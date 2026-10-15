@@ -6,7 +6,8 @@ import {permit,requireActor} from '../src/server/auth.mjs';
 import {fetchTab} from '../src/server/google.mjs';
 import {project,CANONICAL_SCREEN_IDS} from '../src/server/projection.mjs';
 import {readFileSync, readdirSync} from 'node:fs';
-import {join} from 'node:path';
+import {join,dirname,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const domain='https://ia-testing.cloudflareaccess.com',audience='R0PLACEHOLDER_1234567890';
 const kp=generateKeyPairSync('rsa',{modulusLength:2048});
@@ -44,9 +45,8 @@ test('service account OAuth + fixed Google batchGet uses readonly scope',async()
  const d=await fetchTab({IA_GOOGLE_READ_ENABLED:'true',IA_GOOGLE_SERVICE_ACCOUNT_JSON:JSON.stringify(account),IA_GOOGLE_SHEET_ID:'abc_12345678901234567890'},'screens',fetcher);assert.equal(d.length,77);assert.equal(urls.length,2);
 });
 test('public output contract only single nonconfidential static index',()=>{
- const publicRoot='/mnt/data/ia_sheets_0233/public';
- const fs=requireNotUsed=>{};
- // Inspect repo baseline public/index.html mirrored into package below; no internal imports or links.
+ const publicRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../public');
+ // Inspect the packaged public/index.html relative to this test file.
  const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/서비스 준비 중입니다/);assert.equal(readdirSync(publicRoot).join(','),'index.html');
  for(const term of ['PENDING-','/src/internal','docs.google.com','drive.google.com','F17','사업자등록증','sk_live_'])assert.ok(!entry.includes(term));
 });
