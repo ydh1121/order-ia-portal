@@ -1,57 +1,57 @@
 [
   {
     "path": "src/server/auth.mjs",
-    "sha256": "02a2d90727f5ecaa44c501737c1c4c8d3e8fe29d3c58217d410a1f35153a36b9",
-    "bytes": 3653
+    "bytes": 3768,
+    "sha256": "b12ab8a78fc827826add8328cb0a127e83fc47afabee73be8368e335b09f316f"
   },
   {
     "path": "src/server/google.mjs",
-    "sha256": "00ac7b439e5b614042b7abc9060f1d1ee22ddef7dcfb1f8ded97de1533d49b7d",
-    "bytes": 3039
+    "bytes": 3039,
+    "sha256": "00ac7b439e5b614042b7abc9060f1d1ee22ddef7dcfb1f8ded97de1533d49b7d"
   },
   {
     "path": "src/server/projection.mjs",
-    "sha256": "e5eefb5dbdb0f4aedf06032c042bd2492fa66be58c5091224f5d1649e20c287f",
-    "bytes": 2897
+    "bytes": 2897,
+    "sha256": "e5eefb5dbdb0f4aedf06032c042bd2492fa66be58c5091224f5d1649e20c287f"
   },
   {
     "path": "src/server/router.mjs",
-    "sha256": "5c63f09b0ac7c7614caefac457bffa4c9644fb2d72f722affd772310da1e3891",
-    "bytes": 1948
+    "bytes": 1948,
+    "sha256": "5c63f09b0ac7c7614caefac457bffa4c9644fb2d72f722affd772310da1e3891"
   },
   {
     "path": "functions/api/ia/[[route]].js",
-    "sha256": "b8e333359c29b549dd20497b1f9bd9e669e15632f13d649864a88ac0a03518e4",
-    "bytes": 402
+    "bytes": 402,
+    "sha256": "b8e333359c29b549dd20497b1f9bd9e669e15632f13d649864a88ac0a03518e4"
   },
   {
     "path": "docs/IA_SHEETS_ACCESS_CONTRACT.md",
-    "sha256": "061554e816bd9ab9b95401ea01b75ab53757cb7c24fb13771140db84e6b889a7",
-    "bytes": 4626
+    "bytes": 4626,
+    "sha256": "061554e816bd9ab9b95401ea01b75ab53757cb7c24fb13771140db84e6b889a7"
   },
   {
     "path": "docs/REVIEW_NOTES_WRITE_SPEC.md",
-    "sha256": "0870c13d1341ef237db67bdd00d153ca65a2f97622c7124d10576b443ab85543",
-    "bytes": 1477
+    "bytes": 1477,
+    "sha256": "0870c13d1341ef237db67bdd00d153ca65a2f97622c7124d10576b443ab85543"
   },
   {
     "path": "tests/ia-backend.test.mjs",
-    "sha256": "8466a2d785ff4e622f96be66b81876e7e8422105c25a0e53af1d8bceaf69d1a7",
-    "bytes": 7506
+    "bytes": 7610,
+    "sha256": "a6fda42f1022b797dfe5e19321567e080f38d55d0726536122401ea131ff519b"
   },
   {
     "path": "package.json",
-    "sha256": "b112818315ef3743be1a5286091aac89ae92304c8921bf29158a6f634860d29f",
-    "bytes": 121
+    "bytes": 121,
+    "sha256": "b112818315ef3743be1a5286091aac89ae92304c8921bf29158a6f634860d29f"
   },
   {
     "path": ".gitignore",
-    "sha256": "58e886718a49ce073fbc12924b07e799c2c5f10f8688a77c4b2fd442c7e0bc47",
-    "bytes": 76
+    "bytes": 76,
+    "sha256": "58e886718a49ce073fbc12924b07e799c2c5f10f8688a77c4b2fd442c7e0bc47"
   },
   {
     "path": ".env.example",
-    "sha256": "58dbea43699e8ad82f531e232d2bd8ec05b94f0edf57583ca4e797fa600ba920",
-    "bytes": 233
+    "bytes": 233,
+    "sha256": "58dbea43699e8ad82f531e232d2bd8ec05b94f0edf57583ca4e797fa600ba920"
   }
 ]

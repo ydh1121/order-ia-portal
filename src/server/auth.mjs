@@ -41,7 +41,11 @@ const MATRIX={
 };
 export function permit(actor,resource,action,screenId) {
   if(!actor || action!=='READ' || !MATRIX[resource]?.has(actor.role)) return false;
-  if(screenId!==undefined && !/^(F|U|P|C|A)\d{2}$/.test(screenId)) return false;
+  if(screenId!==undefined) {
+    const parts=/^(F|U|P|C|A)(\d{2})$/.exec(screenId);
+    const limits={F:17,U:9,P:8,C:4,A:33};
+    if(!parts || Number(parts[2])>limits[parts[1]]) return false;
+  }
   if((resource==='screens'||resource==='assets') && screenId?.startsWith('A') && ['UIUX','REVIEWER'].includes(actor.role)) return false;
   return true;
 }
