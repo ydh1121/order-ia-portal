@@ -36,8 +36,8 @@
   },
   {
     "path": "tests/ia-backend.test.mjs",
-    "bytes": 7610,
-    "sha256": "a6fda42f1022b797dfe5e19321567e080f38d55d0726536122401ea131ff519b"
+    "bytes": 7631,
+    "sha256": "07a117813eac40753700a4026f4fee63bb908fbc7a228f4fa70004757dbbd20d"
   },
   {
     "path": "package.json",
@@ -53,5 +53,10 @@
     "path": ".env.example",
     "bytes": 233,
     "sha256": "58dbea43699e8ad82f531e232d2bd8ec05b94f0edf57583ca4e797fa600ba920"
+  },
+  {
+    "path": "public/index.html",
+    "bytes": 1288,
+    "sha256": "48e99e68c5869b16c493c19b324e45a18f3ccf6d73e52e24e2179d2e5a114d37"
   }
 ]
