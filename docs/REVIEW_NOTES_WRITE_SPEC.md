@@ -1,0 +1,7 @@
+# Write design — disabled pending owner/provider gate
+
+Notes are not user acceptance. Approval action requires separate OWNER review, immutable recorded user action and explicit version. A planned note event has `event_id (ULID/UUID)`, `idempotency_key`, `screenId` or `decisionId`, `body`, `actorId`, `actorRole`, `createdAt`, `expectedRevision`, `type=COMMENT`, and `approvalStatus=NONE`. Audit event has `eventId`, actor, event type, resource, priorVersion, nextVersion, timestamp, protected origin (never raw credentials).
+
+Do not use existing `화면_관리!M`, `향후_검토!F`, `의견_기록!D` as unguarded overwrite targets. Writing these columns requires a verified source revision, conflict rejection (HTTP 409), atomically assigned sequence, durable idempotency, append-only history and verified readback. Without atomic conditional guarantees from existing Sheets alone, write endpoint stays disabled; propose extra authorized storage/transaction boundary to owner only on actual requirement. No new external DB/project created.
+
+Screen asset proposals: `ScreenID`, `TRACK`, `kind: LOWFI|HIFI|PRODUCT|ADMIN`, `originalFileId`, `originalURL`, `version`, `SHA256`, `sourceCommit`, `qaEvidenceId`, `qaStatus`, `reviewer`, `reviewedAt`, `userApproval`. Until source permissions and provenance validated, URLs/version/approval remain `null/NONE`. User-provided HTML/ZIP is untrusted and must not run on an authenticated IA domain; no upload execution route exists.

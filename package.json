@@ -1,0 +1,1 @@
+{"name":"order-ia-portal-connector","private":true,"type":"module","scripts":{"test:ia":"node --test tests/*.test.mjs"}}

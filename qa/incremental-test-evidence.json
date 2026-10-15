@@ -1,0 +1,15 @@
+{
+  "workOrder": "WO-ORDER-IA-PORTAL-R0-R1-20261015-001",
+  "message": "MSG-20261015-0233",
+  "scope": "INCREMENTAL_ONLY",
+  "testsPassed": 13,
+  "testsFailed": 0,
+  "runtime": "Node.js 22",
+  "mode": "mocked verified-JWT/Google OAuth and service account; NO LIVE Google credentials",
+  "originalQA": "17/17 static and 123/123 Chromium from historic version NOT repeated",
+  "pagesAccessVerified": false,
+  "googleLiveReadVerified": false,
+  "googleLiveWriteVerified": false,
+  "release": "HOLD_FOR_PROTECTED_IA",
+  "publishFolderChanged": false
+}
