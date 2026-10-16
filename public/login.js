@@ -1,14 +1,45 @@
 'use strict';
 const form=document.getElementById('owner-login'),result=document.getElementById('result'),submit=document.getElementById('submit');
+const encoder=new TextEncoder();
+const decode=str=>Uint8Array.from(atob(str.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-str.length%4)%4)),x=>x.charCodeAt(0));
+const b64=x=>btoa(String.fromCharCode(...new Uint8Array(x))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+function message(status,error){
+  if(status===401)return '계정 또는 비밀번호가 일치하지 않습니다.';
+  if(status===403)return '요청 출처가 허용되지 않습니다. 사이트 주소를 확인해 주세요.';
+  if(status===429)return '로그인 요청이 제한되었습니다. 잠시 후 다시 시도해 주세요.';
+  if(status===409||error==='LOGIN_CLIENT_UPDATE_REQUIRED')return '로그인 화면 버전이 바뀌었습니다. 새로고침 후 다시 시도해 주세요.';
+  if(status===500||status===503||status>=500)return '로그인 서버가 응답하지 않습니다. 비밀번호 오류가 아닐 수 있습니다. 잠시 후 다시 시도해 주세요.';
+  return '로그인 요청을 처리하지 못했습니다.';
+}
+async function getChallenge(){
+  const r=await fetch('/api/ia/auth/challenge',{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'error'});
+  if(!r.ok)throw Object.assign(new Error('CHALLENGE_UNAVAILABLE'),{status:r.status});
+  const data=await r.json();
+  if(data.algorithm!=='PBKDF2-SHA256'||!Number.isInteger(data.iterations)||data.iterations<310000||data.iterations>1000000||
+     !/^[A-Za-z0-9_-]+$/.test(data.salt)||!/^[A-Za-z0-9_-]{32,64}$/.test(data.nonce))throw new Error('CHALLENGE_INVALID');
+  return data;
+}
+async function prove(password,email,challenge){
+  // High-cost PBKDF2 runs in the user's browser, never in the edge CPU budget.
+  const key=await crypto.subtle.importKey('raw',encoder.encode(password),'PBKDF2',false,['deriveBits']);
+  const raw=await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:decode(challenge.salt),iterations:challenge.iterations},key,256);
+  const proofKey=await crypto.subtle.importKey('raw',raw,{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  return b64(await crypto.subtle.sign('HMAC',proofKey,encoder.encode('ia.login.v1.'+challenge.nonce+'.'+email)));
+}
 form.addEventListener('submit',async event=>{
-  event.preventDefault();result.textContent='';
-  if(!form.reportValidity())return;
+  event.preventDefault();result.textContent='';if(!form.reportValidity())return;
   submit.disabled=true;
+  const email=form.elements.email.value.trim().toLowerCase();
+  let password=form.elements.password.value;
   try{
-    const response=await fetch('/api/ia/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:form.elements.email.value.trim(),password:form.elements.password.value}),cache:'no-store',redirect:'error'});
-    form.elements.password.value='';
+    const challenge=await getChallenge();
+    const proof=await prove(password,email,challenge);
+    password='';form.elements.password.value='';
+    const response=await fetch('/api/ia/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,nonce:challenge.nonce,proof}),cache:'no-store',redirect:'error'});
     if(response.ok){location.assign('/ia/');return;}
-    result.textContent=response.status===503?'로그인 설정이 아직 완료되지 않았습니다.':response.status===429?'요청이 많습니다. 잠시 후 다시 시도해 주세요.':'로그인할 수 없습니다. 계정과 비밀번호를 확인해 주세요.';
-  }catch{result.textContent='연결에 실패했습니다. 다시 시도해 주세요.'}
-  finally{submit.disabled=false;}
+    let error='';if((response.headers.get('content-type')||'').includes('application/json'))try{error=(await response.json()).error||''}catch{}
+    result.textContent=message(response.status,error);
+  }catch(err){result.textContent=err.status?message(err.status):'로그인 요청 중 통신 또는 암호화 오류가 발생했습니다. 비밀번호 오류가 아닐 수 있습니다.'}
+  finally{password='';form.elements.password.value='';submit.disabled=false;}
 });

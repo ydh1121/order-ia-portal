@@ -6,6 +6,9 @@ const enc=new TextEncoder();
 const COOKIE='__Host-ia_session';
 const TTL=600; // ten minutes. No silent sliding renewal.
 const MAX_BODY=2048;
+const CHALLENGE_COOKIE='__Host-ia_challenge';
+const CHALLENGE_TTL=90; // bounded proof validity; no persistent store or new infra
+const consumed=new Map(); // defense-in-depth only: per-isolate replay throttle
 const attempts=new Map();
 const bytes=x=>enc.encode(x);
 const b64=x=>btoa(String.fromCharCode(...new Uint8Array(x))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
@@ -21,7 +24,7 @@ const rand=n=>crypto.getRandomValues(new Uint8Array(n));
 async function hmacKey(env){
   const key=unb64(env.IA_OWNER_SESSION_KEY);
   if(key.length!==32)throw Error('LOGIN_NOT_CONFIGURED');
-  return crypto.subtle.importKey('raw',key,{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  return crypto.subtle.importKey('raw',key,{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);
 }
 const sign=async (key,text)=>new Uint8Array(await crypto.subtle.sign('HMAC',key,bytes(text)));
 export const ownerConfigured=env=>{
@@ -56,13 +59,65 @@ export function sameOrigin(request){
   return url.protocol==='https:' && url.hostname==='order-ia-portal.pages.dev' && origin===url.origin &&
     request.headers.get('Sec-Fetch-Site')!=='cross-site';
 }
-function getCookie(request){
+function cookieValue(request,name){
   const text=request.headers.get('Cookie')||'';
-  const list=text.split(';').map(x=>x.trim()).filter(x=>x.startsWith(COOKIE+'='));
+  const list=text.split(';').map(x=>x.trim()).filter(x=>x.startsWith(name+'='));
   if(list.length!==1)return null;
-  return list[0].slice(COOKIE.length+1);
+  return list[0].slice(name.length+1);
 }
+const getCookie=request=>cookieValue(request,COOKIE);
+
 export const hasSessionCookie=request=>getCookie(request)!==null;
+/** Avoid edge CPU exhaustion without changing the existing 310000-round PBKDF2 verifier.
+ * Browser derives the same PBKDF2 result, then proves possession with HMAC
+ * over a fresh server-signed challenge. Server verifies HMAC only (fast).
+ * The proof is scoped to challenge+owner email+origin; it is NOT the verifier.
+ * Stateless replay is limited by short expiry and a per-isolate best-effort
+ * consumed-nonce set; full cross-isolate one-time replay prevention needs state.
+ */
+async function createChallenge(env,now){
+  const [,i,salt]=env.IA_OWNER_PASSWORD_VERIFIER.split('$');
+  const nonce=b64(rand(24));
+  const tokenBody=b64(bytes(JSON.stringify({v:1,nonce,exp:now+CHALLENGE_TTL})));
+  const sig=b64(await sign(await hmacKey(env),'ia.challenge.v1.'+tokenBody));
+  return {
+    challenge:{algorithm:'PBKDF2-SHA256',iterations:Number(i),salt,nonce,expiresIn:CHALLENGE_TTL},
+    cookie:CHALLENGE_COOKIE+'='+tokenBody+'.'+sig+'; Path=/; Max-Age='+CHALLENGE_TTL+'; Secure; HttpOnly; SameSite=Strict'
+  };
+}
+function clearChallenge(){return CHALLENGE_COOKIE+'=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict';}
+async function verifyChallenge(request,env,body,now){
+  if(typeof body?.proof!=='string'||typeof body?.nonce!=='string'||
+     !/^[A-Za-z0-9_-]{32,64}$/.test(body.nonce)||!/^[A-Za-z0-9_-]{43,44}$/.test(body.proof))return false;
+  const token=cookieValue(request,CHALLENGE_COOKIE);
+  if(!token||token.length>512||token.split('.').length!==2)return false;
+  const [packed,mac]=token.split('.');
+  const key=await hmacKey(env);
+  let signature;
+  try {signature=unb64(mac)} catch{return false}
+  if(signature.length!==32)return false;
+  const valid=await crypto.subtle.verify('HMAC',key,signature,bytes('ia.challenge.v1.'+packed));
+  if(!valid)return false;
+  let record;
+  try{record=JSON.parse(new TextDecoder().decode(unb64(packed)))}catch{return false}
+  if(record.v!==1||record.nonce!==body.nonce||!Number.isSafeInteger(record.exp)||
+      record.exp<=now||record.exp>now+CHALLENGE_TTL)return false;
+  const email=typeof body.email==='string'?body.email.trim().toLowerCase():'';
+  if(email!==env.IA_OWNER_EMAIL.trim().toLowerCase())return false;
+  const expected=unb64(env.IA_OWNER_PASSWORD_VERIFIER.split('$')[3]);
+  const derived=await crypto.subtle.importKey('raw',expected,{name:'HMAC',hash:'SHA-256'},false,['verify']);
+  let proof;try{proof=unb64(body.proof)}catch{return false}
+  if(proof.length!==32)return false;
+  const ok=await crypto.subtle.verify('HMAC',derived,proof,bytes('ia.login.v1.'+body.nonce+'.'+email));
+  if(!ok)return false;
+  if(consumed.size>=256){
+    for(const [nonce,exp] of consumed)if(exp<=now)consumed.delete(nonce);
+    while(consumed.size>=256)consumed.delete(consumed.keys().next().value);
+  }
+  if(consumed.has(record.nonce))return false;
+  consumed.set(record.nonce,record.exp);
+  return true;
+}
 export async function issueSession(env,now=Math.floor(Date.now()/1000)){
   if(!ownerConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
   const key=await hmacKey(env);
@@ -109,6 +164,19 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
     try{const actor=await readSession(request,env,now);return result({authenticated:true,role:actor.role,email:actor.email,csrf:actor.csrf,expiresAt:actor.expiresAt})}
     catch{return reject()}
   }
+  if(pathname==='/api/ia/auth/challenge'){
+    if(request.method!=='GET')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'GET'});
+    // A cross-site fetch must not create browser login state.
+    if(request.headers.get('Sec-Fetch-Site')==='cross-site')return result({error:'ORIGIN_DENIED'},403);
+    if(!ownerConfigured(env))return result({error:'LOGIN_NOT_CONFIGURED'},503);
+    try{
+      const challenge=await createChallenge(env,now);
+      return result(challenge.challenge,200,{'Set-Cookie':challenge.cookie});
+    }catch{
+      console.error('IA_AUTH_RUNTIME_UNAVAILABLE','challenge');
+      return result({error:'AUTH_SERVER_UNAVAILABLE'},503);
+    }
+  }
   if(pathname==='/api/ia/auth/login'){
     if(request.method!=='POST')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST'});
     if(!sameOrigin(request))return result({error:'ORIGIN_DENIED'},403);
@@ -119,10 +187,21 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
       if(Number(request.headers.get('Content-Length')||0)>MAX_BODY)return reject();
       const raw=await request.text();if(raw.length>MAX_BODY)return reject();body=JSON.parse(raw);
     }catch{return reject()}
-    const email=typeof body?.email==='string'?body.email.trim().toLowerCase():'';
-    if(email!==env.IA_OWNER_EMAIL.trim().toLowerCase()||!await verifyPassword(body?.password,env))return reject();
-    const session=await issueSession(env,now);
-    return result({authenticated:true,expiresIn:session.expiresIn},200,{'Set-Cookie':session.cookie});
+    // No plaintext-password PBKDF2 derivation inside a Cloudflare HTTP request.
+    // Existing verifier iterations and owner password are unchanged.
+    if('password' in (body||{}))return result({error:'LOGIN_CLIENT_UPDATE_REQUIRED'},409);
+    try {
+      if(!await verifyChallenge(request,env,body,now))return reject();
+      const session=await issueSession(env,now);
+      const h=new Headers(headers);
+      // Response supports both cookies (session set and one-time challenge clear).
+      h.append('Set-Cookie',session.cookie);
+      h.append('Set-Cookie',clearChallenge());
+      return new Response(JSON.stringify({authenticated:true,expiresIn:session.expiresIn}),{status:200,headers:h});
+    }catch{
+      console.error('IA_AUTH_RUNTIME_UNAVAILABLE','proof_or_session');
+      return result({error:'AUTH_SERVER_UNAVAILABLE'},503);
+    }
   }
   if(pathname==='/api/ia/auth/logout'){
     if(request.method!=='POST')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST'});
