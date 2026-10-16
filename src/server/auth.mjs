@@ -1,3 +1,4 @@
+import {hasSessionCookie,ownerActor} from './owner-session.mjs';
 /** Server-only Cloudflare Access assertion verification and deny-by-default role lookup. */
 const jwtParts = (value) => {
   if (typeof value !== 'string' || value.length > 12000 || value.split('.').length !== 3) throw new Error('INVALID_JWT');
@@ -10,6 +11,8 @@ const jwtParts = (value) => {
 };
 const VALID_ROLES = new Set(['OWNER','IA_PLANNER','REVIEWER','UIUX','ENGINEER']);
 export async function requireActor(request, env, fetcher=fetch, now=Math.floor(Date.now()/1000)) {
+  // When owner login is enabled, legacy Access assertions cannot bypass the cookie.
+  if(env?.IA_OWNER_LOGIN_ENABLED==='true' || hasSessionCookie(request))return ownerActor(request,env,now);
   const domain=env.IA_ACCESS_TEAM_DOMAIN, audience=env.IA_ACCESS_AUD;
   if(typeof domain!=='string'||!/^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.cloudflareaccess\.com$/i.test(domain) || !/^[A-Za-z0-9_-]{10,128}$/.test(audience||'')) throw new Error('ACCESS_NOT_CONFIGURED');
   const token=request.headers.get('Cf-Access-Jwt-Assertion');

@@ -1,10 +1,12 @@
+import {handleOwnerAuthRequest} from './owner-session.mjs';
 import {requireActor,permit} from './auth.mjs';
 import {fetchTab} from './google.mjs';
 import {project,privateAssetsContract} from './projection.mjs';
-const privateHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Vary':'Cf-Access-Jwt-Assertion','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"};
+const privateHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Vary':'Cookie, Cf-Access-Jwt-Assertion','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"};
 function json(body,status=200) {return new Response(JSON.stringify(body),{status,headers:privateHeaders})}
 export async function handleIaRequest(request,env,dependencies={}) {
-  // IMPORTANT: Even misconfigured Cloudflare Access cannot bypass the cryptographic server gate.
+  if(new URL(request.url).pathname.startsWith('/api/ia/auth/'))return handleOwnerAuthRequest(request,env,dependencies.now);
+  // Server cryptographic authorization always required.
   let actor;
   try {actor=await requireActor(request,env,dependencies.fetcher||fetch,dependencies.now)}
   catch {return json({error:'IA_ACCESS_DENIED'},403)}

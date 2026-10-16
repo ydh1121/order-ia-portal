@@ -1,0 +1,14 @@
+/login.html
+  Cache-Control: no-store, max-age=0
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'
+
+/login.js
+  Cache-Control: public, max-age=300
+  X-Content-Type-Options: nosniff
+
+/owner.js
+  Cache-Control: public, max-age=300
+  X-Content-Type-Options: nosniff

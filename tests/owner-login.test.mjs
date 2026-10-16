@@ -1,0 +1,18 @@
+import {test,before} from 'node:test';
+import assert from 'node:assert/strict';
+import {webcrypto,randomBytes} from 'node:crypto';
+import {ownerConfigured,deriveVerifier,issueSession,handleOwnerAuthRequest} from '../src/server/owner-session.mjs';
+import {handleIaRequest} from '../src/server/router.mjs';
+import {onRequest} from '../functions/ia/[[path]].js';
+if(!globalThis.crypto)globalThis.crypto=webcrypto;
+const origin='https://order-ia-portal.pages.dev';let env,pass;
+const req=(path,opt={})=>new Request(origin+path,{method:opt.method||'GET',headers:{...(opt.origin?{Origin:opt.origin}:{}),...(opt.cookie?{Cookie:opt.cookie}:{}),...(opt.csrf?{'X-IA-CSRF':opt.csrf}:{}),...(opt.body?{'Content-Type':'application/json'}:{})},body:opt.body?JSON.stringify(opt.body):undefined});
+before(async()=>{pass=randomBytes(30).toString('base64url');env={IA_OWNER_EMAIL:'one@sample.invalid',IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(pass),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),IA_GOOGLE_READ_ENABLED:'false'}});
+test('not configured login is unavailable',async()=>{assert.equal(ownerConfigured({}),false);assert.equal((await handleOwnerAuthRequest(req('/api/ia/auth/login',{method:'POST',origin,body:{email:'x',password:'y'}}),{})).status,503)});
+test('email-only and wrong password denied',async()=>{for(const body of [{email:env.IA_OWNER_EMAIL},{email:env.IA_OWNER_EMAIL,password:'not-the-password-2026'}])assert.equal((await handleOwnerAuthRequest(req('/api/ia/auth/login',{method:'POST',origin,body}),env)).status,401)});
+test('cross-origin and missing Origin denied',async()=>{for(const o of ['https://evil.invalid',undefined])assert.equal((await handleOwnerAuthRequest(req('/api/ia/auth/login',{method:'POST',origin:o,body:{email:env.IA_OWNER_EMAIL,password:pass}}),env)).status,403)});
+test('success uses short lived Secure HttpOnly SameSite cookie',async()=>{const r=await handleOwnerAuthRequest(req('/api/ia/auth/login',{method:'POST',origin,body:{email:env.IA_OWNER_EMAIL,password:pass}}),env);assert.equal(r.status,200);for(const s of ['Secure','HttpOnly','SameSite=Strict','Max-Age=600'])assert.ok(r.headers.get('Set-Cookie').includes(s))});
+test('anonymous and forged-cookie API denied',async()=>{assert.equal((await handleIaRequest(req('/api/ia/screens'),env)).status,403);assert.equal((await handleIaRequest(req('/api/ia/screens',{cookie:'__Host-ia_session=forged'}),env)).status,403)});
+test('logout requires origin and CSRF, clears cookie',async()=>{const s=await issueSession(env),cookie=s.cookie.split(';')[0];assert.equal((await handleOwnerAuthRequest(req('/api/ia/auth/logout',{method:'POST',cookie,origin}),env)).status,403);const r=await handleOwnerAuthRequest(req('/api/ia/auth/logout',{method:'POST',cookie,origin,csrf:s.csrf}),env);assert.equal(r.status,200);assert.match(r.headers.get('Set-Cookie'),/Max-Age=0/)});
+test('private IA deep links are inaccessible without server session',async()=>{const r=await onRequest({request:req('/ia/screen/F17'),env});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login.html')});
+test('notes still deny writes',async()=>{const s=await issueSession(env);assert.equal((await handleIaRequest(req('/api/ia/notes',{method:'POST',cookie:s.cookie.split(';')[0]}),env)).status,405)});
