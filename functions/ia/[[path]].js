@@ -1,11 +1,22 @@
-/** Private Pages Function entry point. No confidential planning data is ever static. */
+/** OWNER-only Pages UI. Original v0.3 layout is server-private and current data comes from the Google dashboard API. */
 import {requireActor} from '../../src/server/auth.mjs';
-const h={'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',Vary:'Cookie, Cf-Access-Jwt-Assertion','X-Frame-Options':'DENY','Cross-Origin-Resource-Policy':'same-origin'};
+import {v03OwnerHtml} from '../../src/server/v03-owner-template.mjs';
+const base={
+ 'Cache-Control':'private, no-store, max-age=0',
+ 'X-Content-Type-Options':'nosniff',
+ 'Referrer-Policy':'no-referrer',
+ 'Vary':'Cookie, Cf-Access-Jwt-Assertion',
+ 'X-Frame-Options':'DENY',
+ 'Cross-Origin-Resource-Policy':'same-origin',
+ 'X-Robots-Tag':'noindex, nofollow'
+};
 export async function onRequest({request,env}){
-  if(request.method!=='GET'&&request.method!=='HEAD')return new Response('Method Not Allowed',{status:405,headers:{...h,Allow:'GET, HEAD'}});
-  let actor;try{actor=await requireActor(request,env)}catch{return new Response(null,{status:302,headers:{...h,Location:'/login.html'}})}
-  if(actor.role!=='OWNER')return new Response('Forbidden',{status:403,headers:h});
-  // All dynamic IA data must be retrieved from /api/ia/* after the same server authentication.
-  const html=`<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>order.ooo — IA 관리 대시보드</title><link rel="stylesheet" href="/owner.css"><link rel="stylesheet" href="/ia-map.css"></head><body><div class="app"><aside class="sidebar"><div class="brand">order.ooo<small>PRIVATE · IA WORKSPACE</small></div><nav class="nav" aria-label="IA 대시보드 메뉴"><button data-section="overview" class="selected" type="button">전체 개요</button><button data-section="sitemap" type="button">계층형 사이트맵</button><button data-section="journey" type="button">고객 여정</button><button data-section="operation" type="button">운영 연결</button><button data-section="roadmap" type="button">사업·개발 로드맵</button><button data-section="policy" type="button">정책·승인 구분</button><button data-section="decisions" type="button">향후 검토 25건</button><button data-section="notes" type="button">화면 메모·자료</button><button data-section="guide" type="button">사용 안내</button><button id="print-view" class="print-action" type="button">현재 화면 인쇄</button></nav><div class="asidefoot">Google Sheets 운영 정본 · 내부 전용<br>화면·정책 내용은 서버에서만 읽습니다.<br>실제 기록 쓰기/최종 승인은 비활성화</div></aside><main class="workspace"><div class="topbar"><span class="eyebrow">CODE1 / order.ooo / IA</span><div class="usergroup"><span id="identity">계정 확인 중</span><button class="plain-button" id="refresh" type="button">원장 새로고침</button><button class="plain-button" id="logout" type="button">로그아웃</button></div></div><header class="head"><h1>IA 관리 대시보드</h1><p>화면 흐름과 정책 검토, 단계별 사업 범위를 Google 원장과 대조합니다. 기획 상태와 실제 제품의 승인·구현 상태는 별도로 구분합니다.</p></header><div id="sync-status" class="status-line" role="status" aria-live="polite">원장 접근 상태를 확인하고 있습니다.</div><section class="metrics" id="metrics" aria-label="현황 통계"></section><section class="panel"><div class="panel-header"><h2 id="section-title">전체 개요</h2><span class="tag" id="source-state">서버 인증 · READ ONLY</span></div><div id="main-content" class="content"><p class="empty">원장 데이터를 확인하고 있습니다.</p></div></section><aside id="detail" class="detail" hidden aria-label="화면 상세 정보"></aside></main></div><script src="/ia-map.js" defer></script><script src="/owner.js" defer></script></body></html>`;
-  return new Response(request.method==='HEAD'?null:html,{status:200,headers:{...h,'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"}});
+ if(request.method!=='GET'&&request.method!=='HEAD')return new Response(null,{status:405,headers:{...base,Allow:'GET, HEAD'}});
+ let actor;try{actor=await requireActor(request,env)}catch{return new Response(null,{status:302,headers:{...base,Location:'/login'}})}
+ if(actor.role!=='OWNER')return new Response(null,{status:403,headers:base});
+ const nonce=Array.from(crypto.getRandomValues(new Uint8Array(18)),x=>x.toString(16).padStart(2,'0')).join('');
+ const headers={...base,'Content-Type':'text/html; charset=utf-8',
+  'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`};
+ const html=v03OwnerHtml(nonce);
+ return new Response(request.method==='HEAD'?null:html,{status:200,headers});
 }
