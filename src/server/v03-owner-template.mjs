@@ -40,7 +40,14 @@ const policyNotice=document.querySelector('#view-policy .notice');
 if(policyNotice)policyNotice.textContent='현재 Google 원장: 검토 25개 · 완전 승인 1개 · 운영세부 검토 24개. PENDING-19는 일부 요건과 운영 세부 검토를 구분. IA/LOWFI 사용자 승인 없음.';
 const policyDesc=document.querySelector('#view-policy .sect p');
 if(policyDesc)policyDesc.textContent='아래 네 정책 카드는 원본 v0.3 기획 참고용입니다. 현재 승인 상태는 향후 검토 25건 원장으로 판단합니다.';
-document.querySelectorAll('#policy-grid .policycard .overline').forEach(x=>x.textContent='원본 v0.3 기획 참고 / 현행 승인 확인 필요');
+document.querySelectorAll('#policy-grid .policycard').forEach((card,i)=>{
+ const id=['PENDING-19','PENDING-20','PENDING-01','PENDING-22'][i];
+ const current=liveData.decisions.items.find(x=>x.id===id);
+ const overline=card.querySelector('.overline'),paragraph=card.querySelector('p'),notice=card.querySelector('.notice');
+ if(overline)overline.textContent=id+' · 현재 원장 '+(current?.status||'검토 정보 없음');
+ if(paragraph)paragraph.textContent=current?.question||'현재 Google 원장 검토 내용을 확인할 수 없습니다.';
+ if(notice)notice.textContent=(current?.isFullyApproved?'해당 항목의 요건 완전 승인':'운영·개발 세부 검토 및 최종 승인 별도')+' · 화면 구현·로우파이 사용자 승인과 별개';
+});
 const milestone=document.getElementById('roadmap');
 if(milestone){
  const section=document.createElement('div');section.className='card';section.style.marginBottom='18px';
