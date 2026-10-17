@@ -2,6 +2,7 @@ import {handleOwnerAuthRequest} from './owner-session.mjs';
 import {requireActor,permit} from './auth.mjs';
 import {fetchTab,fetchDashboardTabs} from './google.mjs';
 import {project,privateAssetsContract} from './projection.mjs';
+import {buildIaReference} from './ia-reference.mjs';
 const privateHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Vary':'Cookie, Cf-Access-Jwt-Assertion','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"};
 function json(body,status=200) {return new Response(JSON.stringify(body),{status,headers:privateHeaders})}
 export async function handleIaRequest(request,env,dependencies={}) {
@@ -28,10 +29,11 @@ export async function handleIaRequest(request,env,dependencies={}) {
       const guide=project('guide',tables.guide);
       const notes=project('notes',tables.notes);
       // Reject the entire response if any critical source is incomplete or contradictory.
-      return json({source:'GOOGLE_SHEETS_AUTHENTICATED_READ',readOnly:true,screenCount:screens.total,decisionCount:decisions.total,roadmapCount:roadmap.total,screens,decisions,roadmap,guide,notes});
+      const iaMap=buildIaReference(screens,decisions);
+      return json({source:'GOOGLE_SHEETS_AUTHENTICATED_READ',readOnly:true,screenCount:screens.total,decisionCount:decisions.total,roadmapCount:roadmap.total,screens,decisions,roadmap,guide,notes,iaMap});
     }catch(error){
       // Explicit allowlist of nonsecret status codes, only after authenticated OWNER gate.
-      const safe=new Set(['GOOGLE_READ_DISABLED','GOOGLE_ACCOUNT_NOT_CONFIGURED','GOOGLE_SHEET_NOT_CONFIGURED','GOOGLE_TOKEN_DENIED','GOOGLE_SHEET_NOT_SHARED','GOOGLE_READ_FAILED','GOOGLE_RESPONSE_INVALID','SCREEN_PARITY_FAILED','DECISION_PARITY_FAILED','ROADMAP_PARITY_FAILED']);
+      const safe=new Set(['GOOGLE_READ_DISABLED','GOOGLE_ACCOUNT_NOT_CONFIGURED','GOOGLE_SHEET_NOT_CONFIGURED','GOOGLE_TOKEN_DENIED','GOOGLE_SHEET_NOT_SHARED','GOOGLE_READ_FAILED','GOOGLE_RESPONSE_INVALID','SCREEN_PARITY_FAILED','DECISION_PARITY_FAILED','ROADMAP_PARITY_FAILED','REFERENCE_SCREEN_PARITY_FAILED']);
       return json({error:'IA_DATA_UNAVAILABLE',reason:safe.has(error?.message)?error.message:'IA_DATA_UNAVAILABLE'},503);
     }
   }

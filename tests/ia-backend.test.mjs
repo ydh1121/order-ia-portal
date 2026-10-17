@@ -47,6 +47,6 @@ test('service account OAuth + fixed Google batchGet uses readonly scope',async()
 test('public output contract only single nonconfidential static index',()=>{
  const publicRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../public');
  // Inspect the packaged public/index.html relative to this test file.
- const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/서비스 준비 중입니다/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','index.html','login.html','login.js','owner.css','owner.js']);
+ const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','owner.css','owner.js']);
  for(const term of ['PENDING-','/src/internal','docs.google.com','drive.google.com','F17','사업자등록증','sk_live_'])assert.ok(!entry.includes(term));
 });
