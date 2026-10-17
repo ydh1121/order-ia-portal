@@ -10,7 +10,7 @@ const response=await fetch('/api/ia/dashboard',{credentials:'same-origin',cache:
 if(response.status===401||response.status===403){location.replace('/login');return}
 if(!response.ok)throw Error('GOOGLE_LIVE_READ_UNAVAILABLE');
 const live=await response.json();
-if(!live.readOnly||live.source!=='GOOGLE_SHEETS_AUTHENTICATED_READ'||live.screenCount!==76||live.decisionCount!==25||live.roadmapCount!==7||live.screens?.items?.length!==76||live.decisions?.items?.length!==25||live.roadmap?.items?.length!==7||live.decisions.fullyApproved!==1||live.decisions.active!==24||!Array.isArray(live.notes?.items)||!live.decisions.items.find(x=>x.id==='PENDING-19')?.status?.includes('운영세부'))throw Error('GOOGLE_SOURCE_PARITY_FAILED');
+if(!live.readOnly||live.source!=='GOOGLE_SHEETS_AUTHENTICATED_READ'||live.screenCount!==76||live.decisionCount!==25||live.roadmapCount!==7||live.screens?.items?.length!==76||live.decisions?.items?.length!==25||live.roadmap?.items?.length!==7||live.decisions.fullyApproved!==1||live.decisions.active!==24||!Array.isArray(live.notes?.items)||!live.decisions.items.some(x=>x.id==='PENDING-19'&&x.isFullyApproved!==true&&!!x.status))throw Error('GOOGLE_SOURCE_PARITY_FAILED');
 window.__iaLive=live;
 window.__iaSheetRowById=Object.fromEntries(live.screens.items.map((x,i)=>[x.screenId,i+2]));
 const source=JSON.parse(document.getElementById('sitemap-json').textContent);
@@ -44,6 +44,7 @@ document.querySelectorAll('#policy-grid .policycard').forEach((card,i)=>{
  const id=['PENDING-19','PENDING-20','PENDING-01','PENDING-22'][i];
  const current=liveData.decisions.items.find(x=>x.id===id);
  const overline=card.querySelector('.overline'),paragraph=card.querySelector('p'),notice=card.querySelector('.notice');
+ if(i===0){const title=card.querySelector('h3');if(title)title.textContent='사업자 검증·농가 승인가격 확정 후 예상 납품가 공개';}
  if(overline)overline.textContent=id+' · 현재 원장 '+(current?.status||'검토 정보 없음');
  if(paragraph)paragraph.textContent=current?.question||'현재 Google 원장 검토 내용을 확인할 수 없습니다.';
  if(notice)notice.textContent=(current?.isFullyApproved?'해당 항목의 요건 완전 승인':'운영·개발 세부 검토 및 최종 승인 별도')+' · 화면 구현·로우파이 사용자 승인과 별개';
@@ -84,6 +85,8 @@ const swaps=[
  ['order.ooo — 기획 사이트맵 v0.2 / 계층형','order.ooo — 인증 IA v0.3 원본 화면 / Google 실원장'],
  ['order.ooo Planning IA v0.2','order.ooo Planning IA v0.3'],
  ['PLANNING / HIERARCHICAL IA · v0.2','PLANNING / HIERARCHICAL IA · v0.3'],
+ ['페이지 구조 미리보기','원본 v0.3 미승인 기획용 구조 미리보기'],
+ ['이 화면의 핵심 기능','v0.3 미승인 기획용 핵심 기능'],
  ['전체 22개 · 미결정 21개 · 승인 완료 1개 (사업자등록증 제출 시점).','현재 Google 원장 검증 중 · 사용자 승인과 서비스 구현은 별도입니다.'],
  ['의사결정 대장: 전체 22개 ID / 활성 검토 21건. PENDING-01 승인, PENDING-19 일부 승인·상세 검토, PENDING-20/21/22 미결정.','Google 원장 검토 25건 · 완전 승인 1건 · 상세 검토 24건. PENDING-19 운영세부 검토 진행 중.'],
  ['정책 승인</b>회원 예상가격 / 매장 추가 순서 / 등록증 제출 시점 / 이메일 우선 (4건)','정책 검토</b>현재 원장 25건 중 완전 승인 1건 · 운영 세부와 UI 수락 별도'],
