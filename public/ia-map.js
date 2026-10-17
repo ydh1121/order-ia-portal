@@ -76,6 +76,6 @@ function mapDetail(host,x){if(!data?.iaMap)return;const rel=graph().related[x.sc
  const decisions=data.decisions.items.filter(d=>(graph().policyLinks[d.id]||[]).includes(x.screenId));if(decisions.length){box.append(el('h4','','관련 정책'));for(const d of decisions){const b=el('button','map-detail-policy',d.id+' · '+d.name);b.onclick=()=>openView('policy');box.append(b)}}
  const count=data.notes.items.filter(n=>n.screenOrDecisionId===x.screenId).length;box.append(el('p','map-muted','원장 연결 의견 '+count+'건 · 읽기 전용 / 승인 아님'));host.append(box)}
 function bind(payload,callbacks){data=payload;openScreen=callbacks.openScreen;openView=callbacks.openView}
-function render(section,payload,target,callbacks){bind(payload,callbacks);const route={overview,sitemap,journey,operation,policy};if(!data.iaMap){target.append(el('p','map-empty','기획 연결 자료를 확인할 수 없습니다.'));return}if(route[section])target.append(route[section]());else target.append(el('p','map-empty','선택된 화면을 표시할 수 없습니다.'))}
+function render(section,payload,target,callbacks){bind(payload,callbacks);const route={overview,sitemap,journey,operation:operations,policy};if(!data.iaMap){target.append(el('p','map-empty','기획 연결 자료를 확인할 수 없습니다.'));return}if(route[section])target.append(route[section]());else target.append(el('p','map-empty','선택된 화면을 표시할 수 없습니다.'))}
 window.iaMap={bind,render,mapDetail,enrichRoadmap};
 })();
