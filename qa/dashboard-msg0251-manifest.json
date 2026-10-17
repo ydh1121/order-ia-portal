@@ -1,0 +1,59 @@
+{
+  "wo": "WO-ORDER-IA-PORTAL-R0-R1-20261015-001",
+  "message": "MSG-20261017-0251",
+  "source_baseline": "6eff60e17ee81371725882765f9914fd05d20196",
+  "mode": "REAL_GOOGLE_AUTH_NOT_ENABLED",
+  "files": [
+    {
+      "path": "src/server/google.mjs",
+      "bytes": 4585,
+      "sha256": "14839aa5672e810592e38da05b91da7316c86bc1ccb35859eea8842c6f0b6e35"
+    },
+    {
+      "path": "src/server/router.mjs",
+      "bytes": 3622,
+      "sha256": "b76703fc4cc7b3e5bd4d1b86c26a27e01e33cdc87c08bea409acac642521cd0f"
+    },
+    {
+      "path": "functions/ia/[[path]].js",
+      "bytes": 3425,
+      "sha256": "9ef1482f6377627328ba6902ab8207d4d877401f95983fa8b80f26aaa5afb578"
+    },
+    {
+      "path": "public/owner.js",
+      "bytes": 12066,
+      "sha256": "a952ff2b9171e0c40fb88053fdf2d0a293ee2fa86a4a73353f2f0aeaac678017"
+    },
+    {
+      "path": "public/owner.css",
+      "bytes": 6632,
+      "sha256": "b1e8ec095c81b34002bef00a58c2711615ea672151e289d5c395d6c014467b14"
+    },
+    {
+      "path": "tests/dashboard.test.mjs",
+      "bytes": 7792,
+      "sha256": "3cc131d5862d3c5a11a9da878b52ab8556f9b06721b661cca095f5592942ec02"
+    },
+    {
+      "path": "tests/dashboard-browser.py",
+      "bytes": 4288,
+      "sha256": "08b49daf71c364e6ae1411bf4967e1996a0a52f894e3b78b3a85540ea991be59"
+    },
+    {
+      "path": "docs/IA_DASHBOARD_GOOGLE_READ_MSG0251.md",
+      "bytes": 4590,
+      "sha256": "b84bd9975e5e3bd10baa199c7130d915c7ee4510ef676a6f45c26d6e06cb916d"
+    }
+  ],
+  "test_claims": {
+    "node_suites": 11,
+    "node_fail": 0,
+    "chromium_widths": [
+      390,
+      1440
+    ],
+    "browser_mock_only": true,
+    "Google_live": false,
+    "Sheet_writes": false
+  }
+}

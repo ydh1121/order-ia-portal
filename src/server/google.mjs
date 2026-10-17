@@ -39,3 +39,29 @@ export async function fetchTab(env, tab, fetcher=fetch) {
   if(!Array.isArray(json.valueRanges)||json.valueRanges.length!==1) throw new Error('GOOGLE_RESPONSE_INVALID');
   return json.valueRanges[0].values||[];
 }
+
+/** One owner-only provider read for the existing five operational tabs.
+ * This never caches Google data or credentials in a public asset.
+ */
+export async function fetchDashboardTabs(env,fetcher=fetch){
+  if(env.IA_GOOGLE_READ_ENABLED!=='true')throw new Error('GOOGLE_READ_DISABLED');
+  const sheetId=env.IA_GOOGLE_SHEET_ID;
+  if(typeof sheetId!=='string'||!/^[A-Za-z0-9_-]{20,100}$/.test(sheetId))throw new Error('GOOGLE_SHEET_NOT_CONFIGURED');
+  const token=await tokenFor(env,fetcher);
+  const keys=['screens','decisions','roadmap','guide','notes'];
+  const params=new URLSearchParams({valueRenderOption:'FORMATTED_VALUE'});
+  for(const key of keys)params.append('ranges',TABS[key]);
+  const url='https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+'/values:batchGet?'+params;
+  const res=await fetcher(url,{headers:{Authorization:'Bearer '+token,Accept:'application/json'}});
+  if(!res.ok)throw new Error(res.status===403||res.status===404?'GOOGLE_SHEET_NOT_SHARED':'GOOGLE_READ_FAILED');
+  const body=await res.json();
+  if(!Array.isArray(body.valueRanges)||body.valueRanges.length!==keys.length)throw new Error('GOOGLE_RESPONSE_INVALID');
+  const out={};
+  for(let i=0;i<keys.length;i++){
+    const valueRange=body.valueRanges[i];
+    if(!Array.isArray(valueRange.values)||valueRange.values.length<2)throw new Error('GOOGLE_RESPONSE_INVALID');
+    // Sheets may normalize range notation in its response; positional pairing comes from the one batch request.
+    out[keys[i]]=valueRange.values;
+  }
+  return out;
+}
