@@ -32,7 +32,7 @@ if(owner.ok){
  const btn=document.createElement('button');btn.type='button';btn.textContent='로그아웃';btn.style.cssText='float:right;margin-left:8px;border:1px solid #91bbac;border-radius:6px;background:#fff;color:#245d4e;padding:3px 10px;cursor:pointer';
  btn.addEventListener('click',async()=>{const res=await fetch('/api/ia/auth/logout',{method:'POST',credentials:'same-origin',headers:{'X-IA-CSRF':actor.csrf}});if(res.ok)location.replace('/login')});banner.prepend(btn);
 }
-\`;
+`;
 const after=String.raw`
 // Keep the original 8 interactive views, focus trap, SVG, routes and print behavior.
 const liveData=window.__iaLive;
@@ -65,7 +65,11 @@ if(feedback){
 }
 const query=new URLSearchParams(location.search);
 const aliases={screens:'sitemap',decisions:'pending',notes:'feedback',guide:'feedback'};
-if(aliases[query.get('view')])document.querySelector('[data-view="'+aliases[query.get('view')]+'"]')?.click();
+const alias=aliases[query.get('view')];
+if(alias){
+ const target=document.querySelector('[data-view="'+alias+'"]');
+ if(target)target.click();
+}
 if(query.get('screen')&&/^[FUPCA]\d{2}$/.test(query.get('screen')))document.querySelector('[data-screen="'+query.get('screen')+'"]')?.click();
 }catch(error){
  console.error('IA_SOURCE_VERIFICATION_FAILED',String(error.message||error));
@@ -73,12 +77,13 @@ if(query.get('screen')&&/^[FUPCA]\d{2}$/.test(query.get('screen')))document.quer
  if(banner)banner.textContent='Google 원장 또는 기획 자료 검증에 실패했습니다. 새로고침해 주세요. 미승인 기록을 임의 표시하지 않습니다.';
 }
 })();
-\`;
+`;
 export function v03OwnerHtml(nonce){
 let s=ORIGINAL_V03_SOURCE;
 const swaps=[
  ['order.ooo — 기획 사이트맵 v0.2 / 계층형','order.ooo — 인증 IA v0.3 원본 화면 / Google 실원장'],
  ['order.ooo Planning IA v0.2','order.ooo Planning IA v0.3'],
+ ['PLANNING / HIERARCHICAL IA · v0.2','PLANNING / HIERARCHICAL IA · v0.3'],
  ['전체 22개 · 미결정 21개 · 승인 완료 1개 (사업자등록증 제출 시점).','현재 Google 원장 검증 중 · 사용자 승인과 서비스 구현은 별도입니다.'],
  ['의사결정 대장: 전체 22개 ID / 활성 검토 21건. PENDING-01 승인, PENDING-19 일부 승인·상세 검토, PENDING-20/21/22 미결정.','Google 원장 검토 25건 · 완전 승인 1건 · 상세 검토 24건. PENDING-19 운영세부 검토 진행 중.'],
  ['정책 승인</b>회원 예상가격 / 매장 추가 순서 / 등록증 제출 시점 / 이메일 우선 (4건)','정책 검토</b>현재 원장 25건 중 완전 승인 1건 · 운영 세부와 UI 수락 별도'],
