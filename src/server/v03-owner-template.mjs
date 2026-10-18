@@ -99,6 +99,25 @@ const swaps=[
  ['screenToRow[id]||2','(window.__iaSheetRowById||{})[id]||2']
 ];
 for(const [a,b] of swaps)s=s.replace(a,b);
+// MSG-20261018-0296: amend outdated v0.3 COPY only, not the archived screen graph.
+// PENDING-01 is fully approved; PENDING-19 business verification operating details remain in review.
+const currentRegistrationCopy=[
+ ["desc:'이 시점 사업자등록증 제출'","desc:'가격 열람 전 검증한 서류 재사용·변경 시 재확인'"],
+ ["desc:'실제 승인·조건 일치 품목만 공개'","desc:'사업자정보·등록증·국세청·소속 검증 후 승인가격 공개'"],
+ ["['사업자등록증 심사','F02 → A02 → F03','실제 납품 신청시에 증빙 접수·보완·승인']","['사업자 자격 확인·납품 신청 심사','F07 → A03 → F01 → F02 → A02 → F03','가격 열람 신청 전 사업자정보·등록증·국세청·소속 확인. F02에서는 검증 서류 재사용·재확인, 미제출·변경 시 보완']"],
+ ["'실제 신청·등록증 심사'","'실제 신청·증빙 재확인'"],
+ ['"purpose":"실제 납품 신청 단계에서 사업자등록증 제출"','"purpose":"실제 가격 열람 자격 검증 후 F02에서 증빙 재사용·변경 시 보완"'],
+ ['"description":"사업자 정보·사업자등록증·개인정보동의·실제 신청"','"description":"검증된 사업자정보·서류 재확인·개인정보동의·실제 신청"'],
+ ['"등록증 이미지/PDF 업로드"','"검증된 등록증 재사용·미제출/변경 시 업로드"'],
+ ['"서류와 납품 신청 제출"','"기존 증빙 확인 후 납품 신청"'],
+ ["'비회원 입력·이메일 가입·예상가격 확인에는 필요 없습니다. 실제 납품 신청(F02)에 제출합니다.'","'F17 비회원 견적과 F07 이메일 가입 자체에는 서류가 필요 없습니다. 실제 승인 납품가 열람 요청 전 사업자정보·등록증·국세청·소속을 검증합니다. F02 신청에서는 검증된 증빙을 재사용하고 변경·누락 시 재확인합니다.'"],
+ ["'이메일 인증 회원은 공급자·관리자가 승인하고 상품·지역·물량·배송 조건이 맞는 예상 납품가만 확인합니다.'","'이메일 가입만으로 가격이 공개되지 않습니다. 사업자정보·등록증·국세청·소속 검증 후 상품·지역·물량·배송 조건이 맞는 실제 승인 납품가격을 조건부 확인합니다.'"],
+];
+for(const [from,to] of currentRegistrationCopy){
+ if(!s.includes(from))throw Error('V03_POLICY_COPY_ANCHOR_MISSING: '+from);
+ s=s.replace(from,to);
+}
+
 s=s.replace(/(<script id="pending-json" type="application\/json">)[\s\S]*?(<\/script>)/,(_,a,b)=>a+'[]'+b);
 s=s.replace('</style>','\n'+UX_CSS+'</style>');
 s=s.replace('<body>','<body><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
