@@ -2,6 +2,8 @@
  * Does not copy the historical HTML to public static assets.
  */
 import {ORIGINAL_V03_SOURCE} from './v03-source.mjs';
+import {UX_CSS} from './v03-ux.css.mjs';
+import {UX_RUNTIME} from './v03-ux.js.mjs';
 const prelude=String.raw`
 (async()=>{
 'use strict';
@@ -98,8 +100,9 @@ const swaps=[
 ];
 for(const [a,b] of swaps)s=s.replace(a,b);
 s=s.replace(/(<script id="pending-json" type="application\/json">)[\s\S]*?(<\/script>)/,(_,a,b)=>a+'[]'+b);
+s=s.replace('</style>','\n'+UX_CSS+'</style>');
 s=s.replace('<body>','<body><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
 s=s.replace('<script>','<script nonce="'+nonce+'">'+prelude);
-s=s.replace('</script></body></html>',after+'</script></body></html>');
+s=s.replace('</script></body></html>',after.replace('}catch(error){',UX_RUNTIME+'\n}catch(error){')+'</script></body></html>');
 return s;
 }
