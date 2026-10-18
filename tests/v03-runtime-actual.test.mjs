@@ -33,7 +33,7 @@ test('current Google source exclusively controls decisions and provider status; 
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
 test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'e17da42380bc381d84f4c4e42e75463a95065e264aedd810d1a4b55ebe2c8027');
+ assert.equal(sha256(html),'8f7c18a8e5576158ab054d1048115f0fa630fa05e249da708254497ec9767e8a');
  assert.equal(sha256(actualCode),'cca60de1ec65cfdcc2d9b78960b68b2ffb86979654fa7d1e7f3998eb7b99ce46');
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
 });
