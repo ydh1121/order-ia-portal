@@ -50,9 +50,9 @@ test('incomplete wrong decision status fails closed to 503 without any partial r
 test('Google token rejection is distinct nonsecret owner-only diagnostics',async()=>{
  const response=await handleIaRequest(request('/api/ia/dashboard'),env,{fetchDashboardTabs:async()=>{throw Error('GOOGLE_TOKEN_DENIED')}});assert.equal(response.status,503);assert.equal((await response.json()).reason,'GOOGLE_TOKEN_DENIED');
 });
-test('private /ia path redirect and owner private shell never contains source data',async()=>{
+test('private /ia path redirect and owner shell excludes live Google data and service credentials',async()=>{
  const anonymous=await iaPage({request:request('/ia/','GET',null),env});assert.equal(anonymous.status,302);
- const res=await iaPage({request:request('/ia/'),env});assert.equal(res.status,200);const body=await res.text();assert.match(body,/IA 관리 대시보드/);for(const x of ['PENDING-01','F17','사업자등록증','GOOGLE_SERVICE_ACCOUNT_JSON'])assert.ok(!body.includes(x));
+ const res=await iaPage({request:request('/ia/'),env});assert.equal(res.status,200);const body=await res.text();assert.match(body,/인증 IA v0\.3 원본 화면/);assert.ok(body.includes('F17'));for(const x of ['USER PRIVATE NOTE','PRIVATE CHOICE','IA_GOOGLE_SERVICE_ACCOUNT_JSON'])assert.ok(!body.includes(x));
 });
 test('public JS contains UI behavior but no confidential static IA rows, price or linked Drive keys',()=>{
  const pub=resolve(root,'public');const js=readFileSync(resolve(pub,'owner.js'),'utf8');const css=readFileSync(resolve(pub,'owner.css'),'utf8');assert.ok(js.includes('/api/ia/dashboard'));for(const x of ['PENDING-01','F17','250×6600','docs.google.com','drive.google.com','IA_GOOGLE_SERVICE_ACCOUNT_JSON','/src/internal'])assert.ok(!js.includes(x) && !css.includes(x));

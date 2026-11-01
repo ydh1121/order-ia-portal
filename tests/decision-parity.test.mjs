@@ -6,7 +6,7 @@ import {TABS} from '../src/server/google.mjs';
 const header=['검토 ID','쉬운 제목','무엇을 결정해야 하나요?','현재 상태'];
 const statusFor=i=>i===1?'승인 완료':i===19?'핵심 공개요건 승인·운영세부 검토':i===26?'엔진·UI 통합 완료, 웹 검수 및 정책 검토 중':i===10?'보류 검토':i===11?'향후 검토':'검토 필요';
 const row=i=>['PENDING-'+String(i).padStart(2,'0'),'합성 검토 '+i,'합성 질문 '+i,statusFor(i),'F17'];
-const fixture=()=>[header,...Array.from({length:28},(_,i)=>row(i+1))];
+const fixture=()=>[[...header],...Array.from({length:28},(_,i)=>row(i+1))];
 const summary=rows=>project('decisions',rows);
 const reject=rows=>assert.throws(()=>summary(rows),/DECISION_PARITY_FAILED/);
 
@@ -75,7 +75,7 @@ test('partial row containing only a memo is malformed rather than quietly filter
 });
 test('invalid header, header-only list and non-array rows fail explicitly',()=>{
  const wrong=fixture();wrong[0][1]='제목';reject(wrong);
- reject([header]);const bad=fixture();bad[7]=null;reject(bad);
+ assert.throws(()=>summary([[...header]]),/EMPTY_SHEET/);const bad=fixture();bad[7]=null;reject(bad);
 });
 test('a second exact approval from the source affects the aggregation, without auto-promoting partial statuses',()=>{
  const rows=fixture();rows[2][3]='승인 완료';const d=summary(rows);
