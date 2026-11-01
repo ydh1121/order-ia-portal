@@ -1,0 +1,26 @@
+name: IA scoped decision parity QA
+
+on:
+  pull_request:
+    paths:
+      - 'src/server/**'
+      - 'public/owner.js'
+      - 'tests/**'
+      - '.github/workflows/ia-decision-parity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ia:
+    name: IA Node 22 read-only regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test existing IA + dynamic decision parity
+        run: npm run test:ia

@@ -33,7 +33,7 @@ test('Mobile journey overflow removed, distinct business and IA roadmap tabs exi
  assert.match(UX_RUNTIME,/IA 개발 단계 \\(기획안\\)/);
  assert.match(UX_RUNTIME,/사업 추진 단계/);
 });
-test('Decision and note browsing preserve 25/31 source items with filters and read-only links',()=>{
+test('Decision and note browsing preserve variable decision counts and 31 notes with filters and read-only links',()=>{
  assert.match(UX_RUNTIME,/pendingList/);assert.match(UX_RUNTIME,/decisionLimit=12/);
  assert.match(UX_RUNTIME,/window\\.__iaLive\\.notes\\.items/);
  assert.match(UX_RUNTIME,/ux-note-toolbar/);

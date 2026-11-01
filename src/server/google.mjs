@@ -3,7 +3,7 @@ const enc = new TextEncoder();
 const b64u = input => btoa(String.fromCharCode(...input)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 export const TABS = Object.freeze({
   screens: "'화면_관리'!A1:S77",
-  decisions: "'향후_검토'!A1:N26",
+  decisions: "'향후_검토'!A1:N",
   roadmap: "'사업_로드맵'!A1:G8",
   guide: "'사용_안내'!A1:C24",
   notes: "'의견_기록'!A1:K250"
@@ -37,7 +37,9 @@ export async function fetchTab(env, tab, fetcher=fetch) {
   if(!response.ok) throw new Error('GOOGLE_READ_FAILED');
   const json=await response.json();
   if(!Array.isArray(json.valueRanges)||json.valueRanges.length!==1) throw new Error('GOOGLE_RESPONSE_INVALID');
-  return json.valueRanges[0].values||[];
+  const valueRange=json.valueRanges[0];
+  if(!valueRange||!Array.isArray(valueRange.values)||valueRange.values.length<2)throw new Error('GOOGLE_RESPONSE_INVALID');
+  return valueRange.values;
 }
 
 /** One owner-only provider read for the existing five operational tabs.
@@ -59,7 +61,7 @@ export async function fetchDashboardTabs(env,fetcher=fetch){
   const out={};
   for(let i=0;i<keys.length;i++){
     const valueRange=body.valueRanges[i];
-    if(!Array.isArray(valueRange.values)||valueRange.values.length<2)throw new Error('GOOGLE_RESPONSE_INVALID');
+    if(!valueRange||!Array.isArray(valueRange.values)||valueRange.values.length<2)throw new Error('GOOGLE_RESPONSE_INVALID');
     // Sheets may normalize range notation in its response; positional pairing comes from the one batch request.
     out[keys[i]]=valueRange.values;
   }

@@ -4,8 +4,8 @@ import {project} from '../src/server/projection.mjs';
 import {buildIaReference} from '../src/server/ia-reference.mjs';
 const sr=[['화면 ID','화면명']];
 for(const [p,n] of [['F',18],['U',10],['P',9],['C',5],['A',34]])for(let i=0;i<n;i++)sr.push([p+String(i).padStart(2,'0'),p+' mock '+i,'TEST','/','R1','기획 중','','test']);
-const dr=[['검토 ID','제목']];
-for(let i=1;i<=25;i++)dr.push(['PENDING-'+String(i).padStart(2,'0'),'TEST '+i,'TEST',i===1?'승인 완료':i===19?'핵심 공개요건 승인·운영세부 검토':'검토 필요','F17, F01, F99']);
+const dr=[['검토 ID','쉬운 제목','무엇을 결정해야 하나요?','현재 상태']];
+for(let i=1;i<=28;i++)dr.push(['PENDING-'+String(i).padStart(2,'0'),'TEST '+i,'TEST',i===1?'승인 완료':i===19?'핵심 공개요건 승인·운영세부 검토':i===26?'엔진·UI 통합 완료, 웹 검수 및 정책 검토 중':'검토 필요','F17, F01, F99']);
 const screen=project('screens',sr),dec=project('decisions',dr);
 test('five archived role groups cover live 76 ScreenIDs exactly once',()=>{
  const g=buildIaReference(screen,dec),ids=g.families.flatMap(f=>f.groups.flatMap(x=>x.ids));
@@ -20,7 +20,7 @@ test('journey and operating dependency edges come from v0.3 and valid ScreenIDs'
  assert.equal(g.technical.length,7);
 });
 test('Current Sheet review status controls approval and only canonical policy ScreenIDs link',()=>{
- const g=buildIaReference(screen,dec);assert.equal(dec.fullyApproved,1);assert.equal(dec.active,24);
+ const g=buildIaReference(screen,dec);assert.equal(dec.fullyApproved,1);assert.equal(dec.active,27);
  assert.deepEqual(g.policyLinks['PENDING-19'],['F17','F01']);assert.equal(g.journey.steps.find(x=>x.key==='apply').desc.includes('현재 정책 대장'),true);
 });
 test('incomplete canonical screen list prevents historical relationship publication',()=>{

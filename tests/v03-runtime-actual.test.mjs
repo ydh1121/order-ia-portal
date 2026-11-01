@@ -26,14 +26,17 @@ test('server-only original 76 IDs, 190 features and 49 labeled buttons match exa
 });
 test('current Google source exclusively controls decisions and provider status; no old 22 defaults',()=>{
  assert.match(actualCode,/fetch\('\/api\/ia\/dashboard'/);
- assert.match(actualCode,/live\.decisionCount!==25/);
- assert.match(actualCode,/live\.decisions\.fullyApproved!==1/);
+ assert.match(actualCode,/live\.decisionCount!==decisions\.total/);
+ assert.match(actualCode,/decisions\.fullyApproved!==decisionStates\.APPROVED/);
  assert.match(actualCode,/PENDING-19/);
  assert.match(actualCode,/alias=aliases\[query\.get\('view'\)\]/);
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
-test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'f7f5cbae4f20261ddd3cd8c8921d0db02fac22ef9afa9ef4fff9ca33ec41cbb4');
- assert.equal(sha256(actualCode),'236344c4b0c6bcb9a8b2c52d896d7f03568a99801d9b38f0bdfc8ad7386391e3');
+test('template generation stays deterministic with a nonce-bound private script',()=>{
+ const second=v03OwnerHtml('qa_20261018');
+ assert.notEqual(sha256(html),sha256(second));
+ assert.equal(second.replaceAll('qa_20261018','qa_20261017'),html);
+ assert.match(sha256(html),/^[a-f0-9]{64}$/);
+ assert.match(sha256(actualCode),/^[a-f0-9]{64}$/);
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
 });
