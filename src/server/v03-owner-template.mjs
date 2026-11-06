@@ -1,3 +1,4 @@
+import {RESEARCH_NAV,RESEARCH_NAV_STYLE} from './qa-page.mjs';
 /** Auth-only v0.3 visual contract. Live names, statuses and decisions from OWNER Google API.
  * Does not copy the historical HTML to public static assets.
  */
@@ -90,6 +91,8 @@ if(query.get('screen')&&/^[FUPCA]\d{2}$/.test(query.get('screen')))document.quer
 `;
 export function v03OwnerHtml(nonce){
 let s=ORIGINAL_V03_SOURCE;
+s=s.replace('</nav>','</nav>'+RESEARCH_NAV);
+s=s.replace('</style>',RESEARCH_NAV_STYLE+'</style>');
 const swaps=[
  ['order.ooo — 기획 사이트맵 v0.2 / 계층형','order.ooo — 인증 IA v0.3 원본 화면 / Google 실원장'],
  ['order.ooo Planning IA v0.2','order.ooo Planning IA v0.3'],

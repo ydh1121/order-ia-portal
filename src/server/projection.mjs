@@ -15,7 +15,8 @@ export const DECISION_STATUS_CLASS = Object.freeze({
   '보류 검토':'OPEN',
   '향후 검토':'OPEN',
   '핵심 공개요건 승인·운영세부 검토':'IN_REVIEW',
-  '엔진·UI 통합 완료, 웹 검수 및 정책 검토 중':'IN_REVIEW'
+  '엔진·UI 통합 완료, 웹 검수 및 정책 검토 중':'IN_REVIEW',
+  '진행 — 연구·제작 승인':'IN_REVIEW'
 });
 
 export function project(tab, values) {
