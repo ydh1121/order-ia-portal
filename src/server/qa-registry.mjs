@@ -86,10 +86,14 @@ export function recordView(r){
   validation:r.validation||{},validation_note:r.validation_note||'검사는 제작자·등록자별 범위이며 실제 브라우저나 사용자 수락과 별개입니다.',
   preview_block_reason:overlay.review_status==='REWORK_REQUESTED'?'재작업 요청으로 이 버전의 실행을 보류합니다.':'비공개 원본 연결과 격리·실제 부팅 검증이 끝나지 않았습니다.',
   R2:versions.some(t=>t.version==='R2')?'RECEIVED':null,render_limits:r.render_limits||[],
-  fixture_contract:'같은 원본·데이터·화면 폭에서 비교합니다. 회사 전환은 패키지 소유이며 스타일 초기화와 데이터 초기화는 다릅니다.',
+  fixture_contract:family.family_id==='ORDER-DESIGN-QA'?'같은 원본·데이터·화면 폭에서 비교합니다. 회사 전환은 패키지 소유이며 스타일 초기화와 데이터 초기화는 다릅니다.':family.family_id==='ORDER-COPY-MOTION'?'엔진 독립 표시 예제입니다. 표시 계약은 제품 엔진·외부 ready 규약이나 서버 취소 구현의 근거가 아닙니다.':'기존 기능·컴포넌트 연구 원본의 고정 입력과 검사 범위를 따릅니다.',
   source_state:SOURCE_NOT_READY,history_note:family.family_id==='MASTER-ASTRA-0549-LAB'?'MASTER/Astra 과거 R2~R7 원본 미확보 항목은 현재 파일로 대체하지 않습니다.':'이 자료의 고정 버전: '+versions.map(t=>t.version+(t.registration==='RECEIVED_PENDING_PLANNING'?' (접수 후보)':'')).join(', ')+'. 서로 다른 artifact_id와 해시를 보존합니다.',
   snapshot_hash:'UNKNOWN',viewer_state:'PREVIEW_BLOCKED',permanent_note_write:false,
-  outer_host_contract:r.outer_host_contract||null
+  outer_host_contract:r.outer_host_contract||null,
+  display_host_contract:r.display_host_contract||null,
+  viewer_mode:r.artifact_id==='ORDER-DESIGN-QA-0569-R3'&&r.version==='R3'?'DESIGN_OBSERVER':family.family_id==='ORDER-COPY-MOTION'?'DISPLAY_ONLY':'UNSUPPORTED',
+  company_control_available:family.family_id==='ORDER-DESIGN-QA',
+  external_ready_contract:r.artifact_id==='ORDER-DESIGN-QA-0569-R3'&&r.version==='R3'&&r.outer_host_contract?.revision==='ux-r3-observer-1'
  };
 }
 export function catalogue(menu){

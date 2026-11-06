@@ -1,0 +1,16 @@
+import {test,before} from 'node:test';
+import assert from 'node:assert/strict';
+import {randomBytes} from 'node:crypto';
+import {issueSession} from '../src/server/owner-session.mjs';
+import {handleQaRequest} from '../src/server/qa-api.mjs';
+const host='https://order-ia-portal.pages.dev';
+const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:`pbkdf2-sha256$310000$${randomBytes(16).toString('base64url')}$${randomBytes(32).toString('base64url')}`,IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url')};
+let cookie;before(async()=>{cookie=(await issueSession(env)).cookie.split(';')[0]});
+const query=(copy=false)=>new URLSearchParams({menu:copy?'qa-lab':'design-tokens',artifact_id:copy?'ORDER-COPY-MOTION-0569-R3':'ORDER-DESIGN-QA-0569-R3',version:'R3'});
+const request=(q=query(),method='GET',c=cookie,path='readiness')=>new Request(host+'/api/ia/qa/'+path+'?'+q,{method,headers:c?{Cookie:c}:{}});
+test('OWNER readiness diagnoses exact tuple without calling provider or creating a URL',async()=>{let calls=0;const r=await handleQaRequest(request(),env,{readPrivateArtifact:()=>{calls++}});assert.equal(r.status,200);const b=await r.json();assert.equal(b.readiness.actual_execution_url,null);assert.equal(b.readiness.preview_allowed,false);assert.equal(b.readiness.host.revision,'ux-r3-observer-1');assert.equal(calls,0);assert.match(r.headers.get('Cache-Control'),/private, no-store/);assert.equal(r.headers.get('Access-Control-Allow-Origin'),null)});
+test('COPY readiness exposes no external ready or engine implementation',async()=>{const r=await handleQaRequest(request(query(true)),env);assert.equal(r.status,200);const b=await r.json();assert.equal(b.readiness.host.ready_contract,false);assert.equal(b.readiness.host.engine_connected,false);assert.equal(b.readiness.host.mode,'DISPLAY_ONLY')});
+test('anonymous forged and expired sessions cannot read runtime dependencies or source identity',async()=>{const expired=(await issueSession(env,Math.floor(Date.now()/1000)-1000)).cookie.split(';')[0];for(const c of [null,'__Host-ia_session=forged',expired]){const r=await handleQaRequest(request(query(),'GET',c),env);assert.equal(r.status,403);assert.deepEqual(await r.json(),{error:'DENIED'})}});
+test('readiness refuses writes, activation parameters and duplicate selectors',async()=>{assert.equal((await handleQaRequest(request(query(),'POST'),env)).status,405);for(const [key,val] of [['preview_allowed','true'],['url','https://evil.invalid'],['version','R3']]){const q=query();q.append(key,val);assert.equal((await handleQaRequest(request(q),env)).status,400)}});
+test('readiness rejects wrong version or baseline, never substitutes current source',async()=>{let q=query();q.set('version','R4');assert.equal((await handleQaRequest(request(q),env)).status,404);q=query();q.set('baseline','0'.repeat(40));assert.equal((await handleQaRequest(request(q),env)).status,409)});
+test('response-builder addition does not expose a document or activate old preview route',async()=>{let calls=0;const dep={readPrivateArtifact:()=>{calls++;throw Error('must not call')}};assert.equal((await handleQaRequest(request(query(),'GET',cookie,'document'),env,dep)).status,404);assert.equal((await handleQaRequest(request(query(),'GET',cookie,'preview'),env,dep)).status,409);assert.equal(calls,0)});

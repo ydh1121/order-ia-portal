@@ -2,6 +2,7 @@ import {requireActor} from './auth.mjs';
 import {catalogue,recordView,resolveRecord,previewDecision,QaError} from './qa-registry.mjs';
 import {verifyBundle} from './qa-integrity.mjs';
 import {createPrivateSourceReader} from './qa-provider.mjs';
+import {r3RuntimeReadiness} from './qa-r3-runtime.mjs';
 export const QA_HEADERS=Object.freeze({'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','Vary':'Cookie, Cf-Access-Jwt-Assertion','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cross-Origin-Resource-Policy':'same-origin','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"});
 const response=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:QA_HEADERS});
 const accepted=new Set(['menu','artifact_id','version','baseline']);
@@ -17,10 +18,12 @@ export async function handleQaRequest(request,env,dependencies={}){
    if(q.has('artifact_id')||q.has('version')||q.has('baseline'))throw new QaError('INVALID_REQUEST',400);
    return response({schema:'order.ia.qa-list/1',readOnly:true,menu,items:catalogue(menu),permanent_note_write:false});
   }
-  if(!['detail','verify','preview'].includes(operation))throw new QaError('NOT_FOUND',404);
+  if(!['detail','verify','preview','readiness'].includes(operation))throw new QaError('NOT_FOUND',404);
   if(!q.get('artifact_id')||!q.get('version'))throw new QaError('INVALID_REQUEST',400);
   const r=resolveRecord(menu,q.get('artifact_id'),q.get('version'),q.get('baseline'));
   if(operation==='detail')return response({item:recordView(r),readOnly:true});
+  // Status-only: never fetches raw bytes, creates grants, or promotes an execution URL.
+  if(operation==='readiness')return response({readiness:r3RuntimeReadiness(r,env),readOnly:true});
   if(operation==='preview'){
    const decision=previewDecision(r);
    // No contents or provider call for an inactive/rework version. No client-supplied activation.
