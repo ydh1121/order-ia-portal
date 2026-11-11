@@ -1,0 +1,15 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {verifyZipContents,zipDirectory} from '../src/server/qa-zip-content.mjs';
+import {zipFixture} from './helpers/qa-contract-fixtures.mjs';
+const entry='folder/main.html',body=new TextEncoder().encode('<p>synthetic</p>');
+for(const method of [0,8])test('stored/deflated ZIP '+method+' verifies every CRC and exact entry bytes',async()=>{const z=zipFixture([{name:entry,body,method},{name:'evidence/check.txt',body:'proof',method}]);const r=await verifyZipContents(z,entry,body);assert.equal(r.files,2);assert.equal(r.entry_bytes_equal,true);assert.equal(r.crc,'VERIFIED_ALL')});
+for(const name of ['../escape','/root','a\\b','https://x.invalid/a','a/../b','a\0b'])test('unsafe ZIP path '+JSON.stringify(name)+' refused',()=>{assert.throws(()=>zipDirectory(zipFixture([{name:entry,body},{name,body:'x'}]),entry),/RESOURCE_INVALID/)});
+test('duplicate names and file/directory alias rejected',()=>{for(const name of [entry,entry+'/'])assert.throws(()=>zipDirectory(zipFixture([{name:entry,body},{name,body:''}]),entry),/RESOURCE_INVALID/)});
+test('standalone HTML mismatch with same byte count rejected',async()=>{const different=body.slice();different[1]^=1;await assert.rejects(()=>verifyZipContents(zipFixture([{name:entry,body}]),entry,different),/HASH_MISMATCH/)});
+test('CRC is checked for non-entry archive members too',async()=>{const z=zipFixture([{name:entry,body},{name:'evidence.txt',body:'abc'}]);const rows=zipDirectory(z,entry).rows;z[rows[1].start]^=1;await assert.rejects(()=>verifyZipContents(z,entry,body),/RESOURCE_INVALID/)});
+test('truncated archive and encrypted flag rejected',()=>{const z=zipFixture([{name:entry,body}]);assert.throws(()=>zipDirectory(z.slice(0,-1),entry));const v=new DataView(z.buffer);v.setUint16(6,1,true);assert.throws(()=>zipDirectory(z,entry),/RESOURCE_INVALID/)});
+test('symlink rejected before decompression',()=>{const z=zipFixture([{name:entry,body}]),v=new DataView(z.buffer),end=z.length-22,central=v.getUint32(end+16,true);v.setUint32(central+38,0xa000*65536,true);assert.throws(()=>zipDirectory(z,entry),/RESOURCE_INVALID/)});
+test('256-file limit cannot be bypassed',()=>{const many=Array.from({length:257},(_,i)=>({name:i===0?entry:'f'+i,body:''}));assert.throws(()=>zipDirectory(zipFixture(many),entry),/RESOURCE_INVALID/)});
+test('declared expanded entry and total bounds checked before decompression',()=>{const z=zipFixture([{name:entry,body,method:8}]),v=new DataView(z.buffer),central=v.getUint32(z.length-6,true);v.setUint32(central+24,8*1024*1024+1,true);assert.throws(()=>zipDirectory(z,entry),/RESOURCE_INVALID/)});
+test('missing exact entry has no latest-file fallback',()=>assert.throws(()=>zipDirectory(zipFixture([{name:'other.html',body}]),entry),/MISSING_FILE/));

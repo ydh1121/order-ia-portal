@@ -12,7 +12,7 @@ test('P10 journey A4 pagination is scoped to print and retains the selected exce
  assert.match(section,/grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.doesNotMatch(section,/scenario-output\s*\{[^}]*display:none/);
 });
-test('P10 print includes on-screen paginated 25 decision entries and 31 notes',()=>{
+test('P10 print includes on-screen paginated source decision entries and 31 notes',()=>{
  const section=UX_CSS.split('MSG-20261018-0290: P10 A4 print pagination only.')[1];
  assert.match(section,/#view-pending #pending-list article\.pending-entry\[hidden\]\{display:block!important\}/);
  assert.match(section,/#view-feedback \.ux-note-table details\.ux-hidden\{display:block!important\}/);

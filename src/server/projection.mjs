@@ -8,6 +8,17 @@ export const CANONICAL_SCREEN_IDS = Object.freeze([
 ]);
 const canonicalScreenSet = new Set(CANONICAL_SCREEN_IDS);
 
+// Single server-owned status mapping; partial approval is not full approval.
+export const DECISION_STATUS_CLASS = Object.freeze({
+  '승인 완료':'APPROVED',
+  '검토 필요':'OPEN',
+  '보류 검토':'OPEN',
+  '향후 검토':'OPEN',
+  '핵심 공개요건 승인·운영세부 검토':'IN_REVIEW',
+  '엔진·UI 통합 완료, 웹 검수 및 정책 검토 중':'IN_REVIEW',
+  '진행 — 연구·제작 승인':'IN_REVIEW'
+});
+
 export function project(tab, values) {
   if(!Array.isArray(values)||values.length<2) throw new Error('EMPTY_SHEET');
   const rows=values.slice(1);
@@ -17,10 +28,29 @@ export function project(tab, values) {
     return {total:76,source:'GOOGLE_SHEETS_AUTHENTICATED_READ',items};
   }
   if(tab==='decisions') {
-    const items=rows.filter(r=>r[0]).map(r=>({id:r[0],name:r[1]||'',question:r[2]||'',status:r[3]||'',relatedScreens:r[4]||'',isFullyApproved:r[3]==='승인 완료',implementation:'PLAN_ONLY'}));
-    const ids=new Set(items.map(x=>x.id));
-    if(items.length!==25||ids.size!==25||items.filter(x=>x.isFullyApproved).length!==1||!Array.from({length:25},(_,i)=>'PENDING-'+String(i+1).padStart(2,'0')).every(x=>ids.has(x))||!items.find(x=>x.id==='PENDING-19')?.status.includes('운영세부')) throw new Error('DECISION_PARITY_FAILED');
-    return {total:25,active:24,fullyApproved:1,source:'GOOGLE_SHEETS_AUTHENTICATED_READ',items};
+    const header=values[0];
+    const requiredHeaders=['검토 ID','쉬운 제목','무엇을 결정해야 하나요?','현재 상태'];
+    if(!Array.isArray(header)||requiredHeaders.some((name,i)=>String(header[i]??'').trim()!==name))throw new Error('DECISION_PARITY_FAILED');
+    const items=[],ids=new Set(),counts={OPEN:0,IN_REVIEW:0,APPROVED:0};
+    let trailingEmpty=false;
+    for(const row of rows){
+      if(!Array.isArray(row))throw new Error('DECISION_PARITY_FAILED');
+      const nonempty=row.some(value=>String(value??'').trim()!=='');
+      if(!nonempty){trailingEmpty=true;continue}
+      if(trailingEmpty)throw new Error('DECISION_PARITY_FAILED');
+      const id=String(row[0]??'').trim();
+      const name=String(row[1]??'').trim();
+      const question=String(row[2]??'').trim();
+      const status=String(row[3]??'').trim();
+      if(!/^PENDING-(?:0[1-9]|[1-9][0-9]+)$/.test(id)||ids.has(id)||!name||!question||!status)throw new Error('DECISION_PARITY_FAILED');
+      if(!Object.prototype.hasOwnProperty.call(DECISION_STATUS_CLASS,status))throw new Error('DECISION_PARITY_FAILED');
+      ids.add(id);
+      const reviewState=DECISION_STATUS_CLASS[status];
+      counts[reviewState]++;
+      items.push({id,name,question,status,relatedScreens:String(row[4]??'').trim(),reviewState,isFullyApproved:reviewState==='APPROVED',implementation:'PLAN_ONLY'});
+    }
+    if(items.length===0)throw new Error('DECISION_PARITY_FAILED');
+    return {total:items.length,active:counts.OPEN+counts.IN_REVIEW,open:counts.OPEN,in_review:counts.IN_REVIEW,approved:counts.APPROVED,fullyApproved:counts.APPROVED,source:'GOOGLE_SHEETS_AUTHENTICATED_READ',items};
   }
   if(tab==='roadmap') {
     const items=rows.filter(r=>r[0]).map(r=>({stage:r[0],type:r[1],goal:r[2],description:r[3],status:r[4],scope:r[5],dependency:r[6]||''}));

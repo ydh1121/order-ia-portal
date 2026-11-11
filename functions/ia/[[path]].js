@@ -1,6 +1,8 @@
 /** OWNER-only Pages UI. Original v0.3 layout is server-private and current data comes from the Google dashboard API. */
 import {requireActor} from '../../src/server/auth.mjs';
 import {v03OwnerHtml} from '../../src/server/v03-owner-template.mjs';
+import {qaPage} from '../../src/server/qa-page.mjs';
+import {QA_MENUS} from '../../src/server/qa-registry.mjs';
 const base={
  'Cache-Control':'private, no-store, max-age=0',
  'X-Content-Type-Options':'nosniff',
@@ -17,6 +19,9 @@ export async function onRequest({request,env}){
  const nonce=Array.from(crypto.getRandomValues(new Uint8Array(18)),x=>x.toString(16).padStart(2,'0')).join('');
  const headers={...base,'Content-Type':'text/html; charset=utf-8',
   'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`};
- const html=v03OwnerHtml(nonce);
+ const view=new URL(request.url).searchParams.get('view');
+ // Only these two authenticated QA menus may navigate the exact private document path.
+ if(Object.hasOwn(QA_MENUS,view))headers['Content-Security-Policy']+='; frame-src https://order-ia-portal.pages.dev/api/ia/qa/document';
+ const html=Object.hasOwn(QA_MENUS,view)?qaPage(nonce,view):v03OwnerHtml(nonce);
  return new Response(request.method==='HEAD'?null:html,{status:200,headers});
 }

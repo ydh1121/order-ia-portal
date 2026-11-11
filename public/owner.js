@@ -12,6 +12,17 @@ function chip(value,variant=''){return create('span','chip '+variant,label(value
 function field(title,value){const wrap=create('div','detail-field');put(wrap,create('dt','',title),create('dd','',label(value)));return wrap;}
 function noData(text){return create('p','empty',text)}
 const sectionNames={overview:'전체 개요',sitemap:'계층형 사이트맵',journey:'고객 여정',operation:'운영 연결',screens:'화면 원장',decisions:'향후 검토',roadmap:'사업·개발 로드맵',policy:'정책·승인 구분',guide:'사용 안내',notes:'화면 메모·자료'};
+function decisionMetricsMatch(data){
+ const d=data?.decisions;
+ if(!d||!Array.isArray(d.items)||!d.items.length||data.decisionCount!==d.total||d.total!==d.items.length)return false;
+ const counts={OPEN:0,IN_REVIEW:0,APPROVED:0};
+ for(const item of d.items){
+  if(!Object.prototype.hasOwnProperty.call(counts,item.reviewState)||item.isFullyApproved!==(item.reviewState==='APPROVED'))return false;
+  counts[item.reviewState]++;
+ }
+ return counts.OPEN===d.open&&counts.IN_REVIEW===d.in_review&&counts.APPROVED===d.approved&&d.active===counts.OPEN+counts.IN_REVIEW&&d.fullyApproved===counts.APPROVED&&d.total===counts.OPEN+counts.IN_REVIEW+counts.APPROVED;
+}
+
 function openView(view,role){if(!sectionNames[view])return;state.section=view;render();if(role&&view==='sitemap'){const select=document.querySelector('.ia-map-controls select');if(select){select.value=role;select.dispatchEvent(new Event('change'))}}}
 function focusScreen(id){if(!state.payload)return;const x=state.payload.screens.items.find(s=>s.screenId===id);if(x)showScreen(x)}
 function drawTop(){
@@ -62,7 +73,7 @@ async function refresh(){let sourceValidated=false;status('Google 원장을 확�
   if(response.status===503){const body=await response.json().catch(()=>({}));state.payload=null;clear($('metrics'));clear($('main-content')).append(noData('Google Sheets 실연동 대기 중입니다. 기존 Google 서비스 계정의 시트 Viewer 권한 및 Pages 서버 비밀값을 확인해야 합니다. 현재 데이터는 임의의 모의값으로 표시하지 않습니다.'));status(`원장 서버 연결 대기 · ${label(body.reason,'인증/접근 설정 확인 필요')}`,'pending');return;}
   if(!response.ok)throw new Error('서버 응답 오류 '+response.status);
   const data=await response.json();
-  if(!data.readOnly||data.source!=='GOOGLE_SHEETS_AUTHENTICATED_READ'||data.screenCount!==76||data.decisionCount!==25||data.roadmapCount!==7||data.screens?.items?.length!==76||data.decisions?.items?.length!==25||data.roadmap?.items?.length!==7||data.decisions?.fullyApproved!==1||data.decisions?.active!==24)throw new Error('원장 검증 수량이 정본과 일치하지 않습니다.');
+  if(!data.readOnly||data.source!=='GOOGLE_SHEETS_AUTHENTICATED_READ'||data.screenCount!==76||data.roadmapCount!==7||data.screens?.items?.length!==76||data.roadmap?.items?.length!==7||!decisionMetricsMatch(data))throw new Error('원장 검증 수량이 정본과 일치하지 않습니다.');
   sourceValidated=true;state.payload=data;drawTop();const v=new URL(location.href).searchParams.get('view');if(v&&sectionNames[v])state.section=v;render();const id=new URL(location.href).searchParams.get('screen');if(id&&/^[FUPCA]\d{2}$/.test(id))focusScreen(id);status('원장 동기화 확인 · Google Sheets 인증 읽기 · 수정 불가','ok');
  }catch(e){if(sourceValidated){clear($('main-content')).append(noData('화면 표시 중 오류가 발생했습니다. 원장 데이터는 보존됩니다.'));status('원장 조회 완료 · 화면 표시 오류','pending')}else{state.payload=null;clear($('metrics'));clear($('main-content')).append(noData('데이터 검증에 실패했습니다.'));status('원장 조회 또는 검증 실패','pending')}}finally{$('refresh').disabled=false}}
 async function start(){try{const res=await fetch('/api/ia/auth/me',{credentials:'same-origin',cache:'no-store'});if(!res.ok){location.replace('/login.html');return}const user=await res.json();if(user.role!=='OWNER')throw Error('OWNER_REQUIRED');state.actor=user;state.csrf=user.csrf;$('identity').textContent=user.email+' · OWNER';await refresh()}catch{$('identity').textContent='인증 상태 확인 실패';status('인증 상태를 확인할 수 없습니다.','pending')}}

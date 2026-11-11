@@ -1,3 +1,4 @@
+import {RESEARCH_NAV,RESEARCH_NAV_STYLE} from './qa-page.mjs';
 /** Auth-only v0.3 visual contract. Live names, statuses and decisions from OWNER Google API.
  * Does not copy the historical HTML to public static assets.
  */
@@ -12,7 +13,14 @@ const response=await fetch('/api/ia/dashboard',{credentials:'same-origin',cache:
 if(response.status===401||response.status===403){location.replace('/login');return}
 if(!response.ok)throw Error('GOOGLE_LIVE_READ_UNAVAILABLE');
 const live=await response.json();
-if(!live.readOnly||live.source!=='GOOGLE_SHEETS_AUTHENTICATED_READ'||live.screenCount!==76||live.decisionCount!==25||live.roadmapCount!==7||live.screens?.items?.length!==76||live.decisions?.items?.length!==25||live.roadmap?.items?.length!==7||live.decisions.fullyApproved!==1||live.decisions.active!==24||!Array.isArray(live.notes?.items)||!live.decisions.items.some(x=>x.id==='PENDING-19'&&x.isFullyApproved!==true&&!!x.status))throw Error('GOOGLE_SOURCE_PARITY_FAILED');
+const decisions=live?.decisions;
+if(!live?.readOnly||live.source!=='GOOGLE_SHEETS_AUTHENTICATED_READ'||live.screenCount!==76||live.roadmapCount!==7||live.screens?.items?.length!==76||live.roadmap?.items?.length!==7||!decisions||!Array.isArray(decisions.items)||decisions.items.length===0||live.decisionCount!==decisions.total||decisions.items.length!==decisions.total||!Array.isArray(live.notes?.items))throw Error('GOOGLE_SOURCE_PARITY_FAILED');
+const decisionStates={OPEN:0,IN_REVIEW:0,APPROVED:0};
+for(const item of decisions.items){
+ if(!Object.prototype.hasOwnProperty.call(decisionStates,item.reviewState)||item.isFullyApproved!==(item.reviewState==='APPROVED'))throw Error('GOOGLE_SOURCE_PARITY_FAILED');
+ decisionStates[item.reviewState]++;
+}
+if(decisionStates.OPEN!==decisions.open||decisionStates.IN_REVIEW!==decisions.in_review||decisionStates.APPROVED!==decisions.approved||decisions.active!==decisionStates.OPEN+decisionStates.IN_REVIEW||decisions.fullyApproved!==decisionStates.APPROVED||decisions.total!==decisionStates.OPEN+decisionStates.IN_REVIEW+decisionStates.APPROVED)throw Error('GOOGLE_SOURCE_PARITY_FAILED');
 window.__iaLive=live;
 window.__iaSheetRowById=Object.fromEntries(live.screens.items.map((x,i)=>[x.screenId,i+2]));
 const source=JSON.parse(document.getElementById('sitemap-json').textContent);
@@ -25,9 +33,9 @@ document.getElementById('sitemap-json').textContent=JSON.stringify(source).repla
 const pending=live.decisions.items.map((x,i)=>({id:x.id,title:x.name,description:x.question,status:x.status,related:x.relatedScreens,default:x.isFullyApproved?'현재 원장 완전 승인. 고객 UI/배포 승인 아님':'현재 원장 검토 사항. 운영 및 개발 승인 아님',row:i+2,isFullyApproved:x.isFullyApproved}));
 document.getElementById('pending-json').textContent=JSON.stringify(pending).replace(/</g,'\\u003c');
 const notice=document.querySelector('#view-pending .notice');
-if(notice)notice.textContent='Google 인증 원장 / 25건 · 완전 승인 1건 · 검토 24건. PENDING-19 운영 세부 검토 중. 작성은 Google 원장에서만, 포털 쓰기는 비활성화.';
+if(notice)notice.textContent='Google 인증 원장 / '+decisions.total+'건 · 완전 승인 '+decisions.approved+'건 · 검토 '+decisions.active+'건. 작성은 Google 원장에서만, 포털 쓰기는 비활성화.';
 const banner=document.getElementById('ia-live-banner');
-banner.textContent='OWNER 전용 · Google Sheets 인증 읽기 전용 / 화면 76 · 검토 25 · 사업 7단계 · 의견 '+live.notes.items.length+'건 · v0.3 기획용 UI / LOWFI 미승인';
+banner.textContent='OWNER 전용 · Google Sheets 인증 읽기 전용 / 화면 76 · 검토 '+decisions.total+' · 사업 7단계 · 의견 '+live.notes.items.length+'건 · v0.3 기획용 UI / LOWFI 미승인';
 const owner=await fetch('/api/ia/auth/me',{credentials:'same-origin',cache:'no-store'});
 if(owner.ok){
  const actor=await owner.json();
@@ -39,9 +47,9 @@ const after=String.raw`
 // Keep the original 8 interactive views, focus trap, SVG, routes and print behavior.
 const liveData=window.__iaLive;
 const policyNotice=document.querySelector('#view-policy .notice');
-if(policyNotice)policyNotice.textContent='현재 Google 원장: 검토 25개 · 완전 승인 1개 · 운영세부 검토 24개. PENDING-19는 일부 요건과 운영 세부 검토를 구분. IA/LOWFI 사용자 승인 없음.';
+if(policyNotice)policyNotice.textContent='현재 Google 원장: 전체 '+liveData.decisions.total+'개 · 완전 승인 '+liveData.decisions.approved+'개 · 활성 검토 '+liveData.decisions.active+'개. 부분 승인과 전체 승인 별도 · IA/LOWFI 사용자 승인 없음.';
 const policyDesc=document.querySelector('#view-policy .sect p');
-if(policyDesc)policyDesc.textContent='아래 네 정책 카드는 원본 v0.3 기획 참고용입니다. 현재 승인 상태는 향후 검토 25건 원장으로 판단합니다.';
+if(policyDesc)policyDesc.textContent='아래 네 정책 카드는 원본 v0.3 기획 참고용입니다. 현재 승인 상태는 인증 원장 '+liveData.decisions.total+'건으로 판단합니다.';
 document.querySelectorAll('#policy-grid .policycard').forEach((card,i)=>{
  const id=['PENDING-19','PENDING-20','PENDING-01','PENDING-22'][i];
  const current=liveData.decisions.items.find(x=>x.id===id);
@@ -83,6 +91,8 @@ if(query.get('screen')&&/^[FUPCA]\d{2}$/.test(query.get('screen')))document.quer
 `;
 export function v03OwnerHtml(nonce){
 let s=ORIGINAL_V03_SOURCE;
+s=s.replace('</nav>','</nav>'+RESEARCH_NAV);
+s=s.replace('</style>',RESEARCH_NAV_STYLE+'</style>');
 const swaps=[
  ['order.ooo — 기획 사이트맵 v0.2 / 계층형','order.ooo — 인증 IA v0.3 원본 화면 / Google 실원장'],
  ['order.ooo Planning IA v0.2','order.ooo Planning IA v0.3'],
@@ -90,8 +100,8 @@ const swaps=[
  ['페이지 구조 미리보기','원본 v0.3 미승인 기획용 구조 미리보기'],
  ['이 화면의 핵심 기능','v0.3 미승인 기획용 핵심 기능'],
  ['전체 22개 · 미결정 21개 · 승인 완료 1개 (사업자등록증 제출 시점).','현재 Google 원장 검증 중 · 사용자 승인과 서비스 구현은 별도입니다.'],
- ['의사결정 대장: 전체 22개 ID / 활성 검토 21건. PENDING-01 승인, PENDING-19 일부 승인·상세 검토, PENDING-20/21/22 미결정.','Google 원장 검토 25건 · 완전 승인 1건 · 상세 검토 24건. PENDING-19 운영세부 검토 진행 중.'],
- ['정책 승인</b>회원 예상가격 / 매장 추가 순서 / 등록증 제출 시점 / 이메일 우선 (4건)','정책 검토</b>현재 원장 25건 중 완전 승인 1건 · 운영 세부와 UI 수락 별도'],
+ ['의사결정 대장: 전체 22개 ID / 활성 검토 21건. PENDING-01 승인, PENDING-19 일부 승인·상세 검토, PENDING-20/21/22 미결정.','현재 결정 현황은 인증 원장 조회 후 표시됩니다.'],
+ ['정책 승인</b>회원 예상가격 / 매장 추가 순서 / 등록증 제출 시점 / 이메일 우선 (4건)','정책 검토</b>현재 승인 상태는 인증 원장 조회 후 확인 · 운영 세부와 UI 수락 별도'],
  ['Delta146 사용자 선택 네 가지는 정책 확정.','과거 v0.3 기획 참조와 현재 Google 승인 상태는 별도입니다.'],
  ['counts.scheduled+counts.future','((counts.scheduled||0)+(counts.future||0))'],
  ["'예정 '+counts.scheduled+' / 보류 '+counts.future","'예정 '+(counts.scheduled||0)+' / 보류 '+(counts.future||0)"],
