@@ -73,7 +73,7 @@ export function recordView(r){
  const title=family.family_id==='MASTER-ASTRA-0549-LAB'?'기존 QA 연구실':family.family_id==='ORDER-DESIGN-QA'?'회사별 디자인 비교':'화면 카피·모션 부품';
  const latest=family.latest_produced;
  return {
-  artifact_id:r.artifact_id,version:r.version,family_id:family.family_id,artifact_type:r.artifact_type,artifact_subtype:r.artifact_subtype||null,
+  artifact_id:r.artifact_id,version:r.version,entry_role:r.entry_role||null,customer_document:r.customer_document||null,entry_roles:r.entry_roles||null,qa_tool_support:r.qa_tool_support||null,family_id:family.family_id,artifact_type:r.artifact_type,artifact_subtype:r.artifact_subtype||null,
   title,purpose:family.family_id==='ORDER-DESIGN-QA'?'원본 · IBM · Linear · Vercel':family.family_id==='ORDER-COPY-MOTION'?'엔진 독립 카피·모션':'기능·컴포넌트',change_summary:r.change_summary||'별도 고정 버전으로 받은 제작 후보입니다.',source_change_summary:r.change_summary||null,
   creator:r.original_producer||r.owner_track,administrator:r.catalogue_owner_track||r.owner_track,
   source_url:r.source_url,source_refs:normalizeSourceRefs(r.source_refs),source_ref_count:normalizeSourceRefs(r.source_refs).length,

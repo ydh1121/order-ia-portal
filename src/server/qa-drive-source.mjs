@@ -1,6 +1,6 @@
 /** Existing Pages in-process Drive reader. No service binding, shared cache, new key or logging. */
 import {QaError,resolveArtifactTuple} from './qa-registry.mjs';
-import {R3_DOCUMENT_PROFILES} from './qa-r3-document-profile.mjs';
+import {DOCUMENT_PROFILES,isR5} from './qa-document-profile.mjs';
 import {verifyBundle} from './qa-integrity.mjs';
 import {verifyZipContents} from './qa-zip-content.mjs';
 export const QA_DRIVE_PRINCIPAL='ia-portal@order-511904.iam.gserviceaccount.com';
@@ -18,9 +18,12 @@ export function driveSourceState(env={}){
  try{accountFrom(env);principalMatch=true;credentials=true;reason=null}catch(e){reason=e.code;if(reason==='SOURCE_PRINCIPAL_MISMATCH')principalMatch=false}
  return {mode:'PAGES_IN_PROCESS_DRIVE',credential_binding:'IA_GOOGLE_SERVICE_ACCOUNT_JSON',principal:QA_DRIVE_PRINCIPAL,principal_match:principalMatch,configured:env.IA_QA_DRIVE_READ_ENABLED==='true'&&credentials,read_enabled:env.IA_QA_DRIVE_READ_ENABLED==='true',reason,permission_verified:false,bytes_verified_this_request:false,token_scope:QA_DRIVE_SCOPE,token_cache:'NONE_REQUEST_LOCAL_ONLY'};
 }
+// Historical export name retained for existing callers/tests; R5 requires a third exact selector.
 export function fixedR3Source(input){
- if(!input||Object.keys(input).length!==2||!Object.hasOwn(input,'artifact_id')||!Object.hasOwn(input,'version'))throw new QaError('INVALID_REQUEST',400);
- const p=R3_DOCUMENT_PROFILES.find(p=>p.artifact_id===input.artifact_id&&p.version===input.version);
+ const r5=isR5(input),keys=r5?['artifact_id','version','entry_role']:['artifact_id','version'];
+ if(!input||Object.keys(input).length!==keys.length||!keys.every(k=>Object.hasOwn(input,k)))throw new QaError(r5?'ENTRY_ROLE_REQUIRED':'INVALID_REQUEST',400);
+ if(r5&&input.entry_role!=='customer')throw new QaError('ENTRY_ROLE_UNSUPPORTED',409);
+ const p=DOCUMENT_PROFILES.find(p=>p.artifact_id===input.artifact_id&&p.version===input.version&&(p.entry_role??null)===(input.entry_role??null));
  if(!p)throw new QaError('SOURCE_TUPLE_NOT_ALLOWED',409);
  return p;
 }
@@ -67,7 +70,7 @@ async function driveToken(a,fetcher,now){
 export function createDriveSourceReader(env,{fetcher=fetch,now=()=>Math.floor(Date.now()/1000)}={}){
  if(env?.IA_QA_DRIVE_READ_ENABLED!=='true')return null;
  return async input=>{
-  const p=fixedR3Source(input),record=resolveArtifactTuple(p.artifact_id,p.version),a=accountFrom(env),token=await driveToken(a,fetcher,now());
+  const p=fixedR3Source(input),record=isR5(p)?p:resolveArtifactTuple(p.artifact_id,p.version),a=accountFrom(env),token=await driveToken(a,fetcher,now());
   const read=async(id,size,mime,limit)=>{
    const url=API+id,headers={Authorization:'Bearer '+token,Accept:'application/json'};
    const metadata=await checked(fetcher,url+'?fields=id,mimeType,size,trashed,capabilities(canDownload)',{method:'GET',headers},16384,true);

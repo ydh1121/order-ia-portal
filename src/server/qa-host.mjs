@@ -25,11 +25,11 @@ export async function mountR3Viewer({window,document,container,html,identity,act
  return observeR3Frame({window,container,frame,identity,onState});
 }
 export function mountR3HttpResearch({window,document,container,identity,permit,onState=()=>{}}){
- const origin='https://order-ia-portal.pages.dev',keys=['artifact_id','version','package_sha256','entrypoint_sha256','baseline_commit'];
- if(window.location.origin!==origin||!['ORDER-DESIGN-QA-0569-R3','ORDER-COPY-MOTION-0569-R3'].includes(identity?.artifact_id)||identity?.version!=='R3')throw Error('UNSUPPORTED_VIEWER_REVISION');
- const url='/api/ia/qa/document?'+new URLSearchParams({artifact_id:identity.artifact_id,version:identity.version});
+ const origin='https://order-ia-portal.pages.dev',r5=identity?.artifact_id==='ORDER-COPY-CANDIDATES-0569-R5'&&identity?.version==='R5',keys=['artifact_id','version','package_sha256','entrypoint_sha256','baseline_commit',...(r5?['entry_role','entrypoint']:[])];
+ if(window.location.origin!==origin||(!r5&&(!['ORDER-DESIGN-QA-0569-R3','ORDER-COPY-MOTION-0569-R3'].includes(identity?.artifact_id)||identity?.version!=='R3'))||(r5&&(identity.entry_role!=='customer'||identity.entrypoint!=='components/ORDER_MSG0569_CUSTOMER_FLOW_R5_WORKING_UNVERIFIED.html')))throw Error('UNSUPPORTED_VIEWER_REVISION');
+ const url='/api/ia/qa/document?'+new URLSearchParams({artifact_id:identity.artifact_id,version:identity.version,...(r5?{entry_role:'customer'}:{})});
  if(!permit||permit.schema!=='order.ia.research-permit/1'||permit.purpose!=='FIRST_NATIVE_REVIEW'||permit.preview_allowed!==false||permit.native!=='NOT_RUN'||permit.document_url!==url||!keys.every(k=>permit[k]===identity[k])||!Number.isSafeInteger(permit.expires_at)||permit.expires_at*1000<=Date.now()||permit.expires_at*1000>Date.now()+300000||typeof permit.generation!=='string'||!/^[0-9a-f-]{36}$/.test(permit.generation))throw Error('RESEARCH_PERMIT_DENIED');
- const frame=document.createElement('iframe');frame.title=identity.artifact_id.startsWith('ORDER-DESIGN')?'제한 검수 · 디자인 QA':'제한 검수 · 카피·모션';
+ const frame=document.createElement('iframe');frame.title=identity.artifact_id.startsWith('ORDER-DESIGN')?'제한 검수 · 디자인 QA':r5?'제한 검수 · R5 고객 흐름':'제한 검수 · 카피·모션';
  frame.setAttribute('sandbox','allow-scripts');frame.setAttribute('referrerpolicy','no-referrer');
  frame.setAttribute('allow',"camera 'none'; microphone 'none'; geolocation 'none'; clipboard-read 'none'; clipboard-write 'none'; storage-access 'none'");
  // Deliberately NOT credentialless/srcdoc: initial same-origin navigation needs the

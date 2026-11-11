@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Record exact checkout and recovered candidate identity
+      - name: Record exact checkout and continued document candidate identity
         shell: bash
         run: |
           set -euo pipefail
@@ -45,30 +45,30 @@ jobs:
             'functions/api/ia/qa/[[route]].js':'0fd897ce1823f2e4278448ddbead6fe3f1a8a423',
             'functions/ia/[[path]].js':'4251d84a0b8d15e275079a8cec4cdafc3dc36857',
             'scripts/check-r3-original-contract.mjs':'c4058c57e6bc2d7ece8a47828b61cdf733050aa8',
-            'src/server/qa-api.mjs':'875b101149d6a43e6d939df15526ed621fcff44b',
-            'src/server/qa-client.mjs':'69b7242e761fe90b287f67e4599c5a3c40034deb',
-            'src/server/qa-document.mjs':'34cd764542ba218170622950d613a95b691bedda',
-            'src/server/qa-drive-source.mjs':'08b00d9c72fc20f2c09a2ab6f4f0a1bce7e17463',
-            'src/server/qa-host.mjs':'870c0755e8e83ec485a8080594f90e8ebb8c22fa',
+            'src/server/qa-api.mjs':'d04bca4e1bbe5e12169667babcc18266c5eb2760',
+            'src/server/qa-client.mjs':'074091f966eec7bbd9d3abb410c99bd858aa2b7c',
+            'src/server/qa-document.mjs':'bd6f5215f35e58869156d6f5b41cc9b1b036f178',
+            'src/server/qa-drive-source.mjs':'f184f02f23e9b4abc365144ed84e23459e899767',
+            'src/server/qa-host.mjs':'dafc7f57e86748b1ab8fe04f71b3f7a924b627e6',
             'src/server/qa-page.mjs':'3edebe9fa93e3ad92dd094e2cd9c658b2bfb1669',
-            'src/server/qa-r3-runtime.mjs':'b2b2b13b1dd344b3cb8cb147dcc7662238eb5a1f',
-            'src/server/qa-registry.mjs':'b964a00e343ac540b534c3bae8b1b3f6c12fe274',
-            'src/server/qa-research-permit.mjs':'477bac27798b96ca61dc3637762292860a29f68c',
+            'src/server/qa-r3-runtime.mjs':'bcc3bcf9ec44fe8bd5eef0c1ec8205848e629fda',
+            'src/server/qa-registry.mjs':'879ac0980bcb12a29e04e8d3ade6e5c36fe393e2',
+            'src/server/qa-research-permit.mjs':'c216e1a259e4c447b0031f11cedfe8b38884ffe4',
             'src/server/qa-zip-content.mjs':'cd4d9e39d099ebbde0e0584daadb4f7ec95750d4',
             'tests/helpers/qa-contract-fixtures.mjs':'23d697ca6f6d3aaf166ca54871739b3ca32c1fc0',
             'tests/qa-drive-source-contract.test.mjs':'018fd4eb7d27ce89001a38492d90a547c6ef4d92',
             'tests/qa-http-host.test.mjs':'b75bc399bf22067b425fbb7f17e7d2862d4dc637',
-            'tests/qa-menus-0560.test.mjs':'c04ff400e7d532634dd2440fc575de42c94d118f',
+            'tests/qa-menus-0560.test.mjs':'8ad7c9c1083de10308ba80a15f7583fff7a9fd59',
             'tests/qa-r3-readiness-api.test.mjs':'bd05cc3f63e708332e640f52df21becd430bc7ca',
-            'tests/qa-r3-runtime.test.mjs':'cbf26e81b4f0832d8b3fde03610ebdfd29862977',
+            'tests/qa-r3-runtime.test.mjs':'667bd37e82c9db16a1e65933ff129ef1f14c8a91',
             'tests/qa-research-document.test.mjs':'fbdb49e768defc693ba436561cb19ab676d398d8',
             'tests/qa-zip-content.test.mjs':'3df59cf3ef5e421d7d2e40e035f0b2da4a483b22'
           }
           for name, sha in expected.items():
             data = pathlib.Path(name).read_bytes()
             actual = hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
-            assert actual == sha, name+' differs from recovered MSG0566 candidate'
-          print(json.dumps({'recovered_files':len(expected),'blob_matches':len(expected),'native':'NOT_RUN'}))
+            assert actual == sha, name+' differs from continued MSG0566 candidate'
+          print(json.dumps({'candidate_files':len(expected),'blob_matches':len(expected),'native':'NOT_RUN'}))
           PY
       - name: Full repository IA suite
         shell: bash
