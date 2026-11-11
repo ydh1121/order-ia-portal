@@ -17,7 +17,7 @@ const host='https://order-ia-portal.pages.dev';
 const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:`pbkdf2-sha256$310000$${randomBytes(16).toString('base64url')}$${randomBytes(32).toString('base64url')}`,IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url')};
 let cookie;before(async()=>{cookie=(await issueSession(env)).cookie.split(';')[0]});
 const req=(path,method='GET',c=cookie)=>new Request(host+path,{method,headers:c?{Cookie:c}:{}});
-const query=(operation,record=QA_REGISTRY_SOURCE.records[1],extra={})=>'/api/ia/qa/'+operation+'?'+new URLSearchParams({menu:record.artifact_type==='design_qa'?'design-tokens':'qa-lab',artifact_id:record.artifact_id,version:record.version,...extra});
+const query=(operation,record=QA_REGISTRY_SOURCE.records[1],extra={})=>'/api/ia/qa/'+operation+'?'+new URLSearchParams({...(['verify','document','research-permit'].includes(operation)?{}:{menu:record.artifact_type==='design_qa'?'design-tokens':'qa-lab'}),artifact_id:record.artifact_id,version:record.version,...extra});
 const header=['검토 ID','쉬운 제목','무엇을 결정해야 하나요?','현재 상태'];
 const status=i=>i===1?'승인 완료':i===19?'핵심 공개요건 승인·운영세부 검토':i===26?'엔진·UI 통합 완료, 웹 검수 및 정책 검토 중':i===29?'진행 — 연구·제작 승인':'검토 필요';
 const row=i=>['PENDING-'+String(i).padStart(2,'0'),'합성 제목 '+i,'합성 질문',status(i),'F17'];

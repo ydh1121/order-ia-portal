@@ -107,4 +107,10 @@ export function resolveRecord(menu,artifactId,version,baseline){
  if(baseline&&baseline!==r.baseline_commit)throw new QaError('BASELINE_MISMATCH',409);
  return r;
 }
+/** Tuple-only private source selection; menu, Drive ID and baseline are resolved server-side. */
+export function resolveArtifactTuple(artifactId,version){
+ const r=allRecords(QA_REGISTRY_SOURCE).find(r=>r.artifact_id===artifactId&&r.version===version);
+ if(!r)throw new QaError('MISSING_FILE',404);
+ return r;
+}
 export function previewDecision(record){return {allowed:false,code:recordView(record).review_status==='REWORK_REQUESTED'?'REWORK_REQUESTED':'UNSUPPORTED_PREVIEW',state:'PREVIEW_BLOCKED'};}

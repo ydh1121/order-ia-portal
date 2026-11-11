@@ -5,12 +5,15 @@ export function qaClient(runtime){
  const $=id=>document.getElementById(id),state={menu:document.body.dataset.menu,records:[],selected:null,draft:'',dirty:false,request:0,abort:null,viewer:null};
  const text=(tag,content,cls='')=>{const e=document.createElement(tag);e.textContent=content;if(cls)e.className=cls;return e};
  const labels={EMPTY:'등록된 자료가 없습니다.',LOADING:'등록 자료를 읽고 있습니다.',DENIED:'이 자료를 볼 권한이 없습니다.',MISSING_FILE:'원본 미확보',HASH_MISMATCH:'원본 해시가 등록값과 다릅니다.',BASELINE_MISMATCH:'비교 기준 버전이 다릅니다.',NETWORK_ERROR:'자료를 불러오지 못했습니다.',UNSUPPORTED_PREVIEW:'이 환경에서는 실행을 지원하지 않습니다.',PRIVATE_SOURCE_UNAVAILABLE:'인증된 원본 조회 경로가 아직 연결되지 않았습니다.',REWORK_REQUESTED:'재작업 요청 · 실행 보류',RESOURCE_INVALID:'원본 자원 또는 압축 구조를 검증하지 못했습니다.',INVALID_REQUEST:'잘못된 자료 요청입니다.',INVALID_MENU:'등록되지 않은 메뉴입니다.'};
+ Object.assign(labels,{SOURCE_PRINCIPAL_UNAVAILABLE:'서버의 원본 읽기 계정을 확인하지 못했습니다.',SOURCE_PRINCIPAL_MISMATCH:'서버 계정이 허용된 원본 읽기 계정과 다릅니다.',SOURCE_CREDENTIAL_INVALID:'서버 인증 설정을 확인해야 합니다.',SOURCE_TOKEN_DENIED:'원본 읽기 인증이 거절됐습니다.',SOURCE_API_NOT_ENABLED:'서버 계정의 Drive API 사용을 확인해야 합니다.',SOURCE_SCOPE_DENIED:'원본 읽기 범위가 허용되지 않았습니다.',SOURCE_DOWNLOAD_DENIED:'원본 다운로드 권한이 없습니다.',SOURCE_METADATA_MISMATCH:'원본 파일 정보가 고정 계약과 다릅니다.',SOURCE_RESPONSE_INVALID:'원본 응답 형식이 올바르지 않습니다.',SOURCE_REDIRECT_DENIED:'원본 응답이 허용되지 않은 주소로 이동하려 했습니다.',SOURCE_UPSTREAM_ERROR:'원본 저장소 응답에 오류가 있습니다.',SOURCE_TIMEOUT:'원본 읽기 제한 시간을 넘겼습니다.',SOURCE_TUPLE_NOT_ALLOWED:'이 버전은 서버 원본 읽기 허용목록에 없습니다.',ZIP_RUNTIME_UNSUPPORTED:'서버에서 필요한 압축 검증을 지원하지 않습니다.',RESEARCH_PERMIT_DISABLED:'제한 검수는 아직 허가되지 않았습니다.',RESEARCH_PERMIT_DENIED:'제한 검수 허가가 없거나 만료됐습니다.',RESEARCH_POLICY_INVALID:'제한 검수 게시 범위를 확인해야 합니다.'});
  const role=r=>({MASTER_PLANNING_SUCCESSOR:'총괄 기획',UIUX_SUCCESSOR:'UX/UI',ASTRA_ENGINE_EXECUTION:'Astra 실행'}[r]||r);
  const errorCode=e=>Object.hasOwn(labels,e?.code)?e.code:'NETWORK_ERROR';
  function announce(code,extra=''){$('state').dataset.state=code;$('state').textContent=(labels[code]||code)+(extra?' '+extra:'');}
  function param(values){return new URLSearchParams(Object.entries(values).filter(([,v])=>v!==undefined&&v!==null)).toString();}
- async function api(operation,values,signal){
-  let res;try{res=await fetch('/api/ia/qa/'+operation+'?'+param({menu:state.menu,...values}),{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'},signal});}catch(e){if(e.name==='AbortError')throw e;throw {code:'NETWORK_ERROR'}}
+ async function api(operation,values,signal,extraHeaders={}){
+  const exact=['verify','research-permit'].includes(operation);
+  const query=exact?{artifact_id:values.artifact_id,version:values.version}:{menu:state.menu,...values};
+  let res;try{res=await fetch('/api/ia/qa/'+operation+'?'+param(query),{credentials:'same-origin',mode:'same-origin',cache:'no-store',headers:{Accept:'application/json',...extraHeaders},signal});}catch(e){if(e.name==='AbortError')throw e;throw {code:'NETWORK_ERROR'}}
   let d;try{d=await res.json()}catch{throw {code:'NETWORK_ERROR'}}
   if(!res.ok)throw {code:res.status===403?'DENIED':d.error};return d;
  }
@@ -32,10 +35,25 @@ export function qaClient(runtime){
   const versions=text('div','','version-line'),select=document.createElement('select');select.id='version-select';select.setAttribute('aria-label','고정 원본 버전');
   for(const t of r.versions){const op=text('option',t.version+(t.registration==='RECEIVED_PENDING_PLANNING'?' · 접수 후보':''));op.value=JSON.stringify([t.artifact_id,t.version]);op.selected=t.artifact_id===r.artifact_id&&t.version===r.version;select.append(op)}select.addEventListener('change',()=>{const [id,version]=JSON.parse(select.value);choose(id,version)});const versionLabel=text('label','고정 버전');versionLabel.htmlFor='version-select';versions.append(versionLabel,select);box.append(versions);
   const states=text('dl','','pointer-grid');states.append(pair('등록 최신',r.latest_version),pair('최신 접수',r.latest_received.version),pair('사용자 선택',pointer(r.selected_version)),pair('정규본 통합',pointer(r.integrated_version)));box.append(states);
+  let researchEnabled=false;
   const preview=text('section','','preview-block');preview.setAttribute('aria-label','연구 미리보기 상태');preview.append(text('h3','연구 미리보기'),text('p',r.preview_block_reason),text('p',r.company_control_available?'회사 선택과 제품 미리보기는 검증된 실행 원본에서 제공됩니다.':r.viewer_mode==='DISPLAY_ONLY'?'엔진 독립 표시 자료입니다. 외부 준비완료 응답이나 제품 계산 연결을 제공하는 자료가 아닙니다.':'이 자료의 고정 원본과 기능·컴포넌트 검사 범위를 확인해 주세요.','muted'));
   const disabled=text('button',r.preview_allowed?'미리보기 열기':'미리보기 보류','button');disabled.type='button';disabled.disabled=!r.preview_allowed;
   disabled.addEventListener('click',async()=>{if(!r.preview_allowed||r.viewer_mode!=='DESIGN_OBSERVER'||!r.external_ready_contract||!runtime.mountR3Viewer)return;const ticket=state.request;disabled.disabled=true;try{const response=await api('preview',{artifact_id:r.artifact_id,version:r.version,baseline:r.baseline_commit});if(ticket!==state.request)return;if(response.activation?.preview_allowed!==true||typeof response.html!=='string')throw {code:'UNSUPPORTED_PREVIEW'};state.viewer?.dispose();const identity={artifact_id:r.artifact_id,version:r.version,package_sha256:r.package_sha256,entrypoint_sha256:r.entrypoint_sha256,baseline_commit:r.baseline_commit};state.viewer=await runtime.mountR3Viewer({window,document,container:preview,html:response.html,identity,activation:response.activation,onState:event=>{if(ticket===state.request)announce(event.state,event.code||'')}})}catch(e){if(ticket===state.request)announce(errorCode(e))}finally{if(ticket===state.request)disabled.disabled=!r.preview_allowed}});
-  preview.append(disabled);box.append(preview);
+  preview.append(disabled);
+  const research=text('button','제한 검수 열기','button secondary');research.type='button';research.disabled=true;
+  if(r.version==='R3')preview.append(research);
+  research.addEventListener('click',async()=>{
+   if(!researchEnabled||!runtime.mountR3HttpResearch)return;const ticket=state.request;research.disabled=true;
+   try{
+    const me=await fetch('/api/ia/auth/me',{credentials:'same-origin',mode:'same-origin',cache:'no-store',headers:{Accept:'application/json'},signal:state.abort?.signal});
+    if(!me.ok)throw {code:'DENIED'};const session=await me.json();if(ticket!==state.request)return;
+    if(session.role!=='OWNER'||typeof session.csrf!=='string')throw {code:'DENIED'};
+    const result=await api('research-permit',{artifact_id:r.artifact_id,version:r.version},state.abort?.signal,{'X-IA-QA-Intent':'FIRST_NATIVE_REVIEW','X-IA-CSRF':session.csrf});
+    if(ticket!==state.request)return;state.viewer?.dispose();
+    const identity={artifact_id:r.artifact_id,version:r.version,package_sha256:r.package_sha256,entrypoint_sha256:r.entrypoint_sha256,baseline_commit:r.baseline_commit};
+    state.viewer=runtime.mountR3HttpResearch({window,document,container:preview,identity,permit:result.permit,onState:event=>{if(ticket===state.request)announce(event.state==='DISPLAY_LOADED_UNVERIFIED'?'문서 로드 신호만 확인했습니다. 실제 표시·동작 검수는 별도입니다.':event.state,event.code||'')}});
+   }catch(e){if(ticket===state.request)announce(errorCode(e))}finally{if(ticket===state.request)research.disabled=!researchEnabled}
+  });box.append(preview);
   const inspection=text('details','','evidence');inspection.append(text('summary','검수 정보'));const evidence=text('dl','','metadata');evidence.append(pair('자료 종류',r.artifact_type+(r.artifact_subtype?' / '+r.artifact_subtype:'')),pair('제작',role(r.creator)),pair('관리·채택',role(r.administrator)),pair('작성일',r.created_at),pair('기준 commit',r.baseline_commit,{code:true}),pair('기준 build',r.build_id||'미확인',{code:true}),pair('원본 크기',r.package_bytes.toLocaleString('ko-KR')+' bytes'),pair('SHA-256',r.package_sha256,{code:true}),pair('진입점',r.entrypoint,{code:true}),pair('진입점 SHA-256',r.entrypoint_sha256,{code:true}),pair('원본 등록',r.registration_status),pair('연구 상태',r.research_status));inspection.append(evidence);
   const action=text('div','','actions');action.append(makeOriginalLink(r.source_url));
   const copy=text('button','SHA-256 복사','button secondary');copy.type='button';copy.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(r.package_sha256);announce('복사했습니다.')}catch{announce('복사하지 못했습니다. 해시를 선택하여 복사해 주세요.')}});action.append(copy);
@@ -43,7 +61,7 @@ export function qaClient(runtime){
   if(r.version==='R3'){
    const readiness=text('button','실행 연결 조건','button secondary');readiness.type='button';
    const report=text('p','','muted');report.setAttribute('role','status');
-   readiness.addEventListener('click',async()=>{const ticket=state.request;readiness.disabled=true;try{const result=await api('readiness',{artifact_id:r.artifact_id,version:r.version,baseline:r.baseline_commit});if(ticket!==state.request)return;const d=result.readiness;if(!d||d.actual_execution_url!==null||d.preview_allowed!==false)throw {code:'UNSUPPORTED_PREVIEW'};report.textContent='실행 URL은 아직 없습니다. 원본 공급 권한·비공개 문서 연결·별도 게시 허가·실제 브라우저 격리 검증이 필요합니다. '+(d.host.mode==='DISPLAY_ONLY'?'이 자료는 외부 ready 규약이 없는 표시용 원본입니다.':'회사 버튼은 패키지 소유이며 포털은 전환 결과를 관찰합니다.');}catch(e){if(ticket===state.request)report.textContent=labels[errorCode(e)];}finally{if(ticket===state.request)readiness.disabled=false}});
+   readiness.addEventListener('click',async()=>{const ticket=state.request;readiness.disabled=true;try{const result=await api('readiness',{artifact_id:r.artifact_id,version:r.version,baseline:r.baseline_commit});if(ticket!==state.request)return;const d=result.readiness;if(!d||d.actual_execution_url!==null||d.preview_allowed!==false)throw {code:'UNSUPPORTED_PREVIEW'};researchEnabled=d.research?.enabled===true;research.disabled=!researchEnabled;report.textContent='일반 미리보기 수락과 제한 검수는 별도입니다. 원본 공급 권한·비공개 문서 연결·별도 게시 허가·실제 브라우저 격리 검증이 필요합니다. '+(d.host.mode==='DISPLAY_ONLY'?'이 자료는 외부 ready 규약이 없는 표시용 원본입니다.':'회사 버튼은 패키지 소유이며 포털은 전환 결과를 관찰합니다.');}catch(e){if(ticket===state.request)report.textContent=labels[errorCode(e)];}finally{if(ticket===state.request)readiness.disabled=false}});
    action.append(readiness);inspection.append(report);
   }
   inspection.append(action);

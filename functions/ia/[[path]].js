@@ -20,6 +20,8 @@ export async function onRequest({request,env}){
  const headers={...base,'Content-Type':'text/html; charset=utf-8',
   'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`};
  const view=new URL(request.url).searchParams.get('view');
+ // Only these two authenticated QA menus may navigate the exact private document path.
+ if(Object.hasOwn(QA_MENUS,view))headers['Content-Security-Policy']+='; frame-src https://order-ia-portal.pages.dev/api/ia/qa/document';
  const html=Object.hasOwn(QA_MENUS,view)?qaPage(nonce,view):v03OwnerHtml(nonce);
  return new Response(request.method==='HEAD'?null:html,{status:200,headers});
 }

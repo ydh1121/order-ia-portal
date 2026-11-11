@@ -3,9 +3,12 @@ name: IA scoped decision parity QA
 on:
   pull_request:
     paths:
-      - 'src/server/**'
-      - 'public/owner.js'
+      - 'src/**'
+      - 'functions/**'
+      - 'public/**'
+      - 'scripts/**'
       - 'tests/**'
+      - 'package.json'
       - '.github/workflows/ia-decision-parity.yml'
   workflow_dispatch:
 
@@ -16,11 +19,103 @@ jobs:
   ia:
     name: IA Node 22 read-only regression
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    env:
+      WRANGLER_SEND_METRICS: 'false'
+      CI: 'true'
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Test existing IA + dynamic decision parity
-        run: npm run test:ia
+      - name: Record exact checkout and recovered candidate identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --version
+          git rev-parse HEAD
+          git rev-parse 'HEAD^{tree}'
+          python3 - <<'PY'
+          import hashlib, pathlib, json
+          expected = {
+            'docs/IA_QA_PRIVATE_SOURCE_DOCUMENT_CONTRACT.md':'7dfee48dc6c69d4dd811027f950fdcb526ea9573',
+            'functions/api/ia/qa/[[route]].js':'0fd897ce1823f2e4278448ddbead6fe3f1a8a423',
+            'functions/ia/[[path]].js':'4251d84a0b8d15e275079a8cec4cdafc3dc36857',
+            'scripts/check-r3-original-contract.mjs':'c4058c57e6bc2d7ece8a47828b61cdf733050aa8',
+            'src/server/qa-api.mjs':'875b101149d6a43e6d939df15526ed621fcff44b',
+            'src/server/qa-client.mjs':'69b7242e761fe90b287f67e4599c5a3c40034deb',
+            'src/server/qa-document.mjs':'34cd764542ba218170622950d613a95b691bedda',
+            'src/server/qa-drive-source.mjs':'08b00d9c72fc20f2c09a2ab6f4f0a1bce7e17463',
+            'src/server/qa-host.mjs':'870c0755e8e83ec485a8080594f90e8ebb8c22fa',
+            'src/server/qa-page.mjs':'3edebe9fa93e3ad92dd094e2cd9c658b2bfb1669',
+            'src/server/qa-r3-runtime.mjs':'b2b2b13b1dd344b3cb8cb147dcc7662238eb5a1f',
+            'src/server/qa-registry.mjs':'b964a00e343ac540b534c3bae8b1b3f6c12fe274',
+            'src/server/qa-research-permit.mjs':'477bac27798b96ca61dc3637762292860a29f68c',
+            'src/server/qa-zip-content.mjs':'cd4d9e39d099ebbde0e0584daadb4f7ec95750d4',
+            'tests/helpers/qa-contract-fixtures.mjs':'23d697ca6f6d3aaf166ca54871739b3ca32c1fc0',
+            'tests/qa-drive-source-contract.test.mjs':'018fd4eb7d27ce89001a38492d90a547c6ef4d92',
+            'tests/qa-http-host.test.mjs':'b75bc399bf22067b425fbb7f17e7d2862d4dc637',
+            'tests/qa-menus-0560.test.mjs':'c04ff400e7d532634dd2440fc575de42c94d118f',
+            'tests/qa-r3-readiness-api.test.mjs':'bd05cc3f63e708332e640f52df21becd430bc7ca',
+            'tests/qa-r3-runtime.test.mjs':'cbf26e81b4f0832d8b3fde03610ebdfd29862977',
+            'tests/qa-research-document.test.mjs':'fbdb49e768defc693ba436561cb19ab676d398d8',
+            'tests/qa-zip-content.test.mjs':'3df59cf3ef5e421d7d2e40e035f0b2da4a483b22'
+          }
+          for name, sha in expected.items():
+            data = pathlib.Path(name).read_bytes()
+            actual = hashlib.sha1(b'blob '+str(len(data)).encode()+b'\0'+data).hexdigest()
+            assert actual == sha, name+' differs from recovered MSG0566 candidate'
+          print(json.dumps({'recovered_files':len(expected),'blob_matches':len(expected),'native':'NOT_RUN'}))
+          PY
+      - name: Full repository IA suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run test:ia | tee "$RUNNER_TEMP/ia-full-test.tap"
+      - name: Previously omitted QA menu suite (subset, not additive)
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/qa-menus-0560.test.mjs | tee "$RUNNER_TEMP/ia-qa-menus.tap"
+      - name: Compile existing Pages Functions only - no deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${CLOUDFLARE_API_TOKEN:-}"
+          test -z "${CLOUDFLARE_API_KEY:-}"
+          npm exec --yes --package=wrangler@4.45.0 -- wrangler pages functions build functions --outdir "$RUNNER_TEMP/ia-functions-build" --output-routes-path "$RUNNER_TEMP/ia-routes.json" --build-metadata-path "$RUNNER_TEMP/ia-build-metadata.json" --compatibility-date 2026-10-15
+          python3 - <<'PY'
+          import pathlib, hashlib, gzip, os, json
+          root=pathlib.Path(os.environ['RUNNER_TEMP'])/'ia-functions-build'
+          files=[p for p in root.rglob('*') if p.is_file()]
+          assert files, 'No compiled Functions output'
+          result=[]
+          for p in files:
+            data=p.read_bytes()
+            result.append({'path':str(p.relative_to(root)),'bytes':len(data),'gzip_bytes':len(gzip.compress(data,mtime=0)),'sha256':hashlib.sha256(data).hexdigest()})
+          public=[]
+          for p in pathlib.Path('public').rglob('*'):
+            if p.is_file():
+              data=p.read_bytes()
+              public.append({'path':str(p),'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest()})
+          report={'mode':'BUILD_ONLY_NO_DEPLOY','functions':result,'public':public,'native':'NOT_RUN'}
+          (pathlib.Path(os.environ['RUNNER_TEMP'])/'ia-build-summary.json').write_text(json.dumps(report,indent=2))
+          print(json.dumps(report,indent=2))
+          PY
+          git diff --exit-code
+      - name: Preserve private CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ia-msg0566-code-build-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/ia-full-test.tap
+            ${{ runner.temp }}/ia-qa-menus.tap
+            ${{ runner.temp }}/ia-build-summary.json
+            ${{ runner.temp }}/ia-build-metadata.json
+            ${{ runner.temp }}/ia-routes.json
+          if-no-files-found: warn
+          retention-days: 14
