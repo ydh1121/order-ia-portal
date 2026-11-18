@@ -25,4 +25,4 @@
 
 .qa-quote .qa-modal-backdrop[data-qf-confirm]{position:fixed;inset:0;min-height:0;align-items:center;padding:16px;touch-action:manipulation}
 .qa-quote [data-qf-confirm] .qa-mini-modal{align-self:center;max-height:calc(100dvh - 32px);overflow:auto}
-.qa-quote [data-qf-confirm] button{min-height:44px;touch-action:manipulation}
+.qa-quote [data-qf-confirm] button{min-height:44px;touch-action:none}

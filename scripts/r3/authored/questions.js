@@ -806,8 +806,37 @@
         const text=document.createElement('p');text.textContent=parentName?parentName+' · '+name:name;
         const footer=document.createElement('footer'),cancel=document.createElement('button'),ok=document.createElement('button');
         cancel.type=ok.type='button';cancel.textContent='취소';ok.textContent=unlink?'해제':'삭제';
-        cancel.onclick=()=>dismiss();ok.onclick=()=>{dismiss(false);if(row?.isConnected&&row.contains(button))actOn(button);
-          const next=root.querySelector('.qf-main,.qa-disclosure,[data-qa-action="add-item"],[data-qa-action="add-venue"]');next?.focus({preventScroll:true});};
+        // Touch browsers can suppress the compatibility click on the tap following a drag.
+        // A deliberate stationary release on the same control may activate it; a cancelled drag never does.
+        function bindControl(control,run){
+          let touch=null,timer=null,discardTouchClick=false;
+          const activate=()=>{
+            clearTimeout(timer);
+            if(confirmation?.dialog===overlay)run();
+          };
+          control.onclick=e=>{if(!discardTouchClick||e.detail===0)activate();};
+          control.onpointerdown=e=>{
+            clearTimeout(timer);touch=null;discardTouchClick=false;
+            if(e.pointerType==='touch'&&e.isPrimary&&e.button===0){
+              touch={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};
+              control.setPointerCapture(e.pointerId);
+            }
+          };
+          control.onpointermove=e=>{
+            if(touch?.id===e.pointerId&&Math.hypot(e.clientX-touch.x,e.clientY-touch.y)>8){touch.moved=true;discardTouchClick=true;}
+          };
+          control.onpointercancel=()=>{touch=null;discardTouchClick=true;clearTimeout(timer);};
+          control.onpointerup=e=>{
+            const start=touch;touch=null;
+            if(!start||start.id!==e.pointerId||start.moved||Math.hypot(e.clientX-start.x,e.clientY-start.y)>8)return;
+            const over=document.elementFromPoint(e.clientX,e.clientY);
+            if(over&&control.contains(over))timer=setTimeout(activate,320);
+          };
+        }
+        bindControl(cancel,()=>dismiss());
+        bindControl(ok,()=>{dismiss(false);if(row?.isConnected&&row.contains(button))actOn(button);
+          const next=root.querySelector('.qf-main,.qa-disclosure,[data-qa-action="add-item"],[data-qa-action="add-venue"]');
+          next?.focus({preventScroll:true});});
         footer.append(cancel,ok);dialog.append(title,text,footer);overlay.append(dialog);root.append(overlay);
         confirmation={dialog:overlay,button};cancel.focus({preventScroll:true});
       }

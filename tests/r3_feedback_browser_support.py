@@ -11,14 +11,14 @@ def prepare_frame_pointer(page):
         return
     page._qa_pointer_installed = True
     page.add_init_script("""if(window!==top){
-        for(const type of ['pointerdown','click'])window.addEventListener(type,e=>{
+        for(const type of ['pointerdown','pointerup','pointercancel','click'])window.addEventListener(type,e=>{
             const arm=window.__qaArmedPointer;
             if(!arm)return;
             console.debug('__qa_physical_pointer__'+JSON.stringify({
                 id:arm.id,phase:type,trusted:e.isTrusted,hit:arm.el.contains(e.target),
                 pointer:e.pointerType||'mouse'
             }));
-            if(type==='click')window.__qaArmedPointer=null;
+            if(type===arm.last)window.__qaArmedPointer=null;
         },true);
     }""")
 
@@ -67,8 +67,18 @@ def frame_pointer_position(page, locator, position=None):
     """Find the visible child control in both documents, accounting for the review scale."""
     expect(locator).to_be_visible()
     locator.element_handle().wait_for_element_state("stable")
-    point = locator.evaluate("""(el, relative) => {
+    point = locator.evaluate("""async (el, relative) => {
         el.scrollIntoView({block:'center', inline:'nearest', behavior:'instant'});
+        // A native vertical swipe may still be scrolling the document even when a fixed modal is stable.
+        const chain=[];for(let p=el;p;p=p.parentElement)chain.push(p);
+        let previous='',still=0;
+        for(let tick=0;tick<100&&still<5;tick++){
+            await new Promise(requestAnimationFrame);
+            const r=el.getBoundingClientRect();
+            const now=[r.x,r.y,r.width,r.height,scrollX,scrollY,...chain.flatMap(p=>[p.scrollLeft,p.scrollTop])].join(',');
+            still=now===previous?still+1:0;previous=now;
+        }
+        if(still<5)throw Error('Target or ancestor scroll is still moving');
         const r=el.getBoundingClientRect();
         const clip={left:0, top:0, right:innerWidth, bottom:innerHeight};
         for(let p=el.parentElement;p&&p!==document.documentElement;p=p.parentElement){
@@ -112,24 +122,26 @@ def frame_pointer_position(page, locator, position=None):
     return result["x"], result["y"]
 
 
-def frame_click(page, locator, position=None):
+def frame_click(page, locator, position=None, *, activation="click"):
     x, y = frame_pointer_position(page, locator, position)
     request_id = uuid4().hex
-    locator.evaluate("(el,id)=>{window.__qaArmedPointer={el,id};}", request_id)
+    locator.evaluate("(el,arg)=>{window.__qaArmedPointer={el,id:arg.id,last:arg.last};}", {"id":request_id,"last":activation})
     touch = page.evaluate("navigator.maxTouchPoints>0")
     def is_receipt(message):
         return message.text.startswith('__qa_physical_pointer__') and request_id in message.text
-    with page.expect_console_message(predicate=lambda m:is_receipt(m) and '"phase":"pointerdown"' in m.text, timeout=5000) as down:
-        with page.expect_console_message(predicate=lambda m:is_receipt(m) and '"phase":"click"' in m.text, timeout=5000) as activation:
+    def event_for(phase):
+        return lambda m:is_receipt(m) and f'"phase":"{phase}"' in m.text
+    with page.expect_console_message(predicate=event_for("pointerdown"), timeout=5000) as down:
+        with page.expect_console_message(predicate=event_for(activation), timeout=5000) as result:
             if touch:
                 page.touchscreen.tap(x, y)
             else:
                 page.mouse.click(x, y)
-    for captured in (down,activation):
+    for captured in (down,result):
         receipt=json.loads(captured.value.text.removeprefix('__qa_physical_pointer__'))
         assert receipt["trusted"] and receipt["hit"], "Physical "+receipt["phase"]+" did not reach the requested child control"
     down_receipt=json.loads(down.value.text.removeprefix('__qa_physical_pointer__'))
     assert down_receipt["pointer"]==("touch" if touch else "mouse")
     if not getattr(page, "_qa_reported_frame_pointer", False):
-        print(f"PASS scaled frame {down_receipt['pointer']}: parent iframe hit, child control hit, trusted pointerdown and click",flush=True)
+        print(f"PASS scaled frame {down_receipt['pointer']}: parent iframe hit, child control hit, trusted pointerdown and {activation}",flush=True)
         page._qa_reported_frame_pointer = True

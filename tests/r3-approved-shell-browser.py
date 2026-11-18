@@ -197,8 +197,28 @@ def verify_review_controls(browser, auth, origin):
     saved=page.evaluate("""async()=>{const rows=(await(await fetch('/api/ia/r3-qa/records?release=MSG0585-R3')).json()).items;
         return rows.find(r=>r.kind==='comment' && r.data?.body==='보드 다른 상태의 위치 의견')?.data.target;}""")
     assert saved and saved["screen"]=="login" and saved["state"]==state and saved["viewport"]==390,saved
+    # Give only this page one invented legacy opinion at its original width.
+    # The 12 screenshot pairs above remain comparable with empty review data.
+    source_key="login/empty/email/390"
+    legacy_text="합성 시험용 390px 이전 의견"
+    legacy_row={"sourceKey":source_key,"data":{"status":"fix","comments":[
+        {"id":"qa-width-fixture","body":legacy_text,"status":"open"}]}}
+    page.route("**/api/ia/r3-qa/legacy?**",lambda route:route.fulfill(
+        json={"items":[legacy_row],"hasMore":False,"nextCursor":1}))
+    page.goto(origin+"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=320")
+    page.frame_locator("#frame").locator("#r3-veil").wait_for(state="attached")
+    previous=page.locator('#review-summary [data-metric="previous"] strong')
+    expect(previous).to_have_text("1")
+    page.locator("#points").click()
+    expect(page.locator("#notes article").filter(has_text=legacy_text)).to_have_count(0)
+    expect(page.locator('[data-review="unreviewed"]')).to_have_class(re.compile(r"\bactive\b"))
+    page.locator("#other-width-history").get_by_role("button",name=re.compile("390px 이전 검토 보기")).click()
+    expect(page).to_have_url(re.compile(r"[?&]width=390(?:&|$)"))
+    expect(page.locator("#notes article").filter(has_text=legacy_text)).to_be_visible()
     ctx.close()
-    return {"rails":rail,"figmaStage":"editing","figmaNoteAfterReload":True,"secondaryBoardTarget":saved}
+    return {"rails":rail,"figmaStage":"editing","figmaNoteAfterReload":True,"secondaryBoardTarget":saved,
+            "legacyWidth":{"fixture":"one invented prior fix","sourceWidth":390,"startWidth":320,
+                           "globalPreviousCount":1,"startWidthVerdict":"unreviewed","openedLegacyWidth":390}}
 
 def make_pair(browser, first, second, out, viewport, height):
     page=browser.new_page(viewport={"width":viewport*2,"height":height},device_scale_factor=1)

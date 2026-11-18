@@ -21,6 +21,12 @@ def check(page, origin, width):
         frame.locator("#r3-veil").wait_for(state="attached")
         return frame
 
+    def confirm(frame, label):
+        dialog=frame.locator("[data-qf-confirm]")
+        phase="pointerup" if page.evaluate("navigator.maxTouchPoints>0") else "click"
+        frame_click(page, dialog.get_by_role("button",name=label,exact=True), activation=phase)
+        expect(dialog).to_have_count(0)
+
     def action(frame, name):
         return frame.locator(f'[data-qa-action="{name}"]')
 
@@ -65,7 +71,7 @@ def check(page, origin, width):
     dialog.get_by_text("취소").press("Escape")
     expect(rows).to_have_count(1)
     frame_click(page, action(frame, "remove-item"))
-    frame_click(page, dialog.get_by_role("button", name="삭제"))
+    confirm(frame, "삭제")
     expect(rows).to_have_count(0)
     expect(action(frame, "finish-q1")).to_be_hidden()
 
@@ -95,16 +101,16 @@ def check(page, origin, width):
     swipe(assigned.first, 85, 3)
     dialog = frame.locator("[data-qf-confirm]")
     expect(dialog.get_by_text("연결을 해제할까요?")).to_be_visible()
-    frame_click(page, dialog.get_by_role("button", name="취소"))
+    confirm(frame, "취소")
     expect(assigned).to_have_count(3)
     assigned.first.locator(".qf-main").press("Delete")
-    frame_click(page, dialog.get_by_role("button", name="해제", exact=True))
+    confirm(frame, "해제")
     expect(assigned).to_have_count(2)
     expect(first.locator("[data-item-count]")).to_have_text("2개")
     expect(venues).to_have_count(3)
     for remaining in (2, 1, 0):
         first.locator(".qa-disclosure").press("Delete")
-        frame_click(page, dialog.get_by_role("button", name="삭제", exact=True))
+        confirm(frame, "삭제")
         expect(venues).to_have_count(remaining)
     expect(action(frame, "finish-q3")).to_be_hidden()
     expect(action(frame, "add-venue")).to_be_visible()
@@ -121,7 +127,7 @@ def check(page, origin, width):
     expect(frame.locator("[data-qf-confirm]")).to_have_attribute("data-subject", first_id)
     expect(frame.locator("[data-qf-confirm] p")).to_have_text(parent_name+" · "+item_name)
 
-    frame_click(page, frame.locator("[data-qf-confirm]").get_by_role("button", name="해제", exact=True))
+    confirm(frame, "해제")
     expect(frame.locator("#"+first_id)).to_have_count(0)
     expect(sites).to_have_count(2)
     assert sites.locator("strong").all_text_contents()==other_ids
@@ -134,7 +140,7 @@ def check(page, origin, width):
             frame_click(page, head)
         for _ in range(product.locator(".qa-order-venue").count()):
             frame_click(page, product.locator('[data-qa-action="unlink-venue"]').first)
-            frame_click(page, frame.locator("[data-qf-confirm]").get_by_role("button", name="해제", exact=True))
+            confirm(frame, "해제")
     expect(action(frame, "finish-q4")).to_be_hidden()
 
     for module, state in (("q2", "empty"), ("quote-review", "normal")):

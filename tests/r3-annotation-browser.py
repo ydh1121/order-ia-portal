@@ -1,5 +1,6 @@
 """Chromium interaction tests of the actual authenticated Pages UI with ephemeral SQLite/actor."""
 from pathlib import Path
+from math import dist
 from r3_feedback_browser_support import frame_click, prepare_frame_pointer
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
@@ -90,6 +91,62 @@ def check_screen_memo(context,page):
  expect(memo).to_have_value('갱신한 화면 메모')
  print('PASS screen memo autosave, explicit update, second-tab read and refresh; distinct from comment and verdict')
 
+def pin_geometry(page, frame, anchor):
+ # Resolve the persisted identity from the current DOM, independently of the marker's CSS left/top.
+ pin = frame.locator(".r3-pin").first
+ child = pin.evaluate("""(pin,a)=>{
+   const root=document.getElementById('order-single'),paths=new WeakMap(),byId=new Map([['screen',root]]);
+   const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
+   for(const el of root.querySelectorAll('*')){
+     if(el.parentElement?.closest('svg')||['STYLE','SCRIPT','META'].includes(el.tagName))continue;
+     const path=(paths.get(el.parentElement)||'screen')+'/'+[el.localName,...fields.map(k=>el.getAttribute(k)||'')].join('|');
+     paths.set(el,path);let n=2166136261;
+     for (const c of path)n=Math.imul(n^c.charCodeAt(0),16777619);
+     const id='a-'+(n>>>0).toString(36);byId.set(id,byId.has(id)?null:el);
+   }
+   const el=byId.get(a.id);
+   if(!el)throw Error('Missing or ambiguous restored anchor '+a.id);
+   const r=el.getBoundingClientRect(),m=pin.getBoundingClientRect();
+   const scroll={};
+   for(const s of a.scroll){
+     if(s.id.startsWith('host-'))continue;
+     const node=s.id==='document'?document.scrollingElement:byId.get(s.id);
+     if(!node)throw Error('Missing restored scroll container '+s.id);
+     scroll[s.id]=[node.scrollLeft,node.scrollTop];
+   }
+   return {tag:el.localName,anchorId:a.id,relative:[r.x+a.x*r.width,r.y+a.y*r.height],
+           center:[m.left+m.width/2,m.top+m.height/2],rect:[r.x,r.y,r.width,r.height],scroll};
+ }""",anchor)
+ host = page.locator("#frame").evaluate("""(frame,p)=>{
+   const r=frame.getBoundingClientRect(),surface=document.getElementById('surface'),doc=document.scrollingElement;
+   return {frame:[r.x,r.y,r.width,r.height],absolute:[
+     r.left+(frame.clientLeft+p[0])*r.width/frame.offsetWidth,
+     r.top+(frame.clientTop+p[1])*r.height/frame.offsetHeight],
+     scroll:{'host-surface':[surface.scrollLeft,surface.scrollTop],'host-document':[doc.scrollLeft,doc.scrollTop]}};
+ }""",child["center"])
+ return {**child,**host,"scroll":{**child["scroll"],**host["scroll"]}}
+
+
+def restored_pin(page, frame, card, anchor):
+ root = frame.locator("#order-single")
+ root.evaluate("""(el,id)=>{
+   el.removeAttribute('data-test-restored');
+   function seen(e){
+     if(e.source!==parent||e.data?.scope!=='ORDER_R3_HOST'||e.data.type!=='restore'||e.data.payload?.id!==id)return;
+     window.removeEventListener('message',seen);
+     requestAnimationFrame(()=>requestAnimationFrame(()=>{el.dataset.testRestored=id;}));
+   }
+   window.addEventListener('message',seen);
+ }""",anchor["id"])
+ card.get_by_role("button",name="위치 보기",exact=True).click()
+ expect(root).to_have_attribute("data-test-restored",anchor["id"])
+ geometry=pin_geometry(page,frame,anchor)
+ for entry in anchor["scroll"]:
+  observed=geometry["scroll"][entry["id"]]
+  assert dist(observed,[entry["x"],entry["y"]])<=1, (entry,observed,geometry)
+ assert dist(geometry["relative"],geometry["center"])<=3, geometry
+ return geometry
+
 def run():
  host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
  try:
@@ -98,7 +155,7 @@ def run():
    binary=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium')
    browser=pw.chromium.launch(executable_path=binary)
    for width in (390,1440):
-    ctx=browser.new_context(viewport={'width':width,'height':870})
+    ctx=browser.new_context(viewport={'width':width,'height':870},has_touch=width<600)
     page=ctx.new_page();prepare_frame_pointer(page);page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
     page.goto(fixture['url']+'/ia?view=qa-lab')
     page.locator('input[name=email]').fill(fixture['email']);page.locator('input[name=password]').fill(fixture['pass']);page.locator('button[type=submit]').click()
@@ -110,10 +167,15 @@ def run():
     page.locator('#new').click()
     frame.locator('#r3-veil').wait_for(state='visible')
     # Same viewport point can hold independent comments; typing alone never submits.
+    anchors=[]
     for i in range(2):
      if i:page.locator('#close-drawer').click();page.locator('#new').click()
      veil=frame.locator('#r3-veil');frame_click(page,veil,position={'x':100,'y':120})
-     page.locator('#body-text').fill('위치 '+str(i));page.locator('#save').click()
+     page.locator('#body-text').fill('위치 '+str(i))
+     with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json.get('kind')=='comment') as saved:
+      page.locator('#save').click()
+     assert saved.value.ok
+     anchors.append(saved.value.request.post_data_json['data']['anchor'])
      page.locator('#live').filter(has_text='저장됨').wait_for()
      page.locator('#blocks:not([hidden])').wait_for()
     page.locator('#close-drawer').click();pin=frame.locator('.r3-pin');pin.first.wait_for()
@@ -121,7 +183,7 @@ def run():
     expect(pin.first).to_have_text('1')
     expect(pin.first).to_have_attribute('data-cluster','+1')
     expect(pin.first).to_have_attribute('aria-label','위치 코멘트 1, 2번 열기')
-    box=pin.first.bounding_box();frame_click(page,pin.first);assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
+    frame_click(page,pin.first);assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
     parent=page.locator('#notes article').filter(has=page.get_by_text('위치 0',exact=True))
     parent.get_by_role('button',name='답글 작성').click()
     page.locator('#body-text').fill('저장한 답글');page.get_by_role('button',name='답글 저장').click()
@@ -129,10 +191,17 @@ def run():
     second=ctx.new_page();second.goto(page.url);second.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');second.locator('#points').click()
     other=second.locator('#notes article').filter(has=second.get_by_text('위치 0',exact=True));other.get_by_text('저장한 답글',exact=True).wait_for()
     second.close()
-    page.locator('#close-drawer').click();page.reload()
-    pin.first.wait_for();again=pin.first.bounding_box()
-    error=((again['x']-box['x'])**2+(again['y']-box['y'])**2)**.5
-    assert error<=3,(box,again,error)
+    before=restored_pin(page,frame,parent,anchors[0])
+    page.reload()
+    pin.first.wait_for()
+    on_reload=pin_geometry(page,frame,anchors[0])
+    assert dist(on_reload['relative'],on_reload['center'])<=3, on_reload
+    page.locator('#points').click()
+    after=restored_pin(page,frame,parent,anchors[0])
+    error=max(dist(after['absolute'],before['absolute']),dist(after['center'],before['center']),dist(after['relative'],before['relative']))
+    assert error<=3, {'before':before,'on_reload':on_reload,'after':after,'error':error}
+    print(json.dumps({'width':width,'storedAnchor':{k:anchors[0][k] for k in ('id','x','y','scroll')},
+                      'beforeRestore':before,'afterReload':on_reload,'afterRestore':after}),flush=True)
     page.locator('#points').click()
     page.locator('[data-drawer-tab=settings]').click()
     with page.expect_download() as downloaded:
