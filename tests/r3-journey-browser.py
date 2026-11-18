@@ -57,7 +57,7 @@ def check_result(view, state):
             if state=='new-detail':
                 expect(front.locator('.oq-rate')).to_contain_text('4.78%')
                 expect(front.locator('.oq-clock')).to_have_text(re.compile(r'6일 21시간 13분 \d{2}초'))
-                expect(view.locator('.oq-meta')).to_contain_text('2,000판')
+                expect(view.locator('.oq-meta .oq-meta-line').first).to_have_text('동일한 1회 납품 기준 / 2,000판')
                 expect(view.locator('.oq-meta')).to_contain_text('2026.11.21')
             else:
                 expect(front.locator('.oq-rate')).to_contain_text('300원')

@@ -56,6 +56,79 @@ def save(page, rev):
     assert received.value.ok, received.value.text()
     expect(page.locator("#current")).to_contain_text(f"r{rev}")
 
+def save_personal(page, status):
+    with page.expect_response(lambda r: r.url.endswith('/api/ia/r3-price/personal-draft') and r.request.method=='POST') as received:
+        page.locator('#savePersonalDraft').click()
+    assert received.value.status==status,received.value.text()
+    return received.value.json()
+
+def exercise_personal(page, reopen, origin, label, width):
+    # Neither the owner login nor the signed unassigned account gets a contract price scope.
+    route='/api/ia/r3-price/personal-draft'
+    entry=origin+'/ia?view=pricing-r3'
+    grid=page.locator('#matrix')
+    expect(page.locator('#personalProduct')).to_be_visible()
+    expect(grid.locator('tbody tr')).to_have_count(19)
+    assert all(row[2:]==['']*8 for row in matrix_values(page))
+    page.locator('#personalSupplier').fill('입력 검토 공급처')
+    page.locator('#personalOrigin').fill('입력 검토 출고장')
+    page.locator('#personalProduct').fill('개인 초안 계란')
+    # A pack specification was not supplied in the historical reference.
+    assert page.locator('#personalPack').input_value()==''
+    paste(cell(page,0,2),[row[2:] for row in reference])
+    check_reference_ui(page)
+    first=save_personal(page,200)
+    assert first['revision']==1
+    page.reload()
+    expect(cell(page,0,2)).to_have_value('5,980')
+    check_reference_ui(page)
+    shoot(page,'personal-'+label+'-reopened',width)
+    second=page.context.new_page()
+    second.goto(entry)
+    expect(cell(second,0,2)).to_have_value('5,980')
+    cell(second,0,2).fill('6,002원')
+    cell(page,0,2).fill('6,001원')
+    assert save_personal(page,200)['revision']==2
+    save_personal(second,409)
+    expect(second.locator('#personalConflict')).to_be_visible()
+    assert matrix_values(second)[0][2]=='6002'
+    # Preserve the second editor's explicit choice, then save it as a fresh revision.
+    second.locator('#keepPersonalLocal').click()
+    assert save_personal(second,200)['revision']==3
+    second.close()
+    page.context.close()
+    renewed=reopen()
+    expect(renewed.locator('#personalProduct')).to_have_value('개인 초안 계란')
+    expect(cell(renewed,0,2)).to_have_value('6,002')
+    assert matrix_values(renewed)[1:]==reference[1:]
+    assert renewed.request.get(origin+'/api/ia/r3-price/desk').json()['versions']==[]
+    stored=renewed.request.get(origin+route).json()
+    assert stored['revision']==3 and stored['draft']['productName']=='개인 초안 계란'
+    assert stored['draft']['packSize'] is None
+    renewed.context.close()
+    return {'subject':label,'viewport':width,'savedMoneyCells':152,'conflictStatus':409,
+            'concurrentEdits':['6001','6002'],'finalRestoredValue':'6002','commercialVersions':0}
+
+def independent_owner_check(browser):
+    host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
+    try:
+        # Credentials exist only inside this loopback owner fixture. Never include them in evidence.
+        conf=json.loads(host.stdout.readline())
+        origin=conf['url']
+        def login():
+            context=browser.new_context(viewport={'width':390,'height':850},reduced_motion='reduce')
+            p=context.new_page()
+            p.goto(origin+'/ia?view=pricing-r3')
+            p.locator('input[name=email]').fill(conf['email'])
+            p.locator('input[name=password]').fill(conf['pass'])
+            p.locator('button[type=submit]').click()
+            p.wait_for_url('**/ia?view=pricing-r3')
+            return p
+        return exercise_personal(login(),login,origin,'portal-owner',390)
+    finally:
+        host.terminate()
+        host.wait(timeout=7)
+
 def check(browser, subject, width):
     host = subprocess.Popen(["node", "tests/r3-business-browser-host.mjs", "--first-price"],
                             cwd=ROOT, stdout=subprocess.PIPE, text=True)
@@ -146,21 +219,38 @@ def check(browser, subject, width):
         outside.context.close()
         applicant = new_page(browser, "unassigned", width)
         applicant.goto(entry)
+        setup=applicant.locator("#price-registration")
+        expect(setup).to_be_visible()
+        if not setup.evaluate('el=>el.open'):
+            setup.locator(':scope > summary').click()
         applicant.locator("#requestCompany").fill("등록 시험 공급처")
         applicant.locator("#requestConnection").click()
         expect(applicant.locator("#connectionStatus")).to_contain_text("연결 대기")
         applicant.reload()
         expect(applicant.locator("#connectionStatus")).to_contain_text("연결 대기")
-        expect(applicant.locator("#pricing-editor")).to_be_hidden()
+        expect(applicant.locator('#savePersonalDraft')).to_be_visible()
         assert applicant.request.get(origin + "/api/ia/r3-price/version", params={"id":version}).status in (403,404)
-        applicant.context.close()
+        personal=None
+        if subject=='operator':
+            def sign_in_again():
+                p=new_page(browser,'unassigned',width)
+                p.goto(entry)
+                return p
+            personal=exercise_personal(applicant,sign_in_again,origin,'unassigned',width)
+            verify_other=new_page(browser,'supplier2',width)
+            verify_other.goto(entry)
+            read=verify_other.request.get(origin+'/api/ia/r3-price/personal-draft')
+            assert read.ok and '개인 초안 계란' not in read.text()
+            verify_other.context.close()
+        else:
+            applicant.context.close()
         assert not any("/practice/" in url or "practice=1" in url for url in requests)
         page.context.close()
         return {"subject":subject, "width":width, "route":"/ia?view=pricing-r3",
                 "before":{"catalogScopes":0,"priceVersions":0},
                 "savedReferenceMoneyCells":152,"savedState":"DRAFT",
                 "freshContextReopenedRevision":1,"distinctStatesAfterReload":values[0][2:6],
-                "otherSupplierRead":"denied","unassignedConnection":"pending without access","sourceDate":"2026-11-09"}
+                "personalDraft":personal,"otherSupplierRead":"denied","unassignedConnection":"pending without access","sourceDate":"2026-11-09"}
     finally:
         host.terminate()
         host.wait(timeout=7)
@@ -170,6 +260,7 @@ if __name__ == "__main__":
     with sync_playwright() as pw:
         browser = pw.chromium.launch(executable_path=os.getenv("R3_BROWSER_BINARY") or shutil.which("chromium") or shutil.which("google-chrome"))
         records = [check(browser, who, width) for who,width in (("operator",1440),("supplier",390))]
+        owner=independent_owner_check(browser)
         browser.close()
-    (EVIDENCE/"receipts.json").write_text(json.dumps({"environment":"isolated signed identities and SQLite, no commercial account or production writes","runs":records},ensure_ascii=False,indent=2))
+    (EVIDENCE/"receipts.json").write_text(json.dumps({"environment":"isolated signed identities and SQLite, no commercial account or production writes","runs":records,"ownerPersonalDraft":owner},ensure_ascii=False,indent=2))
     print("PASS: both fixture business identities registered their first product on the normal route; 152 reference amounts each persisted after refresh and fresh sign-in context.")

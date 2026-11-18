@@ -43,9 +43,9 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   Object.assign(localized,{FREIGHT_QUOTE_REQUIRED:'이번 납품에 적용할 확정 운임이 없습니다.',FREIGHT_MANUAL_INELIGIBLE:'직접 지정한 계약의 적용 조건과 사유를 확인해 주세요.',FREIGHT_SURCHARGE_OVERLAP:'같은 지역의 할증을 두 번 적용할 수 없습니다.',FREIGHT_SPLIT_NOT_ALLOWED:'이 정책은 같은 사업장·회차의 분할 출고를 허용하지 않습니다.'});
   function busy(active){
     state.operation=active;
-    for(const id of ['pricing-editor','staff-desk','price-registration'])$(id).inert=active;
+    for(const id of ['pricing-editor','staff-desk','price-registration','personal-panel'])$(id).inert=active;
     const saveButton=document.querySelector('[data-action="save"]');saveButton.disabled=active;saveButton.setAttribute('aria-busy',String(active));
-    for(const id of ['registerProduct','requestConnection']){
+    for(const id of ['registerProduct','requestConnection','openPersonalDraft','savePersonalDraft']){
       $(id).disabled=active;$(id).setAttribute('aria-busy',String(active));
     }
   }
@@ -137,6 +137,112 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     registration=await api('/registration'+(query.has('priceRequest')?'?request='+encodeURIComponent(query.get('priceRequest')):''));
     renderRegistration();
   }
+  const personal={active:false,revision:0,pending:null,remote:null,saved:null};
+  const privateGrades=[['king','왕란'],['xl','특란'],['large','대란'],['medium','중란']].map(([id,name])=>({id,name}));
+  const originalGrid=$('matrix').parentNode, nextToGrid=$('matrix').nextElementSibling;
+  function ownDraftFields(){
+    return {name:$('personalName').value.trim(),supplierName:$('personalSupplier').value.trim()||null,
+      originName:$('personalOrigin').value.trim()||null,productName:$('personalProduct').value.trim()||null,
+      shell:$('personalShell').value||null,packSize:$('personalPack').value===''?null:Number($('personalPack').value),
+      minimumOrder:Number($('personalMinimum').value),matrix:matrix.read()};
+  }
+  function showImportChoices(){
+    const d=personal.saved;
+    const matches=scope=>scope.definition&&['supplierName','originName','productName'].every(k=>!d?.[k]||d[k]===scope.definition[k])
+      &&(!d?.shell||scope.definition.shells.includes(d.shell))&&(d?.packSize==null||scope.definition.packSizes.includes(d.packSize));
+    const options=state.scope.map((s,i)=>[s,i]).filter(([s])=>matches(s));
+    selectOptions($('personalDest'),[['','등록 상품 선택'],...options.map(([s,i])=>[String(i),[s.definition.supplierName,s.definition.originName,s.definition.productName].join(' · ')])],'');
+    $('personalImport').hidden=!d||!options.length;
+    $('personalDest').onchange();
+  }
+  $('personalDest').onchange=()=>{
+    const target=state.scope[Number($('personalDest').value)]?.definition;
+    const shells=$('personalDest').value&&target?target.shells:[], packs=$('personalDest').value&&target?target.packSizes:[];
+    const d=personal.saved;
+    selectOptions($('personalImportShell'),[['','난각번호 선택'],...shells.filter(v=>!d?.shell||v===d.shell).map(v=>[v,shellName(v)])],d?.shell||'');
+    selectOptions($('personalImportPack'),[['','판당 구수 선택'],...packs.filter(v=>d?.packSize==null||v===d.packSize).map(v=>[String(v),v+'구'])],d?.packSize==null?'':String(d.packSize));
+  };
+  function paintPersonal(receipt){
+    const d=receipt.draft||{};
+    personal.active=true;personal.revision=receipt.revision;personal.saved=receipt.draft;personal.remote=null;personal.pending=null;
+    $('personalConflict').hidden=true;$('personal-panel').hidden=false;$('openPersonalDraft').hidden=true;
+    $('pricing-editor').hidden=true;$('staff-desk').hidden=true;$('personalBack').hidden=!state.scope.length&&!registration?.organizations.length;
+    for(const [id,k] of Object.entries({personalName:'name',personalSupplier:'supplierName',personalOrigin:'originName',personalProduct:'productName',personalShell:'shell',personalPack:'packSize'}))$(id).value=d[k]??'';
+    $('personalMinimum').value=d.minimumOrder??10;
+    $('personalGrid').append($('matrix'));$('matrix').hidden=false;
+    matrix.set(d.matrix||null,privateGrades,d.matrix||null);
+    $('personalStatus').textContent=receipt.revision?'본인 입력 초안 · r'+receipt.revision+' · '+new Date(receipt.updatedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'아직 저장하지 않은 본인 입력 초안';
+    $('personalComparison').replaceChildren();showImportChoices();state.dirty=false;
+  }
+  function leavePersonal(){
+    if(!personal.active)return;
+    personal.active=false;personal.remote=null;personal.pending=null;$('personal-panel').hidden=true;
+    originalGrid.insertBefore($('matrix'),nextToGrid);$('openPersonalDraft').hidden=false;
+    $('pricing-editor').hidden=!state.scope.length;$('staff-desk').hidden=!state.scope.length;
+  }
+  async function openPersonal(){
+    if(!changeAllowed())return;
+    const receipt=await api('/personal-draft');paintPersonal(receipt);say('');
+  }
+  $('openPersonalDraft').onclick=run(openPersonal);
+  $('personalBack').onclick=run(async()=>{
+    if(!changeAllowed())return;
+    const last=state.current?.id;leavePersonal();if(last)await open(last);else paint(null);
+  });
+  $('personal-panel').addEventListener('input',e=>{if(!e.target.closest('#personalImport'))dirty();});
+  $('personal-panel').addEventListener('click',e=>{if(e.target.closest('[data-mx=apply],[data-mx=copy],[data-mx=remove],[data-mx=add],[data-mx=undo]'))dirty();});
+  function renderConflict(latest){
+    personal.remote=latest;$('personalConflict').hidden=false;
+    const local=ownDraftFields(),remote=latest.draft,results=[];
+    for(const [key,title] of [['name','초안 이름'],['supplierName','공급처'],['originName','출고장'],['productName','상품'],['shell','난각번호'],['packSize','판당 구수'],['minimumOrder','최소 주문량']]){
+      if(local[key]!==remote[key])results.push(title+' · 내 입력 '+(local[key]??'미지정')+' / 서버 '+(remote[key]??'미지정'));
+    }
+    const diffMatrix=JSON.stringify(local.matrix)!==JSON.stringify(remote.matrix);
+    if(diffMatrix)results.push('가격표 구간 또는 단가가 다릅니다.');
+    const list=$('personalComparison');list.replaceChildren();
+    const summary=document.createElement('p');summary.textContent='서버 r'+latest.revision+' · '+(results.join(' / ')||'입력 내용이 같습니다.');list.append(summary);
+    if(diffMatrix){
+      const details=document.createElement('details'),caption=document.createElement('summary');caption.textContent='서버 가격표 보기';details.append(caption);
+      const frame=document.createElement('div');frame.className='matrix-scroll';const table=document.createElement('table');table.className='price-matrix';
+      const header=table.createTHead().insertRow();for(const label of ['시작','끝',...remote.matrix.grades.flatMap(g=>[g.name+' 원란',g.name+' 포장'])]){const th=document.createElement('th');th.textContent=label;header.append(th);}
+      const body=table.createTBody();for(const row of remote.matrix.rows){const tr=body.insertRow();for(const v of [row.min,row.max??'이상',...row.cells])tr.insertCell().textContent=v===''?'미입력':v;}
+      frame.append(table);details.append(frame);list.append(details);
+    }
+    say('다른 탭에서 먼저 저장했습니다. 내 입력과 서버 내용을 확인해 주세요.');
+  }
+  $('readPersonalRemote').onclick=()=>{if(personal.remote&&window.confirm('내 입력을 닫고 서버 초안을 열까요?'))paintPersonal(personal.remote);};
+  $('keepPersonalLocal').onclick=()=>{
+    if(!personal.remote)return;personal.revision=personal.remote.revision;personal.saved=personal.remote.draft;
+    personal.remote=null;personal.pending=null;$('personalConflict').hidden=true;dirty();say('내 입력을 유지했습니다. 저장하면 다음 버전이 됩니다.');
+  };
+  $('savePersonalDraft').onclick=run(async()=>{
+    if(!personal.active||!state.csrf)throw new Error('ACCESS_REQUIRED');
+    if(!matrix.validate())throw new Error('PRICE_MATRIX_INVALID');
+    const body={action:'save',expectedRevision:personal.revision,draft:ownDraftFields()};
+    personal.pending=retryKey(personal.pending,body);
+    try{
+      const saved=await api('/personal-draft',{...body,requestKey:personal.pending.key});
+      // If the previous response was lost and a different tab already advanced, reopen the latest server revision.
+      const latest=await api('/personal-draft');paintPersonal(latest.revision>=saved.revision?latest:saved);
+      say('본인 입력 초안을 저장했습니다.');
+    }catch(e){
+      if(e.message==='REVISION_CONFLICT'){const latest=await api('/personal-draft');renderConflict(latest);return;}
+      throw e;
+    }
+  });
+  $('importPersonalDraft').onclick=run(async()=>{
+    if(state.dirty){say('먼저 본인 초안을 저장한 뒤 가져와 주세요.');return;}
+    const selection=$('personalDest').value,target=state.scope[Number(selection)];
+    const shell=$('personalImportShell').value,pack=$('personalImportPack').value;
+    if(!selection||!target||!shell||!pack)throw new Error('PERSONAL_SCOPE_MISMATCH');
+    if(!window.confirm(target.definition.productName+'의 새 가격표에 단가를 가져올까요? 확인 후 별도로 저장할 수 있습니다.'))return;
+    const source=await api('/personal-draft',{action:'prepare-import',expectedRevision:personal.revision,supplierId:target.supplier_id,originId:target.origin_id,productId:target.product_id,shell,packSize:Number(pack)});
+    leavePersonal();$('scope').value=selection;rememberVersion(null);state.newId=crypto.randomUUID();state.predecessor=null;state.parent=null;paint(null);
+    $('egg-shell').value=source.shell;$('pack-size').value=String(source.packSize);currentGroup={shell:source.shell,pack:String(source.packSize)};
+    $('minimum').value=source.minimumOrder;matrix.set(source.matrix,target.definition.grades);$('history').replaceChildren();switchTab('price');dirty();
+    say('단가를 가져왔습니다. 이 상품의 가격표에 반영하려면 초안 저장을 눌러 주세요.');
+  });
+  Object.assign(localized,{PERSONAL_FIELDS_REQUIRED:'초안 정보와 최소 주문량을 확인해 주세요.',PERSONAL_SCOPE_MISMATCH:'저장한 초안과 일치하는 등록 상품·난각번호·판당 구수를 선택해 주세요.'});
   function retryKey(previous,body){
     const signature=JSON.stringify(body);
     return previous?.signature===signature?previous:{signature,key:crypto.randomUUID()};
@@ -147,7 +253,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     if(!body.supplierName||!body.originName||!body.productName||!body.shell||!Number.isSafeInteger(body.packSize)||body.packSize<1||body.packSize>360)throw new Error('REGISTRATION_FIELDS_REQUIRED');
     if(!changeAllowed())return;
     setupKey=retryKey(setupKey,body);
-    const created=await api('/registration',{...body,requestKey:setupKey.key});await desk();
+    const created=await api('/registration',{...body,requestKey:setupKey.key});leavePersonal();await desk();
     const i=state.scope.findIndex(s=>s.supplier_id===created.supplier_id&&s.origin_id===created.origin_id&&s.product_id===created.product_id);
     if(i<0)throw new Error('ACCESS_REQUIRED');
     $('scope').value=String(i);state.newId=crypto.randomUUID();state.predecessor=null;state.parent=null;
@@ -449,7 +555,9 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   if(state.practice){$('versions-panel').open=true;$('review-actions').open=true;$('simulation-panel').open=true;}
   switchTab(location.hash==='#shipping'?'shipping':'price');
   run(async()=>{const me=await fetch('/api/ia/r3-price/session',{cache:'no-store'});if(me.ok){const session=await me.json();state.csrf=session.csrf;$('practice-entry').hidden=!session.practiceAllowed;}
-    await desk();const requested=new URLSearchParams(location.search).get('priceVersion');if(requested&&state.versions.some(v=>v.id===requested))await open(requested);else if(!state.practice&&!requested&&state.versions.length)await open(state.versions[0].id);else{rememberVersion(null);paint(null);}await buyerSites();await registrationInfo();if(!state.practice&&query.has('quote'))await restoreQuoteInputs(query.get('quote'));if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}})();
+    await desk();const requested=new URLSearchParams(location.search).get('priceVersion');if(requested&&state.versions.some(v=>v.id===requested))await open(requested);else if(!state.practice&&!requested&&state.versions.length)await open(state.versions[0].id);else{rememberVersion(null);paint(null);}await buyerSites();await registrationInfo();
+    if(!state.practice){$('openPersonalDraft').hidden=false;if(!state.scope.length&&!registration.organizations.length&&!query.has('quote')&&location.hash!=='#quote')await openPersonal();}
+    if(!state.practice&&query.has('quote'))await restoreQuoteInputs(query.get('quote'));if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}})();
 
 }
 export function renderR3PricePage(nonce) {
@@ -460,6 +568,14 @@ ${matrixCss}${carrierCss}${buyerResultCss}</style></head><body>
 <div class="price-title"><h1>계란 가격표</h1><span id="practice-entry" hidden><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></span></div>
 <fieldset id="practice" hidden><legend>연습 공간</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset>
 <output aria-live="polite" id="notice"></output>
+<button type="button" id="openPersonalDraft" hidden>본인 입력 초안 열기</button>
+<section id="personal-panel" hidden><div class="price-toolbar"><strong>본인 입력 초안</strong><button type="button" id="savePersonalDraft" class="primary">본인 초안 저장</button></div>
+<p class="subtle">작성한 계정에서만 볼 수 있습니다. 공급처 상품에 연결하기 전까지 구매자 견적에 적용되지 않습니다.</p>
+<div class="fields price-meta"><label>초안 이름<input id="personalName" maxlength="80" placeholder="예: 11월 9일 참고 단가"></label><label>공급처<input id="personalSupplier" maxlength="80" placeholder="미지정"></label><label>출고장<input id="personalOrigin" maxlength="80" placeholder="미지정"></label><label>상품명<input id="personalProduct" maxlength="80" placeholder="미지정"></label><label>난각번호<select id="personalShell"><option value="">미지정</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="personalPack" type="number" min="1" max="360" placeholder="미지정"></label><label>배송 최소 주문량 (판)<input id="personalMinimum" type="number" min="1" value="10"></label></div>
+<output id="personalStatus" aria-live="polite"></output><div id="personalGrid"></div>
+<div id="personalConflict" hidden><div id="personalComparison"></div><button type="button" id="readPersonalRemote">서버 초안 열기</button><button type="button" id="keepPersonalLocal">서버 내용 확인 후 내 입력 유지</button></div>
+<details id="personalImport" hidden><summary>등록 상품 가격표로 가져오기</summary><div class="fields"><label>연결된 상품<select id="personalDest"></select></label><label>상품 난각번호<select id="personalImportShell"></select></label><label>상품 포장 단위<select id="personalImportPack"></select></label></div><button type="button" id="importPersonalDraft">등록 상품에 단가 가져오기</button></details>
+<button id="personalBack" type="button" hidden>상품 관리로 돌아가기</button></section>
 <details id="price-registration" hidden><summary id="registrationTitle">공급처·출고장·상품 등록</summary>
 <div class="product-setup" id="productSetup" hidden><div class="fields"><label>등록할 소속<select id="setupOrg"></select></label><label>공급처명<input id="setupSupplier" maxlength="60"></label><label>출고장명<input id="setupOrigin" maxlength="60"></label><label>상품명<input id="setupProduct" maxlength="60"></label><label>판매 난각번호<select id="setupShell"><option value="">선택</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="setupPack" inputmode="numeric" type="number" min="1" max="360"></label></div><button id="registerProduct" class="primary">상품 등록하고 가격 입력</button><a id="supplierInvite" hidden>공급처 담당자용 연결 주소</a></div>
 <div id="connectionForm" hidden><p>담당 공급처에 상품 연결을 요청하면 이곳에서 진행 상태를 확인할 수 있습니다.</p><label>연결할 공급처 이름<input id="requestCompany" maxlength="60"></label><button id="requestConnection">담당 가격표 연결 요청</button></div><ul class="connection-list" id="connectionStatus" aria-live="polite"></ul><div id="connectionReview"></div></details>

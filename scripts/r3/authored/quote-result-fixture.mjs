@@ -9,7 +9,7 @@ export function reviewQuoteFixture(state) {
   const quantity=2000,annualCount=12,currentUnit=6270;
   const proposedUnit=state==='equal'?6270:state==='current-lower'?6570:5970;
   const proposed=quantity*proposedUnit;
-  const model={state:'offer',proposed:String(proposed),issued,end,quantityLabel:'2,000판',productLabel:'4번 특란',basis:'동일한 1회 납품 기준 / 2,000판'};
+  const model={state:'offer',proposed:String(proposed),issued,end,quantityLabel:'2,000판',productLabel:'4번 특란',basis:'동일한 1회 납품 기준'};
   if(!['no-current','new-only-detail'].includes(state)){
     const current=quantity*currentUnit,delta=current-proposed,abs=Math.abs(delta),largest=Math.max(current,proposed);
     Object.assign(model,{state:delta>0?'saving':delta<0?'current-lower':'equal',current:String(current),difference:String(abs),

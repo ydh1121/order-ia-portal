@@ -16,6 +16,7 @@ test('editable QA results carry the shared pre-rendered fixture and no commercia
     if(state==='new-detail'){
       assert.match(doc.editable,/7,200,000/);assert.match(doc.editable,/4\.78%/);
       assert.match(doc.editable,/6일 21시간 13분 59초/);
+      assert.match(doc.editable,/동일한 1회 납품 기준 \/ 2,000판<\/p>/);
     }
     if(['locked','no-result','expired'].includes(state))assert.doesNotMatch(doc.editable,/12,540,000|11,940,000|13,140,000/);
   }

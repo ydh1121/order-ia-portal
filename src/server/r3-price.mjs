@@ -2,6 +2,7 @@
 // the DB below separately authorizes the business actor and target of every operation.
 import { validateSupplyPolicy, simulateSupplyQuote, previousPeriod, PolicyError } from './order-engine/calculation/supply-policy.mjs';
 import {editPriceCatalog,checkPriceGroup} from './r3-price-catalog.mjs';
+import {personalPrice} from './r3-personal-price.mjs';
 import {registrationDesk,registerProduct,updateConnection} from './r3-price-registration.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
 import {freightPack} from './r3-carrier-page.mjs';
@@ -195,6 +196,10 @@ export async function handleR3Price({request,env,actor,path,clock=()=>new Date()
         return reply({status:'PRACTICE_READY',region:'1100000000',regionVersion:'review-region-v1'});
       }
       actor={id:scope[personas[parts[2]]]};path='/'+parts[3];
+    }
+    if(!practiceSupplier && path==='/personal-draft'){
+      if(!get&&request.method!=='POST')return reply({error:'METHOD_NOT_ALLOWED'},405);
+      return reply(await personalPrice(db,actor,get?null:await parseBody(request),now));
     }
     if(!practiceSupplier && path==='/registration'){
       if(get)return reply(await registrationDesk(db,actor,u.searchParams.get('request')));

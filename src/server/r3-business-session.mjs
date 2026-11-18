@@ -19,7 +19,7 @@ export async function businessActor(request,env,fetcher=fetch,now=Math.floor(Dat
   // commercial read/write still requires its own product grant; other surfaces remain closed.
   const url=new URL(request.url);
   const pricingOnly=(/^\/ia\/?$/.test(url.pathname)&&url.searchParams.get('view')==='pricing-r3')
-    || /^\/api\/ia\/r3-price\/(registration|session|desk|version|sites|simulate)$/.test(url.pathname);
+    || /^\/api\/ia\/r3-price\/(registration|personal-draft|session|desk|version|sites|simulate)$/.test(url.pathname);
   if(!grant&&!pricingOnly)throw Error('BUSINESS_MEMBERSHIP_REQUIRED');
   // Token-bound synchronizer value is returned only by the same-origin authenticated session endpoint.
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('order.business.csrf.v1.'+request.headers.get('Cf-Access-Jwt-Assertion')));
