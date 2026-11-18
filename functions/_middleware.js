@@ -25,7 +25,7 @@ export async function handlePreview(context,fetcher=fetch) {
       if(view==='qa-lab'){
         const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))dest.searchParams.set('screen',screen);
-        if(['320','390','768','1440'].includes(width))dest.searchParams.set('width',width);
+        if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))dest.searchParams.set('width',width);
       }
     }
     return new Response(null,{status:303,headers:{...headers,Location:dest.pathname+dest.search}});

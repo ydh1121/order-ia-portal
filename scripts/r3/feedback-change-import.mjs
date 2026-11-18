@@ -24,13 +24,14 @@ for (const comment of trace.comments) {
   if (!row || !row.hashes[viewport] || comment.record !== row.id+'/'+viewport) throw new Error('Unmatched target '+comment.id);
   const artifactHash = row.hashes[viewport];
   const change = comment.disposition === 'SOURCE_DELTA_REVIEW_REQUIRED';
-  if (change && !comment.evidence?.observed) throw new Error('Missing observation '+comment.id);
+  const related = comment.disposition === 'RELATED_PRICE_ROUTE_ONLY';
+  if ((change || related) && !comment.evidence?.observed) throw new Error('Missing observation '+comment.id);
   const data = {
     target:{screen:row.screen, state:row.state, variant:row.variant, viewport, artifactHash},
     sourceKey:comment.record, sourceCommentId:comment.id, status:change?'recheck':'unknown',
-    body:change?comment.evidence.observed:'이 의견에 개별 반영 근거를 아직 연결하지 않았습니다.'
+    body:(change || related)?comment.evidence.observed:'이 의견에 개별 반영 근거를 아직 연결하지 않았습니다.'
   };
-  if (change) data.evidenceRef = String(comment.evidence.path || trace.sources.iaCommit).slice(0,512);
+  if (change || related) data.evidenceRef = String(comment.evidence.path || trace.sources.iaCommit).slice(0,512);
   const content = JSON.stringify(data);
   const id = 'feedback:'+comment.id+':'+artifactHash;
   const hash = sha(id+'\n'+content);

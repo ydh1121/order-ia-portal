@@ -25,6 +25,12 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install playwright==1.56.0
         id: browser-deps
+      - name: Compare approved QA 1.0 and protected R3 shell at matching viewports
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+          GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python tests/r3-approved-shell-browser.py
       - name: Check protected navigation, SQLite transactions and product forms
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -35,6 +41,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-annotation-browser.py
+      - name: Check onboarding source art, member menus, auth returns and footer
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-onboarding-browser.py
       - name: Check business forms, proof and signature review at three widths
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -45,6 +56,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-navigation-browser.py
+      - name: Check detailed quote lists, keyboard and swipe confirmation
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-questions-browser.py
       - name: Check price review and protected snapshots
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -60,6 +76,8 @@ jobs:
         if: always()
         with:
           name: r3-private-browser-receipts
-          path: artifacts/role-browser/
+          path: |
+            artifacts/role-browser/
+            artifacts/approved-shell/
           if-no-files-found: ignore
           retention-days: 7

@@ -22,7 +22,7 @@ export async function onRequest({request,env}){
    if(r3View==='qa-lab'){
      const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
      if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
-     if(['320','390','768','1440'].includes(width))next.set('width',width);
+     if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))next.set('width',width);
    }
    return new Response(null,{status:302,headers:{...base,Location:next.size?'/login?'+next:'/login'}});
  }

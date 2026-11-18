@@ -44,7 +44,7 @@ form.addEventListener('submit',async event=>{
       if(view==='qa-lab'){
         const screen=incoming.get('screen'),width=incoming.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);
-        if(['320','390','768','1440'].includes(width))target.set('width',width);
+        if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))target.set('width',width);
       }
       location.assign(target.size?'/ia?'+target:'/ia/');return;
     }

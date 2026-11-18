@@ -13,6 +13,8 @@ from review_document import prepare
 HERE = Path(__file__).resolve().parent
 UI = HERE.parents[1] / "src/server/r3-ui"
 FAMILIES = {
+    "questions": {"q1", "q3", "q4"},
+    "onboarding": {"onboarding"},
     "account": {"login", "signup", "password", "otp", "terms"},
     "business": {"business", "proof", "signature"},
     "navigation": {"passes", "search", "profile", "drawer"},
@@ -40,6 +42,17 @@ def write_module(path, values):
     path.write_text("\n".join(banner) + "\n")
 
 
+def onboarding_art():
+    # Source is the isolated product artwork cropped from the retained design export.
+    # Arbitrary author-supplied image URLs are still removed by prepare().
+    original = json.loads((HERE / "authored/onboarding-art.json").read_text())
+    image = base64.b64decode(original["data"], validate=True)
+    if (hashlib.sha256(image).hexdigest() != original["sha256"]
+            or image[:4] != b"RIFF" or image[8:12] != b"WEBP"):
+        raise ValueError("Invalid onboarding artwork")
+    return 'alt="" src="data:image/webp;base64,' + original["data"] + '"'
+
+
 def refresh(source, family, catalog_file):
     runtime_file = catalog_file.with_name("runtime.gen.mjs")
     catalog = load_module(catalog_file)
@@ -64,6 +77,12 @@ def refresh(source, family, catalog_file):
     script_hash = digest(frame_function + family_script)
     data_keys = ("detail hour minute on pass-id search-detail site sort suggestion tag view".split()
                  if family == "navigation" else ())
+    illustration = onboarding_art() if family == "onboarding" else None
+    if illustration:
+        data_keys = ("intro-art",)
+    if family == "questions":
+        data_keys = ("choice value index item-row egg-list egg-modal egg-error venue region address venue-region venue-count "
+                     "item-count contact-address contact-phone venue-modal venue-error order-venue-count order-summary order-error order-type").split()
     runtime_key = family
     if family == "account":
         # Keep all existing login/empty targets and their current runtime available:
@@ -76,6 +95,8 @@ def refresh(source, family, catalog_file):
         # Include current styles in the scoped body. The immutable shared stylesheet and
         # previous bodies retain their identities for all existing reviews.
         body = prepare("<style>" + style + "</style>" + active["body"], row["screen"], row["state"], extra_data=data_keys)
+        if illustration:
+            body = body.replace("data-intro-art>", illustration + ">")
         body_hash = digest(body)
         catalog["frames"][body_hash] = base64.b64encode(
             gzip.compress(body.encode(), mtime=0)).decode()

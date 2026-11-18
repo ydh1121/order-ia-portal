@@ -39,7 +39,7 @@ function validData(kind,d) {
   const types = {
     comment:['body','anchor','sourceKey','sourceCommentId'], reply:['body','parent'], draft:['body','anchor','sourceKey','sourceCommentId','parent'],
     review:['decision','sourceKey'], change:['status','evidenceRef','body','sourceKey','sourceCommentId'],
-    figma:['figmaUrl','status','evidenceRef','sourceKey'], artifact:['evidenceRef','status'], screen:['sourceKey','evidenceRef','status']
+    figma:['figmaUrl','status','evidenceRef','sourceKey','note'], artifact:['evidenceRef','status'], screen:['sourceKey','evidenceRef','status','body']
   };
   if (!keys(d,allowed('target',...types[kind])) || !validTarget(d.target)) return false;
   if ('sourceKey' in d && !recordId(d.sourceKey)) return false;
@@ -55,7 +55,8 @@ function validData(kind,d) {
   if (kind==='review') return ['changes_requested','unreviewed','approved'].includes(d.decision);
   if (kind==='change') return ['unknown','not_started','implemented','verified','recheck','blocked'].includes(d.status) &&
     (!['implemented','verified','recheck'].includes(d.status) || Boolean(d.evidenceRef));
-  if (kind==='figma') return ['linked','exported','edited','unlinked'].includes(d.status) &&
+  if (kind==='figma') return ['none','linked','exported','imported','editing','edited','commented','reviewed','unlinked'].includes(d.status) &&
+    (d.note===undefined || text(d.note,10000)) &&
     (d.figmaUrl===undefined || figmaLink(d.figmaUrl)) && (d.status!=='exported'||Boolean(d.evidenceRef));
   return (d.status===undefined || pointId(d.status)) && (kind!=='artifact'||Boolean(d.evidenceRef));
 }
@@ -148,6 +149,20 @@ function pageNumber(s,fallback,min,max) {
 async function read(db,url,path) {
   const q=url.searchParams,limit=pageNumber(q.get('limit'),50,1,150);
   if(limit===null) return invalid();
+  if(path==='/legacy-source'){
+    const source=await db.prepare('SELECT original_bytes,chunk_count,complete FROM qa_legacy_sources WHERE sha256=?').bind(sourceSha).first();
+    if(!source?.complete)return json({error:'SOURCE_IMPORT_PENDING'},503);
+    const {results}=await db.prepare('SELECT ordinal,hex(raw_bytes) AS bytes FROM qa_legacy_chunks WHERE source_sha=? ORDER BY ordinal').bind(sourceSha).all();
+    if(results.length!==source.chunk_count)return json({error:'SOURCE_INCOMPLETE'},503);
+    const bytes=new Uint8Array(source.original_bytes);
+    let offset=0;
+    for(const [i,row] of results.entries()){
+      if(row.ordinal!==i||typeof row.bytes!=='string'||row.bytes.length%2||offset+row.bytes.length/2>bytes.length)return json({error:'SOURCE_INCOMPLETE'},503);
+      for(let j=0;j<row.bytes.length;j+=2)bytes[offset++]=parseInt(row.bytes.slice(j,j+2),16);
+    }
+    if(offset!==bytes.length)return json({error:'SOURCE_INCOMPLETE'},503);
+    return new Response(bytes,{headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','Vary':'Cookie, Cf-Access-Jwt-Assertion','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer'}});
+  }
   if(path==='/legacy'){
     const after=pageNumber(q.get('after'),0,0,2147483647);if(after===null)return invalid();
     const source=await db.prepare('SELECT complete FROM qa_legacy_sources WHERE sha256=?').bind(sourceSha).first();
@@ -179,7 +194,7 @@ async function read(db,url,path) {
 export async function handleR3Review({request,env,actor,path,checkTarget}) {
   if(!env.ORDER_QA_DB)return json({error:'QA_STORE_UNAVAILABLE'},503);
   try {
-    if(request.method==='GET' && ['/records','/events','/legacy','/backup'].includes(path))return await read(env.ORDER_QA_DB,new URL(request.url),path);
+    if(request.method==='GET' && ['/records','/events','/legacy','/legacy-source','/backup'].includes(path))return await read(env.ORDER_QA_DB,new URL(request.url),path);
     if(request.method==='POST' && path==='/records'){
       const body=await readJson(request);
       if(checkTarget && (!validTarget(body?.data?.target)||!await checkTarget(body.data.target,body.release)))return invalid();

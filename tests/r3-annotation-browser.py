@@ -63,6 +63,32 @@ def check_draft_recovery(context,page):
  expect(entry).to_contain_text('r3 · save · 두 번째 탭 초안')
  second.close()
  print('PASS offline edit + reload, post-commit lost response + replay r1, two-tab UI conflict + explicit rebase r3 preserving both versions')
+def check_screen_memo(context,page):
+ page.reload()
+ page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+ page.locator('#points').click()
+ memo=page.locator('#review-note')
+ first='이 화면에 관한 별도 메모'
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='screen') as saved:
+  memo.fill(first)
+ assert saved.value.ok and saved.value.json()['revision']==1
+ expect(page.locator('#review-note-state')).to_contain_text('저장됨 · r1')
+ second=context.new_page()
+ second.goto(page.url)
+ second.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+ second.locator('#points').click()
+ expect(second.locator('#review-note')).to_have_value(first)
+ expect(second.locator('#notes article').filter(has=second.get_by_text(first,exact=True))).to_have_count(0)
+ second.locator('#review-note').fill('갱신한 화면 메모')
+ second.locator('#save-review-note').click()
+ expect(second.locator('#review-note-state')).to_contain_text('저장됨 · r2')
+ second.close()
+ page.reload()
+ page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+ page.locator('#points').click()
+ expect(memo).to_have_value('갱신한 화면 메모')
+ print('PASS screen memo autosave, explicit update, second-tab read and refresh; distinct from comment and verdict')
+
 def run():
  host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
  try:
@@ -78,7 +104,9 @@ def run():
     page.wait_for_url('**/ia?view=qa-lab**')
     frame=page.frame_locator('#frame')
     frame.locator('#r3-veil').wait_for(state='attached')
-    page.locator('#width').select_option(str(width));frame.locator('#r3-veil').wait_for(state='attached');page.locator('#open').click();page.locator('#search').fill('로그인');tile=page.locator('#tiles article').filter(has_text='로그인').first;tile.get_by_role('button',name='이 화면에 의견').click()
+    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login/empty/email&width='+str(width))
+    frame.locator('#r3-veil').wait_for(state='attached')
+    page.locator('#new').click()
     frame.locator('#r3-veil').wait_for(state='visible')
     # Same viewport point can hold independent comments; typing alone never submits.
     for i in range(2):
@@ -101,14 +129,18 @@ def run():
     pin.first.wait_for();again=pin.first.bounding_box()
     error=((again['x']-box['x'])**2+(again['y']-box['y'])**2)**.5
     assert error<=3,(box,again,error)
-    page.locator('summary').click()
+    page.locator('#points').click()
+    page.locator('[data-drawer-tab=settings]').click()
     with page.expect_download() as downloaded:
-     page.locator('#export').click()
+     page.locator('#export-editable').click()
     file=Path(downloaded.value.path());raw=file.read_bytes()
     assert b'<iframe' not in raw and b'id="frame-meta"' in raw
     assert not errors,errors
     print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'pageErrors':errors}))
-    if width==390:check_draft_recovery(ctx,page)
+    page.locator('#close-drawer').click()
+    if width==390:
+     check_draft_recovery(ctx,page)
+     check_screen_memo(ctx,page)
     ctx.close()
    browser.close()
  finally:host.terminate();host.wait(timeout=5)

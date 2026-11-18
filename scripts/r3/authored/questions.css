@@ -1,0 +1,24 @@
+.qa-quote{background:#f4f5f7;min-height:100%;padding-bottom:1rem;color:#202832}.qa-quote .qa-question,.qa-quote .qa-question-short{background:#fff;border:0;box-shadow:none;border-radius:16px}.qa-quote .qa-question{padding:clamp(12px,4vw,22px)}
+.qa-quote .qf-stack,.qa-quote .qa-venue-row,.qa-quote .qa-order-row,.qa-quote .qa-order-venue{display:flex;align-items:center;gap:8px;min-width:0;background:#f4f5f7;border:0;border-radius:12px;padding:8px 10px;margin:0 0 8px;touch-action:pan-y}
+.qa-quote .qf-main,.qa-quote .qa-disclosure{display:grid;gap:5px;justify-items:start;min-width:0;flex:1;text-align:left;background:none;color:inherit;border:0;min-height:44px;font:inherit;line-height:1.4;padding:6px 2px;overflow-wrap:anywhere}
+.qa-quote .qf-main strong,.qa-quote .qa-venue-name{font-size:1rem;text-align:left}
+.qa-quote .qf-tags,.qa-quote .qa-row-summary{display:flex;align-items:center;flex-wrap:wrap;gap:4px}.qa-quote .qf-tag,.qa-quote .qa-row-summary>span{padding:2px 7px;max-width:100%;border-radius:6px;background:#e3e8ee;color:#34465a;font-size:.8rem}
+.qa-quote .qa-venue-row,.qa-quote .qa-order-row{display:block}.qa-quote .qa-disclosure{display:flex;width:100%;align-items:center;justify-content:space-between}
+.qa-quote .qa-venue-panel,.qa-quote .qa-venue-details,.qa-quote .qa-venue-details div,.qa-quote .qa-venue-tools,.qa-quote .qa-assigned-heading,.qa-quote .qa-assigned-list,.qa-quote .qa-order-panel{text-align:left}
+.qa-quote .qa-venue-details dt,.qa-quote .qa-venue-details dd{margin-inline-start:0;text-align:start}
+.qa-quote .qa-venue-row .qa-disclosure[aria-expanded=true] .qa-row-summary{display:none}
+.qa-quote .qa-venue-tools{display:flex;justify-content:space-between;gap:5px;flex-wrap:wrap}
+.qa-quote .qa-order-venue{display:grid;grid-template-columns:minmax(0,1fr) auto;background:#fff;align-items:start}
+.qa-quote .qa-order-venue>strong{grid-column:1}.qa-quote .qa-order-venue>.qf-remove{grid-column:2;grid-row:1}.qa-quote .qa-order-inputs{grid-column:1/-1;grid-row:2;min-width:0}
+.qa-quote .qf-remove,.qa-quote .qa-venue-tools button{border:0;border-radius:8px;min-height:44px;background:transparent;padding:6px 8px;color:#505e70;white-space:nowrap}
+.qa-quote .qa-center-action{width:100%;display:block}.qa-quote .qa-center-action>button{background:none;min-height:44px}
+.qa-quote [data-egg-list]:not(:empty)+.qa-center-action>button,.qa-quote .qa-venue-list:not(:empty)+.qa-center-action>button{width:100%;border:1px dashed #9da9b8;border-radius:12px;background:#f8f9fb;color:#324762}
+.qa-quote [data-egg-list]:empty,.qa-quote .qa-venue-list:empty{display:none}
+.qa-quote .qa-choice-grid [data-choice=size] .qa-egg-shape{background:#a6b0bc;border:0;box-shadow:none}
+.qa-quote .qa-choice-grid [data-choice=size][aria-pressed=true] .qa-egg-shape{background:#fff}
+.qa-quote .qa-mini-modal fieldset.is-error{border-color:transparent;outline:0;box-shadow:none}
+.qa-quote .qa-mini-modal fieldset.is-error .qa-choice-grid button,.qa-quote .qa-choice-grid button[aria-invalid=true]{border:1px solid #be4141}
+.qa-quote [data-egg-error]{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden}
+.qa-quote :focus-visible{outline:2px solid #275bb7;outline-offset:2px}
+@media(prefers-reduced-motion:no-preference){.qa-quote .qf-stack:first-child .qf-main{animation:qf-discover .6s ease-out .35s 1}
+@keyframes qf-discover{0%,100%{transform:translateX(0)}45%{transform:translateX(-5px)}}}

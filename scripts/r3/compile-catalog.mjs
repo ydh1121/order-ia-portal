@@ -9,7 +9,7 @@ const assets = {brand:'<span class="brand" aria-label="Order"><span>Order</span>
 const names=['core','account','business','navigation','quotes-admin','member-flows','operations-flows','route-bindings'];
 const window={ORDER_QA_ASSETS:assets};
 const ctx=vm.createContext({window,console,setTimeout,clearTimeout,Uint8Array,Blob});
-if (selectedFamily && !['business','navigation','account'].includes(selectedFamily)) throw Error('Unknown review family');
+if (selectedFamily && !['business','navigation','onboarding','account','questions'].includes(selectedFamily)) throw Error('Unknown review family');
 for (const name of selectedFamily ? ['core', selectedFamily] : names) {
   const override = name === selectedFamily && authoredFile
     ? authoredFile : path.join(import.meta.dirname, 'authored', name + '.js');
