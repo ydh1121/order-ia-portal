@@ -1,7 +1,8 @@
+import {buyerResultCss,createBuyerResult,projectBuyerResult} from './r3-quote-result.mjs';
 import {bloubScript,bloubMontages} from './r3-bloub.mjs';
 import {createQuoteWait} from './r3-quote-wait.mjs';
 
-function priceDesk(createWait,montages) {
+function priceDesk(createWait,montages,makeResult,project) {
   const $=id=>document.getElementById(id);
   const state={csrf:'',scope:[],current:null,pending:null,operation:false,practice:new URLSearchParams(location.search).get('practice')==='1'};
   const number=v=>v===''?null:Number(v);
@@ -114,8 +115,9 @@ function priceDesk(createWait,montages) {
       else player.play();
     }).catch(()=>{if(gen===motionGeneration)slot.replaceChildren();});
   }});
+  const resultView=makeResult($('buyerResult'),project,id=>api('/quote?id='+encodeURIComponent(id)),()=>$('quoteQty').focus());
   function invalidateQuote(){
-    inputRevision++;quoteWait.stop();buyerState.retry=null;$('buyerResult').textContent='';
+    inputRevision++;quoteWait.stop();buyerState.retry=null;resultView.clear();
   }
   for(const id of ['offerSelect','quoteQty','quoteDay','quoteHistory'])$(id).addEventListener('input',invalidateQuote);
   window.addEventListener('offline',()=>{
@@ -125,38 +127,33 @@ function priceDesk(createWait,montages) {
   });
   function clearQuote(){
     offerScope++;invalidateQuote();
-    $('offerSelect').replaceChildren();$('quoteHistory').replaceChildren();$('buyerResult').textContent='';buyerState.offers=[];buyerState.retry=null;
+    $('offerSelect').replaceChildren();$('quoteHistory').replaceChildren();resultView.clear();buyerState.offers=[];buyerState.retry=null;
   }
   async function showOffers(){
     clearQuote();
-    const site=buyerState.sites[Number($('buyerSite').value)];if(!site || site.verification!=='VERIFIED')return;
-    const scope=offerScope;const d=await api('/offers?org='+encodeURIComponent(site.org_id)+'&site='+encodeURIComponent(site.site_id));if(scope!==offerScope)return;buyerState.offers=d.offers;
+    const site=buyerState.sites[Number($('buyerSite').value)];if(!site || site.verification!=='VERIFIED'){resultView.gate();return;}
+    const scope=offerScope;const d=await api('/offers?org='+encodeURIComponent(site.org_id)+'&site='+encodeURIComponent(site.site_id));if(scope!==offerScope)return;buyerState.offers=d.offers;if(!d.offers.length&&!d.quotes.length)resultView.empty();
     $('offerSelect').replaceChildren(...d.offers.map((o,i)=>new Option([o.product_id,o.packaging,o.unit].join(' · '),String(i))));
     $('quoteHistory').replaceChildren(...d.quotes.map(q=>new Option(q.id,q.id)));
   }
   async function buyerSites(){
-    const d=await api('/sites');buyerState.sites=d.sites;
+    const d=await api('/sites');buyerState.sites=d.sites;if(!d.sites.some(site=>site.verification==='VERIFIED'))resultView.gate();
     $('buyerSite').replaceChildren(new Option('사업장 선택',''),...d.sites.map((site,i)=>new Option(site.org_id+' · '+site.site_id+(site.verification==='VERIFIED'?'':' · 인증 필요'),String(i))));
-  }
-  function showResult(result){
-    if(result.status==='EXPIRED'){$('buyerResult').textContent='유효기간이 지난 견적입니다.';return;}
-    const amount=result.response?.quotes?.[0]?.total?.decimal;
-    $('buyerResult').textContent='견적 '+result.id+' · '+amount+'원 · 유효 종료 '+new Date(result.expiresAt).toLocaleString('ko-KR');
   }
   $('buyerSite').onchange=async()=>{
     if($('buyerSite').value===''){clearQuote();return;}
     try{await showOffers();}catch(error){say(localized[error.message]||'승인 상품을 불러오지 못했습니다.');}
   };
   $('quoteIssue').onclick=run(async()=>{
-    $('buyerResult').textContent='';
+    resultView.clear();
     const site=buyerState.sites[Number($('buyerSite').value)],offer=buyerState.offers[Number($('offerSelect').value)];
     if($('buyerSite').value===''||!site||!offer||site.verification!=='VERIFIED')throw new Error('ACCESS_REQUIRED');
     const body={orgId:site.org_id,siteId:site.site_id,inputRevision,lines:[{id:'line',shipmentId:'first',productId:offer.product_id,versionId:offer.id,unit:offer.unit,serviceDate:$('quoteDay').value,deliveryQty:number($('quoteQty').value)}]};
     const signature=JSON.stringify(body);if(buyerState.retry?.signature!==signature)buyerState.retry={signature,key:crypto.randomUUID()};
     const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[offer.product_id,String(body.lines[0].deliveryQty)+' '+offer.unit,body.lines[0].serviceDate]);
-    if(!result)return;showResult(result);$('quoteHistory').add(new Option(result.id,result.id));$('quoteHistory').value=result.id;
+    if(!result)return;resultView.show(result);$('quoteHistory').add(new Option(result.id,result.id));$('quoteHistory').value=result.id;
   });
-  $('quoteRecall').onclick=run(async()=>{$('buyerResult').textContent='';const result=await quoteWait.request(signal=>api('/quote?id='+encodeURIComponent($('quoteHistory').value),undefined,signal),[]);if(result)showResult(result);});
+  $('quoteRecall').onclick=run(async()=>{resultView.clear();const result=await quoteWait.request(signal=>api('/quote?id='+encodeURIComponent($('quoteHistory').value),undefined,signal),[]);if(result)resultView.show(result);});
   // Re-entering a restored page requires a fresh server grant before redisplay.
   window.addEventListener('pagehide',clearQuote);
   window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
@@ -181,14 +178,14 @@ function priceDesk(createWait,montages) {
 }
 export function renderR3PricePage(nonce) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>가격·배송 조건 | Order</title>
-<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error] #quoteAvatar{display:none}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}</style></head><body>
+<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error] #quoteAvatar{display:none}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}${buyerResultCss}</style></head><body>
 <a href="/ia?view=qa-lab">QA랩으로</a><h1>가격·배송 조건</h1><p><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></p><fieldset id="practice" hidden><legend>비공개 합성 QA · 실제 사업장과 분리된 연습 데이터</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset><div class="bar"><label>정책 버전<select id="versions"></select></label><button id="open">열기</button><button id="new">새 정책</button><button id="next">후속 버전</button></div><p id="current"></p><output aria-live="polite" id="notice"></output>
 <section><h2>상품과 유효기간</h2><label>공급처 · 거점 · 상품<select id="scope"></select></label><div class="fields" id="product"></div></section>
 <section><h2>수량별 가격</h2><div class="fields" id="basis"></div><div id="tiers"></div><button id="addTier">구간 추가</button></section>
 <details><summary>세금과 반올림</summary><div class="fields" id="cost"></div></details>
 <section><h2>지역 배송 조건</h2><div class="fields" id="delivery"></div><div id="regions"></div><button id="addRegion">지역 추가</button></section>
 <section><h2>저장·검토</h2><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button data-action="save">초안 저장</button><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button></div></section>
-<section><h2>미리 계산</h2><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output></section><section id="quote"><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" role="status" hidden><strong id="quoteWaitTitle"></strong><div id="quoteAvatar" aria-hidden="true"></div><ul id="quoteBanners"></ul></div><output aria-live="polite" id="buyerResult"></output></section><details><summary>변경 이력</summary><ol id="history"></ol></details>
+<section><h2>미리 계산</h2><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output></section><section id="quote"><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" role="status" hidden><strong id="quoteWaitTitle"></strong><div id="quoteAvatar" aria-hidden="true"></div><ul id="quoteBanners"></ul></div><div aria-live="polite" id="buyerResult"></div></section><details><summary>변경 이력</summary><ol id="history"></ol></details>
 <script nonce="${nonce}">${bloubScript}
-;(${priceDesk.toString()})(${createQuoteWait.toString()},${JSON.stringify(bloubMontages)});</script></body></html>`;
+;(${priceDesk.toString()})(${createQuoteWait.toString()},${JSON.stringify(bloubMontages)},${createBuyerResult.toString()},${projectBuyerResult.toString()});</script></body></html>`;
 }

@@ -27,6 +27,23 @@ try:
   p.get_by_role('button',name='승인',exact=True).click();expect(p.locator('#current')).to_contain_text('APPROVED')
   p.locator('#persona').select_option('buyer');expect(p.locator('#buyerSite option')).to_have_count(2);p.locator('#buyerSite').select_option(index=1);expect(p.locator('#offerSelect option')).to_have_count(1)
   p.locator('#quoteQty').fill('10');p.locator('#quoteDay').fill((datetime.now(timezone.utc)+timedelta(days=1)).date().isoformat());p.get_by_role('button',name='견적 발급').click();expect(p.locator('#buyerResult')).to_contain_text('255원')
+  card=p.locator('#buyerResult');expect(card).to_have_attribute('data-state','offer')
+  expect(card.get_by_role('button',name='제안 납품가 255원 상세 보기')).to_be_visible()
+  expect(card.get_by_text('현재 납품가',exact=True)).to_have_count(0)
+  card.get_by_role('button',name='제안 납품가 255원 상세 보기').click()
+  expect(card.get_by_text('견적 기준일',exact=True)).to_be_visible()
+  expect(card.get_by_text('견적 만료일',exact=True)).to_be_visible()
+  card.get_by_role('button',name='견적 요약으로 돌아가기').click()
+  expect(card.get_by_text('견적 기준일',exact=True)).to_have_count(0)
+  # A detail click rechecks the snapshot grant. A refused read must remove the visible amount.
+  card.get_by_role('button',name='제안 납품가 255원 상세 보기').wait_for()
+  protected_read='**/api/ia/r3-price/practice/buyer/quote?id=*'
+  def deny_read(route):route.fulfill(status=403,content_type='application/json',body='{"error":"ACCESS_REQUIRED"}')
+  p.route(protected_read,deny_read)
+  card.get_by_role('button',name='제안 납품가 255원 상세 보기').click()
+  expect(card).to_have_attribute('data-state','unverified')
+  expect(card).not_to_contain_text('255')
+  p.unroute(protected_read,deny_read)
   p.reload();p.locator('#persona').select_option('buyer');expect(p.locator('#buyerSite option')).to_have_count(2);p.locator('#buyerSite').select_option(index=1);expect(p.locator('#quoteHistory option')).to_have_count(1);p.get_by_role('button',name='다시 보기').click();expect(p.locator('#buyerResult')).to_contain_text('255원')
   for w in (320,390,1440):
    p.set_viewport_size({'width':w,'height':844});assert p.evaluate('document.documentElement.scrollWidth<=innerWidth')

@@ -55,6 +55,20 @@ test('server-generated revision, atomic contention, conflict payload and retry',
   const reopened={...event('reopen',loser.current.data.body,3),action:'reopen',reason:'사용자 재검토'};assert.equal((await send(reopened)).status,200);
   assert.equal((await (await read('/records?release=MSG0585-R3&unresolved=1')).json()).items.length,1);
 });
+test('a resolved comment can be archived with its reason, and restored with a separate event',async()=>{
+  const note={...event('archive-comment','처리한 의견'),id:'archive-comment'};
+  assert.equal((await send(note)).status,200);
+  const stateChange=(action,rev,reason)=>({...note,expectedRevision:rev,action,reason,idempotencyKey:'archival-'+action+rev});
+  assert.equal((await send(stateChange('resolve',1,'확인 완료'))).status,200);
+  assert.equal((await send(stateChange('delete',2,''))).status,400);
+  const archived=await (await send(stateChange('delete',2,'목록 정리'))).json();
+  assert.equal(archived.action,'delete');
+  assert.equal(archived.revision,3);
+  assert.equal((await send({...note,expectedRevision:3,idempotencyKey:'archived-save'})).status,400);
+  assert.equal((await send(stateChange('reopen',3,'원래 의견 복원'))).status,200);
+  const history=await (await read('/events?release=MSG0585-R3&kind=comment&id=archive-comment')).json();
+  assert.deepEqual(history.items.map(item=>item.action),['save','resolve','delete','reopen']);
+});
 test('anchor telemetry, role, approval and artifact remain distinct',async()=>{
   const anchor={id:'panel',instance:'second',x:.12,y:.34,viewport:{width:320,height:640},scale:1,scroll:[{id:'parent',x:121,y:145}],layers:['dialog','list'],artifactHash:target.artifactHash};
   const c={...event('point','pin'),id:'p',data:{...data('pin'),anchor}};

@@ -13,6 +13,7 @@ from review_document import prepare
 HERE = Path(__file__).resolve().parent
 UI = HERE.parents[1] / "src/server/r3-ui"
 FAMILIES = {
+    "account": {"login", "signup", "password", "otp", "terms"},
     "business": {"business", "proof", "signature"},
     "navigation": {"passes", "search", "profile", "drawer"},
 }
@@ -63,6 +64,13 @@ def refresh(source, family, catalog_file):
     script_hash = digest(frame_function + family_script)
     data_keys = ("detail hour minute on pass-id search-detail site sort suggestion tag view".split()
                  if family == "navigation" else ())
+    runtime_key = family
+    if family == "account":
+        # Keep all existing login/empty targets and their current runtime available:
+        # this is the family that already contains a verified OWNER pin.
+        target_rows = [r for r in target_rows if (r["screen"],r["state"]) != ("login","empty")]
+        data_keys = ("opt-choice",)
+        runtime_key = "accountFeedback"
     for row in target_rows:
         active = frames[row["id"]]
         # Include current styles in the scoped body. The immutable shared stylesheet and
@@ -72,13 +80,13 @@ def refresh(source, family, catalog_file):
         catalog["frames"][body_hash] = base64.b64encode(
             gzip.compress(body.encode(), mtime=0)).decode()
         row["current"] = body_hash
-        row["runtimeFamily"] = family
+        row["runtimeFamily"] = runtime_key
         row["authoredChange"] = row["previous"] != body_hash
         row["hashes"] = {width: digest("|".join((row["id"], "current", body_hash,
             catalog["cssHash"], width, script_hash))) for width in row["hashes"]}
     used = {row[side] for row in catalog["catalog"] for side in ("current", "previous")}
     catalog["frames"] = {key: packed for key, packed in catalog["frames"].items() if key in used}
-    runtime["runtimes"][family] = family_script
+    runtime["runtimes"][runtime_key] = family_script
     write_module(catalog_file, catalog)
     write_module(runtime_file, runtime)
     print(json.dumps({"family": family, "updated": len(target_rows), "states": len(frames)}))

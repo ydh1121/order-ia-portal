@@ -20,10 +20,11 @@ export function bootQaHost(nonce, frameBootstrap) {
   function stateInfo(row,width,index){
     const key=reviewKey(row,width), past=legacy.get(key),live=index.get(key)||[];
     const reviewed=live.find(r=>r.kind==='review'&&r.data.target.artifactHash===row.hashes?.[width]);
-    const change=live.find(r=>r.kind==='change'&&r.data.target.artifactHash===row.hashes?.[width]);
+    const changes=live.filter(r=>r.kind==='change'&&r.data.target.artifactHash===row.hashes?.[width]);
+    const hasStatus=(...states)=>changes.some(r=>states.includes(r.data.status));
     const oldApproval=past?.status==='okay'||live.some(r=>r.kind==='review'&&r.data.decision==='approved'&&r.data.target.artifactHash!==row.hashes?.[width]);
-    const changed=row.authoredChange||['implemented','verified','recheck'].includes(change?.data.status);
-    return {implemented:change?.data.status==='implemented',verified:change?.data.status==='verified',blocked:change?.data.status==='blocked',untouched:change?.data.status==='not_started',previous:past?.status==='fix',changed,approved:reviewed?.data.decision==='approved',unreviewed:!reviewed||reviewed.data.decision==='unreviewed',requested:reviewed?.data.decision==='changes_requested',needs:reviewed?.data.decision==='changes_requested'||(changed||oldApproval)&&!reviewed,unknown:!change&&!row.authoredChange,oldApproval};
+    const changed=row.authoredChange||hasStatus('implemented','verified','recheck');
+    return {implemented:hasStatus('implemented'),verified:hasStatus('verified'),blocked:hasStatus('blocked'),untouched:hasStatus('not_started'),previous:past?.status==='fix',changed,approved:reviewed?.data.decision==='approved',unreviewed:!reviewed||reviewed.data.decision==='unreviewed',requested:reviewed?.data.decision==='changes_requested',needs:reviewed?.data.decision==='changes_requested'||(changed||oldApproval)&&!reviewed,unknown:hasStatus('unknown')||(!changes.length&&!row.authoredChange),oldApproval};
   }
   const filters=[['all','▤','전체'],['previous','↶','이전 수정 요청'],['changed','✎','이번 판 수정'],['approved','✓','사용자 통과'],['unreviewed','○','미검토'],['unknown','?','확인 전'],['needs','↻','재검토'],['untouched','…','미착수'],['verified','☑','구현 검증'],['blocked','Ⅱ','보류']];
   function widthFor(row){return Number($('width').value)||row.defaultWidth;}
@@ -119,15 +120,30 @@ export function bootQaHost(nonce, frameBootstrap) {
         box.append(btn(label,()=>edit(null,null,false,null,draft)));
       }
       for(const d of [...records.values()].filter(r=>r.kind==='draft'&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash&&r.data.body&&records.get(localKey(r.data.parent?'reply':'comment',r.id))?.data.body!==r.data.body)){box.append(btn('임시 의견 이어쓰기',()=>{edit();editor={id:d.id,revision:records.get(localKey(d.data.parent?'reply':'comment',d.id))?.revision??0,body:d.data.body,anchor:d.data.anchor,parent:d.data.parent,draftRevision:d.revision};setEditorFields();}));}
-      for(const c of past?.comments||[]){if(c.deleted)continue;const card=node('article');card.append(node('small','이전 의견 · '+c.id),node('p',c.body),btn('이번 판에 위치 연결',()=>edit(null,c,true)));thread(card,{origin:'legacy',id:c.id},true);box.append(card);}
+      for(const c of past?.comments||[]){
+        if(c.deleted)continue;
+        const card=node('article');
+        card.append(node('small','이전 의견 · '+c.id),node('p',c.body));
+        const change=records.get(localKey('change','feedback:'+c.id+':'+target.artifactHash));
+        if(change){
+          const labels={unknown:'반영 근거 확인 전',recheck:'수정 근거 있음 · 재검토 필요',implemented:'수정됨',verified:'구현 검증',blocked:'보류',not_started:'미착수'};
+          card.append(node('strong',labels[change.data.status]||'확인 전'));
+          if(change.data.body)card.append(node('p',change.data.body));
+          if(change.data.evidenceRef)card.append(node('small',change.data.evidenceRef));
+        }
+        card.append(btn('이번 판에 위치 연결',()=>edit(null,c,true)));
+        thread(card,{origin:'legacy',id:c.id},true);box.append(card);
+      }
       if(past?.figma?.url){const t=node('p','이전 Figma 링크 · '+past.figma.url);box.append(t);}
       if(past?.status==='fix'&&!(past.comments||[]).some(c=>!c.deleted))box.append(node('p','본문이 없는 이전 수정 요청'));
     }
     for(const r of records.values()){
       if(r.kind!=='comment'||r.action!=='delete'||!match(r.data.target,target,target.viewport)||(ids&&!ids.includes(r.id)))continue;
       const card=node('article');
+      card.append(node('small','삭제된 의견 · r'+r.revision));
       thread(card,{origin:'current',id:r.id},false);
-      if(card.childElementCount){card.prepend(node('small','삭제된 의견'));box.append(card);}
+      if(r.data.target.artifactHash===target.artifactHash)card.append(btn('의견 복원',()=>eventReason(r,'reopen')));
+      box.append(card);
     }
     for(const r of live.filter(r=>!ids||ids.includes(r.id))){
       const card=node('article'),same=r.data.target.artifactHash===target.artifactHash;
@@ -140,7 +156,7 @@ export function bootQaHost(nonce, frameBootstrap) {
       thread(card,{origin:'current',id:r.id},same&&r.action!=='resolve');
       card.append(btn('이력',async()=>{try{const j=await api(base+'/events?release='+release+'&kind=comment&id='+encodeURIComponent(r.id));for(const e of j.items)card.append(node('p','r'+e.revision+' · '+e.action+' · '+(e.reason||e.data.body||'')));}catch(e){announceError(e);}}));box.append(card);
     }
-    for(const r of records.values())if(['figma','change'].includes(r.kind)&&match(r.data.target,target,target.viewport))box.append(node('small',[r.kind,r.data.status,r.data.evidenceRef,r.data.figmaUrl].filter(Boolean).join(' · ')));
+    for(const r of records.values())if((r.kind==='figma'||(r.kind==='change'&&!r.data.sourceCommentId))&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash)box.append(node('small',[r.kind,r.data.status,r.data.evidenceRef,r.data.figmaUrl].filter(Boolean).join(' · ')));
     if(!box.querySelector('article')&&!past)box.append(node('p','등록된 의견이 없습니다.'));
   }
   async function write(kind,id,data,rev,action='save',reason=''){

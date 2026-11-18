@@ -100,7 +100,8 @@ async function write(db,actor,b) {
     // old target/hash and coordinates remain on their previous immutable event.
     const oldTarget=action==='relocate'?{...data.target,artifactHash:b.data.target.artifactHash}:data.target;
     if(JSON.stringify(canonical(oldTarget))!==JSON.stringify(canonical(b.data.target))) return invalid();
-    if((previous.action==='delete'||previous.action==='resolve') && action!=='reopen') return invalid();
+    if(previous.action==='delete' && action!=='reopen') return invalid();
+    if(previous.action==='resolve' && !['reopen','delete'].includes(action)) return invalid();
     if(action==='reopen' && !['delete','resolve'].includes(previous.action)) return invalid();
     if(action==='relocate' && (!b.data.anchor || data.body!==b.data.body)) return invalid();
     if(['delete','resolve','reopen'].includes(action) && JSON.stringify(canonical(data))!==JSON.stringify(canonical(b.data))) return invalid();

@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.parse import urlencode
 
 from playwright.sync_api import expect, sync_playwright
 
@@ -12,10 +11,29 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(page, origin, width):
+    # Exercise the same QA host and selected width for the duration of this viewport.
+    page.evaluate("""()=>{window.addEventListener('message', event=>{
+        if(event.source===document.getElementById('frame').contentWindow &&
+           event.origin==='null' && event.data?.scope==='ORDER_R3_FRAME' && event.data.type==='ready') {
+          document.getElementById('frame').dataset.testReadyHash=event.data.artifact;
+        }
+    });}""")
+    page.locator("#width").select_option(str(width))
     def screen(module, state):
-        query = urlencode({"view": "qa-lab", "screen": f"{module}/{state}/email", "width": width})
-        page.goto(origin + "/ia?" + query)
+        target = f"{module}/{state}/email"
+        page.locator("#open").click()
+        page.locator("#search").fill(target)
+        tile = page.locator("#tiles .tile")
+        expect(tile).to_have_count(1)
+        with page.expect_response(lambda res: "/r3-qa/artifact?" in res.url
+                                  and f"id={module}%2F{state}%2Femail" in res.url) as pending:
+            tile.locator("button").first.click()
+        response = pending.value
+        assert response.ok, (target, width, response.status)
         frame = page.frame_locator("#frame")
+        # The old iframe may still be unloading immediately after its host assigns srcdoc.
+        expected_hash=response.json()["hash"]
+        expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash",expected_hash)
         frame.locator("#r3-veil").wait_for(state="attached")
         return frame
 

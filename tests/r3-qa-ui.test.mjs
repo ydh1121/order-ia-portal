@@ -54,9 +54,10 @@ test('published family runtimes and frame identities agree with the reviewed sou
   const {readFile} = await import('node:fs/promises');
   const {catalog,cssHash} = await import('../src/server/r3-ui/catalog.gen.mjs');
   const hash = value => createHash('sha256').update(value).digest('hex');
-  for (const family of ['business','navigation']) {
+  for (const family of ['business','navigation','account']) {
     const source = await readFile(new URL('../scripts/r3/authored/'+family+'.js',import.meta.url),'utf8');
-    assert.ok(runtimes[family].endsWith(source),family+' runtime must include current authored source');
+    const runtime = family === 'account' ? runtimes.accountFeedback : runtimes[family];
+    assert.ok(runtime.endsWith(source),family+' runtime must include current authored source');
   }
   for (const item of catalog.filter(item=>item.runtimeFamily)) {
     const runtime = runtimes[item.runtimeFamily];
@@ -66,4 +67,26 @@ test('published family runtimes and frame identities agree with the reviewed sou
       assert.equal(hash([item.id,'current',item.current,cssHash,width,scriptHash].join('|')),stored,item.id);
     }
   }
+});
+
+test('account feedback preserves the active login target and exports only masked loading fixtures', async () => {
+  const pinned = await row('login/empty/email',390);
+  assert.equal(pinned.hash,'3ce1e61428ca87c7202fe73272ad0234f0d492cd15bdb81cafaca3b409354f36');
+  assert.equal(pinned.mount,runtimes.account);
+  for (const screen of ['login','signup']) {
+    const loading = await row(screen+'/loading/email');
+    const body = loading.editable.split('<body>')[1].split('<script')[0];
+    assert.match(body,/placeholder="shop@example.test"/);
+    assert.match(body,/placeholder="•+"/);
+    assert.doesNotMatch(body,/data-action="password-visibility"|value="[^"]+"/);
+    assert.equal(loading.mount,runtimes.accountFeedback);
+  }
+  const signup = await row('signup/terms/email');
+  assert.match(signup.html,/data-opt-choice/);
+  assert.match(signup.html,/받지 않고 계속/);
+  const otp = await row('otp/expired/email');
+  const disabled = (otp.html.match(/<input[^>]+class="otp-digit"[^>]*disabled[^>]*>/g)||[]).length;
+  assert.equal(disabled,6);
+  const complete = await row('otp/verified/email');
+  assert.doesNotMatch(complete.html,/data-action="login"/);
 });
