@@ -108,7 +108,12 @@ export function mountPriceMatrix(root, model) {
         input.setAttribute('aria-label',(r+1)+'행 '+labels[c]);error.id='mx-error-'+r+'-'+c;error.className='sr-only';input.setAttribute('aria-describedby',error.id);
         input.oninput=()=>{checkpoint();row[c]=input.value;cancelProposal();update();};
         input.onfocus=()=>{point=[r,c];};
-        input.onblur=()=>{if(c<2||readOnly)return;const v=model.normalize(input.value);row[c]=v;input.value=display(v);update();};
+        input.onblur=()=>{
+          if(c<2||readOnly)return;
+          // Removing a focused input while repainting a pasted range also fires blur in Chrome.
+          // oninput already owns manual edits; reflect the latest model rather than the old input.
+          const v=model.normalize(row[c]);row[c]=v;input.value=display(v);update();
+        };
         input.onclick=e=>select(r,c,e.shiftKey);
         input.onkeydown=e=>{
           if(e.isComposing||e.altKey||e.ctrlKey||e.metaKey)return;

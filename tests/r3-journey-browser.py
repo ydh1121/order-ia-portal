@@ -17,6 +17,7 @@ def capture_reference_viewports(qa_page, folder):
     out.mkdir(parents=True, exist_ok=True)
     page = qa_page.context.new_page()
     page.set_viewport_size({'width':375,'height':828})
+    errors=[]
     try:
         for state in ['saving','new-detail','current-detail','equal','current-lower']:
             path = '/api/ia/r3-qa/artifact?'+urlencode({'id':'quote-result/'+state+'/email','width':375,'version':'current'})
@@ -29,12 +30,16 @@ def capture_reference_viewports(qa_page, folder):
             wrapper=page.locator('[data-review-result]')
             expect(wrapper).to_have_attribute('data-view',state)
             expect(wrapper).to_have_attribute('data-quote-fixture','figma-20261118')
-            check_result(wrapper.locator('[data-order-result]'),state)
-            if state=='new-detail':
-                expect(wrapper.locator('.oq-clock:visible')).to_have_text('6일 21시간 13분 59초')
-            assert page.locator('iframe').count()==0
             page.evaluate('document.fonts.ready')
             page.screenshot(path=str(out/('reference-'+state+'-375x828.png')),animations='disabled')
+            try:
+                check_result(wrapper.locator('[data-order-result]'),state)
+                if state=='new-detail':
+                    expect(wrapper.locator('.oq-clock:visible')).to_have_text('6일 21시간 13분 59초')
+                assert page.locator('iframe').count()==0
+            except AssertionError as error:
+                errors.append((state,str(error)))
+        assert not errors,errors
     finally:
         page.close()
 
@@ -158,7 +163,14 @@ def run(page, origin, width):
         view=wrapper.locator('[data-order-result]')
         check_result(view,state)
         assert '7,300' not in view.inner_text()
-        assert view.evaluate('(el)=>document.documentElement.scrollWidth<=innerWidth')
+        layout=view.evaluate('''el=>{
+            const limit=innerWidth;
+            const excess=[...document.querySelectorAll('body *')].map(node=>{
+                const b=node.getBoundingClientRect();return {tag:node.tagName,cls:typeof node.className==='string'?node.className:'',right:Math.ceil(b.right),left:Math.floor(b.left),width:Math.ceil(b.width)};
+            }).filter(b=>b.width && (b.right>limit+1||b.left < -1)).sort((a,b)=>b.right-a.right).slice(0,8);
+            return {width:limit,scroll:document.documentElement.scrollWidth,excess};
+        }''')
+        assert layout['scroll']<=layout['width'],(state,width,layout)
         folder=os.environ.get('R3_EVIDENCE_DIR')
         if folder and width in (390,1440):
             path=Path(folder);path.mkdir(parents=True,exist_ok=True)
@@ -178,9 +190,10 @@ if __name__=='__main__':
                 page.locator('input[name=password]').fill(conf['pass'])
                 page.locator('button[type=submit]').click()
                 page.wait_for_url('**/ia?view=qa-lab**')
+                if width==320 and os.environ.get('R3_EVIDENCE_DIR'):
+                    capture_reference_viewports(page,os.environ['R3_EVIDENCE_DIR'])
                 run(page,conf['url'],width)
                 if width==390 and os.environ.get('R3_EVIDENCE_DIR'):
-                    capture_reference_viewports(page,os.environ['R3_EVIDENCE_DIR'])
                     page.emulate_media(reduced_motion='no-preference')
                     check_motion(page, conf['url'])
                 context.close()

@@ -28,6 +28,17 @@ def paste(target, rows):
         el.dispatchEvent(new ClipboardEvent('paste', {clipboardData:dt, bubbles:true, cancelable:true}));
     }""", "\n".join("\t".join(row) for row in rows))
 
+def paste_native(page, target, rows):
+    # Use the browser clipboard and an actual Ctrl+V so the replaced origin cell loses focus natively.
+    origin=urlparse(page.url)
+    page.context.grant_permissions(['clipboard-read','clipboard-write'],origin=origin.scheme+'://'+origin.netloc)
+    page.bring_to_front()
+    text="\n".join("\t".join(row) for row in rows)
+    target.focus()
+    page.evaluate("text=>navigator.clipboard.writeText(text)",text)
+    target.press('Control+v')
+    expect(target).to_have_value(f"{int(rows[0][0].replace(',','').replace('원','')):,}")
+
 def matrix_values(page):
     return page.locator("#matrix tbody tr").evaluate_all("""rows => rows.map(
         row => Array.from(row.querySelectorAll('input[data-c]'), input => input.value.replaceAll(',','').replace(/원$/, ''))
@@ -75,7 +86,7 @@ def exercise_personal(page, reopen, origin, label, width):
     page.locator('#personalProduct').fill('개인 초안 계란')
     # A pack specification was not supplied in the historical reference.
     assert page.locator('#personalPack').input_value()==''
-    paste(cell(page,0,2),[row[2:] for row in reference])
+    paste_native(page,cell(page,0,2),[row[2:] for row in reference])
     check_reference_ui(page)
     first=save_personal(page,200)
     assert first['revision']==1
@@ -166,7 +177,7 @@ def check(browser, subject, width):
         for row in reference:
             prices.append([str(value) if i % 3 == 0 else f"{int(value):,}" + ("원" if i % 3 == 2 else "")
                            for i, value in enumerate(row[2:])])
-        paste(cell(page, 0, 2), prices)
+        paste_native(page,cell(page, 0, 2), prices)
         check_reference_ui(page)
         # Review mapping before applying the 10-column spreadsheet (two bounds + eight prices).
         cell(page, 0, 2).fill("7,777원")

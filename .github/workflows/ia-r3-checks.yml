@@ -79,7 +79,7 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-questions-browser.py
-      - name: Check saved input and nine quote result states
+      - name: Check shared result states, motion and matched artboard exports
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
@@ -89,9 +89,12 @@ jobs:
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: |
-          python tests/r3-price-browser.py
-          python tests/r3-price-first-browser.py
+        run: python tests/r3-price-browser.py
+      - name: Check first registration, account drafts and cross-tab conflicts
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-price-first-browser.py
       - name: Check freight references and quantity policies
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:

@@ -148,7 +148,7 @@ export const approvedRegistry = {
     ]
   },
   "quote-result": {
-    "description": "Figma 그래프→가격 카드 후보. 고정 예시: 발급 2026.11.17 09:00 KST, 7일 만료. 실제 승인 가격·서버 조회 연결 없음.",
+    "description": "11월 14일 발급·11월 21일 만료 예시로 그래프와 상세 카드를 비교합니다. 내 견적은 인증된 사업장에서 발급받은 건을 선택해 확인하세요.",
     "routeIds": [
       "F01"
     ]
