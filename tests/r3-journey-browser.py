@@ -67,7 +67,8 @@ if __name__=='__main__':
         with sync_playwright() as pw:
             browser=pw.chromium.launch(executable_path=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium'))
             for width in (320,390,1440):
-                page=browser.new_page(viewport={'width':width,'height':852},reduced_motion='reduce')
+                context=browser.new_context(viewport={'width':width,'height':852},reduced_motion='reduce')
+                page=context.new_page()
                 page.goto(conf['url']+'/ia?view=qa-lab')
                 page.locator('input[name=email]').fill(conf['email'])
                 page.locator('input[name=password]').fill(conf['pass'])
@@ -76,7 +77,7 @@ if __name__=='__main__':
                 run(page,conf['url'],width)
                 if width==390 and os.environ.get('R3_EVIDENCE_DIR'):
                     capture_reference_viewports(page.context,conf['url'],os.environ['R3_EVIDENCE_DIR'])
-                page.close()
+                context.close()
             browser.close()
     finally:
         host.terminate();host.wait(timeout=5)
