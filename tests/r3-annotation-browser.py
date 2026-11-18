@@ -34,9 +34,10 @@ def run():
     pin.first.wait_for();again=pin.first.bounding_box()
     error=((again['x']-box['x'])**2+(again['y']-box['y'])**2)**.5
     assert error<=3,(box,again,error)
-    page.locator('summary').click();with_download=page.expect_download()
-    with with_download:page.locator('#export').click()
-    file=Path(with_download.value.path());raw=file.read_bytes()
+    page.locator('summary').click()
+    with page.expect_download() as downloaded:
+     page.locator('#export').click()
+    file=Path(downloaded.value.path());raw=file.read_bytes()
     assert b'<iframe' not in raw and b'id="frame-meta"' in raw
     assert not errors,errors
     print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'pageErrors':errors}))

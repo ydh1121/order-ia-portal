@@ -17,7 +17,14 @@ export async function onRequest({request,env}){
  const r3View=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view) ? view : null;
  let actor;try{actor=await requireActor(request,env)}catch{
    if(productAsset)return new Response(null,{status:403,headers:base});
-   return new Response(null,{status:302,headers:{...base,Location:r3View?'/login?returnView='+r3View:'/login'}});
+   const next=new URLSearchParams();
+   if(r3View)next.set('returnView',r3View);
+   if(r3View==='qa-lab'){
+     const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
+     if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
+     if(['320','390','768','1440'].includes(width))next.set('width',width);
+   }
+   return new Response(null,{status:302,headers:{...base,Location:next.size?'/login?'+next:'/login'}});
  }
  if(actor.role!=='OWNER')return new Response(null,{status:403,headers:base});
  if(productAsset){

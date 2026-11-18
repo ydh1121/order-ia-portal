@@ -31,6 +31,8 @@ test('authentication, original CSRF and direct login return view',async()=>{
   assert.equal((await send(event('bad','x'),{Origin:'https://different.invalid'})).status,403);
   assert.equal((await send(event('bad','x'),{'X-IA-CSRF':''})).status,403);
   assert.equal((await page({request:new Request(origin+'/ia?view=qa-lab'),env})).headers.get('location'),'/login?returnView=qa-lab');
+  const deep=await page({request:new Request(origin+'/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=390&ignored=1'),env});
+  assert.equal(deep.headers.get('location'),'/login?returnView=qa-lab&screen=login%2Fempty%2Femail&width=390');
   const asset=await page({request:new Request(origin+'/ia/r3-product/unknown.mjs'),env});
   assert.equal(asset.status,403);assert.equal(await asset.text(),'');
   assert.match(v03OwnerHtml('nonce-qa'),/href="\/ia\?view=qa-lab" target="_blank" rel="noopener"/);

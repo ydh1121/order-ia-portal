@@ -38,9 +38,15 @@ form.addEventListener('submit',async event=>{
     const response=await fetch('/api/ia/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,nonce:challenge.nonce,proof}),cache:'no-store',redirect:'error'});
     if(response.ok){
-      const view=new URLSearchParams(location.search).get('returnView');
-      const target=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view)?'/ia?view='+view:'/ia/';
-      location.assign(target);return;
+      const incoming=new URLSearchParams(location.search), view=incoming.get('returnView');
+      const target=new URLSearchParams();
+      if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view))target.set('view',view);
+      if(view==='qa-lab'){
+        const screen=incoming.get('screen'),width=incoming.get('width');
+        if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);
+        if(['320','390','768','1440'].includes(width))target.set('width',width);
+      }
+      location.assign(target.size?'/ia?'+target:'/ia/');return;
     }
     let error='';if((response.headers.get('content-type')||'').includes('application/json'))try{error=(await response.json()).error||''}catch{}
     result.textContent=message(response.status,error);
