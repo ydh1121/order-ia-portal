@@ -33,13 +33,13 @@ test('current Google source exclusively controls decisions and provider status; 
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
 test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'598b47cb05bcf27abbd0cf5dec7f5a1b9637613472899b4c2e9882f61647aea7');
+ assert.equal(sha256(html),'dc2d7d56b9ac8b341ff64cf38d3660ed4db061785388c8ddc5140e36359f18ff');
  assert.equal(sha256(actualCode),'cd2d9de553ba1358fb38c24e95d7747000244c3557a9dd7b3ed88d714a4d50a2');
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
 });
 
 test('private QA remains reachable in the same tab when a popup is blocked',()=>{
- const fallback='<details><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA 연구실 열기</a></details>';
+ const fallback='<details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details>';
  assert.ok(html.includes(fallback));
- assert.equal(sha256(html.replace(fallback+' ','')),'75d39f4e3cbe8d99e3e832bc2c1f4f3b4e735ab54efdbd55d8e84bf576d58e32');
+ assert.equal(sha256(html.replace(fallback,'')),'2865702a6a5261bdb67d4ac5065867a9bb50bfa3798e463de4176c1ebd8b79be');
 });

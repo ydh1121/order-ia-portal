@@ -1,3 +1,4 @@
+import {browserFunction} from './browser-source.mjs';
 import {catalog, cssHash, cssGzip, previousCssGzip, previousCssHash, frames, release} from './r3-ui/catalog.gen.mjs';
 import {hostCode,frameCode,runtimes} from './r3-ui/runtime.gen.mjs';
 
@@ -10,7 +11,7 @@ import {mountReviewDownloads} from './r3-qa-downloads.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
-const reviewFrameCode='function presentReviewFrame(session){('+installReviewShortcut.toString()+')(session);('+frameCode+')(session);('+mountApprovedMarkers.toString()+')(session);}';
+const reviewFrameCode='function presentReviewFrame(session){('+browserFunction(installReviewShortcut)+')(session);('+frameCode+')(session);('+browserFunction(mountApprovedMarkers)+')(session);}';
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cached=new Map();
@@ -62,5 +63,5 @@ export async function serveR3Artifact(request){
 export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}</style></head><body>
 ${approvedShellBody()}
-<script nonce="${esc(nonce)}">(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${bootApprovedShell.toString()}),(${mountReviewDownloads.toString()}))</script></body></html>`;
+<script nonce="${esc(nonce)}">(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}))</script></body></html>`;
 }

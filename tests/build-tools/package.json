@@ -1,0 +1,1 @@
+{"name":"order-r3-bundle-regression-tools","private":true,"dependencies":{"esbuild":"0.25.12","jsdom":"26.1.0"}}

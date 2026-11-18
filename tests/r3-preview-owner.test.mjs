@@ -28,11 +28,14 @@ function visit(request,config=env){
   return handlePreview({request,env:config,next:(forwarded=request)=>iaPage({request:forwarded,env:config})},getKeys);
 }
 const entry=(email)=>new Request(origin+'/ia/',{headers:email?{'Cf-Access-Jwt-Assertion':token(email)}:{}});
-test('preview document verifies assigned owner, creates host session, serves independent IA menu and QA desk',async()=>{
+test('preview document verifies assigned owner, creates host session, serves the original IA menu and an independent QA desk',async()=>{
   const page=await visit(entry(owner));assert.equal(page.status,200);
   assert.match(page.headers.get('Set-Cookie'),/^__Host-ia_session=.*; Path=\/; Max-Age=600; Secure; HttpOnly; SameSite=Strict$/);
   assert.match(page.headers.get('X-Robots-Tag'),/noindex/);
-  assert.match(await page.text(),/href="\/ia\?view=qa-lab" target="_blank"/);
+  const html=await page.text();
+  assert.match(html,/<nav id="nav">[\s\S]*?class="ia-tool-link" href="\/ia\?view=qa-lab" target="_blank" rel="noopener noreferrer"[\s\S]*?<\/nav>/);
+  assert.match(html,/id="view-overview"/);
+  assert.doesNotMatch(html,/<h1>Order\. 비공개 IA<\/h1>|class="ia-review-nav"/);
   const cookie=page.headers.get('Set-Cookie').split(';')[0];
   const desk=await visit(new Request(origin+'/ia?view=qa-lab',{headers:{Cookie:cookie}}));
   assert.equal(desk.status,200);assert.equal(desk.headers.get('Set-Cookie'),null);

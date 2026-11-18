@@ -1,3 +1,4 @@
+import {browserFunction} from './browser-source.mjs';
 import {buyerResultCss,createBuyerResult,projectBuyerResult} from './r3-quote-result.mjs';
 import {bloubScript,bloubMontages} from './r3-bloub.mjs';
 import {createQuoteWait} from './r3-quote-wait.mjs';
@@ -187,5 +188,5 @@ export function renderR3PricePage(nonce) {
 <section><h2>저장·검토</h2><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button data-action="save">초안 저장</button><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button></div></section>
 <section><h2>미리 계산</h2><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output></section><section id="quote"><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" role="status" hidden><strong id="quoteWaitTitle"></strong><div id="quoteAvatar" aria-hidden="true"></div><ul id="quoteBanners"></ul></div><div aria-live="polite" id="buyerResult"></div></section><details><summary>변경 이력</summary><ol id="history"></ol></details>
 <script nonce="${nonce}">${bloubScript}
-;(${priceDesk.toString()})(${createQuoteWait.toString()},${JSON.stringify(bloubMontages)},${createBuyerResult.toString()},${projectBuyerResult.toString()});</script></body></html>`;
+;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${JSON.stringify(bloubMontages)},${browserFunction(createBuyerResult)},${browserFunction(projectBuyerResult)});</script></body></html>`;
 }
