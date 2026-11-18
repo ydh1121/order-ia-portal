@@ -3,10 +3,11 @@
  */
 import {ORIGINAL_V03_SOURCE} from './v03-source.mjs';
 import {UX_CSS} from './v03-ux.css.mjs';
-import {UX_RUNTIME} from './v03-ux.js.mjs';
+import {UX_RUNTIME,UX_NAV_RUNTIME} from './v03-ux.js.mjs';
 const prelude=String.raw`
 (async()=>{
 'use strict';
+${UX_NAV_RUNTIME}
 try {
 const response=await fetch('/api/ia/dashboard',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
 if(response.status===401||response.status===403){location.replace('/login');return}
