@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+from time import monotonic
 from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,11 +139,17 @@ def check_stage_wheel(page):
     assert stage.evaluate("e=>e.scrollHeight>e.clientHeight")
     box=stage.bounding_box()
     page.mouse.move(box["x"]+6,box["y"]+box["height"]/2)
+    def wait_offset(check):
+        deadline=monotonic()+4
+        while monotonic()<deadline:
+            offset=stage.evaluate("e=>e.scrollTop")
+            if check(offset):return offset
+            page.wait_for_timeout(40)
+        raise AssertionError("Stage did not respond to wheel input")
     page.mouse.wheel(0,250)
-    page.wait_for_function("document.querySelector('.lab-stage').scrollTop>0")
-    moved=stage.evaluate("e=>e.scrollTop")
+    moved=wait_offset(lambda offset:offset>0)
     page.mouse.wheel(0,-1000)
-    page.wait_for_function("document.querySelector('.lab-stage').scrollTop===0")
+    wait_offset(lambda offset:offset==0)
     return moved
 
 
@@ -163,6 +170,13 @@ def verify_review_controls(browser, auth, origin):
         const menu=getComputedStyle(sample).scrollbarWidth;sample.remove();return {documentWidth,generic,moved,menu};
     }""")
     assert rail["documentWidth"]=="none" and rail["generic"]=="none" and rail["moved"]>0 and rail["menu"]=="thin",rail
+    page.locator("#points").focus()
+    page.keyboard.press("c")
+    expect(frame.locator("#r3-veil")).to_be_visible()
+    frame.locator("#r3-veil").press("c")
+    expect(page.locator("#body-text")).to_be_focused()
+    page.keyboard.press("Escape")
+    expect(page.locator("#drawer")).to_be_hidden()
     page.locator("#points").click()
     page.locator("#figma-stage").select_option("editing")
     page.locator("#figma-memo").fill("검토 셸 브라우저 검사")

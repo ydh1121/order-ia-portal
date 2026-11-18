@@ -4,10 +4,11 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from urllib.parse import parse_qs, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
-from r3_feedback_browser_support import ReviewScreens, frame_click
+from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,8 +64,26 @@ def check(page, origin, width):
     modal.get_by_role("button",name="문의하기").press("Escape")
     expect(modal).to_be_hidden()
     expect(frame.get_by_role("button",name="사업자 정보",exact=True)).to_be_focused()
-    frame_click(page, frame.get_by_role("button",name="상세 견적"))
-    page.wait_for_url("**/ia?view=detailed-r3")
+    # The CTA replaces the whole QA shell. Observe the browser's document request
+    # and the authenticated product it rendered after the source iframe is gone.
+    x, y = frame_pointer_position(page, frame.get_by_role("button",name="상세 견적"))
+    destination = origin + "/ia?view=detailed-r3"
+    def detailed_document(response):
+        request = response.request
+        return (response.url == destination and request.is_navigation_request()
+                and request.frame == page.main_frame and request.resource_type == "document")
+    with page.expect_response(detailed_document) as navigation:
+        if page.evaluate("navigator.maxTouchPoints > 0"):
+            page.touchscreen.tap(x, y)
+        else:
+            page.mouse.click(x, y)
+    assert navigation.value.status == 200, navigation.value.status
+    expect(page.locator("html")).to_have_attribute("data-r3-quote-mode","detailed")
+    expect(page.locator("html")).to_have_attribute("data-storage-ready","true")
+    expect(page.get_by_role("link",name="QA LAB으로")).to_be_visible()
+    target_url = urlsplit(page.url)
+    assert target_url.netloc == urlsplit(origin).netloc and target_url.path == "/ia"
+    assert parse_qs(target_url.query) == {"view":["detailed-r3"]}
     print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3"}))
 
 

@@ -22,3 +22,7 @@
 .qa-quote :focus-visible{outline:2px solid #275bb7;outline-offset:2px}
 @media(prefers-reduced-motion:no-preference){.qa-quote .qf-stack:first-child .qf-main{animation:qf-discover .6s ease-out .35s 1}
 @keyframes qf-discover{0%,100%{transform:translateX(0)}45%{transform:translateX(-5px)}}}
+
+.qa-quote .qa-modal-backdrop[data-qf-confirm]{position:fixed;inset:0;min-height:0;align-items:center;padding:16px;touch-action:manipulation}
+.qa-quote [data-qf-confirm] .qa-mini-modal{align-self:center;max-height:calc(100dvh - 32px);overflow:auto}
+.qa-quote [data-qf-confirm] button{min-height:44px;touch-action:manipulation}

@@ -72,8 +72,9 @@ def check(page, origin, width):
     expect(library.get_by_role("heading", name="공통 컴포넌트")).to_be_visible()
     expect(library.locator("header small")).to_have_text("MSG0585-R3")
     expect(library.locator("details")).to_have_count(9)
-    frame_click(page, library.locator("summary").filter(has_text="목록 뼈대"))
-    frame_click(page, library.locator('[data-mf-go="passes"][data-mf-state="loading"]'))
+    skeleton = library.locator("details").filter(has_text="목록 뼈대·데이터 표시")
+    frame_click(page, skeleton.locator("summary"))
+    frame_click(page, skeleton.locator('[data-mf-go="passes"][data-mf-state="loading"]'))
     expect(page.frame_locator("#frame").locator(".skeleton-ticket").first).to_be_visible()
 
     page.clock.set_fixed_time("2026-12-15T05:00:00Z")

@@ -423,7 +423,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   $('open').onclick=()=>{$('choose').showModal();$('search').focus();};$('close-choose').onclick=()=>$('choose').close();
   $('search').oninput=list;$('width').onchange=()=>select(current);$('version').onchange=()=>select(current);
   $('next').onclick=()=>{const index=showRecords();const rows=screens.filter(v=>{const s=stateInfo(v,widthFor(v),index);return(historyWidth(v)||s.needs)&&!s.approved;});if(rows.length){const row=rows[(rows.findIndex(r=>r.id===current?.id)+1)%rows.length];if(historyWidth(row))$('width').value=String(historyWidth(row));select(row);}else status('해당하는 미해결 화면이 없습니다.');};
-  $('points').onclick=()=>notes();$('new').onclick=()=>edit(null,null,true);$('general').onclick=()=>edit();$('reposition').onclick=pick;
+  $('points').onclick=()=>{if(wantsPoint)stage();notes();};$('new').onclick=()=>{if(wantsPoint)stage();else edit(null,null,true);};$('general').onclick=()=>edit();$('reposition').onclick=pick;
   $('pick-cancel').onclick=stage;$('close-drawer').onclick=hideDrawer;$('hide-pins').onclick=()=>{displayPins=!displayPins;send('visible',displayPins);$('hide-pins').setAttribute('aria-pressed',String(!displayPins));};
   $('save').onclick=()=>saveDraft(false);$('draft').onclick=()=>saveDraft(true);$('sync').onclick=async()=>{await readLegacy();await refresh();};body.oninput=()=>{if(editor){editor.dirty=true;remember();}};
   if(exportReview) exportReview({release, notify:status, getLocalDrafts:()=>{remember();return [...edits];}});

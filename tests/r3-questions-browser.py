@@ -7,12 +7,13 @@ import subprocess
 from urllib.parse import urlencode
 
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import frame_click, frame_pointer_position
+from r3_feedback_browser_support import frame_click, frame_pointer_position, prepare_frame_pointer
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(page, origin, width):
+    prepare_frame_pointer(page)
     def screen(module, state):
         query = urlencode({"view": "qa-lab", "screen": f"{module}/{state}/email", "width": width})
         page.goto(origin + "/ia?" + query)
@@ -112,9 +113,18 @@ def check(page, origin, width):
     products = frame.locator(".qa-order-row")
     sites = products.first.locator(".qa-order-venue")
     expect(sites).to_have_count(3)
+    item_name = sites.first.locator("strong").inner_text()
+    parent_name = products.first.locator(".qa-disclosure strong").inner_text()
+    first_id = sites.first.get_attribute("id")
+    other_ids = sites.locator("strong").all_text_contents()[1:]
     swipe(sites.first.locator("strong"), 80, 2)
+    expect(frame.locator("[data-qf-confirm]")).to_have_attribute("data-subject", first_id)
+    expect(frame.locator("[data-qf-confirm] p")).to_have_text(parent_name+" · "+item_name)
+
     frame_click(page, frame.locator("[data-qf-confirm]").get_by_role("button", name="해제", exact=True))
+    expect(frame.locator("#"+first_id)).to_have_count(0)
     expect(sites).to_have_count(2)
+    assert sites.locator("strong").all_text_contents()==other_ids
     expect(products.first.locator("[data-order-venue-count]")).to_have_text("2개 사업장")
     expect(products.nth(1).locator(".qa-order-venue")).to_have_count(3)
     for _ in range(3):

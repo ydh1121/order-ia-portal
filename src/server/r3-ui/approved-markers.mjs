@@ -1,3 +1,16 @@
+// Install before the released review bridge takes focus for position annotations.
+export function installReviewShortcut(session) {
+  if (window === parent) return;
+  window.addEventListener('keydown', event => {
+    if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'c') return;
+    const veil = document.getElementById('r3-veil');
+    if (!veil || veil.hidden) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type:'cancelPick',payload:{}}, '*');
+  }, true);
+}
+
 // Presentation inside the opaque preview. The released review runtime continues to own selection,
 // anchor clicks and all product input. No file, credential, comment text or network access here.
 export function mountApprovedMarkers(session) {

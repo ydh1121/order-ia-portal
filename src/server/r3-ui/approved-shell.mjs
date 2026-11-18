@@ -18,6 +18,12 @@ html,body{overflow:hidden}
 #filters button[aria-pressed=true]{color:#315de6;background:#eaeefa}
 #filters{display:flex;gap:4px;flex-wrap:wrap}
 .r3-review-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+.r3-review-metrics>button{display:flex;flex-direction:column;align-items:flex-start;gap:5px;padding:12px 8px;border:0;border-radius:10px;background:#f2f4f6;text-align:left}
+.r3-review-metrics>button:hover{background:#eaeefa}
+.r3-review-metrics>button strong{color:inherit}
+.lab-drawer-body label.review-import-button{position:relative;display:flex;justify-content:center;cursor:pointer;font-weight:400}
+.review-import-button input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.review-import-button:focus-within{outline:3px solid #93afff;outline-offset:2px}
 .r3-review-metrics [data-metric=previous]{color:#c5523b}.r3-review-metrics [data-metric=changed]{color:#315de6}.r3-review-metrics [data-metric=approved]{color:#09816b}.r3-review-metrics [data-metric=unreviewed]{color:#6b7684}
 #conflict{background:#fff0de;border-radius:8px;padding:10px;white-space:pre-wrap}
 #buyer{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -105,7 +111,7 @@ export function approvedShellBody(){
       <button id="next" class="drawer-button">다음 미해결</button><div id="review-records"></div>
       <h3>통합 내보내기</h3><button id="backup" data-lab-action="export-review" class="drawer-button primary">코멘트·피그마 기록 JSON</button>
       <button id="backup-csv" data-lab-action="export-csv" class="drawer-button">검토 현황 CSV</button><button id="backup-md" data-lab-action="export-markdown" class="drawer-button">전체 코멘트 문서</button>
-      <label class="drawer-button" for="review-import">검토 JSON 열기<input type="file" id="review-import" accept="application/json,.json"></label><output id="review-import-result" aria-live="polite"></output>
+      <label class="drawer-button review-import-button" for="review-import">검토 JSON 열기<input type="file" id="review-import" accept="application/json,.json"></label><output id="review-import-result" aria-live="polite"></output>
     </div>
     <div class="lab-drawer-body" id="drawer-settings" data-drawer-panel="settings" hidden>
       <h3>화면 크기</h3>

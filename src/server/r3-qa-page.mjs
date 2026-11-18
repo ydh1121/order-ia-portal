@@ -3,14 +3,14 @@ import {hostCode,frameCode,runtimes} from './r3-ui/runtime.gen.mjs';
 
 import {approvedShellBody,shellStyles} from './r3-ui/approved-shell.mjs';
 import {approvedHash,reviewHashes,approvedWidths} from './r3-ui/approved-width.mjs';
-import {mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
+import {installReviewShortcut, mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
 import {approvedRegistry} from './r3-ui/approved-registry.mjs';
 import {bootApprovedShell} from './r3-ui/approved-controller.mjs';
 import {mountReviewDownloads} from './r3-qa-downloads.mjs';
 
 const utf8=new TextEncoder();
-// The product runtime is byte-identical. Marker decoration belongs to the QA tool.
-const reviewFrameCode='function presentReviewFrame(session){('+frameCode+')(session);('+mountApprovedMarkers.toString()+')(session);}';
+// The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
+const reviewFrameCode='function presentReviewFrame(session){('+installReviewShortcut.toString()+')(session);('+frameCode+')(session);('+mountApprovedMarkers.toString()+')(session);}';
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cached=new Map();

@@ -1,13 +1,32 @@
 """Open a frame in the approved private sidebar and wait for that frame's ready receipt."""
 import re
 
+import json
 from uuid import uuid4
 from playwright.sync_api import expect
+
+
+def prepare_frame_pointer(page):
+    if getattr(page, "_qa_pointer_installed", False):
+        return
+    page._qa_pointer_installed = True
+    page.add_init_script("""if(window!==top){
+        for(const type of ['pointerdown','click'])window.addEventListener(type,e=>{
+            const arm=window.__qaArmedPointer;
+            if(!arm)return;
+            console.debug('__qa_physical_pointer__'+JSON.stringify({
+                id:arm.id,phase:type,trusted:e.isTrusted,hit:arm.el.contains(e.target),
+                pointer:e.pointerType||'mouse'
+            }));
+            if(type==='click')window.__qaArmedPointer=null;
+        },true);
+    }""")
 
 
 class ReviewScreens:
     def __init__(self, page, origin, width):
         self.page = page
+        prepare_frame_pointer(page)
         self.width = width
         page.add_init_script("""if(window === top) window.addEventListener('message', event=>{
             const frame = document.getElementById('frame');
@@ -47,6 +66,7 @@ class ReviewScreens:
 def frame_pointer_position(page, locator, position=None):
     """Find the visible child control in both documents, accounting for the review scale."""
     expect(locator).to_be_visible()
+    locator.element_handle().wait_for_element_state("stable")
     point = locator.evaluate("""(el, relative) => {
         el.scrollIntoView({block:'center', inline:'nearest', behavior:'instant'});
         const r=el.getBoundingClientRect();
@@ -95,30 +115,21 @@ def frame_pointer_position(page, locator, position=None):
 def frame_click(page, locator, position=None):
     x, y = frame_pointer_position(page, locator, position)
     request_id = uuid4().hex
-    page.evaluate("""id=>{
-        const frame=document.getElementById('frame');
-        function receive(ev){
-            if(ev.source!==frame.contentWindow||ev.origin!=='null'||ev.data?.testPointerId!==id)return;
-            window.removeEventListener('message',receive);
-            (window.__qaPointerReceipts??=Object.create(null))[id]=ev.data;
-        }
-        window.addEventListener('message',receive);
-    }""", request_id)
-    locator.evaluate("""(el,id)=>{
-        document.addEventListener('pointerdown',e=>parent.postMessage({
-            testPointerId:id, trusted:e.isTrusted, hit:el.contains(e.target), type:e.pointerType
-        },'*'),{once:true,capture:true});
-    }""", request_id)
+    locator.evaluate("(el,id)=>{window.__qaArmedPointer={el,id};}", request_id)
     touch = page.evaluate("navigator.maxTouchPoints>0")
-    if touch:
-        page.touchscreen.tap(x, y)
-    else:
-        page.mouse.click(x, y)
-    result = page.wait_for_function("id=>window.__qaPointerReceipts?.[id]", arg=request_id, timeout=3500)
-    receipt = result.json_value()
-    page.evaluate("id=>delete window.__qaPointerReceipts[id]", request_id)
-    assert receipt["trusted"] and receipt["hit"], "Physical pointer did not reach the requested child control"
-    assert receipt["type"] == ("touch" if touch else "mouse"), receipt["type"]
+    def is_receipt(message):
+        return message.text.startswith('__qa_physical_pointer__') and request_id in message.text
+    with page.expect_console_message(predicate=lambda m:is_receipt(m) and '"phase":"pointerdown"' in m.text, timeout=5000) as down:
+        with page.expect_console_message(predicate=lambda m:is_receipt(m) and '"phase":"click"' in m.text, timeout=5000) as activation:
+            if touch:
+                page.touchscreen.tap(x, y)
+            else:
+                page.mouse.click(x, y)
+    for captured in (down,activation):
+        receipt=json.loads(captured.value.text.removeprefix('__qa_physical_pointer__'))
+        assert receipt["trusted"] and receipt["hit"], "Physical "+receipt["phase"]+" did not reach the requested child control"
+    down_receipt=json.loads(down.value.text.removeprefix('__qa_physical_pointer__'))
+    assert down_receipt["pointer"]==("touch" if touch else "mouse")
     if not getattr(page, "_qa_reported_frame_pointer", False):
-        print(f"PASS scaled frame {receipt['type']}: parent iframe hit, child control hit, isTrusted=true",flush=True)
+        print(f"PASS scaled frame {down_receipt['pointer']}: parent iframe hit, child control hit, trusted pointerdown and click",flush=True)
         page._qa_reported_frame_pointer = True

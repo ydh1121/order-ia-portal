@@ -1,6 +1,6 @@
 """Chromium interaction tests of the actual authenticated Pages UI with ephemeral SQLite/actor."""
 from pathlib import Path
-from r3_feedback_browser_support import frame_click
+from r3_feedback_browser_support import frame_click, prepare_frame_pointer
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
@@ -99,7 +99,7 @@ def run():
    browser=pw.chromium.launch(executable_path=binary)
    for width in (390,1440):
     ctx=browser.new_context(viewport={'width':width,'height':870})
-    page=ctx.new_page();page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
+    page=ctx.new_page();prepare_frame_pointer(page);page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
     page.goto(fixture['url']+'/ia?view=qa-lab')
     page.locator('input[name=email]').fill(fixture['email']);page.locator('input[name=password]').fill(fixture['pass']);page.locator('button[type=submit]').click()
     page.wait_for_url('**/ia?view=qa-lab**')

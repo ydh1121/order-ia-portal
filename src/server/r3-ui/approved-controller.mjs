@@ -237,12 +237,18 @@ export function bootApprovedShell(h) {
   for (const b of all('[data-drawer-tab]')) b.onclick=()=>openTab(b.dataset.drawerTab);
   for (const b of all('.lab-bottomline [data-lab-action]')) b.onclick=()=>{const a=b.dataset.labAction;if(a==='replay')openRow(h.snapshot().current);else go(a==='prev'?-1:1);};
   document.addEventListener('keydown',e=>{
-    if(e.defaultPrevented||e.altKey||e.metaKey||e.ctrlKey||e.shiftKey||e.target.closest?.('input,select,textarea,button,[contenteditable=true]'))return;
-    if(e.key==='Escape'){byId('lab').classList.remove('nav-open');if(!byId('drawer').hidden)h.close();return;}
+    if(e.defaultPrevented||e.isComposing||e.altKey||e.metaKey||e.ctrlKey||e.shiftKey||document.querySelector('dialog[open]'))return;
+    if(e.key==='Escape'){
+      if(!byId('pick-cancel').hidden)byId('pick-cancel').click();
+      else if(!byId('drawer').hidden)h.close();
+      else byId('lab').classList.remove('nav-open');
+      return;
+    }
+    if(e.target.closest?.('input,select,textarea,[contenteditable=true]'))return;
     if (!byId('drawer').hidden)return;
     if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();go(e.key==='ArrowLeft'?-1:1);}
     if(e.key.toLowerCase()==='g')setMode(mode==='board'?'focus':'board');
-    if(e.key.toLowerCase()==='c')openTab('review');
+    if(e.key.toLowerCase()==='c')byId('new').click();
   });
   for (const [id,mobile] of [['mobile-width',true],['desktop-width',false]]) {
     byId(id).onchange=()=>{

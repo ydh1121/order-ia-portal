@@ -248,7 +248,7 @@
       "</div>"
     );
   }
-  function q1Mount(root, state, api) {
+  function q1Mount(root, state, api, registerAction) {
     root = quoteScope(root);
     let items = state === "before" ? [] : itemSeeds.map((x) => ({ ...x })),
       editing = state === "edit" ? 1 : null;
@@ -276,8 +276,8 @@
           );
       root.querySelector("[data-choice]")?.focus();
     };
-    const handler = (e) => {
-      const choice = e.target.closest("[data-choice]");
+    const actOn = (target) => {
+      const choice = target.closest("[data-choice]");
       if (choice) {
         choice.closest("fieldset")?.classList.remove("is-error","is-shaking");
         choice.closest('fieldset')?.querySelectorAll('[aria-invalid]').forEach(el=>el.removeAttribute('aria-invalid'));
@@ -286,7 +286,7 @@
           .forEach((b) => b.setAttribute("aria-pressed", String(b === choice)));
         return;
       }
-      const b = e.target.closest("[data-qa-action]");
+      const b = target.closest("[data-qa-action]");
       if (!b) return;
       const a = b.dataset.qaAction;
       if (a === "toggle-question") toggleQuestion(b);
@@ -346,6 +346,8 @@
         select(api,"quote-review","saved");
       }
     };
+    registerAction(actOn);
+    const handler = (e) => actOn(e.target);
     const key = (e) => dialogKey(root, e, close);
     root.addEventListener("click", handler);
     root.addEventListener("keydown", key);
@@ -456,7 +458,7 @@
       "</div>"
     );
   }
-  function q3Mount(root, state, api) {
+  function q3Mount(root, state, api, registerAction) {
     root = quoteScope(root);
     let added = 3;
     let editing = null;
@@ -493,8 +495,8 @@
       );
       root.querySelector("[name=venueName]")?.focus();
     }
-    const handler = (e) => {
-      const b = e.target.closest("[data-qa-action]");
+    const actOn = (target) => {
+      const b = target.closest("[data-qa-action]");
       if (!b) return;
       const a = b.dataset.qaAction,
         row = b.closest("[data-venue]");
@@ -604,6 +606,8 @@
           !!root.querySelector("[data-venue]"),
       );
     };
+    registerAction(actOn);
+    const handler = (e) => actOn(e.target);
     const key = (e) => dialogKey(root, e, close);
     root.addEventListener("click", handler);
     root.addEventListener("keydown", key);
@@ -690,7 +694,7 @@
       "</div>"
     );
   }
-  function q4Mount(root, state, api) {
+  function q4Mount(root, state, api, registerAction) {
     root = quoteScope(root);
     const validQuantity = (input) => {
       const n = Number(input.value);
@@ -698,8 +702,8 @@
         input.validity.valid && Number.isSafeInteger(n) && n >= 1 && n <= 100000
       );
     };
-    const click = (e) => {
-      const b = e.target.closest("[data-qa-action]");
+    const actOn = (target) => {
+      const b = target.closest("[data-qa-action]");
       if (!b) return;
       const a = b.dataset.qaAction;
       if (a === "toggle-question") toggleQuestion(b);
@@ -765,6 +769,8 @@
           ),
       );
     };
+    registerAction(actOn);
+    const click=(e)=>actOn(e.target);
     root.addEventListener("click", click);
     root.addEventListener("change", change);
     return () => {
@@ -775,16 +781,17 @@
   function mountQuestions(original){
     return (surface,state,api)=>{
       const root=quoteScope(surface);
-      const unmount=original(surface,state,api);
+      let actOn;
+      const unmount=original(surface,state,api,handle=>{actOn=handle;});
       const actionSelector='[data-qa-action="remove-item"],[data-qa-action="delete-venue"],[data-qa-action="detach-item"],[data-qa-action="unlink-venue"]';
-      let confirmation=null, approved=null, gesture=null, suppress=null;
+      let confirmation=null, gesture=null, suppress=null;
       const items='.qa-item-row,.qa-assigned-item,.qa-order-venue,.qa-venue-row,.qa-order-row';
       const on=(type,handler)=>root.addEventListener(type,handler,true);
       const off=(type,handler)=>root.removeEventListener(type,handler,true);
       function candidate(row){
         return [...row.querySelectorAll(actionSelector)].find(b=>b.closest(items)===row);
       }
-      function dismiss(focus=true){if(!confirmation)return;const prior=confirmation;confirmation=null;prior.dialog.remove();if(focus&&prior.button.isConnected)prior.button.focus();}
+      function dismiss(focus=true){if(!confirmation)return;const prior=confirmation;confirmation=null;prior.dialog.remove();if(focus&&prior.button.isConnected)prior.button.focus({preventScroll:true});}
       function request(button){
         if(confirmation)return;
         const kind=button.dataset.qaAction;
@@ -793,20 +800,23 @@
         const overlay=document.createElement('div');overlay.className='qa-modal-backdrop';overlay.dataset.qfConfirm='';
         const dialog=document.createElement('section');dialog.className='qa-mini-modal';dialog.setAttribute('role','dialog');dialog.setAttribute('aria-modal','true');dialog.setAttribute('aria-labelledby','qf-confirm-title');
         const title=document.createElement('h2');title.id='qf-confirm-title';title.textContent=unlink?'연결을 해제할까요?':'목록에서 삭제할까요?';
-        const text=document.createElement('p');text.textContent=name;
+        const product=row?.closest('.qa-order-row');
+        const parentName=product?.querySelector('.qa-disclosure strong')?.textContent;
+        overlay.dataset.subject=row?.id||row?.dataset.venue||'';
+        const text=document.createElement('p');text.textContent=parentName?parentName+' · '+name:name;
         const footer=document.createElement('footer'),cancel=document.createElement('button'),ok=document.createElement('button');
         cancel.type=ok.type='button';cancel.textContent='취소';ok.textContent=unlink?'해제':'삭제';
-        cancel.onclick=()=>dismiss();ok.onclick=()=>{dismiss(false);approved=button;try{button.click();}finally{approved=null;}
-          const next=root.querySelector('.qf-main,.qa-disclosure,[data-qa-action="add-item"],[data-qa-action="add-venue"]');next?.focus();};
+        cancel.onclick=()=>dismiss();ok.onclick=()=>{dismiss(false);if(row?.isConnected&&row.contains(button))actOn(button);
+          const next=root.querySelector('.qf-main,.qa-disclosure,[data-qa-action="add-item"],[data-qa-action="add-venue"]');next?.focus({preventScroll:true});};
         footer.append(cancel,ok);dialog.append(title,text,footer);overlay.append(dialog);root.append(overlay);
-        confirmation={dialog:overlay,button};cancel.focus();
+        confirmation={dialog:overlay,button};cancel.focus({preventScroll:true});
       }
       function click(e){
         if(confirmation&&confirmation.dialog.contains(e.target))return;
         const button=e.target.closest('button');
         if(!button)return;
         if(suppress&&e.detail&&suppress.row.contains(button)&&performance.now()<suppress.until){e.preventDefault();e.stopImmediatePropagation();return;}
-        if(button.matches(actionSelector)&&button!==approved){e.preventDefault();e.stopImmediatePropagation();request(button);}
+        if(button.matches(actionSelector)){e.preventDefault();e.stopImmediatePropagation();request(button);}
       }
       function key(e){
         if(confirmation){
