@@ -46,9 +46,7 @@
   }
   function frozenFixture(form) {
     // Isolated loading-state examples. No previously typed fields enter an export.
-    return form.replace(/placeholder="my@order.ooo"/g,'placeholder="shop@example.test"')
-      .replace(/class="float-hint">my@order.ooo</g,'class="float-hint">shop@example.test<')
-      .replace(/placeholder="(?:비밀번호(?: 입력)?|한 번 더 입력해 주세요)"/g,'placeholder="••••••••••"')
+    return form.replace(/placeholder="(?:비밀번호(?: 입력)?|한 번 더 입력해 주세요)"/g,'placeholder="••••••••••"')
       .replace(/class="float-hint">(?:비밀번호(?: 입력)?|한 번 더 입력해 주세요)</g,'class="float-hint">••••••••••<')
       .replace(/<button type="button" class="field-icon"[^>]*>[\s\S]*?<\/button>/g,'')
       .replace(/<input (?=[^>]*name="(?:email|password|password-confirm)")/g,'<input disabled ');
@@ -88,6 +86,15 @@
       update(false);input.addEventListener('input',()=>update(true),{signal:c.signal});
     });
   }
+  function exitSheet(root,api,callback,signal) {
+    const content=root.querySelector('.auth-sheet');
+    if(!content || api.reduced?.() || !content.animate){callback();return;}
+    if(content.inert)return;
+    content.inert=true;
+    const anim=content.animate([{opacity:1,transform:'translateX(0)'},{opacity:0,transform:'translateX(22%)'}],{duration:220,easing:'cubic-bezier(.32,0,.67,.55)',fill:'forwards'});
+    signal.addEventListener('abort',()=>anim.cancel(),{once:true});
+    anim.finished.then(()=>{if(!signal.aborted)callback();},()=>{});
+  }
   function scene(content,title,opts={}) {
     return `<div class="auth-scene"><div class="auth-background" aria-hidden="true" inert>${head('우리 사업장에 맞는<br>계란 최저가를 알아보세요','',opts)}<div class="scene-egg">${w.ORDER_QA_ASSETS?.avatar||''}</div></div><div class="sheet-dim" aria-hidden="true"></div><section class="auth-sheet t-modal is-open" role="dialog" aria-modal="true" aria-label="${esc(title)}" tabindex="-1"><div class="sheet-handle" aria-hidden="true"></div><button type="button" class="icon-btn sheet-close" data-action="close-sheet" aria-label="닫기">${icon('close')}</button>${content}</section></div>`;
   }
@@ -107,7 +114,7 @@
     handle?.addEventListener('pointerup',e=>{if(pointer?.id===e.pointerId && e.clientY-pointer.y>=48)close();pointer=null;},{signal:c.signal});
     handle?.addEventListener('pointercancel',()=>{pointer=null;},{signal:c.signal});
     if(authenticated && interactive(api)){
-      const timer=setTimeout(close,api.reduced?.()?250:1000);
+      const timer=setTimeout(()=>exitSheet(root,api,close,c.signal),api.reduced?.()?250:780);
       c.signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});
     }
     root.addEventListener('click',e=>{
@@ -136,12 +143,16 @@
 
   registry.push({id:'login',group:'로그인·가입',label:'로그인 바텀시트',description:'이메일 우선·간편 로그인 우선·통합형 배치와 인증 예외를 비교합니다.',width:'mobile',variants:[{id:'email',label:'이메일 우선'},{id:'social',label:'간편 로그인 우선'},{id:'compact',label:'통합형'}],states:states([['empty','기본'],['filled','입력됨'],['email-error','이메일 오류'],['error','인증 오류'],['loading','처리 중'],['limited','시도 제한'],['success','완료 예시'],['closed','닫힘']]),render(s,o={}) {
     if(s==='closed')return `<div class="page">${head('다시 만나서<br>반가워요','내 견적과 납품 조건을 이어서 확인하세요.',o)}<div class="surface login-return">${icon('user',42)}<h2>내 견적을 한곳에서</h2><p class="muted">저장한 견적과 요청을 확인해요.</p></div><div class="bottom-actions">${button('로그인','open-login')}</div></div>`;
-    const form=`${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',required:true,value:s==='filled'?'sample@example.test':s==='email-error'?'sample.example.test':'',error:s==='email-error'?'이메일 양식을 확인해 주세요.':''})}${field('비밀번호','password','비밀번호',{type:'password',autocomplete:'current-password',required:true,value:s==='filled'?EXAMPLE_PASSWORD:'',error:s==='error'?'비밀번호를 확인해 주세요.':''})}<div class="auth-options"><label class="check-row"><input type="checkbox">로그인 상태 유지</label>${button('비밀번호 찾기','reset-password','text')}</div>${s==='limited'?note('시도가 많아요. 잠시 후 다시 시도해 주세요.','error'):''}${button(s==='loading'?spinner:s==='limited'?'잠시 후 재시도':'로그인','submit-login','primary wide',s==='loading'||s==='limited'?'disabled':'')}`;
-    const v='compact',sep='<div class="auth-separator"><span>또는</span></div>';
+    const form=`${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',required:true,value:s==='filled'?'my@order.ooo':s==='email-error'?'my.order.ooo':'',error:s==='email-error'?'이메일 양식을 확인해 주세요.':''})}${field('비밀번호','password','비밀번호',{type:'password',autocomplete:'current-password',required:true,value:s==='filled'?EXAMPLE_PASSWORD:'',error:s==='error'?'비밀번호를 확인해 주세요.':''})}<div class="auth-options"><label class="check-row"><input type="checkbox">로그인 상태 유지</label>${button('비밀번호 찾기','reset-password','text')}</div>${s==='limited'?note('시도가 많아요. 잠시 후 다시 시도해 주세요.','error'):''}${button(s==='loading'?spinner:s==='limited'?'잠시 후 재시도':'로그인','submit-login','primary wide',s==='loading'||s==='limited'?'disabled':'')}`;
+    const v=o.variant==='social'?'social':o.variant==='email'?'email':'compact',sep='<div class="auth-separator"><span>또는</span></div>';
     const body=s==='success'?'<div class="auth-complete" role="status"><span class="success-mark">'+icon('check',32)+'</span><h2>로그인했어요</h2></div>':`<div class="sheet-title"><h1>로그인</h1></div><form novalidate data-submit-action="submit-login">${v==='social'?social()+sep+form:form+sep+social(v==='compact')}</form><div class="auth-footer"><span>아직 계정이 없나요?</span>${button('회원가입','signup','text blue')}</div>`;
     return scene(`<div class="auth-layout ${v}">${s==='loading'?frozenFixture(body):body}</div>`,'로그인',o);
   },mount(root,s,api={}) {
     const dispose=commonAuthMount(root,s,api,s==='success'),c=new AbortController();
+    if(s==='error'&&api.authState?.reason==='email_unknown'){
+      U.setFieldError(root.querySelector('[name=password]'),'');
+      fieldError(root.querySelector('[name=email]'),'이메일을 확인해 주세요.');
+    }
     if(s==='limited')runDeadline(api.authState?.retryAt,(remaining,text)=>{
       const submit=root.querySelector('[data-action="submit-login"]');
       if(submit){submit.disabled=remaining>0;submit.textContent=remaining?text+' 후 로그인 가능해요':'로그인';}
@@ -179,7 +190,7 @@
   }
   registry.push({id:'signup',group:'로그인·가입',label:'회원가입',description:'가입 입력·약관 동의·처리 상태를 비교합니다. 소셜 인증은 연결 위치만 표시합니다.',width:'mobile',states:states([['empty','기본'],['filled','입력됨'],['email-error','이메일 오류'],['mismatch','비밀번호 불일치'],['terms','동의 누락'],['loading','처리 중'],['success','다음 단계']]),render(s,o={}) {
     const filled=s==='filled';
-    const content=s==='success'?success('이메일을 확인해 주세요','메일에 표시된 만료 시간 안에 인증번호를 입력해 주세요.','open-otp'):`<div class="sheet-title"><h1>Order 시작하기</h1></div><form novalidate data-submit-action="submit-signup">${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',value:filled?'sample@example.test':s==='email-error'?'sample.example.test':'',required:true,error:s==='email-error'?'이메일 양식을 확인해 주세요.':''})}${field('비밀번호','password','비밀번호 입력',{type:'password',autocomplete:'new-password',required:true,help:passwordRule,value:filled?EXAMPLE_PASSWORD:''})}${meter(filled?strength(EXAMPLE_PASSWORD):0)}${field('비밀번호 확인','password-confirm','한 번 더 입력해 주세요',{type:'password',autocomplete:'new-password',required:true,value:filled?EXAMPLE_PASSWORD:'',error:s==='mismatch'?'입력한 비밀번호가 달라요.':''})}<div class="consent-block ${s==='terms'?'consent-error':''}"><label class="check-row"><input type="checkbox" name="required-consent" ${filled?'checked':''}>[필수] 이용약관·개인정보 처리방침 동의<button type="button" data-action="open-terms" aria-label="약관 보기">${icon('next',17)}</button></label><label class="check-row"><input type="checkbox" name="marketing-consent">[선택] 시세 변동 알림·소식·혜택 받기</label></div><section class="consent-choice" data-opt-choice hidden aria-label="선택 알림"><p>계란 시세가 바뀌면 알려드려요. 시세 변동 알림을 받으실까요?</p>${button('받을게요','allow-notices','text')}${button('받지 않고 계속','skip-notices','secondary')}</section><div class="sr-only" data-consent-feedback ${s==='terms'?'':'hidden'}>${note('필수 약관에 동의해 주세요.','error')}</div>${button(s==='loading'?spinner:'이메일 인증하기','submit-signup','primary wide',s==='loading'?'disabled':'')}</form>`;
+    const content=s==='success'?success('이메일을 확인해 주세요','받은 메일의 인증번호와 만료 시각을 확인해 주세요. 만료되면 새 인증번호를 받을 수 있어요.','open-otp'):`<div class="sheet-title"><h1>Order 시작하기</h1></div><form novalidate data-submit-action="submit-signup">${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',value:filled?'my@order.ooo':s==='email-error'?'my.order.ooo':'',required:true,error:s==='email-error'?'이메일 양식을 확인해 주세요.':''})}${field('비밀번호','password','비밀번호 입력',{type:'password',autocomplete:'new-password',required:true,help:passwordRule,value:filled?EXAMPLE_PASSWORD:''})}${meter(filled?strength(EXAMPLE_PASSWORD):0)}${field('비밀번호 확인','password-confirm','한 번 더 입력해 주세요',{type:'password',autocomplete:'new-password',required:true,value:filled?EXAMPLE_PASSWORD:'',error:s==='mismatch'?'입력한 비밀번호가 달라요.':''})}<div class="consent-block ${s==='terms'?'consent-error':''}"><label class="check-row"><input type="checkbox" name="required-consent" ${filled?'checked':''}>[필수] 이용약관·개인정보 처리방침 동의<button type="button" data-action="open-terms" aria-label="약관 보기">${icon('next',17)}</button></label><label class="check-row"><input type="checkbox" name="marketing-consent">[선택] 시세 변동 알림·소식·혜택 받기</label></div><section class="consent-choice" data-opt-choice hidden aria-label="선택 알림"><p>계란 시세가 바뀌면 알려드려요. 시세 변동 알림을 받으실까요?</p>${button('받을게요','allow-notices','text')}${button('받지 않고 계속','skip-notices','secondary')}</section><div class="sr-only" data-consent-feedback ${s==='terms'?'':'hidden'}>${note('필수 약관에 동의해 주세요.','error')}</div>${button(s==='loading'?spinner:'이메일 인증하기','submit-signup','primary wide',s==='loading'?'disabled':'')}</form>`;
     return scene(s==='loading'?frozenFixture(content):content,'회원가입',o);
   },mount(root,s,api={}) {
     const restore=pendingSignupRestore;
@@ -250,7 +261,13 @@
     });
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]'),a=btn?.dataset.action;if(btn?.disabled)return;
-      if(a==='resend')navigate(api,'otp','empty','.otp-digit');
+      if(a==='resend'){
+        if(btn.disabled)return;
+        btn.disabled=true;btn.setAttribute('aria-busy','true');btn.innerHTML=spinner;
+        const finish=()=>{if(!c.signal.aborted)navigate(api,'otp','empty','.otp-digit');};
+        if(api.reduced?.()||!btn.animate)finish();
+        else {const transition=btn.animate([{opacity:.6},{opacity:1}],{duration:180});c.signal.addEventListener('abort',()=>transition.cancel(),{once:true});transition.finished.then(finish,()=>{});}
+      }
       if(a==='verify-otp'){
         const missing=fields.find(el=>!/^\d$/.test(el.value));
         if(missing){root.querySelector('[data-otp-feedback]').hidden=false;fields.forEach(el=>el.setAttribute('aria-invalid','true'));U.shake(root.querySelector('.otp-wrap'));missing.focus({preventScroll:true});return;}
@@ -264,7 +281,7 @@
 
   registry.push({id:'password',group:'로그인·가입',label:'비밀번호 재설정',description:'계정 존재 여부를 노출하지 않는 안내와 Liquid Link 강도 표시를 비교합니다.',width:'mobile',states:states([['request','이메일 입력'],['request-error','이메일 오류'],['sent','안내 완료'],['weak','짧은 비밀번호'],['strong','긴 비밀번호'],['error','일치 오류'],['complete','완료 예시']]),render(s,o={}) {
     const request=s==='request'||s==='request-error';
-    return scene(`<div data-submit-action="${request?'send-reset':'submit-password'}"><div class="sheet-title"><h1>비밀번호 재설정</h1></div>${request?`${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',required:true,error:s==='request-error'?'이메일 양식을 확인해 주세요.':'',value:s==='request-error'?'sample.example.test':''})}${button('인증코드 전송','send-reset','primary wide')}`:s==='sent'?success('메일함을 확인해 주세요','가입 정보와 일치하면 재설정 안내를 보내드려요.','show-password'):s==='complete'?success('비밀번호를 바꿨어요','새 비밀번호로 로그인해 주세요.','login'):`${field('새 비밀번호','new-password','비밀번호 입력',{type:'password',autocomplete:'new-password',required:true,value:s==='strong'?EXAMPLE_PASSWORD:s==='weak'?'abc':''})}${meter(s==='strong'?strength(EXAMPLE_PASSWORD):s==='weak'?1:0)}${field('비밀번호 확인','password-confirm','한 번 더 입력해 주세요',{type:'password',autocomplete:'new-password',required:true,value:s==='strong'?EXAMPLE_PASSWORD:'',error:s==='error'?'입력한 비밀번호가 달라요.':''})}<div class="bottom-actions">${button('비밀번호 바꾸기','submit-password')}</div>`}</div>`,'비밀번호 재설정',o);
+    return scene(`<div data-submit-action="${request?'send-reset':'submit-password'}"><div class="sheet-title"><h1>비밀번호 재설정</h1></div>${request?`${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',required:true,error:s==='request-error'?'이메일 양식을 확인해 주세요.':'',value:s==='request-error'?'my.order.ooo':''})}${button('인증코드 전송','send-reset','primary wide')}`:s==='sent'?success('메일함을 확인해 주세요','가입 정보와 일치하면 재설정 안내를 보내드려요.','show-password'):s==='complete'?success('비밀번호를 바꿨어요','새 비밀번호로 로그인해 주세요.','login'):`${field('새 비밀번호','new-password','비밀번호 입력',{type:'password',autocomplete:'new-password',required:true,value:s==='strong'?EXAMPLE_PASSWORD:s==='weak'?'abc':''})}${meter(s==='strong'?strength(EXAMPLE_PASSWORD):s==='weak'?1:0)}${field('비밀번호 확인','password-confirm','한 번 더 입력해 주세요',{type:'password',autocomplete:'new-password',required:true,value:s==='strong'?EXAMPLE_PASSWORD:'',error:s==='error'?'입력한 비밀번호가 달라요.':''})}<div class="bottom-actions">${button('비밀번호 바꾸기','submit-password')}</div>`}</div>`,'비밀번호 재설정',o);
   },mount(root,s,api={}) {
     const c=new AbortController(),dispose=commonAuthMount(root,s,api);mountMeter(root,c);
     root.addEventListener('click',e=>{
@@ -274,7 +291,7 @@
       if(a==='submit-password'){
         const p=root.querySelector('[name=new-password]'),q=root.querySelector('[name=password-confirm]');
         const validPass=fieldError(p,meetsPasswordRule(p.value)?'':passwordRule),validConfirm=fieldError(q,!q.value?'비밀번호를 한 번 더 입력해 주세요.':p.value!==q.value?'입력한 비밀번호가 달라요.':'');
-        if(!validPass||!validConfirm){firstInvalid(root);return;}navigate(api,'password','complete','[data-action="login"]');
+        if(!validPass||!validConfirm){firstInvalid(root);return;}exitSheet(root,api,()=>navigate(api,'password','complete','[data-action="login"]'),c.signal);
       }
       if(a==='login'||a==='back')navigate(api,'login','empty','[name=email]');
     },{signal:c.signal});

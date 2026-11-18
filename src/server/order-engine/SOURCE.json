@@ -1,6 +1,6 @@
 {
   "repository": "ydh1121/order",
-  "commit": "4a459bf5b24ad42b5ef78f90e06bfa502c42d24d",
+  "commit": "e4de5884f3a3423759e5281f464a7833518a7dcc",
   "scope": "Existing exact quote, projections and policy source copied byte-for-byte for private IA server bundling. No public assets.",
   "files": [
     {
@@ -8,12 +8,20 @@
       "sha256": "0eb1e5d0a90c654835d1fdae541572e6c34656254e3eaa1d8e17ed1ef6fea7f4"
     },
     {
+      "path": "calculation/freight-policy.mjs",
+      "sha256": "70d83cbb8a931e19497d20cf6f964b9359814e50a3e4b73d1b79dbc06b80bb65"
+    },
+    {
+      "path": "calculation/price-matrix.mjs",
+      "sha256": "107967983414dcd08c48737366206f7761f07543e852dc0a7570382b57ee6708"
+    },
+    {
       "path": "calculation/quote.mjs",
-      "sha256": "d0b3d52bf762f9bd74cb66016ac6baea0ee931a0a6083b4adc24c2104267a157"
+      "sha256": "ea328f2e9ab8f25d6eae02a016c29f258e470bb70583ff55e528f69190b6d2a0"
     },
     {
       "path": "calculation/supply-policy.mjs",
-      "sha256": "1744f0e92e84ddbae3215958fa5cb7be2cd663dba8cda48ab8c903b08fb029c5"
+      "sha256": "be76e2e1cf6298616d9acfa6cdcddf45012a1e9e99efea4445028a2e4379a30c"
     },
     {
       "path": "contracts/quote-response.mjs",

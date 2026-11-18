@@ -4,13 +4,38 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
 from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def check_archived_entry(page, origin):
+    old_hash = "bf83c284c019ab7306cb6ca2c75f7344e50e3dae825b414f26d776b02c5de68c"
+    # The private release has an existing 320px email review anchor on this exact document.
+    query = {"view":"qa-lab","screen":"login/empty/email","width":320,
+             "version":"recorded","artifactHash":old_hash}
+    page.goto(origin + "/ia?" + urlencode(query))
+    frame = page.frame_locator("#frame")
+    frame.locator("#r3-veil").wait_for(state="attached")
+    expect(page.locator("#version")).to_have_value("prior-r3")
+    expect(page.locator("#version-mark")).to_have_text("이전 R3 검토판")
+    for selector in ("#new","#general","#link-figma"):
+        expect(page.locator(selector)).to_be_disabled()
+    assert len(frame.locator('[data-action^="social-"] img').all()) == 0
+    assert parse_qs(urlsplit(page.url).query)["artifactHash"] == [old_hash]
+    page.reload()
+    frame.locator("#r3-veil").wait_for(state="attached")
+    expect(page.locator("#version")).to_have_value("prior-r3")
+    query.pop("version"); query.pop("artifactHash")
+    page.goto(origin + "/ia?" + urlencode(query))
+    frame.locator("#r3-veil").wait_for(state="attached")
+    expect(frame.locator('[data-action^="social-"] img')).to_have_count(3)
+    expect(page.locator("#version")).to_have_value("current")
+    print("PASS retained 320px prior email review, exact hash and reload; today's same email frame contains three native provider assets")
 
 
 def check(page, origin, width):
@@ -101,6 +126,8 @@ def main():
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()
                 page.wait_for_url("**/ia?view=qa-lab**")
+                if width == 320:
+                    check_archived_entry(page,fixture["url"])
                 check(page,fixture["url"],width)
                 context.close()
             browser.close()

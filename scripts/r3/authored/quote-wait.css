@@ -3,7 +3,7 @@
   grid-template-rows: 5.75rem minmax(0, 1fr);
   justify-items: center;
   align-content: center;
-  gap: clamp(1rem, 4vw, 1.75rem);
+  gap: clamp(1.35rem, 5.2vw, 2.1rem);
   height: clamp(16rem, 46vh, 21rem);
   margin-block-start: 1rem;
 }
@@ -21,7 +21,7 @@
   inset: auto;
   grid-row: 2;
   align-self: start;
-  width: clamp(6.75rem, 32vw, 10rem);
+  width: clamp(6.65rem, 29vw, 8.75rem);
   height: auto;
   aspect-ratio: 1;
 }

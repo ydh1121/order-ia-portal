@@ -30,6 +30,19 @@ def check(page, origin, width):
     frame_click(page, frame.locator('[data-action="close-ticket"]'))
     frame_click(page, frame.locator('[data-action="dismiss-expired"]'))
     expect(frame.locator(".expired-reminder")).to_be_hidden()
+    frame_click(page, frame.locator('[data-pass-id="b09"] button'))
+    expect(frame.locator('[data-action="tear-ticket"]')).to_have_count(0)
+    frame_click(page, frame.locator('[data-action="close-ticket"]'))
+    frame_click(page, frame.locator('[data-pass-id="c15"] button'))
+    frame_click(page, frame.get_by_role("button", name="수령 확인하기", exact=False))
+    confirm = frame.get_by_role("alertdialog", name="납품 수령 확인")
+    expect(confirm).to_contain_text("복원할 수 없어요")
+    frame_click(page, confirm.get_by_role("button", name="취소", exact=True))
+    expect(confirm).to_be_hidden()
+    frame_click(page, frame.locator('[data-action="tear-ticket"]'))
+    frame_click(page, confirm.get_by_role("button", name="수령 확인", exact=True))
+    expect(cards.last).to_have_attribute("data-pass-id","c15")
+    expect(cards.last.locator(".pass-state")).to_have_text("수령 확인")
 
     frame = screen("search", "empty")
     field = frame.locator(".tag-field input")
@@ -41,6 +54,9 @@ def check(page, origin, width):
     frame_click(page, frame.locator('[data-action="back-results"]'))
     field.press("Backspace")
     expect(frame.locator("[data-tag]")).to_have_count(0)
+    frame = screen("search", "none")
+    frame_click(page, frame.get_by_role("button",name="태그 지우기"))
+    expect(frame.locator(".quote-search-row")).to_have_count(4)
 
     frame = screen("profile", "default")
     frame_click(page, frame.locator('[data-action="account-menu"]'))
@@ -78,6 +94,22 @@ def check(page, origin, width):
     expect(page.frame_locator("#frame").locator(".skeleton-ticket").first).to_be_visible()
 
     page.clock.set_fixed_time("2026-12-15T05:00:00Z")
+    frame = screen("drawer", "closed")
+    expect(frame.locator("[data-consult-ready=true]")).to_have_count(1)
+    first = frame.locator(".consult-ticket").first
+    frame_click(page, first.locator('[data-action="consult-ticket-detail"]'))
+    expect(first.locator(".ticket-item")).to_have_count(2)
+    frame_click(page, first.locator('[name="consult-pass"]'))
+    frame_click(page, frame.locator('[data-action="open-drawer"]'))
+    frame = page.frame_locator("#frame")
+    expect(frame.locator(".consult-topics")).to_be_visible()
+    expect(frame.locator("[data-consult-ready=true]")).to_have_count(1)
+    expect(frame.locator(".consult-summary")).to_contain_text("샘플베이커리")
+    frame_click(page,frame.get_by_label("납품 일정",exact=True))
+    frame.locator("textarea").fill("제품 검수용 메모")
+    frame_click(page,frame.get_by_role("button",name="시간 선택하기"))
+    expect(frame.locator(".consult-summary")).to_contain_text("제품 검수용 메모")
+    expect(frame.locator(".consult-summary")).to_contain_text("납품 일정")
     frame = screen("drawer", "booking")
     frame_click(page, frame.locator('[data-action="choose-consult-date"]'))
     dialog = frame.get_by_role("dialog", name="상담 희망일")
@@ -96,6 +128,11 @@ def check(page, origin, width):
     frame = screen("drawer", "done")
     expect(frame.get_by_text("상담을 예약했어요", exact=True)).to_be_visible()
     expect(frame.locator(".functional-drawer .empty button")).to_have_count(0)
+    frame = screen("profile", "notification")
+    # Only the fixed menu is passed. The real page derives grants and cases from the signed-in session.
+    with page.expect_navigation(wait_until="domcontentloaded"):
+        frame_click(page,frame.get_by_role("button",name="내 업무 알림 열기"))
+    assert page.url == origin+"/ia?view=roles-r3&menu=activity"
     print(json.dumps({"width": width, "screens": ["passes","search","profile","drawer"]}))
 
 

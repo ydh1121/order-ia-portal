@@ -1,3 +1,4 @@
+import {isBusinessSurface} from '../src/server/r3-business-session.mjs';
 import {verifyAccessActor} from '../src/server/auth.mjs';
 import {issueSession,previewOwnerOrigin,readSession} from '../src/server/owner-session.mjs';
 
@@ -39,7 +40,10 @@ export async function handlePreview(context,fetcher=fetch) {
     const actor=await verifyAccessActor(request,env,fetcher);
     if(actor.role!=='OWNER' || actor.email!==env.IA_OWNER_EMAIL.trim().toLowerCase())return deny(403);
     session=await issueSession(env);
-  } catch { return deny(403); }
+  } catch {
+    if(env.IA_BUSINESS_ACCESS_AUD && isBusinessSurface(url) && request.headers.has('Cf-Access-Jwt-Assertion'))return context.next();
+    return deny(403);
+  }
 
   const internalHeaders=new Headers(request.headers);
   internalHeaders.set('Cookie',session.cookie.split(';')[0]);

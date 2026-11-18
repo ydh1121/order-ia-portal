@@ -85,9 +85,7 @@ def refresh(source, family, catalog_file):
                      "item-count contact-address contact-phone venue-modal venue-error order-venue-count order-summary order-error order-type").split()
     runtime_key = family
     if family == "account":
-        # Keep all existing login/empty targets and their current runtime available:
-        # this is the family that already contains a verified OWNER pin.
-        target_rows = [r for r in target_rows if (r["screen"],r["state"]) != ("login","empty")]
+        # Earlier issued login targets are retained by the R3 archive.
         data_keys = ("opt-choice",)
         runtime_key = "accountFeedback"
     for row in target_rows:

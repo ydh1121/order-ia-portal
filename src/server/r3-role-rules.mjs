@@ -21,6 +21,7 @@ const definitions = {
   reprice: [
     ['DRAFT','attach','REVIEW','BUYER'], ['REVIEW','supplement','NEEDS_INFO','OPERATOR'],
     ['NEEDS_INFO','attach','REVIEW','BUYER'], ['REVIEW','request-price','RECALCULATION_REQUESTED','OPERATOR'],
+    ['RECALCULATION_REQUESTED','link-requote','QUOTE_UPDATED','BUYER'],
     ['REVIEW','reject','REJECTED','OPERATOR'],
   ],
   delivery: [
@@ -29,8 +30,9 @@ const definitions = {
     ['PAYMENT_REVIEW','payment-review','PAYMENT_REVIEWED','OPERATOR'], ['PAYMENT_REVIEWED','schedule','SCHEDULED','SUPPLIER'],
     ['SCHEDULED','dispatch','DISPATCHED','SUPPLIER'], ['DISPATCHED','report-issue','ISSUE_REVIEW','BUYER'],
     ['ISSUE_REVIEW','reschedule','SCHEDULED','OPERATOR'], ['DISPATCHED','receive','RECEIVED','BUYER'],
+    ['RECEIVED','attach','RECEIVED','SUPPLIER'], ['DOCUMENT_REVIEWED','attach','DOCUMENT_REVIEWED','SUPPLIER'],
     ['RECEIVED','document-review','DOCUMENT_REVIEWED','OPERATOR'], ['DOCUMENT_REVIEWED','settlement-review','SETTLEMENT_REVIEW','SUPPLIER'],
-    ['SETTLEMENT_REVIEW','settle','SETTLEMENT_REVIEWED','OPERATOR'],
+    ['SETTLEMENT_REVIEW','supplement','DOCUMENT_REVIEWED','OPERATOR'], ['SETTLEMENT_REVIEW','settle','SETTLEMENT_REVIEWED','OPERATOR'],
   ],
 };
 export const caseKinds = Object.freeze(Object.keys(definitions));

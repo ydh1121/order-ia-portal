@@ -53,8 +53,8 @@ function validData(kind,d) {
   if (kind==='reply'||kind==='comment') return typeof d.body==='string' && d.body.trim().length>0;
   if (kind==='draft') return typeof d.body==='string';
   if (kind==='review') return ['changes_requested','unreviewed','approved'].includes(d.decision);
-  if (kind==='change') return ['unknown','not_started','implemented','verified','recheck','blocked'].includes(d.status) &&
-    (!['implemented','verified','recheck'].includes(d.status) || Boolean(d.evidenceRef));
+  if (kind==='change') return ['unknown','not_started','implemented','verified','recheck','blocked','carried'].includes(d.status) &&
+    (!['implemented','verified','recheck','carried'].includes(d.status) || Boolean(d.evidenceRef));
   if (kind==='figma') return ['none','linked','exported','imported','editing','edited','commented','reviewed','unlinked'].includes(d.status) &&
     (d.note===undefined || text(d.note,10000)) &&
     (d.figmaUrl===undefined || figmaLink(d.figmaUrl)) && (d.status!=='exported'||Boolean(d.evidenceRef));

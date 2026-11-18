@@ -11,7 +11,7 @@ const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&q
 const countBySpec=[
   ['입력','이메일·비밀번호',/<input\b[^>]*type="(?:password|email)"/i,['login/empty/email','signup/empty/email']],
   ['입력','선택·알림 스위치',/role="switch"/,['profile/notification/email','profile/menu/email']],
-  ['선택','태그와 자동 추천',/class="[^"]*tag-field/,['search/suggestions/email','search/results/email']],
+  ['선택','태그와 자동 추천',/class="[^"]*tag-field/,['passes/grid/email','search/suggestions/email','search/results/email','search/none/email']],
   ['선택','단일·복수 선택',/type="checkbox"/,['terms/required/email','drawer/info/email']],
   ['문서','파일 선택·오류',/type="file"/,['business/empty/email','proof/blocked/email']],
   ['화면 전환','패널·드로어',/role="dialog"/,['login/empty/email','drawer/booking/email']],
@@ -24,7 +24,13 @@ const body=row=>{if(!cache.has(row.current))cache.set(row.current,gunzipSync(Buf
 const groups=new Map();
 for(const [group,label,pattern,targets] of countBySpec){
   const used=data.catalog.filter(row=>row.screen!=='common'&&pattern.test(body(row)));
-  const links=targets.map(id=>{const row=data.catalog.find(f=>f.id===id);if(!row)throw Error('Unknown component usage '+id);return '<button type="button" class="btn text" data-mf-go="'+row.screen+'" data-mf-state="'+row.state+'">'+esc(row.label)+' · '+esc(row.stateLabel)+'</button>';});
+  const links=targets.map(id=>{
+    const row=data.catalog.find(f=>f.id===id);
+    if(!row)throw Error('Unknown component usage '+id);
+    const version=row.current.slice(0,8);
+    return '<button type="button" class="btn text" data-mf-go="'+row.screen+'" data-mf-state="'+row.state+'">'+
+      esc(row.label)+' · '+esc(row.stateLabel)+'</button><small title="화면 콘텐츠 버전">'+version+'</small>';
+  });
   const uses=[...new Set(used.map(r=>r.label))].map(esc);
   if(!groups.has(group))groups.set(group,[]);
   groups.get(group).push('<details><summary>'+esc(label)+' <small>사용 상태 '+used.length+'개</small></summary><div class="usage-links">'+links.join('')+'</div><p>'+uses.join(' · ')+'</p></details>');

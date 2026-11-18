@@ -63,8 +63,14 @@ test('frozen price quote, verified site and supplier scope link order → dispat
   const create=body('d',0,'create',{kind:'delivery',orgId:'store',siteId:'one',quoteId:'q'});
   assert.equal((await request('buyer',create)).case.supplier_org_id,'farm');assert.equal((await run('buyer','conflict',0,'create',{kind:'delivery',orgId:'store',siteId:'one',quoteId:'q'})).status,409);
   const transitions=[['buyer','submit'],['ops','accept'],['buyer','payment-request'],['ops','payment-review'],['farmer','schedule'],['farmer','dispatch'],['buyer','report-issue'],['ops','reschedule'],['farmer','dispatch'],['buyer','receive'],['ops','document-review'],['farmer','settlement-review'],['ops','settle']];let rev=1;
-  for(const [role,action] of transitions){const result=await run(role,'d',rev,action,action==='report-issue'?{reason:'DELIVERY_EXCEPTION'}:{});assert.equal(result.status,200,action);rev++;}
-  const res=await request('buyer',null,'?id=d');assert.equal(res.case.state,'SETTLEMENT_REVIEWED');for(const k of ['order_id','delivery_id','document_id','settlement_id'])assert.ok(res.case[k]);assert.equal(res.case.quote_id,'q');assert.equal(res.events.length,14);
+  for(const [role,action] of transitions){
+    if(action==='document-review'){
+      sql.prepare('INSERT INTO r3_evidence_receipt VALUES(?,?,?,?,?)').run('doc','store','one','delivery','MASKED_SCANNED');
+      sql.prepare('INSERT INTO r3_evidence_object VALUES(?,?,?,?,?,?,?,?)').run('doc','d','farmer','doc-key','test','private/test',1,new Date().toISOString());
+      assert.equal((await run('farmer','d',rev++,'attach',{evidenceId:'doc'})).status,200);
+    }
+    const result=await run(role,'d',rev,action,action==='report-issue'?{reason:'DELIVERY_EXCEPTION'}:{});assert.equal(result.status,200,action);rev++;}
+  const res=await request('buyer',null,'?id=d');assert.equal(res.case.state,'SETTLEMENT_REVIEWED');for(const k of ['order_id','delivery_id','document_id','settlement_id'])assert.ok(res.case[k]);assert.equal(res.case.quote_id,'q');assert.equal(res.events.length,15);
   assert.doesNotMatch(JSON.stringify([res,await request('ops')]),/syntheticAmountOnly|32100/);
   sql.exec("UPDATE r3_membership SET active=0 WHERE actor_id='farmer'");assert.equal((await request('farmer',null,'?id=d')).status,403);
 });

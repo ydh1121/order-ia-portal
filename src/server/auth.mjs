@@ -15,8 +15,7 @@ export async function requireActor(request, env, fetcher=fetch, now=Math.floor(D
   if(env?.IA_PREVIEW_OWNER_ORIGIN!==undefined || env?.IA_OWNER_LOGIN_ENABLED==='true' || hasSessionCookie(request))return ownerActor(request,env,now);
   return verifyAccessActor(request,env,fetcher,now);
 }
-export async function verifyAccessActor(request,env,fetcher=fetch,now=Math.floor(Date.now()/1000)) {
-  const domain=env.IA_ACCESS_TEAM_DOMAIN, audience=env.IA_ACCESS_AUD;
+export async function verifyAccessIdentity(request,domain,audience,fetcher=fetch,now=Math.floor(Date.now()/1000)) {
   if(typeof domain!=='string'||!/^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.cloudflareaccess\.com$/i.test(domain) || !/^[A-Za-z0-9_-]{10,128}$/.test(audience||'')) throw new Error('ACCESS_NOT_CONFIGURED');
   const token=request.headers.get('Cf-Access-Jwt-Assertion');
   const {header,payload,signed,signature}=jwtParts(token);
@@ -30,12 +29,16 @@ export async function verifyAccessActor(request,env,fetcher=fetch,now=Math.floor
   if(!candidate) throw new Error('UNKNOWN_AUTH_KEY');
   const verifyKey=await crypto.subtle.importKey('jwk',candidate,{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
   if(!await crypto.subtle.verify('RSASSA-PKCS1-v1_5',verifyKey,signature,signed)) throw new Error('INVALID_JWT');
+  return {id:payload.sub,email:payload.email.trim().toLowerCase(),expiresAt:payload.exp};
+}
+export async function verifyAccessActor(request,env,fetcher=fetch,now=Math.floor(Date.now()/1000)) {
+  const identity=await verifyAccessIdentity(request,env.IA_ACCESS_TEAM_DOMAIN,env.IA_ACCESS_AUD,fetcher,now);
   let bindings;
   try {bindings=JSON.parse(env.IA_ROLE_BINDINGS_JSON||'{}')} catch {throw new Error('ROLES_NOT_CONFIGURED')}
   if(!bindings||Array.isArray(bindings)||typeof bindings!=='object') throw new Error('ROLES_NOT_CONFIGURED');
-  const email=payload.email.trim().toLowerCase(), role=bindings[email];
+  const email=identity.email, role=bindings[email];
   if(!VALID_ROLES.has(role)) throw new Error('FORBIDDEN_ROLE');
-  return {id:payload.sub,email,role};
+  return {id:identity.id,email,role};
 }
 const MATRIX={
   screens: new Set(['OWNER','IA_PLANNER','REVIEWER','UIUX','ENGINEER']),

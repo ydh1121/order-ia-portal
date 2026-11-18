@@ -1,3 +1,4 @@
+import {workspaceOptions,caseQuotes,publishMenu,validCaseContext,targetsOwnedSql} from './r3-role-workspace.mjs';
 import {handleR3Evidence} from './r3-evidence.mjs';
 import {caseKinds, creatorRole, dispositionReasons, reasonRequired, transitions} from './r3-role-rules.mjs';
 
@@ -27,8 +28,9 @@ function publicCase(c,grants,actorId) {
   return {...caseData,evidenceId:evidence_id||null,hasEvidence:Boolean(evidence_id),actions:actionsFor(c,grants,actorId).map(r=>r.action)};
 }
 function readInput(raw) {
-  const allowed=['caseId','kind','orgId','siteId','quoteId','productId','evidenceId','reason','action','expectedRevision','requestKey'];
+  const allowed=['caseId','kind','orgId','siteId','quoteId','productId','evidenceId','reason','action','expectedRevision','requestKey','context'];
   if (!raw || Array.isArray(raw) || Object.keys(raw).some(k=>!allowed.includes(k))) return null;
+  if(!validCaseContext(raw.context,raw.kind,raw.action)||(raw.action==='link-requote'&&!raw.context?.replacementQuoteId))return null;
   if (!id(raw.caseId)||!id(raw.requestKey)||!id(raw.action)||!Number.isSafeInteger(raw.expectedRevision)||raw.expectedRevision<0) return null;
   if (!['orgId','siteId','quoteId','productId','evidenceId'].every(k=>raw[k]===undefined || id(raw[k]))) return null;
   if (raw.reason!==undefined && !dispositionReasons.has(raw.reason)) return null;
@@ -68,6 +70,7 @@ async function planCreate(db,actorId,input,now) {
     if(kind==='delivery') c.supplier_org_id=quote.supplier_org_id;
     guard+=` AND ${validSnapshot}`; args.push(input.quoteId,c.org_id,c.site_id,now);
   }
+  if(input.context?.targets){guard+=' AND '+targetsOwnedSql;args.push(JSON.stringify(input.context.targets),c.org_id,c.site_id);}
   if(kind==='catalog') {
     guard+=" AND EXISTS(SELECT 1 FROM r3_case WHERE kind='supply' AND org_id=? AND state='APPROVED')";args.push(c.org_id);
   }
@@ -83,8 +86,17 @@ async function planTransition(db,actorId,input,now) {
   const rule=actionsFor(c,await readRoleScope(db,actorId),actorId).find(r=>r.action===input.action);
   if(!rule) return {error:json({error:'ACTION_NOT_ALLOWED'},403)};
   let guard=guardedRole, args=scopeArgs(actorId,rule.role,c);
+  if(input.action==='link-requote'){
+    guard+=` AND ${validSnapshot} AND EXISTS(SELECT 1 FROM r3_price_quote q JOIN r3_price_quote old ON old.id=? WHERE q.id=? AND q.id<>old.id AND q.supplier_org_id=old.supplier_org_id AND julianday(q.issued_at)>julianday(old.issued_at) AND julianday(q.issued_at)>=julianday(?))`;
+    args.push(input.context.replacementQuoteId,c.org_id,c.site_id,now,c.quote_id,input.context.replacementQuoteId,c.updated_at);
+  }
   if(input.action==='attach' || input.action==='verify') {
     guard+=` AND ${evidencePredicate()}`;args.push(input.evidenceId||c.evidence_id||'',c.org_id,c.site_id,c.kind);
+  }
+  if(c.kind==='delivery' && ['attach','document-review','settle'].includes(input.action)){
+    guard+=` AND EXISTS (SELECT 1 FROM r3_evidence_object o JOIN r3_evidence_receipt e ON e.id=o.id
+      WHERE o.case_id=? AND o.id=? AND e.purpose='delivery' AND e.state='MASKED_SCANNED')`;
+    args.push(c.id,input.evidenceId||c.evidence_id||'');
   }
   if(c.kind==='delivery' && ['resume','submit','accept'].includes(input.action)) {
     guard+=` AND ${validSnapshot}`;args.push(c.quote_id,c.org_id,c.site_id,now);
@@ -115,6 +127,7 @@ async function mutate(db,actorId,input,now) {
   if(input.action==='create' && input.kind==='business') statements.push(db.prepare(`UPDATE r3_case SET site_revision=COALESCE((SELECT revision FROM r3_business_site WHERE org_id=r3_case.org_id AND site_id=r3_case.site_id),0) WHERE id=? AND changes()=1`).bind(input.caseId));
   if(plan.c.kind==='business' && ['verify','revoke'].includes(input.action)) statements.push(db.prepare(`INSERT INTO r3_business_site(org_id,site_id,verification,revision)
     SELECT ?,?,?,1 WHERE changes()=1 ON CONFLICT(org_id,site_id) DO UPDATE SET verification=excluded.verification,revision=r3_business_site.revision+1`).bind(plan.c.org_id,plan.c.site_id,plan.next));
+  if(input.context)statements.push(db.prepare(`INSERT INTO r3_case_note(case_id,revision,context_json) SELECT ?,?,? WHERE EXISTS(SELECT 1 FROM r3_case_event WHERE case_id=? AND revision=? AND actor_id=? AND request_key=? AND request_hash=?) ON CONFLICT DO NOTHING`).bind(input.caseId,rev,JSON.stringify(input.context),input.caseId,rev,actorId,input.requestKey,hash));
   try {await db.batch(statements);} catch(e) {
     if(await existingEvent(db,actorId,input.requestKey))return resultAfterWrite(db,actorId,input,hash);
     if(String(e.message).includes('UNIQUE constraint')) return json({error:'CASE_EXISTS_OR_CHANGED'},409);
@@ -127,20 +140,44 @@ export async function handleR3Role({request,env,actor,path}) {
   const db=env.ORDER_QA_DB; if(!db) return json({error:'WORKFLOW_UNAVAILABLE'},503);
   const url=new URL(request.url);const suffix=url.pathname.replace(/^\/api\/ia\/r3-role\/?/,'');
   if(suffix==='evidence') return handleR3Evidence({request,env,actor});
-  if(suffix) return json({error:'NOT_FOUND'},404);
+  if(suffix==='session'&&request.method==='GET'&&actor.csrf)return json({csrf:actor.csrf,expiresAt:actor.expiresAt,practiceAllowed:actor.role!=='BUSINESS'});
+  if(!['','workspace','publication'].includes(suffix)) return json({error:'NOT_FOUND'},404);
   try {
+    if(suffix==='publication'){
+      if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
+      if(request.headers.get('Origin')!==url.origin||!actor.csrf||request.headers.get('X-IA-CSRF')!==actor.csrf)return json({error:'CSRF_DENIED'},403);
+      if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'JSON_REQUIRED'},415);
+      let data;try{const reader=request.body?.getReader();if(!reader)return json({error:'INVALID_INPUT'},400);const buf=new Uint8Array(512);let length=0;for(;;){const {value,done}=await reader.read();if(done)break;if(length+value.length>buf.length){await reader.cancel();return json({error:'REQUEST_TOO_LARGE'},413);}buf.set(value,length);length+=value.length;}data=JSON.parse(new TextDecoder().decode(buf.subarray(0,length)));}catch{return json({error:'INVALID_INPUT'},400);}
+      const out=await publishMenu(db,actor.id,data,new Date().toISOString());return json(out,out.status);
+    }
     const grants=await readRoleScope(db,actor.id);
     if(!grants.length)return json({error:'NO_BUSINESS_MEMBERSHIP'},403);
+    if(suffix==='workspace'){
+      if(request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
+      const options=await workspaceOptions(db,actor.id);
+      const {results:activity}=await db.prepare(`SELECT e.case_id,e.action,e.revision,e.next_state,e.created_at,c.org_id,c.site_id,c.kind
+        FROM r3_case_event e JOIN r3_case c ON c.id=e.case_id WHERE ${visibleCase}
+        ORDER BY e.created_at DESC,e.revision DESC,e.case_id LIMIT 100`).bind(actor.id).all();
+      return json({...options,activity});
+    }
     if(request.method==='GET') {
       const caseId=url.searchParams.get('id');
       if(caseId!==null) {
         if(!id(caseId))return json({error:'INVALID_INPUT'},400);
         const row=await readVisible(db,actor.id,caseId);if(!row)return json({error:'NOT_FOUND'},404);
         const {results:events}=await db.prepare(`SELECT e.revision,e.action,e.previous_state,e.next_state,e.reason_code,e.created_at FROM r3_case_event e JOIN r3_case c ON c.id=e.case_id WHERE c.id=? AND ${visibleCase} ORDER BY e.revision`).bind(caseId,actor.id).all();
+        if(url.searchParams.get('context')==='1'){
+          const {results:notes}=await db.prepare(`SELECT n.revision,n.context_json FROM r3_case_note n JOIN r3_case c ON c.id=n.case_id WHERE c.id=? AND ${visibleCase} ORDER BY n.revision`).bind(caseId,actor.id).all();
+          const fields=notes.map(n=>({revision:n.revision,...JSON.parse(n.context_json)}));
+          const allowedQuotes=await caseQuotes(db,row,fields);
+          return json({case:publicCase(row,grants,actor.id),events,notes:fields,issued:allowedQuotes.find(q=>q.id===row.quote_id),targetQuotes:allowedQuotes});
+        }
         return json({case:publicCase(row,grants,actor.id),events});
       }
       const cursor=url.searchParams.get('after')||'';if(cursor&&!id(cursor))return json({error:'INVALID_CURSOR'},400);
-      const {results}=await db.prepare(`SELECT c.* FROM r3_case c WHERE c.id>? AND ${visibleCase} ORDER BY c.id LIMIT 51`).bind(cursor,actor.id).all();
+      const withContext=url.searchParams.get('context')==='1';
+      const extra=withContext?", (SELECT json_extract(n.context_json,'$.businessName') FROM r3_case_note n WHERE n.case_id=c.id AND n.revision=1) businessName, (SELECT json_extract(n.context_json,'$.desiredDate') FROM r3_case_note n WHERE n.case_id=c.id AND json_extract(n.context_json,'$.desiredDate') IS NOT NULL ORDER BY revision DESC LIMIT 1) desiredDate":'';
+      const {results}=await db.prepare(`SELECT c.*${extra} FROM r3_case c WHERE c.id>? AND ${visibleCase} ORDER BY c.id LIMIT 51`).bind(cursor,actor.id).all();
       return json({grants,cases:results.slice(0,50).map(c=>publicCase(c,grants,actor.id)),next:results.length===51?results[49].id:null});
     }
     if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);

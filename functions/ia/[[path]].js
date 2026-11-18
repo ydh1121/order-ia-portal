@@ -1,4 +1,5 @@
 /** OWNER-only Pages UI. Original v0.3 layout is server-private and current data comes from the Google dashboard API. */
+import {businessActor,isBusinessSurface} from '../../src/server/r3-business-session.mjs';
 import {requireActor} from '../../src/server/auth.mjs';
 import {v03OwnerHtml} from '../../src/server/v03-owner-template.mjs';
 const base={
@@ -15,7 +16,7 @@ export async function onRequest({request,env}){
  const url=new URL(request.url),view=url.searchParams.get('view');
  const productAsset=url.pathname.startsWith('/ia/r3-product/');
  const r3View=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view) ? view : null;
- let actor;try{actor=await requireActor(request,env)}catch{
+ let actor;try{actor=await (isBusinessSurface(url)?businessActor:requireActor)(request,env)}catch{
    if(productAsset)return new Response(null,{status:403,headers:base});
    const next=new URLSearchParams();
    if(r3View)next.set('returnView',r3View);
@@ -26,7 +27,7 @@ export async function onRequest({request,env}){
    }
    return new Response(null,{status:302,headers:{...base,Location:next.size?'/login?'+next:'/login'}});
  }
- if(actor.role!=='OWNER')return new Response(null,{status:403,headers:base});
+ if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && isBusinessSurface(url)))return new Response(null,{status:403,headers:base});
  if(productAsset){
    const {r3ProductAsset}=await import('../../src/server/r3-product-page.mjs');
    const response=await r3ProductAsset(url.pathname);

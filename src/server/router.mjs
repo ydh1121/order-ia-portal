@@ -1,4 +1,5 @@
 import {handleOwnerAuthRequest,readSession,sameOrigin} from './owner-session.mjs';
+import {businessActor,isBusinessSurface} from './r3-business-session.mjs';
 import {requireActor,permit} from './auth.mjs';
 import {fetchTab,fetchDashboardTabs} from './google.mjs';
 import {project,privateAssetsContract} from './projection.mjs';
@@ -10,19 +11,23 @@ export async function handleIaRequest(request,env,dependencies={}) {
   if(pathname.startsWith('/api/ia/auth/'))return handleOwnerAuthRequest(request,env,dependencies.now);
   // IMPORTANT: Neither a missing config nor a fabricated header bypasses the server gate.
   let actor;
-  try {actor=await requireActor(request,env,dependencies.fetcher||fetch,dependencies.now)}
+  try {actor=await (isBusinessSurface(new URL(request.url))?businessActor:requireActor)(request,env,dependencies.fetcher||fetch,dependencies.now)}
   catch {return json({error:'IA_ACCESS_DENIED'},403)}
   const url=new URL(request.url);
   const r3=url.pathname.match(/^\/api\/ia\/r3-(qa|price|role)(\/.*)?$/);
   if(r3) {
-    if(actor.role!=='OWNER')return json({error:'IA_PERMISSION_DENIED'},403);
+    if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && r3[1]!=='qa' && !r3[2]?.startsWith('/practice/')))return json({error:'IA_PERMISSION_DENIED'},403);
     if(!['GET','HEAD','POST'].includes(request.method))return json({error:'METHOD_NOT_ALLOWED'},405);
     if(request.method==='POST') {
       if(!sameOrigin(request,env))return json({error:'ORIGIN_DENIED'},403);
       let session;
-      try {session=await readSession(request,env,dependencies.now);}catch{return json({error:'CSRF_DENIED'},403);}
+      try {session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);}catch{return json({error:'CSRF_DENIED'},403);}
       if(session.id!==actor.id || request.headers.get('X-IA-CSRF')!==session.csrf)return json({error:'CSRF_DENIED'},403);
       actor={...actor,csrf:session.csrf};
+    }
+    if(r3[1]==='role' && r3[2]==='/session' && request.method==='GET'){
+      try{const session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);return json({csrf:session.csrf,expiresAt:session.expiresAt,practiceAllowed:actor.role==='OWNER'});}
+      catch{return json({error:'SESSION_DENIED'},403);}
     }
     const ctx={request,env,actor,path:r3[2]||'/'};
     try {

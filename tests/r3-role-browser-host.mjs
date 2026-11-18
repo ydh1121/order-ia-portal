@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';import {once} from 'node:events';import {DatabaseSync} from 'node:sqlite';import fs from 'node:fs';import {fileURLToPath} from 'node:url';import {handleR3Role} from '../src/server/r3-role.mjs';import {renderR3RolePage} from '../src/server/r3-role-page.mjs';
-const sql=new DatabaseSync(':memory:');for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence'])sql.exec(fs.readFileSync('migrations/'+n+'.sql','utf8'));
+const sql=new DatabaseSync(':memory:');for(const n of fs.readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort().map(f=>f.slice(0,-4)))sql.exec(fs.readFileSync('migrations/'+n+'.sql','utf8'));
 const objects=new Map(),bucket={put:async(k,b)=>objects.set(k,new Uint8Array(b)),get:async k=>objects.has(k)?{body:objects.get(k),size:objects.get(k).length}:null,delete:async k=>objects.delete(k)};
 const prepare=(query,params=[])=>({query,params,bind:(...v)=>prepare(query,v),first:async()=>sql.prepare(query).get(...params),all:async()=>({results:sql.prepare(query).all(...params)})});const db={prepare,batch:async rows=>{sql.exec('BEGIN');try{for(const q of rows)sql.prepare(q.query).run(...q.params);sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}};
 sql.exec("INSERT INTO r3_membership VALUES ('qa-buyer','BUYER','qa-store','first',1)");

@@ -26,3 +26,15 @@
 .ds .otp-digit{border:0}
 .ds .otp-digit:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 @media(prefers-reduced-motion:no-preference){.ds .check-row button svg{transition:transform .15s ease}.ds .check-row button:hover svg,.ds .check-row button:focus-visible svg{transform:translateX(2px)}.ds .otp-digit:focus{animation:field-spring .18s ease-out}}
+
+.ds .auth-sheet .check-row{align-items:center}
+.ds .consent-block [data-action=open-terms]{display:inline-grid;align-items:center;justify-content:center;min-width:32px;min-height:32px}
+.ds .consent-block [data-action=open-terms] svg{transition:transform .18s ease-out}
+.ds .consent-block [data-action=open-terms]:is(:hover,:focus-visible) svg{transform:translateX(3px)}
+.ds .auth-sheet .sheet-handle{touch-action:none}
+.ds .otp-wrap .otp-digit{border:0;box-shadow:none}
+.ds .otp-wrap .otp-digit:focus-visible{background:#e7efff;outline:2px solid #396eed;outline-offset:1px}
+.ds .otp-wrap .otp-digit:not(:placeholder-shown){font-variant-numeric:tabular-nums}
+.ds .auth-complete .success-mark svg{stroke-dasharray:85;animation:qa-check-trace .42s ease-out}
+@keyframes qa-check-trace{from{stroke-dashoffset:85}to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.ds .consent-block [data-action=open-terms] svg,.ds .auth-complete .success-mark svg{animation:none;transition:none}}

@@ -46,24 +46,31 @@ export function createBuyerResult(host,project,readDetail,recompare) {
   function message(state,title,detail){
     clear();host.dataset.state=state;host.append(make('h3',title));if(detail)host.append(make('p',detail));
   }
+  function chooseConditions(){
+    const dialog=make('dialog'),title=make('h3','어떤 조건으로 다시 비교할까요?');
+    dialog.setAttribute('aria-label',title.textContent);
+    dialog.append(title,action('동일한 조건',()=>{dialog.close();recompare('same');}),
+      action('새로운 견적',()=>{dialog.close();recompare('new');}),action('닫기',()=>dialog.close()));
+    dialog.addEventListener('close',()=>dialog.remove(),{once:true});host.append(dialog);dialog.showModal();
+  }
   function show(snapshot,selected=null) {
     clear();const m=project(snapshot),token=generation;
     host.dataset.state=m.state;
     if(m.state==='expired'){
       message('expired','견적 유효기간이 지났어요',date.format(m.end)+' 만료');
-      host.append(action('납품 조건 다시 확인하기',recompare));return;
+      host.append(action('납품 조건 다시 확인하기',chooseConditions));return;
     }
     if(m.state==='unavailable'){message('unavailable','견적을 불러올 수 없어요');return;}
     const comparable=m.current!==undefined;
     const title=m.state==='equal'?'현재 납품가와 가격이 같아요':m.state==='current-lower'?'현재 납품가가 더 낮아요':m.state==='saving'?currency(m.difference)+' 줄일 수 있어요':'이번 조건의 제안 납품가';
     host.append(make('h3',title));
     if(!comparable)host.append(make('p','현재 납품가와 비교할 자료가 없어요.'));
-    const chart=make('div');chart.className='buyer-chart';host.append(chart);
+    const chart=make('div');chart.className='buyer-chart';chart.dataset.detail=String(Boolean(selected));host.append(chart);
     const detail=(label)=>{const mine=++generation;clearTimeout(timer);timer=null;host.replaceChildren(make('p','견적을 확인하고 있어요.'));
       Promise.resolve().then(()=>readDetail(snapshot.id)).then(next=>{if(generation===mine)show(next,label);})
         .catch(error=>{
           if(generation!==mine)return;
-          if(error.message==='ACCESS_REQUIRED')message('unverified','사업자 확인 후 납품가를 볼 수 있어요');
+          if(error.message==='ACCESS_REQUIRED'||error.status===401||error.status===403)message('unverified','사업자 확인 후 납품가를 볼 수 있어요');
           else message('unavailable','이 견적을 열 수 없어요','사업장을 다시 선택해 주세요.');
         });};
     const emphasis=m.state==='current-lower'?'current':'proposed';
@@ -71,7 +78,19 @@ export function createBuyerResult(host,project,readDetail,recompare) {
       if(amount===undefined)continue;
       const card=action('',()=>detail(key));card.className='buyer-price';card.dataset.kind=key;card.dataset.emphasis=String(key===emphasis);
       card.setAttribute('aria-label',label+' '+currency(amount)+' 상세 보기');
-      card.append(make('span',label),make('strong',currency(amount)));
+      const value=make('strong',currency(amount));card.append(make('span',label),value);
+      if(key==='proposed'&&comparable&&!selected&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+        const [whole,fraction='']=amount.split('.'),scale=BigInt(10)**BigInt(fraction.length);
+        const target=BigInt(whole+fraction),start=performance.now();
+        function animate(now){
+          if(token!==generation)return;
+          const progress=Math.max(0,Math.min(1000,Math.round((now-start)*1000/350)));
+          const count=target*BigInt(progress)/1000n;
+          value.textContent=currency(String(count/scale)+(fraction?'.'+String(count%scale).padStart(fraction.length,'0'):''));
+          if(progress<1000)requestAnimationFrame(animate);
+        }
+        requestAnimationFrame(animate);
+      }
       if(comparable&&!selected){
         const track=make('span'),bar=make('span');track.className='buyer-track';bar.className='buyer-bar';
         track.setAttribute('aria-hidden','true');bar.style.height=ratio+'%';track.append(bar);card.append(track);
@@ -82,7 +101,7 @@ export function createBuyerResult(host,project,readDetail,recompare) {
     if(selected){
       const meta=make('dl');
       for(const [label,value] of [['견적 기준일',m.issued],['견적 만료일',m.end]])meta.append(make('dt',label),make('dd',date.format(value)));
-      host.append(meta,action('견적 요약으로 돌아가기',()=>detail(null)));
+      host.insertBefore(meta,chart);host.append(action('견적 요약으로 돌아가기',()=>detail(null)));
     }
     const countdown=make('small');countdown.setAttribute('aria-live','off');host.append(countdown);
     function tick(){
@@ -93,10 +112,11 @@ export function createBuyerResult(host,project,readDetail,recompare) {
       countdown.textContent='유효시간 '+days+'일 '+hours+'시간 '+minutes+'분 '+seconds%60+'초';
       timer=setTimeout(tick,Math.min(ms,1000));
     }
+    host.append(action('다시 비교하기',chooseConditions));
     tick();
   }
   return {clear,show,gate:()=>message('unverified','사업자 확인 후 납품가를 볼 수 있어요'),
-    empty:()=>message('no-offer','이 사업장에 제안할 수 있는 상품이 없어요')};
+    empty:()=>{message('no-offer','길을 잃으셨나요?','표시할 견적을 찾을 수 없어요.');host.append(action('이전 페이지로 돌아가기',()=>recompare('same')));}};
 }
 
 export const buyerResultCss=`
@@ -111,5 +131,11 @@ export const buyerResultCss=`
 #buyerResult [data-emphasis=true] .buyer-bar{background:#3659dc}
 #buyerResult .buyer-price[data-kind=proposed] .buyer-bar{transform-origin:bottom;animation:r3-buyer-bar .35s ease-out both}@keyframes r3-buyer-bar{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){#buyerResult .buyer-price[data-kind=proposed] .buyer-bar{animation:none}}
 #buyerResult dl{display:grid;grid-template-columns:auto 1fr;text-align:left;font-size:.9rem;gap:.35rem 1rem;margin:0}
+#buyerResult .buyer-chart[data-detail=true]{align-items:center;isolation:isolate}
+#buyerResult [data-detail=true] .buyer-price{border-radius:.7rem;background:#f1f3f7;min-height:5rem}
+#buyerResult [data-detail=true] .buyer-selected{z-index:1;flex:1.45;min-height:9rem;background:#fff}
+#buyerResult[data-state=equal] .buyer-price[data-kind=current]{color:#3b4860;border-color:#acb8cc}
+#buyerResult>dialog[open]{border:0;max-width:min(92%,24rem);padding:1.3rem;border-radius:1rem}
+#buyerResult>dialog[open] button{min-height:44px;margin:.25rem}
 #buyerResult dd{margin:0}#buyerResult small{color:#506070}
 `;

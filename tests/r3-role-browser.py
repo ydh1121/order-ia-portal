@@ -16,7 +16,7 @@ with sync_playwright() as w:
   page.get_by_text('역할별 시나리오 체험').click();page.locator('#create button').click();page.locator('#detail select[name=action]').select_option('manual');page.get_by_role('button',name='선택한 처리 확인').click();page.locator('#detail input[type=file]').set_input_files({'name':'private-original.pdf','mimeType':'application/pdf','buffer':file});page.locator('#detail canvas').wait_for();assert len(post)==2
   page.locator('summary',has_text='숫자로 가림 영역 선택').click();values=page.locator('#detail input[type=number]');
   for i,v in enumerate([0,0,100,100]):values.nth(i).fill(str(v))
-  page.get_by_role('button',name='영역 가리기').click();page.locator('#detail input[type=checkbox]').check();page.locator('#detail button',has_text='가림 처리본 제출').click();page.get_by_text('사업장 확인 · 검토 대기',exact=True).first.wait_for();rec=page.locator('#detail dd').first.inner_text();page.reload();page.locator('#list button').first.click();page.get_by_role('button',name='연결된 증빙 열기').click();page.locator('#detail canvas').wait_for()
+  page.get_by_role('button',name='영역 가리기').click();page.locator('#detail input[type=checkbox]').check();page.locator('#detail button',has_text='가림 처리본 제출').click();page.get_by_text('사업장 확인 · 검토 대기',exact=True).first.wait_for();rec=page.locator('#detail dd').first.inner_text();page.reload();page.locator('#detail h2',has_text='사업장 확인 · 검토 대기').wait_for();page.get_by_role('button',name='연결된 증빙 열기').click();page.locator('#detail canvas').wait_for()
   assert page.locator('#detail canvas').evaluate('(c)=>{const p=c.getContext("2d").getImageData(0,0,c.width,c.height).data;return p.every((n,i)=>n===(i%4===3?255:0))}')
   screen=[]
   for width,height in [(390,844),(1440,900)]:

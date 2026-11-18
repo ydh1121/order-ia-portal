@@ -1,5 +1,5 @@
 // Trusted top-level chrome. Only typed review fields and allow-listed UI positions are persisted.
-export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
+export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, createBuyerResult, projectBuyerResult) {
   const $=id=>document.getElementById(id),release='MSG0585-R3',base='/api/ia/r3-qa';
   const node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text??''});
   function btn(text,handler){const b=node('button',text);b.type='button';b.onclick=handler;return b;}
@@ -134,7 +134,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   }
   function hideDrawer(){wantsPoint=false;remember();drawer.hidden=true;$('authoring').hidden=true;editor=null;subset=null;syncPins();send('mode',false);$('points').focus();}
   function edit(r=null,past=null,picking=false,parent=null,saved=null){
-    if(!target)return;
+    if(!target||$('version').value==='prior-r3')return;
     shell?.setTab('review');$('blocks').hidden=true;drawer.hidden=false;$('authoring').hidden=false;
     $('conflict').hidden=true;editor=saved||((r&&edits.get(draftKey(r.id)))||null);
     if(!editor)editor=parent?{id:crypto.randomUUID(),body:'',revision:0,parent}:r?{id:r.id,parent:r.data.parent,revision:r.revision,body:r.data.body,anchor:r.data.anchor,sourceKey:r.data.sourceKey,sourceCommentId:r.data.sourceCommentId}:past?{id:crypto.randomUUID(),body:past.body,sourceKey:reviewKey(target,target.viewport),sourceCommentId:past.id,revision:0}:{id:crypto.randomUUID(),body:'',revision:0};
@@ -166,7 +166,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
     shell?.setTab('review');shell?.historyLinks();syncPins();
     const box=$('notes');box.replaceChildren();
     const key=reviewKey(target,target.viewport);const past=legacy.get(key),live=comments();
-    const info=stateInfo(current,target.viewport,showRecords());
+    const indexed=showRecords(),info=stateInfo(current,target.viewport,indexed);
     $('review-heading').textContent=current.label+' / '+current.stateLabel;
     const widths=shell?.reviewWidths()||[];
     $('review-viewports').replaceChildren(...(widths.length?widths:[target.viewport]).map(width=>{
@@ -204,14 +204,21 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
         for(const e of c.replies||[])card.append(node('small','이전 답글'),node('p',e.body||''));
         if(c.deleted){box.append(card);continue;}
         const change=records.get(localKey('change','feedback:'+c.id+':'+target.artifactHash));
-        if(change){
-          const labels={unknown:'반영 근거 확인 전',recheck:'수정 근거 있음 · 재검토 필요',implemented:'수정됨',verified:'구현 검증',blocked:'보류',not_started:'미착수'};
-          card.append(node('strong',labels[change.data.status]||'확인 전'));
-          if(change.data.body)card.append(node('p',change.data.body));
-          if(change.data.evidenceRef)card.append(node('small',change.data.evidenceRef));
+        const labels={carried:'기존 구현 인수 · 사용자 재검토',unknown:'반영 근거 확인 전',recheck:'수정 근거 있음 · 재검토 필요',implemented:'수정됨',verified:'구현 검증',blocked:'보류',not_started:'미착수'};
+        function showChange(parent,event){
+          parent.append(node('strong',labels[event.data.status]||'확인 전'));
+          if(event.data.body)parent.append(node('p',event.data.body));
+          if(event.data.evidenceRef)parent.append(node('small',event.data.evidenceRef));
         }
-        card.append(btn('이번 판에 위치 연결',()=>edit(null,c,true)));
-        thread(card,{origin:'legacy',id:c.id},true);box.append(card);
+        if(change)showChange(card,change);
+        const previousChanges=(indexed.get(key)||[]).filter(r=>r.kind==='change'&&r.data.sourceCommentId===c.id&&r.data.target.artifactHash!==target.artifactHash);
+        if(previousChanges.length){
+          const history=node('details');history.append(node('summary','이전 판 기술 기록 '+previousChanges.length+'건'));
+          for(const record of previousChanges){history.append(node('small',record.data.target.artifactHash.slice(0,12)));showChange(history,record);}
+          card.append(history);
+        }
+        if($('version').value==='current')card.append(btn('이번 판에 위치 연결',()=>edit(null,c,true)));
+        thread(card,{origin:'legacy',id:c.id},$('version').value!=='prior-r3');box.append(card);
       }
       if(past?.figma?.url){const t=node('p','이전 Figma 링크 · '+past.figma.url);box.append(t);}
       if(past?.status==='fix'&&!(past.comments||[]).some(c=>!c.deleted))box.append(node('p','본문이 없는 이전 수정 요청'));
@@ -221,7 +228,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
       const card=node('article');
       card.append(node('small','삭제된 의견 · r'+r.revision));
       thread(card,{origin:'current',id:r.id},false);
-      if(r.data.target.artifactHash===target.artifactHash)card.append(btn('의견 복원',()=>eventReason(r,'reopen')));
+      if($('version').value!=='prior-r3'&&r.data.target.artifactHash===target.artifactHash)card.append(btn('의견 복원',()=>eventReason(r,'reopen')));
       box.append(card);
     }
     for(const r of live.filter(r=>(!ids||ids.includes(r.id))&&visible(r.action==='resolve'))){
@@ -229,17 +236,23 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
       if(isTest(r))card.append(node('small','실행 검증 기록 · 두 탭 저장 시험'));
       card.append(node('small',(r.action==='resolve'?'해결됨':'이번 판 의견')+' · r'+r.revision),node('p',r.data.body));
       if(!same||r.data.anchor&&missing.has(r.id))card.append(node('span','위치 재연결 필요'));
-      if(!same)card.append(btn('새 판에 위치 연결',()=>edit(null,{id:r.id,body:r.data.body},true)));
+      if(!same && $('version').value==='current'){
+        const old=document.createElement('a'), url=sameOriginUrl(location.href);
+        url.searchParams.set('version','recorded');url.searchParams.set('artifactHash',r.data.target.artifactHash);
+        old.href=url.href;old.textContent='의견을 남긴 화면 열기';card.append(old);
+      }
+      if(!same&&$('version').value==='current')card.append(btn('새 판에 위치 연결',()=>edit(null,{id:r.id,body:r.data.body},true)));
       if(r.data.anchor&&same)card.append(btn('위치 보기',()=>{hideDrawer();for(const p of r.data.anchor.scroll||[]){if(p.id==='host-surface')$('surface').scrollTo(p.x,p.y);else if(p.id==='host-document')document.scrollingElement.scrollTo(p.x,p.y);}send('restore',r.data.anchor);}));
-      if(r.action!=='resolve'&&same)card.append(btn('수정',()=>edit(r)),btn('위치 다시 연결',()=>{edit(r);editor.action='relocate';body.readOnly=true;pick();}));
-      if(same)card.append(btn(r.action==='resolve'?'다시 열기':'해결',()=>eventReason(r,r.action==='resolve'?'reopen':'resolve')),btn('삭제',()=>eventReason(r,'delete')));
-      thread(card,{origin:'current',id:r.id},same&&r.action!=='resolve');
+      if($('version').value!=='prior-r3'&&r.action!=='resolve'&&same)card.append(btn('수정',()=>edit(r)),btn('위치 다시 연결',()=>{edit(r);editor.action='relocate';body.readOnly=true;pick();}));
+      if(same&&$('version').value!=='prior-r3')card.append(btn(r.action==='resolve'?'다시 열기':'해결',()=>eventReason(r,r.action==='resolve'?'reopen':'resolve')),btn('삭제',()=>eventReason(r,'delete')));
+      thread(card,{origin:'current',id:r.id},same&&r.action!=='resolve'&&$('version').value!=='prior-r3');
       card.append(btn('이력',async()=>{try{const j=await api(base+'/events?release='+release+'&kind=comment&id='+encodeURIComponent(r.id));for(const e of j.items)card.append(node('p','r'+e.revision+' · '+e.action+' · '+(e.reason||e.data.body||'')));}catch(e){announceError(e);}}));box.append(card);
     }
     for(const r of records.values())if((r.kind==='figma'||(r.kind==='change'&&!r.data.sourceCommentId))&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash)box.append(node('small',[r.kind,r.data.status,r.data.evidenceRef,r.data.figmaUrl].filter(Boolean).join(' · ')));
     if(!box.querySelector('article')&&!past)box.append(node('p','등록된 의견이 없습니다.'));
   }
   async function write(kind,id,data,rev,action='save',reason=''){
+    if($('version').value==='prior-r3'){status('보관한 검토판입니다. 이번 판에서 새 의견을 작성해 주세요.');return false;}
     const packet={release,id,kind,expectedRevision:rev,data,action,reason};const sig=JSON.stringify(packet);
     if(storing)return false;
     const draftEditor=editor&&['comment','reply','draft'].includes(kind)&&editor.id===id?editor:null;
@@ -286,7 +299,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   }
   // Actual snapshot values stay in the trusted host and never enter comments, HTML exports or the frame.
   let quoteGeneration=0,allowedSites=[];
-  function clearPrivateQuote(){quoteGeneration++;allowedSites=[];$('buyer-sites').replaceChildren();$('buyer-quotes').replaceChildren();$('snapshot').textContent='';}
+  const buyerView=createBuyerResult($('snapshot'),projectBuyerResult,
+    id=>api('/api/ia/r3-price/quote?id='+encodeURIComponent(id)),step=>{
+      location.assign('/ia?view=simple-r3&step='+(step==='new'?'q2':'review')+'#/form');
+    });
+  function clearPrivateQuote(){buyerView.clear();quoteGeneration++;allowedSites=[];$('buyer-sites').replaceChildren();$('buyer-quotes').replaceChildren();$('snapshot').textContent='';}
   async function loadSites(){
     clearPrivateQuote();const seq=quoteGeneration;
     try{const j=await api('/api/ia/r3-price/sites');if(seq!==quoteGeneration)return;
@@ -296,28 +313,24 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
     }catch(e){if(seq===quoteGeneration)announceError(e);}
   }
   $('buyer-sites').onchange=async()=>{
-    const seq=++quoteGeneration;$('buyer-quotes').replaceChildren();$('snapshot').textContent='';
+    const seq=++quoteGeneration;buyerView.clear();$('buyer-quotes').replaceChildren();$('snapshot').textContent='';
     const which=$('buyer-sites').value,site=which!==''&&allowedSites[Number(which)];if(!site)return;
     try{const q=new URLSearchParams({org:site.org_id,site:site.site_id}),j=await api('/api/ia/r3-price/offers?'+q);
       if(seq===quoteGeneration)$('buyer-quotes').replaceChildren(new Option('기존 견적 선택',''),...j.quotes.map(v=>new Option(v.id,v.id)));
     }catch(e){if(seq===quoteGeneration)announceError(e);}
   };
   $('buyer-quotes').onchange=async()=>{
-    const seq=++quoteGeneration,id=$('buyer-quotes').value;$('snapshot').textContent='';if(!id)return;
-    try{const j=await api('/api/ia/r3-price/quote?id='+encodeURIComponent(id));if(seq!==quoteGeneration)return;
-      const value=j.response?.quotes?.[0]?.total?.decimal;
-      if(j.status==='EXPIRED'){$('snapshot').textContent='유효기간이 지난 견적입니다.';return;}
-      if(typeof value!=='string'||!/^\d+(?:\.\d+)?$/.test(value)){status('견적을 확인할 수 없습니다.');return;}
-      const [whole,decimal]=value.split('.');const price=BigInt(whole).toLocaleString('ko-KR')+(decimal?'.'+decimal:'');
-      $('snapshot').textContent='납품 견적 '+price+'원 · '+new Date(j.expiresAt).toLocaleDateString('ko-KR')+'까지';
-    }catch(e){if(seq===quoteGeneration)announceError(e);}
+    const seq=++quoteGeneration,id=$('buyer-quotes').value;buyerView.clear();if(!id)return;
+    try{const snapshot=await api('/api/ia/r3-price/quote?id='+encodeURIComponent(id));
+      if(seq===quoteGeneration)buyerView.show(snapshot);
+    }catch(e){if(seq===quoteGeneration){if([401,403].includes(e.status))buyerView.gate();else announceError(e);}}
   };
   $('quote-open').onclick=loadSites;addEventListener('pagehide',clearPrivateQuote);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)clearPrivateQuote();});
   const sameOriginUrl=(path)=>new URL(path,location.href);
   function download(filename,bytes,mime){const url=URL.createObjectURL(new Blob([bytes],{type:mime}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function frameDocument(a,row,channel){
-      const boot=frameBootstrap.replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,screen:row.screen,state:row.state,variant:row.variant}).replaceAll('<','\\u003c');
+      const boot=frameBootstrap.replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant}).replaceAll('<','\\u003c');
       const script='<script nonce="'+nonce+'">('+boot+')('+params+')</'+'script>';
       // srcdoc inherits parent CSP; the child further restricts network, forms and images.
       const policy='<meta http-equiv="Content-Security-Policy" content="default-src \'none\';script-src \'nonce-'+nonce+'\';style-src \'unsafe-inline\';img-src data:;connect-src \'none\';form-action \'none\';base-uri \'none\'">';
@@ -326,18 +339,24 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   }
   // The source step is short-lived and belongs to this QA tab's guest authentication flow.
   let authOriginStep = null;
-  async function select(row,version=$('version').value,originStep=null){
+  async function select(row,version=$('version').value,originStep=null,pinnedHash=null){
     if(row && row.id !== current?.id) authOriginStep = originStep;
     if(!row)return;if(wantsPoint)send('mode',false);wantsPoint=false;clearPrivateQuote();$('buyer').hidden=row.screen!=='quote-result'||version!=='current';remember();editor=null;drawer.hidden=true;$('pick-cancel').hidden=true;$('conflict').hidden=true;
     document.querySelectorAll('[data-review]').forEach(b=>b.disabled=version!=='current');const n=++generation;current=row;$('quote-candidates').hidden=version!=='current'||!['q1','q2','q3','q4','quote-review'].includes(row.screen);target=null;artifact=null;session='';missing.clear();frame.srcdoc='';$('caption').textContent=row.label+' · '+row.stateLabel;
     const width=widthFor(row);shell?.render();$('surface').style.setProperty('--width',width+'px');
-    const url=sameOriginUrl(location.href);url.searchParams.set('screen',row.id);url.searchParams.set('width',width);history.replaceState(null,'',url);
+    for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3'||version==='recorded';
+    const url=sameOriginUrl(location.href);url.searchParams.set('screen',row.id);url.searchParams.set('width',width);
+    if(version==='current')url.searchParams.delete('version');else url.searchParams.set('version',version);
+    if(pinnedHash)url.searchParams.set('artifactHash',pinnedHash);else url.searchParams.delete('artifactHash');
+    history.replaceState(null,'',url);
     try{
-      const a=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version);
-      if(n!==generation)return;artifact=a;session=crypto.randomUUID();if(version==='current'){row.hashes??={};row.hashes[width]=a.hash;}
+      const a=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version+(pinnedHash?'&artifactHash='+encodeURIComponent(pinnedHash):''));
+      if(n!==generation)return;
+      if(version==='recorded'){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
+      artifact=a;session=crypto.randomUUID();if(version==='current'){row.hashes??={};row.hashes[width]=a.hash;}
       target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash};
       frame.srcdoc=frameDocument(a,row,session);
-      $('version-mark').textContent=version==='previous'?'이전 화면':'이번 판';
+      $('version-mark').textContent=version==='previous'?'이전 화면':version==='prior-r3'?'이전 R3 검토판':'이번 판';
       list();
     }catch(e){if(n===generation)announceError(e);}
   }
@@ -362,7 +381,18 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   async function readLegacy(){
     let after=0;try{for(;;){const j=await api(base+'/legacy?after='+after+'&limit=50');for(const r of j.items)legacy.set(r.sourceKey,r.data);if(!j.hasMore)break;after=j.nextCursor;}legacyAvailable=true;list();}catch(e){announceError(e);}
   }
+  let journeyDraft=null;
+  const questionScreens=['q1','q2','q3','q4','quote-review'];
+  let menuPublished=false;
+  async function loadPublication(){
+    try{menuPublished=(await api('/api/order/features')).orderMenu===true;}catch{menuPublished=false;}
+    if(current&&questionScreens.includes(current.screen)&&$('version').value==='current')send('menuPublication',menuPublished);
+  }
+  loadPublication();addEventListener('pageshow',loadPublication);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadPublication();});
   let fixtureNotices=[false,false,false];
+  let consultationFixture={passes:[],topics:[],memo:'',date:'',time:''};
+  const roleMenus={passes:['quotes','delivery'],search:['quotes'],profile:['activity','business','quotes'],drawer:['consult']};
   addEventListener('message',e=>{
     const m=e.data;
     const item=secondary.get(e.source);
@@ -385,12 +415,42 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
       return;
     }
     if(!artifact||e.source!==frame.contentWindow||e.origin!=='null'||m?.scope!=='ORDER_R3_FRAME'||m.channel!==session||m.artifact!==artifact.hash)return;
-    const notices=$('version').value==='current'&&(current.screen==='profile'||current.id==='terms/optional/email');
+    const isCurrent=$('version').value==='current';
+    const notices=isCurrent&&(current.screen==='profile'||current.id==='terms/optional/email');
+    const consultation=isCurrent&&current.screen==='drawer';
+    if(consultation&&!wantsPoint&&m.type==='setConsultationFixture'){
+      const data=m.payload;
+      const entries=(value,allowed)=>Array.isArray(value)&&value.length<=allowed.length&&value.every(x=>allowed.includes(x));
+      if(data&&entries(data.passes,['b17','c15','r12'])&&entries(data.topics,['납품 일정','수량','가격 조건'])&&
+        typeof data.memo==='string'&&data.memo.length<=300&&typeof data.date==='string'&&(!data.date||/^\d{4}-\d{2}-\d{2}$/.test(data.date))&&
+        typeof data.time==='string'&&(!data.time||/^\d{2}시 \d{2}분$/.test(data.time))){
+        consultationFixture={passes:[...new Set(data.passes)],topics:[...new Set(data.topics)],memo:data.memo,date:data.date,time:data.time};
+      }
+      return;
+    }
     if(notices&&!wantsPoint&&m.type==='setNoticeFixture'&&Array.isArray(m.payload)&&m.payload.length===3&&m.payload.every(x=>typeof x==='boolean')){
       fixtureNotices=m.payload.slice();
       return;
     }
-    if(m.type==='ready'){if(notices)send('noticeFixture',fixtureNotices);syncPins();if(wantsPoint)send('mode',true);return;}
+    const input=isCurrent&&['q2','quote-review'].includes(current.screen);
+    if(isCurrent&&!wantsPoint&&questionScreens.includes(current.screen)&&m.type==='quoteMode'){
+      if(menuPublished&&['simple','detailed'].includes(m.payload))location.assign('/ia?view='+m.payload+'-r3');
+      return;
+    }
+    if(input&&!wantsPoint&&m.type==='quoteStep'){
+      if(['q2','review'].includes(m.payload))location.assign('/ia?view=simple-r3&step='+m.payload+'#/form');
+      return;
+    }
+    if(input&&current.screen==='q2'&&!wantsPoint&&m.type==='quoteInput'){
+      const d=m.payload,amount=v=>typeof v==='string'&&/^\d{1,10}$/.test(v);
+      if(!d||!['month','delivery'].includes(d.basis)||!['판','개'].includes(d.unit)||!amount(d.qty)||Number(d.qty)<1||
+        typeof d.unknown!=='boolean'||(d.unknown?d.price!=='':!amount(d.price)))return;
+      journeyDraft={basis:d.basis,qty:d.qty,unit:d.unit,price:d.price,unknown:d.unknown};
+      select(screens.find(r=>r.id==='quote-review/normal/email'));return;
+    }
+    if(m.type==='ready'){if(input&&journeyDraft)send('journeyDraft',journeyDraft);
+      if(isCurrent&&questionScreens.includes(current.screen))send('menuPublication',menuPublished);
+      if(notices)send('noticeFixture',fixtureNotices);if(consultation)send('consultationFixture',consultationFixture);syncPins();if(wantsPoint)send('mode',true);return;}
     if(m.type==='point'&&wantsPoint&&editor&&m.payload?.artifactHash===artifact.hash&&m.payload.instance===target.screen){
       const {id,instance,x,y,viewport,scale,scroll,layers,artifactHash}=m.payload;
       if(typeof id!=='string'||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>1||y<0||y>1||!Array.isArray(scroll)||!Array.isArray(layers))return;
@@ -401,6 +461,19 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
     if(m.type==='missing'&&Array.isArray(m.payload?.ids))missing=new Set(m.payload.ids);
     if(!wantsPoint && m.type==='navigate' && typeof m.payload?.screen==='string'){
       let {screen,state}=m.payload, originStep=authOriginStep;
+      if(['role-consult','role-delivery'].includes(screen)){
+        if(isCurrent&&current.screen==='quote-result')location.assign('/ia?view=roles-r3&menu='+(screen==='role-consult'?'consult':'delivery'));
+        return;
+      }
+      if(screen==='role-case' && $('version').value==='current'){
+        const scope=current.screen==='business'?'business':['proof','signature'].includes(current.screen)?'reprice':null;
+        if(scope && state===scope)location.assign('/ia?view=roles-r3&menu='+scope);
+        return;
+      }
+      if(screen==='role-work'){
+        if(isCurrent&&roleMenus[current.screen]?.includes(state))location.assign('/ia?view=roles-r3&menu='+state);
+        return;
+      }
       if(current.screen==='onboarding'){
         if(screen==='simple-r3'){location.assign('/ia?view=simple-r3');return;}
         if(screen==='detailed-r3' && current.state.startsWith('member-')){location.assign('/ia?view=detailed-r3');return;}
@@ -565,7 +638,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   (async()=>{try{
     const [me,a]=await Promise.all([api('/api/ia/auth/me'),api(base+'/artifact')]);csrf=me.csrf;screens=a.items;await loadDrafts(me.email);
     const u=new URL(location.href);if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(u.searchParams.get('width')))$('width').value=u.searchParams.get('width');
-    list();await Promise.all([select(screens.find(r=>r.id===u.searchParams.get('screen'))||screens.find(r=>r.screen==='login')||screens[0]),readLegacy(),refresh(true)]);
+    const requested=u.searchParams.get('version');
+    if(['previous','prior-r3'].includes(requested))$('version').value=requested;
+    const pinned=u.searchParams.get('artifactHash');
+    list();await Promise.all([select(screens.find(r=>r.id===u.searchParams.get('screen'))||screens.find(r=>r.id==='login/empty/compact')||screens[0],requested==='recorded'&&pinned?'recorded':$('version').value,null,pinned),readLegacy(),refresh(true)]);
     if(target&&draftsForScreen().length){notes();status('저장하지 않은 글이 이 탭에 남아 있습니다.');}
     addEventListener('focus',()=>refresh());
   }catch(e){announceError(e);}})();

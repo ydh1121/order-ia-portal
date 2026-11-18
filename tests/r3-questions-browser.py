@@ -4,22 +4,15 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.parse import urlencode
 
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import frame_click, frame_pointer_position, prepare_frame_pointer
+from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(page, origin, width):
-    prepare_frame_pointer(page)
-    def screen(module, state):
-        query = urlencode({"view": "qa-lab", "screen": f"{module}/{state}/email", "width": width})
-        page.goto(origin + "/ia?" + query)
-        frame = page.frame_locator("#frame")
-        frame.locator("#r3-veil").wait_for(state="attached")
-        return frame
+    screen = ReviewScreens(page, origin, width).screen
 
     def confirm(frame, label):
         dialog=frame.locator("[data-qf-confirm]")

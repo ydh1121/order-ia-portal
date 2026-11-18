@@ -70,16 +70,19 @@ test('published family runtimes and frame identities agree with the reviewed sou
 });
 
 test('account feedback preserves the active login target and exports only masked loading fixtures', async () => {
-  const pinned = await row('login/empty/email',390);
+  const pinned = await row('login/empty/email',390,'prior-r3');
   assert.equal(pinned.hash,'3ce1e61428ca87c7202fe73272ad0234f0d492cd15bdb81cafaca3b409354f36');
   assert.equal(pinned.mount,runtimes.account);
+  const live=await row('login/empty/email',390);
+  assert.notEqual(live.hash,pinned.hash);
+  assert.match(live.html,/integrated-providers/);
   for (const screen of ['login','signup']) {
     const loading = await row(screen+'/loading/email');
     const body = loading.editable.split('<body>')[1].split('<script')[0];
-    assert.match(body,/placeholder="shop@example.test"/);
+    assert.match(body,/placeholder="my@order.ooo"/);
     assert.match(body,/placeholder="•+"/);
     assert.doesNotMatch(body,/data-action="password-visibility"|value="[^"]+"/);
-    assert.equal(loading.mount,runtimes.accountFeedback);
+    assert.equal(loading.mount,screen==='login'?runtimes.integratedLogin:runtimes.accountFeedback);
   }
   const signup = await row('signup/terms/email');
   assert.match(signup.html,/data-opt-choice/);

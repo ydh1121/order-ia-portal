@@ -1,0 +1,7 @@
+.ds .qa-quote{background:#f4f5f7}
+.ds .qa-quote :is(.qa-question,.qa-question-short){background:#fff;border:0;border-radius:1.1rem;box-shadow:0 1px 3px #1727360c}
+.ds .qa-quote .qa-venue-tools{display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:center;gap:.5rem}
+.ds .qa-quote .qa-venue-tools button,.ds .qa-quote .qa-disclosure{min-height:44px}
+.ds .qa-quote .qa-row-summary{overflow-wrap:anywhere;color:#566370}
+.ds .qa-quote .qf-stack:focus-within{outline:2px solid #4163d4;outline-offset:2px}
+.ds .qa-question:has([aria-invalid=true]) .qa-question-head :is(.qa-check,.qa-caret,strong){color:#ab3347}

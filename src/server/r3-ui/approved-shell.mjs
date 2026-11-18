@@ -66,7 +66,7 @@ export function approvedShellBody(){
     <section class="lab-stage" id="surface" data-mode="focus" aria-label="화면 미리보기">
       <div class="lab-stage-heading"><span id="stage-hint">화면에서 직접 조작하거나 위치 코멘트를 남겨 주세요.</span><span class="prototype-pill" id="prototype-badge">디자인 예시</span></div>
       <nav id="quote-candidates" hidden aria-label="실제 견적 입력"><a href="/ia?view=simple-r3#/form" target="_blank" rel="noopener">간편 견적 입력 열기</a> · <a href="/ia?view=detailed-r3#/form" target="_blank" rel="noopener">상세 견적 입력 열기</a></nav>
-      <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><output id="snapshot"></output></section>
+      <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><section id="snapshot" aria-label="선택한 견적"></section></section>
       <div class="preview-list" id="preview-list">
         <section class="preview-unit mobile" id="focus-unit" data-width="390" data-height="844">
           <div class="preview-caption"><strong id="focus-label">모바일</strong><button id="focus-viewport" class="viewport-review active" aria-label="이 화면 크기 검토">390px</button></div>
@@ -121,7 +121,7 @@ export function approvedShellBody(){
       <label class="check-setting"><input type="checkbox" id="motion-enabled" checked>모션 재생</label>
       <label class="check-setting"><input type="checkbox" id="show-resolved-pins">해결된 위치 코멘트 표시</label>
       <label class="sr-only" for="width">현재 검토 폭</label><select id="width" hidden><option value="0">원본 폭</option>${widthOptions(approvedWidths)}</select>
-      <label for="version">비교할 화면<select id="version"><option value="current">이번 판</option><option value="previous">이전 화면</option></select></label><span class="sr-only" id="version-mark"></span>
+      <label for="version">비교할 화면<select id="version"><option value="current">이번 판</option><option value="prior-r3">이전 R3 검토판</option><option value="previous">R2 화면</option></select></label><span class="sr-only" id="version-mark"></span>
       <label class="check-setting"><input type="checkbox" id="audit-demo">실행 검증용 기록 포함</label>
       <button id="hide-pins" class="drawer-button" aria-pressed="false">핀 숨기기</button><button class="drawer-button" id="sync">다시 읽기</button>
       <h3>개별 파일</h3><button id="export-editable" class="drawer-button" data-lab-action="export-html">피그마 편집용 HTML</button><button id="export-runnable" class="drawer-button">실행용 HTML</button>
