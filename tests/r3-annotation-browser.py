@@ -147,6 +147,73 @@ def restored_pin(page, frame, card, anchor):
  assert dist(geometry["relative"],geometry["center"])<=3, geometry
  return geometry
 
+def check_zoomed_pin(page, context, origin, width):
+    """Save a real pin on a wide canvas. Preserve its DOM attachment across view changes."""
+    state = {320:"empty", 390:"filled", 1440:"email-error"}[width]
+    page.set_viewport_size({"width":width, "height":870})
+    page.goto(f"{origin}/ia?view=qa-lab&screen=login/{state}/email&width=1920")
+    frame = page.frame_locator("#frame")
+    veil = frame.locator("#r3-veil")
+    veil.wait_for(state="attached")
+
+    def fit(enabled):
+        page.locator("#points").click()
+        page.locator("[data-drawer-tab=settings]").click()
+        page.locator("#scale-fit").set_checked(enabled)
+        page.locator("#close-drawer").click()
+        return page.locator("#focus-unit .preview-canvas").evaluate(
+            "el => new DOMMatrixReadOnly(getComputedStyle(el).transform).a"
+        )
+
+    assert fit(False) == 1
+    page.locator("#new").click()
+    frame_click(page, veil, position={"x":1750, "y":150})
+    text = f"배율과 가로 이동 {width}"
+    page.locator("#body-text").fill(text)
+    with page.expect_response(lambda r: r.request.method=="POST" and
+            r.url.endswith("/r3-qa/records") and r.request.post_data_json.get("kind")=="comment") as receipt:
+        page.locator("#save").click()
+    assert receipt.value.ok
+    anchor = receipt.value.request.post_data_json["data"]["anchor"]
+    saved_x = next(s["x"] for s in anchor["scroll"] if s["id"]=="host-surface")
+    assert saved_x > 0, anchor["scroll"]
+    card = page.locator("#notes article").filter(has=page.get_by_text(text,exact=True))
+    original = restored_pin(page, frame, card, anchor)
+
+    # Pinch zoom is Chrome's visual viewport scale. The QA tool's canvas fit control
+    # is a distinct transformation; verify both without editing the rendered DOM.
+    cdp = context.new_cdp_session(page)
+    try:
+        cdp.send("Emulation.setPageScaleFactor", {"pageScaleFactor":2})
+        scale = page.evaluate("() => visualViewport.scale")
+        assert abs(scale-2) <= 0.01, scale
+        enlarged = pin_geometry(page, frame, anchor)
+        assert dist(enlarged["relative"], enlarged["center"]) * scale <= 3, enlarged
+        cdp.send("Emulation.setPageScaleFactor", {"pageScaleFactor":1})
+    finally:
+        cdp.detach()
+    fitted_scale = fit(True)
+    assert 0 < fitted_scale < 1, fitted_scale
+    fitted = pin_geometry(page, frame, anchor)
+    assert dist(fitted["relative"], fitted["center"]) <= 3
+    page.locator("[data-mode=dual]").first.click()
+    dual = pin_geometry(page, frame, anchor)
+    assert dist(dual["relative"], dual["center"]) <= 3
+    page.locator("[data-mode=focus]").first.click()
+    assert fit(False) == 1
+    # Move the real stage away from the recorded position, then restore through the UI.
+    stage = page.locator("#surface")
+    stage.evaluate("el => el.scrollTo(0,0)")
+    assert stage.evaluate("el => el.scrollLeft") == 0
+    page.locator("#points").click()
+    restored = restored_pin(page, frame, card, anchor)
+    error = dist(restored["absolute"], original["absolute"])
+    assert error <= 3, (error, restored, original)
+    print(json.dumps({"width":width, "artifactWidth":1920, "zoom":scale,
+                      "fitScale":fitted_scale, "savedScrollX":saved_x,
+                      "absoluteErrorAfterModeAndZoom":error}), flush=True)
+
+
 def run():
  host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
  try:
@@ -214,6 +281,8 @@ def run():
     if width==390:
      check_draft_recovery(ctx,page)
      check_screen_memo(ctx,page)
+     check_zoomed_pin(page,ctx,fixture['url'],320)
+    check_zoomed_pin(page,ctx,fixture['url'],width)
     ctx.close()
    browser.close()
  finally:host.terminate();host.wait(timeout=5)
