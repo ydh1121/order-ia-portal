@@ -21,7 +21,7 @@ export function buildIaReference(screens,decisions){
  journey:{steps:steps.filter(x=>ids.has(x.id)).map(x=>x.key==='apply'?{...x,desc:'신청 단계 · 등록증 최초 제출·재사용 조건은 현재 정책 대장으로 확인'}:x),branches:branches.filter(x=>ids.has(x.id)),
   edges:edges.filter(e=>keys.has(e[0])&&keys.has(e[1])),paths:Object.fromEntries(Object.entries(flowSets).map(([k,v])=>[k,v.filter(x=>keys.has(x))])),
   scenarios:scenarios.filter(x=>ids.has(x[1])).map(x=>({title:x[0],screenId:x[1],description:x[2]}))},
- operations:bridges.map(x=>({title:x[0],ids:known(x[1].match(/[FUPCA]\\d{2}/g)||[]),description:x[2]})),
- policyLinks:Object.fromEntries(decisions.items.map(x=>[x.id,known([...new Set(String(x.relatedScreens||'').match(/[FUPCA]\\d{2}/g)||[])])])),
+ operations:bridges.map(x=>({title:x[0],ids:known(x[1].match(/[FUPCA]\d{2}/g)||[]),description:x[2]})),
+ policyLinks:Object.fromEntries(decisions.items.map(x=>[x.id,known([...new Set(String(x.relatedScreens||'').match(/[FUPCA]\d{2}/g)||[])])])),
  technical:miles.filter(x=>/^R[0-6]$/.test(x[0])).map(x=>({code:x[0],historicalState:x[1],name:x[2],details:x[3]}))};
 }

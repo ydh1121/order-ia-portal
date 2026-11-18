@@ -1,0 +1,25 @@
+// The Pages route has verified the OWNER before rendering HTML or serving
+// assets. All browser code in this inventory comes from the sealed order build.
+import {quoteCommit,quoteTemplate,quoteFiles} from './r3-product-sources.mjs';
+
+const prefix='/ia/r3-product/';
+const base={'Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer','Vary':'Cookie, Cf-Access-Jwt-Assertion','Cross-Origin-Resource-Policy':'same-origin'};
+
+export async function renderR3ProductPage(nonce,mode,actorId){
+ if(!/^[a-zA-Z0-9+/=_-]+$/.test(nonce)||!['simple','detailed'].includes(mode)||typeof actorId!=='string'||!actorId)throw Error('Invalid R3 quote context');
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('order.ooo/ia/quote/v1/'+actorId));
+ const partition=Array.from(new Uint8Array(digest),n=>n.toString(16).padStart(2,'0')).join('');
+ return quoteTemplate.replace('<html lang="ko">',`<html lang="ko" data-r3-quote-mode="${mode}" data-r3-quote-commit="${quoteCommit}" data-r3-quote-partition="${partition}">`)
+   .replace(/<link rel="stylesheet" href="\/([a-z-]+\.css)">/g,(_,name)=>`<link rel="stylesheet" href="${prefix}web/${name}">`)
+   .replace('<script type="module" src="/main.mjs">',`<script nonce="${nonce}" type="module" src="${prefix}web/main.mjs">`)
+   .replace('</header>','<a class="ui-copy-action" href="/ia?view=qa-lab">QA LAB으로</a></header>');
+}
+
+export function r3ProductAsset(pathname){
+ const path=pathname.startsWith(prefix)?pathname.slice(prefix.length):'';
+ if(!Object.hasOwn(quoteFiles,path))return new Response(null,{status:404,headers:base});
+ const bytes=Uint8Array.from(atob(quoteFiles[path]),char=>char.charCodeAt(0));
+ const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+ const type=path.endsWith('.mjs')?'text/javascript':path.endsWith('.css')?'text/css':'application/json';
+ return new Response(stream,{headers:{...base,'Content-Type':type+'; charset=utf-8'}});
+}

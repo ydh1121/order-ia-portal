@@ -3,10 +3,11 @@
  */
 import {ORIGINAL_V03_SOURCE} from './v03-source.mjs';
 import {UX_CSS} from './v03-ux.css.mjs';
-import {UX_RUNTIME} from './v03-ux.js.mjs';
+import {UX_RUNTIME,UX_NAV_RUNTIME} from './v03-ux.js.mjs';
 const prelude=String.raw`
 (async()=>{
 'use strict';
+${UX_NAV_RUNTIME}
 try {
 const response=await fetch('/api/ia/dashboard',{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
 if(response.status===401||response.status===403){location.replace('/login');return}
@@ -119,7 +120,18 @@ for(const [from,to] of currentRegistrationCopy){
 }
 
 s=s.replace(/(<script id="pending-json" type="application\/json">)[\s\S]*?(<\/script>)/,(_,a,b)=>a+'[]'+b);
-s=s.replace('</style>','\n'+UX_CSS+'</style>');
+const toolStyles=String.raw`
+.sidebar nav .ia-tool-link{color:#afc5cd;background:transparent;border:1px solid transparent;text-decoration:none;text-align:left;display:flex;align-items:center;gap:13px;border-radius:11px;padding:12px 14px;width:100%;font-size:14px;font-weight:650;min-height:44px;line-height:1.4}
+.sidebar nav .ia-tool-link span{color:#7e9fac;font-size:12px;font-weight:800}.sidebar nav .ia-tool-link:hover{background:#20414e}.sidebar nav .ia-tool-link:focus-visible{outline:3px solid #46aa93;outline-offset:3px}
+.sidebar nav .ia-tool-fallback{padding:0 14px;color:#7e9fac;font-size:11px}.sidebar nav .ia-tool-fallback a{color:#afc5cd}.sidebar nav .ia-tool-label{padding:13px 14px 2px;color:#7e9fac;font-size:11px;font-weight:700}
+html,body,.sidebar,#nav{scrollbar-width:none}html::-webkit-scrollbar,body::-webkit-scrollbar,.sidebar::-webkit-scrollbar,#nav::-webkit-scrollbar{display:none}
+@media(min-width:981px){.sidebar{overflow-y:auto}}@media(max-width:980px){.sidebar nav .ia-tool-link{width:auto;min-width:max-content;white-space:nowrap}}@media(max-width:640px){.sidebar nav .ia-tool-link{width:100%;white-space:normal;min-width:0}}
+`;
+s=s.replace('</style>','\n'+UX_CSS+'\n'+toolStyles+'</style>');
+// Keep QA in the existing IA menu, with a real user-activated new-window link.
+// It remains available even when the live Google dashboard reports a loading error.
+const tools='<div class="ia-tool-label">검토 도구</div><a class="ia-tool-link" href="/ia?view=qa-lab" target="_blank" rel="noopener noreferrer" aria-label="QA랩 새 창에서 열기"><span>09</span>QA랩</a><details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details><a class="ia-tool-link" href="/ia?view=pricing-r3"><span>10</span>가격표·배송 정책</a><a class="ia-tool-link" href="/ia?view=roles-r3"><span>11</span>업무 흐름 검토</a>';
+s=s.replace('</nav><div class="sidefoot">',tools+'</nav><div class="sidefoot">');
 s=s.replace('<body>','<body><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
 s=s.replace('<script>','<script nonce="'+nonce+'">'+prelude);
 s=s.replace('</script></body></html>',after.replace('}catch(error){',UX_RUNTIME+'\n}catch(error){')+'</script></body></html>');

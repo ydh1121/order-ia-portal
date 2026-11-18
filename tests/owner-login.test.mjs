@@ -39,7 +39,7 @@ test('signed challenge and synthetic 310000-round proof issue secure session',as
 });
 test('anonymous and forged-cookie API denied',async()=>{assert.equal((await handleIaRequest(req('/api/ia/screens'),env)).status,403);assert.equal((await handleIaRequest(req('/api/ia/screens',{cookie:'__Host-ia_session=forged'}),env)).status,403)});
 test('logout requires origin and CSRF, clears cookie',async()=>{const s=await issueSession(env),cookie=s.cookie.split(';')[0];assert.equal((await handleOwnerAuthRequest(req('/api/ia/auth/logout',{method:'POST',cookie,origin}),env)).status,403);const r=await handleOwnerAuthRequest(req('/api/ia/auth/logout',{method:'POST',cookie,origin,csrf:s.csrf}),env);assert.equal(r.status,200);assert.match(r.headers.get('Set-Cookie'),/Max-Age=0/)});
-test('private IA deep links are inaccessible without server session',async()=>{const r=await onRequest({request:req('/ia/screen/F17'),env});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login.html')});
+test('private IA deep links are inaccessible without server session',async()=>{const r=await onRequest({request:req('/ia/screen/F17'),env});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login')});
 test('notes still deny writes',async()=>{const s=await issueSession(env);assert.equal((await handleIaRequest(req('/api/ia/notes',{method:'POST',cookie:s.cookie.split(';')[0]}),env)).status,405)});
 
 test('synthetic incorrect proof is JSON 401 not platform HTML',async()=>{

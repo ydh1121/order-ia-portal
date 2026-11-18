@@ -50,9 +50,19 @@ test('incomplete wrong decision status fails closed to 503 without any partial r
 test('Google token rejection is distinct nonsecret owner-only diagnostics',async()=>{
  const response=await handleIaRequest(request('/api/ia/dashboard'),env,{fetchDashboardTabs:async()=>{throw Error('GOOGLE_TOKEN_DENIED')}});assert.equal(response.status,503);assert.equal((await response.json()).reason,'GOOGLE_TOKEN_DENIED');
 });
-test('private /ia path redirect and owner private shell never contains source data',async()=>{
- const anonymous=await iaPage({request:request('/ia/','GET',null),env});assert.equal(anonymous.status,302);
- const res=await iaPage({request:request('/ia/'),env});assert.equal(res.status,200);const body=await res.text();assert.match(body,/IA 관리 대시보드/);for(const x of ['PENDING-01','F17','사업자등록증','GOOGLE_SERVICE_ACCOUNT_JSON'])assert.ok(!body.includes(x));
+test('unauthenticated /ia contains no source; OWNER receives private no-store IA with no credentials',async()=>{
+ const anonymous=await iaPage({request:request('/ia/','GET',null),env});
+ assert.equal(anonymous.status,302);assert.equal(await anonymous.text(),'');
+ const res=await iaPage({request:request('/ia/'),env});assert.equal(res.status,200);
+ const body=await res.text();assert.match(body,/인증 IA v0.3/);
+ const sidebar=body.match(/<aside\b[^>]*class="sidebar"[^>]*>([\s\S]*?)<\/aside>/)?.[1];
+ assert.ok(sidebar,'the original IA sidebar remains the entry point');
+ const qaLink=sidebar.match(/<a\b[^>]*href="\/ia\?view=qa-lab"[^>]*>([\s\S]*?)<\/a>/);
+ assert.ok(qaLink,'QA is reachable from the existing IA sidebar');
+ assert.match(qaLink[1],/QA랩/);
+ assert.match(qaLink[0],/\btarget="_blank"/);
+ assert.match(res.headers.get('cache-control'),/private, no-store/);assert.match(res.headers.get('content-security-policy'),/frame-ancestors 'none'/);
+ for(const x of ['GOOGLE_SERVICE_ACCOUNT_JSON','USER PRIVATE NOTE','PRIVATE CHOICE'])assert.ok(!body.includes(x));
 });
 test('public JS contains UI behavior but no confidential static IA rows, price or linked Drive keys',()=>{
  const pub=resolve(root,'public');const js=readFileSync(resolve(pub,'owner.js'),'utf8');const css=readFileSync(resolve(pub,'owner.css'),'utf8');assert.ok(js.includes('/api/ia/dashboard'));for(const x of ['PENDING-01','F17','250×6600','docs.google.com','drive.google.com','IA_GOOGLE_SERVICE_ACCOUNT_JSON','/src/internal'])assert.ok(!js.includes(x) && !css.includes(x));

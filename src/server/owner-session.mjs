@@ -14,7 +14,9 @@ const bytes=x=>enc.encode(x);
 const b64=x=>btoa(String.fromCharCode(...new Uint8Array(x))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 const unb64=x=>{
   if(typeof x!=='string'||x.length>4096||!/^[A-Za-z0-9_-]+$/.test(x))throw Error('INVALID_B64');
-  return Uint8Array.from(atob(x.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-x.length%4)%4)),v=>v.charCodeAt(0));
+  const decoded=Uint8Array.from(atob(x.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-x.length%4)%4)),v=>v.charCodeAt(0));
+  if(b64(decoded)!==x)throw Error('INVALID_B64');
+  return decoded;
 };
 const eq=(a,b)=>{
   if(a.length!==b.length)return false;
@@ -53,10 +55,21 @@ export async function verifyPassword(password,env){
   const computed=new Uint8Array(await crypto.subtle.deriveBits({name:'PBKDF2',hash:'SHA-256',salt:unb64(salt),iterations:Number(rounds)},key,256));
   return eq(computed,unb64(hash));
 }
-export function sameOrigin(request){
+// Preview credentials are independent of the production password and cookie.
+export function previewOwnerOrigin(env) {
+  const origin=env?.IA_PREVIEW_OWNER_ORIGIN;
+  return typeof origin==='string' && /^https:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.order-ia-portal\.pages\.dev$/.test(origin) ? origin : null;
+}
+function sessionConfigured(env) {
+  if(env?.IA_PREVIEW_OWNER_ORIGIN===undefined)return ownerConfigured(env);
+  return !!previewOwnerOrigin(env) && env.IA_OWNER_LOGIN_ENABLED!=='true' &&
+    typeof env.IA_OWNER_EMAIL==='string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env.IA_OWNER_EMAIL);
+}
+const sessionPrefix=env=>env?.IA_PREVIEW_OWNER_ORIGIN===undefined?'ia.session.v1.':'ia.preview.session.v1.'+previewOwnerOrigin(env)+'.';
+export function sameOrigin(request,env){
   const url=new URL(request.url);
-  const origin=request.headers.get('Origin');
-  return url.protocol==='https:' && url.hostname==='order-ia-portal.pages.dev' && origin===url.origin &&
+  const allowed=env?.IA_PREVIEW_OWNER_ORIGIN===undefined?'https://order-ia-portal.pages.dev':previewOwnerOrigin(env);
+  return url.origin===allowed && request.headers.get('Origin')===url.origin &&
     request.headers.get('Sec-Fetch-Site')!=='cross-site';
 }
 function cookieValue(request,name){
@@ -119,23 +132,24 @@ async function verifyChallenge(request,env,body,now){
   return true;
 }
 export async function issueSession(env,now=Math.floor(Date.now()/1000)){
-  if(!ownerConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
+  if(!sessionConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
   const key=await hmacKey(env);
   const sid=b64(rand(24));
   const payload={v:1,sid,iat:now,exp:now+TTL};
   const body=b64(bytes(JSON.stringify(payload)));
-  const signature=b64(await sign(key,'ia.session.v1.'+body));
+  const signature=b64(await sign(key,sessionPrefix(env)+body));
   const token=body+'.'+signature;
   const csrf=b64(await sign(key,'ia.csrf.v1.'+sid));
   return {cookie:`${COOKIE}=${token}; Path=/; Max-Age=${TTL}; Secure; HttpOnly; SameSite=Strict`,csrf,expiresIn:TTL};
 }
 export async function readSession(request,env,now=Math.floor(Date.now()/1000)){
-  if(!ownerConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
+  if(!sessionConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
+  if(env?.IA_PREVIEW_OWNER_ORIGIN!==undefined && new URL(request.url).origin!==previewOwnerOrigin(env))throw Error('SESSION_DENIED');
   const value=getCookie(request);
   if(!value||value.length>900||value.split('.').length!==2)throw Error('SESSION_DENIED');
   const [body,sig]=value.split('.');
   const key=await hmacKey(env);
-  const expected=await sign(key,'ia.session.v1.'+body);
+  const expected=await sign(key,sessionPrefix(env)+body);
   if(!eq(expected,unb64(sig)))throw Error('SESSION_DENIED');
   let p;try{p=JSON.parse(new TextDecoder().decode(unb64(body)))}catch{throw Error('SESSION_DENIED')}
   if(p.v!==1||typeof p.sid!=='string'||unb64(p.sid).length!==24||!Number.isSafeInteger(p.iat)||!Number.isSafeInteger(p.exp)||
@@ -179,7 +193,7 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
   }
   if(pathname==='/api/ia/auth/login'){
     if(request.method!=='POST')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST'});
-    if(!sameOrigin(request))return result({error:'ORIGIN_DENIED'},403);
+    if(!sameOrigin(request,env))return result({error:'ORIGIN_DENIED'},403);
     if(!ownerConfigured(env))return result({error:'LOGIN_NOT_CONFIGURED'},503);
     if(!limiter(request,now*1000))return result({error:'RATE_LIMITED'},429,{'Retry-After':'900'});
     if(!/^application\/json(?:;|$)/i.test(request.headers.get('Content-Type')||''))return reject();
@@ -205,7 +219,7 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
   }
   if(pathname==='/api/ia/auth/logout'){
     if(request.method!=='POST')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST'});
-    if(!sameOrigin(request))return result({error:'ORIGIN_DENIED'},403);
+    if(!sameOrigin(request,env))return result({error:'ORIGIN_DENIED'},403);
     try{
       const actor=await readSession(request,env,now);
       if(request.headers.get('X-IA-CSRF')!==actor.csrf)return result({error:'CSRF_DENIED'},403);

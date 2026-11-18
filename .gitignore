@@ -9,3 +9,5 @@ secret*.json
 
 .dev.vars*
 *.log
+
+__pycache__/

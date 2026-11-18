@@ -33,7 +33,13 @@ test('current Google source exclusively controls decisions and provider status; 
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
 test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'f7f5cbae4f20261ddd3cd8c8921d0db02fac22ef9afa9ef4fff9ca33ec41cbb4');
- assert.equal(sha256(actualCode),'236344c4b0c6bcb9a8b2c52d896d7f03568a99801d9b38f0bdfc8ad7386391e3');
+ assert.equal(sha256(html),'084a755ff3fc2a171053be432f2603a1ce895d944352550b7ea09de4a2509961');
+ assert.equal(sha256(actualCode),'b2aa01b2656bd1e81ce19deacd3369751485afd7413b73e02ab59924474e0662');
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
+});
+
+test('private QA remains reachable in the same tab when a popup is blocked',()=>{
+ const fallback='<details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details>';
+ assert.ok(html.includes(fallback));
+ assert.equal(sha256(html.replace(fallback,'')),'1f1f7f993b8afbdf6289ec0ce8766a656b96d4d45fd27e982fe923963bb39f57');
 });
