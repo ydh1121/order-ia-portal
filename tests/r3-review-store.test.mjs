@@ -35,7 +35,14 @@ test('authentication, original CSRF and direct login return view',async()=>{
   assert.equal(deep.headers.get('location'),'/login?returnView=qa-lab&screen=login%2Fempty%2Femail&width=390');
   const asset=await page({request:new Request(origin+'/ia/r3-product/unknown.mjs'),env});
   assert.equal(asset.status,403);assert.equal(await asset.text(),'');
-  assert.match(v03OwnerHtml('nonce-qa'),/href="\/ia\?view=qa-lab" target="_blank" rel="noopener"/);
+  const sidebar=v03OwnerHtml('nonce-qa').match(/<aside\b[^>]*class="sidebar"[^>]*>([\s\S]*?)<\/aside>/)?.[1];
+  assert.ok(sidebar,'QA uses the original IA sidebar');
+  const qaLink=sidebar.match(/<a\b[^>]*href="\/ia\?view=qa-lab"[^>]*>/)?.[0];
+  assert.ok(qaLink,'the QA new-window link is present');
+  assert.match(qaLink,/\btarget="_blank"/);
+  const rel=new Set((qaLink.match(/\brel="([^"]*)"/)?.[1]||'').split(/\s+/));
+  assert.ok(rel.has('noopener'),'new QA windows cannot control their opener');
+  assert.ok(rel.has('noreferrer'),'navigation does not forward private IA referrers');
   assert.equal(db.prepare('SELECT count(*) AS n FROM qa_review_events').get().n,0);
 });
 test('server-generated revision, atomic contention, conflict payload and retry',async()=>{

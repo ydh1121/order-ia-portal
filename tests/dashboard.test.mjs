@@ -54,7 +54,13 @@ test('unauthenticated /ia contains no source; OWNER receives private no-store IA
  const anonymous=await iaPage({request:request('/ia/','GET',null),env});
  assert.equal(anonymous.status,302);assert.equal(await anonymous.text(),'');
  const res=await iaPage({request:request('/ia/'),env});assert.equal(res.status,200);
- const body=await res.text();assert.match(body,/인증 IA v0.3/);assert.match(body,/QA 연구실/);
+ const body=await res.text();assert.match(body,/인증 IA v0.3/);
+ const sidebar=body.match(/<aside\b[^>]*class="sidebar"[^>]*>([\s\S]*?)<\/aside>/)?.[1];
+ assert.ok(sidebar,'the original IA sidebar remains the entry point');
+ const qaLink=sidebar.match(/<a\b[^>]*href="\/ia\?view=qa-lab"[^>]*>([\s\S]*?)<\/a>/);
+ assert.ok(qaLink,'QA is reachable from the existing IA sidebar');
+ assert.match(qaLink[1],/QA랩/);
+ assert.match(qaLink[0],/\btarget="_blank"/);
  assert.match(res.headers.get('cache-control'),/private, no-store/);assert.match(res.headers.get('content-security-policy'),/frame-ancestors 'none'/);
  for(const x of ['GOOGLE_SERVICE_ACCOUNT_JSON','USER PRIVATE NOTE','PRIVATE CHOICE'])assert.ok(!body.includes(x));
 });
