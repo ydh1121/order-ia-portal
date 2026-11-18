@@ -1,8 +1,68 @@
 """Chromium interaction tests of the actual authenticated Pages UI with ephemeral SQLite/actor."""
 from pathlib import Path
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
+def check_draft_recovery(context,page):
+ # Exercise the real editor, interrupt just the response after one committed POST,
+ # and replay from a reloaded document. The SQLite fixture receives actual requests.
+ body='복구 검수용 의견'
+ draft=page.locator('#body-text')
+ page.locator('#points').click()
+ page.locator('#general').click()
+ draft.fill(body)
+ context.set_offline(True)
+ page.locator('#save').click()
+ expect(page.locator('#live')).to_contain_text('저장하지 못했습니다')
+ expect(draft).to_have_value(body)
+ context.set_offline(False)
+ def recover():
+  page.reload()
+  page.get_by_role('button',name='저장하지 않은 의견 이어쓰기 · '+body).click()
+  expect(draft).to_have_value(body)
+ recover()
+ pattern='**/api/ia/r3-qa/records'
+ seen=[]
+ def drop_committed_response(route):
+  response=route.fetch()
+  seen.append((route.request.post_data_json['idempotencyKey'],response.status))
+  route.abort()
+ page.route(pattern,drop_committed_response)
+ page.locator('#save').click()
+ expect(page.locator('#live')).to_contain_text('저장하지 못했습니다')
+ page.unroute(pattern,drop_committed_response)
+ recover()
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records')) as result:
+  page.locator('#save').click()
+ response=result.value
+ assert len(seen)==1 and seen[0][1]==200 and response.request.post_data_json['idempotencyKey']==seen[0][0]
+ assert response.json()['replayed'] and response.json()['revision']==1
+ card=page.locator('#notes article').filter(has=page.get_by_text(body,exact=True))
+ second=context.new_page()
+ second.goto(page.url)
+ second.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+ second.locator('#points').click()
+ second.locator('#notes article').filter(has=second.get_by_text(body,exact=True)).get_by_role('button',name='수정',exact=True).click()
+ second.locator('#body-text').fill('두 번째 탭 초안')
+ card.get_by_role('button',name='수정',exact=True).click()
+ draft.fill('먼저 확정한 의견')
+ page.locator('#save').click()
+ expect(page.locator('#live')).to_contain_text('저장됨 · r2')
+ second.locator('#save').click()
+ expect(second.locator('#conflict')).to_contain_text('먼저 확정한 의견')
+ expect(second.locator('#body-text')).to_have_value('두 번째 탭 초안')
+ second.get_by_role('button',name='다른 탭의 내용을 확인하고 계속 수정').click()
+ second.locator('#save').click()
+ expect(second.locator('#live')).to_contain_text('저장됨 · r3')
+ second.reload()
+ second.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+ second.locator('#points').click()
+ entry=second.locator('#notes article').filter(has=second.get_by_text('두 번째 탭 초안',exact=True))
+ entry.get_by_role('button',name='이력').click()
+ expect(entry).to_contain_text('r2 · save · 먼저 확정한 의견')
+ expect(entry).to_contain_text('r3 · save · 두 번째 탭 초안')
+ second.close()
+ print('PASS offline edit + reload, post-commit lost response + replay r1, two-tab UI conflict + explicit rebase r3 preserving both versions')
 def run():
  host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
  try:
@@ -48,6 +108,7 @@ def run():
     assert b'<iframe' not in raw and b'id="frame-meta"' in raw
     assert not errors,errors
     print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'pageErrors':errors}))
+    if width==390:check_draft_recovery(ctx,page)
     ctx.close()
    browser.close()
  finally:host.terminate();host.wait(timeout=5)

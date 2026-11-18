@@ -1,0 +1,79 @@
+{
+  "delayed": {
+    "format": "bloub-montage",
+    "version": 1,
+    "engineRevision": "order-egg-r4",
+    "name": "지연",
+    "settings": {
+      "shape": "egg",
+      "color": "#ffbc70",
+      "expression": "attentif",
+      "direction": "original",
+      "rainbow": null,
+      "eyes": {
+        "shape": "round",
+        "width": 1.2,
+        "height": 1.05,
+        "spacing": 1
+      },
+      "material": {
+        "preset": "flat",
+        "strength": 0.85,
+        "roughness": 0.55,
+        "lightAngle": -135
+      }
+    },
+    "background": "transparent",
+    "size": 256,
+    "fps": 60,
+    "loop": true,
+    "blocks": [
+      {
+        "state": "thinking",
+        "duration": 2.8,
+        "direction": "reverse"
+      },
+      {
+        "state": "alert",
+        "duration": 2.4,
+        "direction": "reverse"
+      }
+    ]
+  },
+  "complete": {
+    "format": "bloub-montage",
+    "version": 1,
+    "engineRevision": "order-egg-r4",
+    "name": "견적 완료",
+    "settings": {
+      "shape": "egg",
+      "color": "#ffbc70",
+      "expression": "attentif",
+      "direction": "original",
+      "rainbow": null,
+      "eyes": {
+        "shape": "round",
+        "width": 1.2,
+        "height": 1.05,
+        "spacing": 1
+      },
+      "material": {
+        "preset": "flat",
+        "strength": 0.85,
+        "roughness": 0.55,
+        "lightAngle": -135
+      }
+    },
+    "background": "transparent",
+    "size": 256,
+    "fps": 60,
+    "loop": false,
+    "blocks": [
+      {
+        "state": "comet_fade",
+        "duration": 2.4,
+        "direction": "original"
+      }
+    ]
+  }
+}

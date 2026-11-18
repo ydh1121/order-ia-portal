@@ -38,8 +38,9 @@ export async function serveR3Artifact(request){
   const meta=js({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:r[version],cssSha256:version==='previous'?previousCssHash:cssHash});
   const page=common+'<!--R3-POLICY--><style>'+css+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
   const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
-  const candidates={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',onboarding:'member', 'quote-wait':'member'};
-  const mount=version==='current'&&Object.hasOwn(candidates,r.screen)?runtimes[candidates[r.screen]]:null;
+  const candidates={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member', 'quote-wait':'member'};
+  const family=r.runtimeFamily || candidates[r.screen];
+  const mount=version==='current' && Object.hasOwn(runtimes,family) ? runtimes[family] : null;
   return json({release,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
 }
 export function renderR3Qa(nonce){

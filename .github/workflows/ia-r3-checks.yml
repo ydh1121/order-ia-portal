@@ -35,6 +35,16 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-annotation-browser.py
+      - name: Check business forms, proof and signature review at three widths
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-business-feedback-browser.py
+      - name: Check pass filtering, tag search, profile settings and booking hours
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-navigation-browser.py
       - name: Check price review and protected snapshots
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
