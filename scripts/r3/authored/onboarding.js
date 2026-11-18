@@ -39,7 +39,7 @@
   function render(state) {
     const member=state.startsWith('member-'), opened=state==='company', step=opened?1:Number(state.slice(-1));
     const [title,subtitle]=copy[step-1], inactive=opened?' inert':'';
-    const top=member ? '<strong class="ob-wordmark">Order</strong>'+link(brandMark,'profile/menu','ob-mark-btn') :
+    const top=member ? '<strong class="ob-wordmark">Order<span class="ob-period" aria-hidden="true">.</span></strong>'+link(brandMark,'profile/menu','ob-mark-btn') :
       '<button type="button" class="ob-brand" data-action="animate-brand" aria-label="Order 로고"><strong>Order.</strong>'+brandMark+'</button>'+link('회원가입','signup/empty','ob-join');
     const content=step===4?'<div class="ob-mode-grid">'+mode(true,member,true)+mode(false,member,true)+'</div>':
       step<=2?'<img class="ob-art" alt="" width="287" height="226" data-intro-art>':'';
@@ -59,7 +59,29 @@
     let drag=null,gripStart=null,suppressClick=false;
     const go=n=>{if(n!==step && n>=1 && n<=4)api.select('onboarding',prefix+'-'+n);};
     function menu(open){if(quick){quick.setAttribute('aria-expanded',String(open));shell.querySelector('.ob-quick-items').hidden=!open;}}
-    function show(open){shade.hidden=!open;stage.inert=open;shell.classList.toggle('footer-open',open);menu(false);if(open)grip.focus({preventScroll:true});else opener.focus({preventScroll:true});}
+    const mark=shell.querySelector('.ob-mark-btn');
+    on(window,'message',e=>{
+      if(e.source!==parent||e.data?.scope!=='ORDER_R3_HOST'||e.data.type!=='memberArrival'||!mark)return;
+      shell.dataset.memberArrival='true';
+      if(api.reduced?.())return;
+      const period=shell.querySelector('.ob-period');
+      period?.animate([{opacity:1},{opacity:0}],{duration:300});
+      const distance=mark.getBoundingClientRect().left-shell.querySelector('.ob-wordmark').getBoundingClientRect().right;
+      mark.animate([{transform:'translateX('+(-Math.max(0,distance))+'px)'},{transform:'translateX(7px)',offset:.7},{transform:'translateX(-3px)',offset:.88},{transform:'translateX(0)'}],{duration:570,easing:'ease-out'});
+    });
+    let paused=[];
+    function show(open){
+      if(open){
+        paused=stage.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
+        for(const a of paused)a.pause();
+        for(const svg of stage.querySelectorAll('svg'))svg.pauseAnimations?.();
+      }else{
+        for(const a of paused)a.play();paused=[];
+        for(const svg of stage.querySelectorAll('svg'))svg.unpauseAnimations?.();
+      }
+      shade.hidden=!open;stage.inert=open;shell.classList.toggle('footer-open',open);menu(false);
+      if(open)grip.focus({preventScroll:true});else opener.focus({preventScroll:true});
+    }
     on(shell,'click',e=>{
       const b=e.target.closest('button');
       if(e.target===shade||b?.hasAttribute('data-company-close')){show(false);return;}
@@ -82,7 +104,7 @@
     on(main,'pointerup',e=>{if(!drag||drag.id!==e.pointerId)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;drag=null;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.4){suppressClick=true;go(step+(dx<0?1:-1));}});
     on(main,'pointercancel',()=>{drag=null;});
     on(grip,'pointerdown',e=>{gripStart=e.clientY;grip.setPointerCapture(e.pointerId);});
-    on(grip,'pointermove',e=>{if(gripStart!==null)modal.style.transform='translateY('+Math.max(0,e.clientY-gripStart)*.75+'px)';});
+    on(grip,'pointermove',e=>{if(gripStart!==null)modal.style.transform='translateY('+(e.clientY>=gripStart?(e.clientY-gripStart)*.85:-Math.sqrt(gripStart-e.clientY)*1.6)+'px)';});
     function release(e){if(gripStart!==null&&e.type==='pointerup'&&e.clientY-gripStart>55)show(false);gripStart=null;modal.style.removeProperty('transform');}
     on(grip,'pointerup',release);on(grip,'pointercancel',release);
     if(state==='company')show(true);

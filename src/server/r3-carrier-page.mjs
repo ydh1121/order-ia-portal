@@ -17,6 +17,10 @@ export const carrierCss=`
 #carrier-editor th,#carrier-editor td {padding:.4rem .55rem;text-align:left;border-bottom:1px solid #e6e8eb;white-space:nowrap}
 #carrier-editor th {position:sticky;top:0;background:#f4f6f8}
 #carrier-editor td input {width:7.5rem;min-height:36px}
+#carrier-editor .freight-presets {display:flex;flex-wrap:wrap;gap:.45rem 1rem;margin:.7rem 0;border:0;padding:0}
+#carrier-editor .freight-presets legend {font-weight:600;margin-bottom:.35rem}
+#carrier-editor .freight-contract-list td:first-child {position:sticky;left:0;background:#fff}
+#carrier-editor .freight-contract-list td input[type=checkbox] {width:1.2rem;min-height:1.2rem}
 #carrier-editor td.is-changed input {outline:1px solid #627ade}
 #carrier-editor small {display:block;color:#4d596a}
 #carrier-editor .freight-notice {font-size:.88rem}
@@ -26,6 +30,7 @@ export const carrierCss=`
 // This factory is serialized with the existing Cloudflare browserFunction wrapper.
 export function mountCarrierEditor(root,initialCatalog){
   let catalog=initialCatalog,model=null,previous=null,active='',source='',shownTable='';
+  const selectedPresets=new Set();
   const statuses={UNSET:'미설정',FEE:'유료',FREE:'무료',CONSULT:'별도 협의',UNAVAILABLE:'배송 불가'};
   const modes={PARCEL:'택배',TRUCK:'용달',FREIGHT:'정기화물',DIRECT:'직배송'};
   const units={TRAYS:'회당 판수',BOXES:'상자 수',KG:'총중량 (kg)',M3:'부피 (㎥)',PALLETS:'팔레트 수',KM:'거리 (km)'};
@@ -74,9 +79,9 @@ export function mountCarrierEditor(root,initialCatalog){
   }
   const fmtRate=r=>r.amountKrw==null?'별도 견적':r.amountKrw.toLocaleString('ko-KR')+'원';
   const fmtSize=r=>r.vehicle?r.vehicle+' · '+r.publishedDistanceKm+'km':[r.weightUpperKg!=null?r.weightUpperKg+'kg 이하':'',r.sumDimensionsUpperCm!=null?r.sumDimensionsUpperCm+'cm 이하':''].filter(Boolean).join(' / ');
-  function addPublished(preset,variant){
+  function copyPublished(preset,variant){
     const known=model.contracts.find(c=>c.source?.presetId===preset.id&&c.source.packId===catalog.packId);
-    if(known && !variant){active=known.id;render();return;}
+    if(known && !variant)return known;
     const truck=preset.id==='SEMA_DISTANCE_VEHICLE_PUBLIC';
     const c=baseContract(preset.provider+' '+preset.service,truck?'TRUCK':'PARCEL');
     const s=catalog.sources.find(s=>s.id===preset.sourceId);
@@ -89,7 +94,35 @@ export function mountCarrierEditor(root,initialCatalog){
     c.vehicle=truck?c.rates[0]?.vehicle??null:null;
     c.extras=catalog.surcharges.filter(e=>e.presetId===preset.id).map(e=>({id:e.id,label:e.label,group:e.mutuallyExclusiveGroup,conditions:e.conditions,
       type:e.percentage!=null?'PERCENT':e.calculationBasis==='상자당'?'PER_BOX':e.id==='SEMA_WAITING'?'PER_HOUR':e.amountKrw!=null?'FLAT':'QUOTE',when:e.startTime?'TIME':e.id==='SEMA_WEEKEND_HOLIDAY'?'WEEKEND_HOLIDAY':e.freeMinutes!=null?'WAIT':'ALWAYS',fromTime:e.startTime??null,toTime:e.endTime??null,freeMinutes:e.freeMinutes??null,amount:e.percentage!=null?String(e.percentage*100):e.amountKrw!=null?String(e.amountKrw):null,enabled:false}));
-    model.contracts.push(c);active=c.id;changed();render();
+    model.contracts.push(c);return c;
+  }
+  function copyAndOpen(presets,variant=false){
+    if(!presets.length)return;
+    if(!model)model=newPolicy();
+    const additions=presets.filter(preset=>variant||!model.contracts.some(c=>c.source?.presetId===preset.id&&c.source.packId===catalog.packId));
+    if(model.contracts.length+additions.length>24){
+      root.querySelector('[data-freight-status]').textContent='한 가격표에 운송사 계약을 최대 24개까지 등록할 수 있습니다.';
+      return;
+    }
+    active=presets.map(preset=>copyPublished(preset,variant))[0].id;
+    selectedPresets.clear();
+    changed();render();
+  }
+  function renderPresetSelection(panel){
+    const fieldset=node('fieldset',null,'freight-presets');
+    fieldset.append(node('legend','계약 초안에 추가할 운송사'));
+    const copyButton=button('선택한 운송사 추가',()=>copyAndOpen(catalog.presets.filter(p=>selectedPresets.has(p.id))));
+    copyButton.disabled=!selectedPresets.size;
+    for(const preset of catalog.presets){
+      const label=node('label',null,'freight-check'),check=node('input');
+      check.type='checkbox';check.checked=selectedPresets.has(preset.id);
+      check.onchange=()=>{
+        if(check.checked)selectedPresets.add(preset.id);else selectedPresets.delete(preset.id);
+        copyButton.disabled=!selectedPresets.size;
+      };
+      label.append(check,' '+preset.provider);fieldset.append(label);
+    }
+    panel.append(fieldset,copyButton);
   }
   function renderReference(){
     const panel=details(root,'운송사 공개 요금표 · '+catalog.asOf,shownTable==='reference'||!model);
@@ -106,8 +139,9 @@ export function mountCarrierEditor(root,initialCatalog){
     table(t,['규격 / 차종·거리','권역 / 서비스','단위','공개 요금'],rates.map(r=>[fmtSize(r),[r.zoneLabel,r.deliveryLabel].filter(Boolean).join(' · '),r.rateUnit,fmtRate(r)]));
     if(extras.length)table(t,['할증 항목','금액 / 비율','적용 조건'],extras.map(e=>[e.label,e.percentage!=null?(e.percentage*100)+'%':e.amountKrw!=null?fmtRate(e):'별도 견적',e.conditions]));
     for(const note of preset.knownLimitNotes??[])t.append(node('small',note));
-    panel.append(button('계약표로 복사',()=>{if(!model)model=newPolicy();addPublished(preset,false);}));
-    if(model?.contracts.some(c=>c.source?.presetId===source))panel.append(button('같은 운송사에 별도 계약 추가',()=>addPublished(preset,true)));
+    panel.append(button('계약표로 복사',()=>copyAndOpen([preset])));
+    if(model?.contracts.some(c=>c.source?.presetId===source))panel.append(button('같은 운송사에 별도 계약 추가',()=>copyAndOpen([preset],true)));
+    renderPresetSelection(panel);
   }
   function renderPacking(){
     const p=model.packing,box=details(root,'상품 포장·적재 프로필',!p.confirmed);let row=group(box);
@@ -187,6 +221,7 @@ export function mountCarrierEditor(root,initialCatalog){
   }
   function renderContract(c){
     const box=details(root,'계약 편집 · '+c.name,true),r=group(box);
+    box.dataset.contractEditor='';box.tabIndex=-1;
     input(r,'운송사·서비스 계약명',c,'name');select(r,'운송 방식',c,'mode',Object.entries(modes),true);toggle(r,'계약 사용',c,'enabled');
     const r2=group(box);select(r2,'요금 상태',c,'status',Object.entries(statuses));input(r2,'계약 시작일',c,'start','date');input(r2,'계약 만료일',c,'end','date');input(r2,'우선순위',c,'priority','number',{step:'1'});
     const cond=details(box,'지역·회당 물량·서비스 조건',true);regionsEditor(cond,c);
@@ -204,10 +239,28 @@ export function mountCarrierEditor(root,initialCatalog){
     if(reference){const p=node('small','공개표 복사본 · '+reference.accessedAt.slice(0,10)+' · ');link(p,'원본 출처',reference.url);box.append(p);}
     renderRates(box,c);
   }
+  function renderContractList(){
+    if(!model.contracts.length)return;
+    const list=details(root,'운송사별 계약표 · '+model.contracts.length+'개',true);
+    const old=root.querySelector('[data-contract-list]');
+    if(old){list.open=old.open;old.replaceWith(list);}
+    list.dataset.contractList='';
+    const rows=model.contracts.map(c=>{
+      const edit=button(c.name,()=>{active=c.id;render();root.querySelector('[data-contract-editor]')?.focus();});
+      const enabled=node('input');enabled.type='checkbox';enabled.checked=c.enabled;
+      enabled.setAttribute('aria-label',c.name+' 계약 적용');
+      enabled.onchange=()=>{c.enabled=enabled.checked;changed();render();};
+      const area=c.prefixes.map(prefix=>catalog.regionChoices.find(r=>r.value===prefix)?.label??prefix);
+      const range=(c.min??'—')+' ~ '+(c.max??'—');
+      return [edit,enabled,modes[c.mode],area.join(', ')||'지역 미지정',units[c.measure]+' '+range,c.start||'시작일 미정',statuses[c.status]];
+    });
+    table(list,['운송사·계약 편집','적용','운송 방식','적용 지역','1회 배송량','적용 시작일','운임 상태'],rows).className='freight-contract-list';
+  }
   function render(){
     root.replaceChildren();
     if(!catalog)return;
     root.append(node('h3','배송 요금표'));
+    const status=node('div');status.dataset.freightStatus='';status.setAttribute('role','status');root.append(status);
     renderReference();
     if(!model){root.append(button('새 계약 배송 정책',()=>{model=newPolicy();changed();render();}));return;}
     renderPacking();
@@ -216,9 +269,11 @@ export function mountCarrierEditor(root,initialCatalog){
     if(model.selection==='MANUAL'){
       select(r,'직접 지정할 계약',model,'manualId',[['','선택'],...model.contracts.map(c=>[c.id,c.name])]);input(r,'선택 사유',model,'manualReason');}
     rule.append(node('small','같은 총운임은 우선순위·고정 계약 순서로 선택합니다. 둘 이상의 후보가 있어도 물량을 자동 분할하지 않습니다.'));
+    renderContractList();
     const contracts=group(root),switcher=select(contracts,'작업할 계약',{active},'active',[['','계약 선택'],...model.contracts.map(c=>[c.id,c.name])]);
     switcher.onchange=()=>{active=switcher.value;render();};
-    contracts.append(button('빈 계약 추가',()=>{const c=baseContract('새 운송사 계약','DIRECT');model.contracts.push(c);active=c.id;changed();render();}));
+    const addContract=button('빈 계약 추가',()=>{const c=baseContract('새 운송사 계약','DIRECT');model.contracts.push(c);active=c.id;changed();render();});
+    addContract.disabled=model.contracts.length>=24;contracts.append(addContract);
     const c=model.contracts.find(x=>x.id===active);
     if(c){
       contracts.append(button('선택한 계약 삭제',()=>{if(!window.confirm(c.name+' 계약을 이 초안에서 삭제할까요?'))return;model.contracts=model.contracts.filter(x=>x.id!==c.id);if(model.manualId===c.id)model.manualId=null;active=model.contracts[0]?.id??'';changed();render();}));
@@ -226,10 +281,13 @@ export function mountCarrierEditor(root,initialCatalog){
     }
     if(!model.contracts.length)root.append(button('기존 권역 배송표로 돌아가기',()=>{model=null;active='';changed();render();}));
   }
+  root.addEventListener('change',event=>{
+    if(event.target.closest('[data-contract-editor]'))renderContractList();
+  });
   render();
   return {
     read:()=>copy(model),
-    set:(value,prior=null)=>{model=copy(value);previous=copy(prior);active=model?.contracts.some(c=>c.id===active)?active:model?.contracts[0]?.id??'';render();},
-    setCatalog:next=>{catalog=next;render();}
+    set:(value,prior=null)=>{selectedPresets.clear();model=copy(value);previous=copy(prior);active=model?.contracts.some(c=>c.id===active)?active:model?.contracts[0]?.id??'';render();},
+    setCatalog:next=>{selectedPresets.clear();catalog=next;render();}
   };
 }

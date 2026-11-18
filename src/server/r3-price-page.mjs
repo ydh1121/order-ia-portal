@@ -1,5 +1,5 @@
 import {browserFunction} from './browser-source.mjs';
-import {buyerResultCss,createBuyerResult,projectBuyerResult} from './r3-quote-result.mjs';
+import {buyerResultCss,buyerResultClient,projectBuyerResult} from './r3-quote-result.mjs';
 import {bloubScript,bloubMontages} from './r3-bloub.mjs';
 import {createQuoteWait} from './r3-quote-wait.mjs';
 
@@ -41,7 +41,15 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     VOLUME_OUT_OF_SCOPE:'회당 배송량 조건 밖',UNSET:'미설정',CONSULT:'별도 협의',UNAVAILABLE:'배송 불가',TAX_UNCONFIRMED:'세금 조건 미확인',SEPARATE_QUOTE:'별도 견적 필요'};
   const freightExcluded=candidates=>candidates.map(c=>c.name+' · '+(freightReasons[c.reason]||'조건 확인 필요')).join(' / ');
   Object.assign(localized,{FREIGHT_QUOTE_REQUIRED:'이번 납품에 적용할 확정 운임이 없습니다.',FREIGHT_MANUAL_INELIGIBLE:'직접 지정한 계약의 적용 조건과 사유를 확인해 주세요.',FREIGHT_SURCHARGE_OVERLAP:'같은 지역의 할증을 두 번 적용할 수 없습니다.',FREIGHT_SPLIT_NOT_ALLOWED:'이 정책은 같은 사업장·회차의 분할 출고를 허용하지 않습니다.'});
-  const run=fn=>async()=>{if(state.operation)return;state.operation=true;try{await fn();}catch(e){if(Array.isArray(e.candidates)){$('result').textContent='';$('freightResult').textContent=freightExcluded(e.candidates);}say(e instanceof TypeError?'연결이 끊겼습니다. 입력을 유지했습니다. 연결 후 다시 저장해 주세요.':localized[e.message]||'조건을 확인해 주세요. '+e.message);}finally{state.operation=false;}};
+  function busy(active){
+    state.operation=active;
+    for(const id of ['pricing-editor','staff-desk','price-registration'])$(id).inert=active;
+    const saveButton=document.querySelector('[data-action="save"]');saveButton.disabled=active;saveButton.setAttribute('aria-busy',String(active));
+    for(const id of ['registerProduct','requestConnection']){
+      $(id).disabled=active;$(id).setAttribute('aria-busy',String(active));
+    }
+  }
+  const run=fn=>async()=>{if(state.operation)return;busy(true);try{await fn();}catch(e){if(Array.isArray(e.candidates)){$('result').textContent='';$('freightResult').textContent=freightExcluded(e.candidates);}say(e instanceof TypeError?'연결이 끊겼습니다. 입력을 유지했습니다. 연결 후 다시 저장해 주세요.':localized[e.message]||'조건을 확인해 주세요. '+e.message);}finally{busy(false);}};
   const selectOptions=(select,choices,selected)=>{select.replaceChildren(...choices.map(([v,title])=>new Option(title,v)));if(choices.some(([v])=>String(v)===String(selected)))select.value=String(selected);};
   const shellName=v=>v==='unspecified'?'번호 구분 없음':'난각번호 '+v;
   const elem=(id,key)=>$(id).querySelector('[data-field="'+key+'"]');
@@ -62,6 +70,100 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   function readRegions(){
     return [...$('regions').children].map(r=>{const v=read(r),sel=r.querySelector('[data-field=prefix]');return {...v,id:r.dataset.id,label:sel.selectedOptions[0]?.text||'',weekdays:[...r.querySelectorAll('.weekdays input:checked')].map(x=>Number(x.value)),minimumQty:number(v.minimumQty),priority:number(v.priority),fee:v.status==='FREE'?'0':v.status==='FEE'?v.fee:null,freeQty:number(v.freeQty),freeAmount:v.freeAmount||null,surcharge:v.surcharge||null,zip:v.zip||null,cutoff:v.cutoff||null};});
   }
+  let registration=null, setupKey=null, connectionKey=null, activeTab='price';
+  const query=new URL(location.href).searchParams;
+  function switchTab(tab){
+    activeTab=tab;
+    $('priceTab').setAttribute('aria-pressed',String(tab==='price'));
+    $('shippingTab').setAttribute('aria-pressed',String(tab==='shipping'));
+    $('price-content').hidden=tab!=='price';$('shipping').hidden=tab!=='shipping';
+    $('prices').hidden=tab!=='price';
+    if(!state.practice){
+      const url=new URL(location.href);
+      if(tab==='shipping'||url.hash==='#shipping')url.hash=tab==='shipping'?'shipping':'';
+      window.history.replaceState(null,'',url);
+    }
+  }
+  $('priceTab').onclick=()=>switchTab('price');$('shippingTab').onclick=()=>switchTab('shipping');
+  function setupOrganization(){
+    const org=registration?.organizations.find(o=>o.supplierId===$('setupOrg').value);
+    $('setupSupplier').value=org?.supplierName||'';$('setupSupplier').readOnly=Boolean(org?.supplierName);
+    const share=$('supplierInvite');share.hidden=!org?.invitation;
+    if(org?.invitation)share.href='/ia?view=pricing-r3&join='+encodeURIComponent(org.invitation);
+  }
+  $('setupOrg').onchange=setupOrganization;
+  const states={PENDING:'연결 대기',LINKED:'가격표 연결됨',DECLINED:'연결 요청 반려',REVOKED:'가격표 연결 해제'};
+  function renderRegistration(){
+    const orgs=registration.organizations;
+    const selected=$('setupOrg').value;
+    selectOptions($('setupOrg'),orgs.map(org=>[org.supplierId,org.supplierName||((org.role==='OPERATOR'?'운영':'공급처')+' 소속'+(orgs.length>1?' · '+org.supplierId:''))]),selected);
+    setupOrganization();$('productSetup').hidden=!orgs.length;
+    $('price-registration').hidden=false;
+    $('price-registration').open=(!state.scope.length||Boolean(query.get('priceRequest'))||Boolean(query.get('join')));
+    $('registrationTitle').textContent=orgs.length?'공급처·출고장·상품 등록':'담당 가격표 연결';
+    $('connectionForm').hidden=orgs.length>0&&!query.has('join');
+    $('connectionStatus').replaceChildren();
+    for(const row of registration.own){
+      const li=document.createElement('li');li.textContent=row.company+' · '+states[row.state]+' ';
+      if(row.state==='PENDING'){
+        const link=document.createElement('a');link.href='/ia?view=pricing-r3&priceRequest='+encodeURIComponent(row.id);
+        link.textContent='담당 운영자에게 공유할 요청 링크';li.append(link);
+      }
+      $('connectionStatus').append(li);
+    }
+    $('connectionReview').replaceChildren();
+    for(const row of registration.review){
+      const pending=row.state==='PENDING', options=state.scope.filter(s=>s.role==='OPERATOR'&&s.supplier_id===row.supplierId&&s.definition&&
+        (pending||(s.origin_id===row.linkedOrigin&&s.product_id===row.linkedProduct)));
+      if(!options.length)continue;
+      const box=document.createElement('fieldset'),who=document.createElement('legend');
+      who.textContent=row.applicant+' · '+row.company+' · '+states[row.state];box.append(who);
+      const choice=field(box,'target','담당 상품','0',null,options.map((o,i)=>[String(i),o.definition.originName+' · '+o.definition.productName]));
+      for(const [action,title] of pending?[['link','이 상품의 가격 작성 연결'],['decline','요청 반려']]:[['revoke','가격 작성 연결 해제']]){
+        const btn=document.createElement('button');btn.type='button';btn.textContent=title;
+        btn.disabled=action==='link'&&!row.verified;btn.onclick=run(async()=>{
+          const chosen=options[Number(choice.value)];
+          if(!window.confirm(row.applicant+' · '+chosen.definition.productName+' · '+title+'할까요?'))return;
+          await api('/registration',{action,id:row.id,supplierId:chosen.supplier_id,originId:chosen.origin_id,productId:chosen.product_id});
+          await registrationInfo();say('가격표 연결 상태를 저장했습니다.');
+        });box.append(btn);
+      }
+      if(!row.verified){const note=document.createElement('p');note.textContent='담당자가 사업자 계정으로 로그인해 요청하면 상품을 연결할 수 있습니다.';box.append(note);}
+      $('connectionReview').append(box);
+    }
+  }
+  async function registrationInfo(){
+    if(state.practice)return;
+    registration=await api('/registration'+(query.has('priceRequest')?'?request='+encodeURIComponent(query.get('priceRequest')):''));
+    renderRegistration();
+  }
+  function retryKey(previous,body){
+    const signature=JSON.stringify(body);
+    return previous?.signature===signature?previous:{signature,key:crypto.randomUUID()};
+  }
+  $('registerProduct').onclick=run(async()=>{
+    const body={action:'product',supplierId:$('setupOrg').value,supplierName:$('setupSupplier').value.trim(),originName:$('setupOrigin').value.trim(),
+      productName:$('setupProduct').value.trim(),shell:$('setupShell').value,packSize:Number($('setupPack').value)};
+    if(!body.supplierName||!body.originName||!body.productName||!body.shell||!Number.isSafeInteger(body.packSize)||body.packSize<1||body.packSize>360)throw new Error('REGISTRATION_FIELDS_REQUIRED');
+    if(!changeAllowed())return;
+    setupKey=retryKey(setupKey,body);
+    const created=await api('/registration',{...body,requestKey:setupKey.key});await desk();
+    const i=state.scope.findIndex(s=>s.supplier_id===created.supplier_id&&s.origin_id===created.origin_id&&s.product_id===created.product_id);
+    if(i<0)throw new Error('ACCESS_REQUIRED');
+    $('scope').value=String(i);state.newId=crypto.randomUUID();state.predecessor=null;state.parent=null;
+    const savedVersion=state.versions.find(v=>v.supplier_id===created.supplier_id&&v.origin_id===created.origin_id&&v.product_id===created.product_id&&v.status!=='WITHDRAWN');
+    if(savedVersion)await open(savedVersion.id);else{paint(null);rememberVersion(null);$('history').replaceChildren();}
+    await registrationInfo();$('price-registration').open=false;switchTab('price');setupKey=null;
+    say(savedVersion?'등록된 가격표를 열었습니다.':'상품을 등록했습니다. 새 가격표에 단가를 입력해 주세요.');
+    $('matrix').scrollIntoView({block:'nearest'});
+  });
+  $('requestConnection').onclick=run(async()=>{
+    const body={action:'request',supplierName:$('requestCompany').value.trim(),invite:query.get('join')||null};
+    if(!body.supplierName)throw new Error('REGISTRATION_FIELDS_REQUIRED');
+    connectionKey=retryKey(connectionKey,body);await api('/registration',{...body,requestKey:connectionKey.key});
+    await registrationInfo();connectionKey=null;say('연결 요청을 저장했습니다. 담당 운영자가 상품 연결을 확인합니다.');
+  });
+  Object.assign(localized,{QUOTE_INPUTS_REQUIRED:'승인 상품, 규격, 납품일과 1회 납품 수량을 확인해 주세요.',REGISTRATION_FIELDS_REQUIRED:'공급처·출고장·상품명과 직접 확인한 난각번호·판당 구수를 입력해 주세요.',CATALOG_INVALID:'상품명과 판매 규격을 확인해 주세요.',CATALOG_EXISTS:'같은 출고장과 상품이 다른 규격으로 등록돼 있습니다. 등록된 상품을 선택해 주세요.',SUPPLIER_NAME_CHANGED:'등록된 공급처 이름을 다시 확인해 주세요.',CONNECTION_UNAVAILABLE:'연결 요청 상태와 계정 권한을 다시 확인해 주세요.',INVITATION_INVALID:'공급처 이름과 담당자가 공유한 연결 주소를 다시 확인해 주세요.'});
   function catalogFields(s){
     const d=s?.definition||{};
     for(const key of ['supplierName','originName','productName'])$(key).value=d[key]||'';
@@ -110,7 +212,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     selectOptions($('pack-size'),(d?.packSizes||[]).map(n=>[n,n+'구 / 판']),p.packSize);
     currentGroup={shell:$('egg-shell').value,pack:$('pack-size').value};
     matrix.set(p.matrix,d?.grades||[],previous||p.matrix||null,locked);gradeChoice($('simGrade'),p.matrix?.grades||d?.grades||[]);
-    $('minimum').value=p.minimumOrder??1;$('start-date').value=p.effectiveFrom?day(Date.parse(p.effectiveFrom)):day(Date.now());$('end-date').value=p.effectiveTo?day(Date.parse(p.effectiveTo)):'';
+    $('minimum').value=p.minimumOrder??(state.practice?1:10);$('start-date').value=p.effectiveFrom?day(Date.parse(p.effectiveFrom)):day(Date.now());$('end-date').value=p.effectiveTo?day(Date.parse(p.effectiveTo)):'';
     fill($('basis'),{basis:'DELIVERY',fallback:'CONSULT',scope:'SITE',event:'DELIVERED',...p.performance});
     fill($('cost'),{rounding:p.rounding||'HALF_UP',taxType:p.tax?.type||'INCLUDED',percent:p.tax?.percent||''});
     $('groupBasis').value=p.delivery?.groupBasis||'SHIPMENT';$('regions').replaceChildren();for(const r of p.delivery?.regions||[])addRegion(r);carrier.set(p.delivery?.carrierPolicy||null,previousCarrier??state.parent?.policy.delivery?.carrierPolicy);
@@ -126,7 +228,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   }
   async function desk(){
     const d=await api('/desk'),sites=new Map();
-    for(const s of d.scopes){const k=[s.supplier_id,s.origin_id,s.product_id].join('/');if(!sites.has(k)||s.role==='OPERATOR')sites.set(k,s);}
+    for(const s of d.scopes){const k=[s.supplier_id,s.origin_id,s.product_id].join('/');if(!sites.has(k)||s.role==='OPERATOR'||sites.get(k).role==='WRITER')sites.set(k,s);}
     const old=scope();state.scope=[...sites.values()];state.versions=d.versions;
     selectOptions($('scope'),state.scope.map((s,i)=>[i,s.definition?[s.definition.supplierName,s.definition.originName,s.definition.productName].join(' · '):'표시명 등록 대기 '+(i+1)]));
     const prior=old&&state.scope.findIndex(s=>s.supplier_id===old.supplier_id&&s.origin_id===old.origin_id&&s.product_id===old.product_id);if(prior>=0&&prior!=null)$('scope').value=prior;
@@ -134,7 +236,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     state.country=d.freightPack?.regionChoices||[];state.regionVersion=d.freightPack?.regionVersion||'kr-legal-region-code-20261001-observed-20261112';carrier.setCatalog(d.freightPack);
     const r=elem('scenario','region');selectOptions(r,state.country.map(x=>[x.value,x.label]),r.value);
     $('pricing-editor').hidden=!d.scopes.length;$('staff-desk').hidden=!d.scopes.length;
-    if(!d.scopes.length)say('배정된 공급처·상품이 없습니다.');
+    if(!d.scopes.length && !state.practice)say('처음 사용할 공급처와 상품을 등록하거나 담당 가격표의 연결을 요청해 주세요.');
   }
   async function open(id){
     const data=await api('/version?id='+encodeURIComponent(id));state.parent=null;state.predecessor=data.version.predecessor;paint(data.version,data.previousMatrix,data.previousCarrierPolicy);$('versions').value=id;rememberVersion(id);
@@ -237,11 +339,11 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
       else player.play();
     }).catch(()=>{if(gen===motionGeneration)slot.replaceChildren();});
   }});
-  const resultView=makeResult($('buyerResult'),project,id=>api('/quote?id='+encodeURIComponent(id)),mode=>{
+  const resultView=makeResult($('buyerResult'),project,id=>api('/quote?id='+encodeURIComponent(id)),(mode,id)=>{
     invalidateQuote();
     if(mode==='new'){
       $('quoteQty').value='';$('quoteDay').value='';$('offerSelect').selectedIndex=-1;updateBuyerGrade();$('offerSelect').focus();
-    } else $('quoteQty').focus();
+    } else if(id)run(()=>restoreQuoteInputs(id))();else $('quoteQty').focus();
   });
   function invalidateQuote(){
     inputRevision++;quoteWait.stop();buyerState.retry=null;resultView.clear();
@@ -264,7 +366,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   $('offerSelect').onchange=updateBuyerGrade;
   async function showOffers(){
     clearQuote();
-    const site=buyerState.sites[Number($('buyerSite').value)];if(!site || site.verification!=='VERIFIED'){resultView.gate();return;}
+    const site=buyerState.sites[Number($('buyerSite').value)];if($('buyerSite').value===''||!site || site.verification!=='VERIFIED'){resultView.gate();return;}
     const scope=offerScope;const d=await api('/offers?org='+encodeURIComponent(site.org_id)+'&site='+encodeURIComponent(site.site_id));if(scope!==offerScope)return;buyerState.offers=d.offers;if(!d.offers.length&&!d.quotes.length)resultView.empty();
     $('offerSelect').replaceChildren(...d.offers.map((o,i)=>new Option([o.displayName||'승인 상품',o.shell?shellName(o.shell):o.packaging,o.packSize+'구'].filter(Boolean).join(' · '),String(i))));
     updateBuyerGrade();
@@ -274,6 +376,31 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     const d=await api('/sites');buyerState.sites=d.sites;$('quote').hidden=!d.sites.length;if(!d.sites.some(site=>site.verification==='VERIFIED'))resultView.gate();
     $('buyerSite').replaceChildren(new Option('사업장 선택',''),...d.sites.map((site,i)=>new Option(site.org_id+' · '+site.site_id+(site.verification==='VERIFIED'?'':' · 인증 필요'),String(i))));
   }
+  async function restoreQuoteInputs(id){
+    if(!id)return;
+    const expectedScope=offerScope;
+    const data=await api('/quote-inputs?id='+encodeURIComponent(id));
+    if(expectedScope!==offerScope||document.hidden)return;
+    const site=buyerState.sites.findIndex(s=>s.org_id===data.orgId&&s.site_id===data.siteId&&s.verification==='VERIFIED');
+    if(site<0)throw new Error('ACCESS_REQUIRED');
+    $('buyerSite').value=String(site);const nextScope=offerScope+1;
+    await showOffers();
+    if(nextScope!==offerScope||document.hidden)return;
+    $('offerSelect').selectedIndex=-1;$('quoteQty').value='';$('quoteDay').value='';
+    if(data.status!=='REVIEW_INPUTS'){
+      updateBuyerGrade();say('이전 견적은 복수 품목이나 출고 조건을 포함합니다. 다시 비교할 품목과 조건을 직접 선택해 주세요.');
+      $('offerSelect').focus();return;
+    }
+    const ix=buyerState.offers.findIndex(o=>o.id===data.offerId);
+    $('offerSelect').selectedIndex=ix;updateBuyerGrade();
+    if(ix>=0&&buyerState.offers[ix].gradeChoices?.length)$('buyerGrade').value=[data.grade,data.packing].join('/');
+    if(Number.isSafeInteger(data.quantity)&&data.quantity>0)$('quoteQty').value=data.quantity;
+    if(/^\d{4}-\d{2}-\d{2}$/.test(data.serviceDate)&&data.serviceDate>=day(Date.now()))$('quoteDay').value=data.serviceDate;
+    const missing=[ix<0&&'승인 상품',ix>=0&&buyerState.offers[ix].gradeChoices?.length&&!$('buyerGrade').value&&'규격',
+      !$('quoteQty').value&&'수량',!$('quoteDay').value&&'납품일'].filter(Boolean);
+    say(missing.length?'새로 선택할 조건 · '+missing.join(', '):'이전 견적의 납품 조건을 불러왔습니다. 확인 후 새 견적을 발급해 주세요.');
+    $('quote').scrollIntoView({block:'start'});(ix<0?$('offerSelect'):!$('quoteDay').value?$('quoteDay'):$('quoteQty')).focus({preventScroll:true});
+  }
   $('buyerSite').onchange=async()=>{
     if($('buyerSite').value===''){clearQuote();return;}
     try{await showOffers();}catch(error){say(localized[error.message]||'승인 상품을 불러오지 못했습니다.');}
@@ -281,7 +408,8 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   $('quoteIssue').onclick=run(async()=>{
     resultView.clear();
     const site=buyerState.sites[Number($('buyerSite').value)],offer=buyerState.offers[Number($('offerSelect').value)];
-    if($('buyerSite').value===''||$('offerSelect').value===''||!site||!offer||site.verification!=='VERIFIED')throw new Error('ACCESS_REQUIRED');
+    if($('buyerSite').value===''||!site||site.verification!=='VERIFIED')throw new Error('ACCESS_REQUIRED');
+    if($('offerSelect').value===''||!offer||(offer.gradeChoices?.length&&!$('buyerGrade').value)||!$('quoteDay').value||$('quoteDay').value<day(Date.now())||!Number.isSafeInteger(number($('quoteQty').value))||number($('quoteQty').value)<1)throw new Error('QUOTE_INPUTS_REQUIRED');
     const body={orgId:site.org_id,siteId:site.site_id,inputRevision,lines:[{id:'line',shipmentId:'first',productId:offer.product_id,versionId:offer.id,unit:offer.unit,serviceDate:$('quoteDay').value,deliveryQty:number($('quoteQty').value),grade:$('buyerGrade').value.split('/')[0]||undefined,packing:$('buyerGrade').value.split('/')[1]||undefined}]};
     const signature=JSON.stringify(body);if(buyerState.retry?.signature!==signature)buyerState.retry={signature,key:crypto.randomUUID()};
     const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[offer.product_id,String(body.lines[0].deliveryQty)+' '+offer.unit,body.lines[0].serviceDate]);
@@ -318,31 +446,39 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     $('current').textContent='기존 단가에서 옮긴 새 가격표 · '+grade.name;dirty();
   };
   state.newId=crypto.randomUUID();paint(null);
-  run(async()=>{const me=await fetch('/api/ia/r3-role/session',{cache:'no-store'});if(me.ok)state.csrf=(await me.json()).csrf;await desk();const requested=new URLSearchParams(location.search).get('priceVersion');if(requested&&state.versions.some(v=>v.id===requested))await open(requested);else{rememberVersion(null);paint(null);}await buyerSites();if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}})();
+  if(state.practice){$('versions-panel').open=true;$('review-actions').open=true;$('simulation-panel').open=true;}
+  switchTab(location.hash==='#shipping'?'shipping':'price');
+  run(async()=>{const me=await fetch('/api/ia/r3-price/session',{cache:'no-store'});if(me.ok){const session=await me.json();state.csrf=session.csrf;$('practice-entry').hidden=!session.practiceAllowed;}
+    await desk();const requested=new URLSearchParams(location.search).get('priceVersion');if(requested&&state.versions.some(v=>v.id===requested))await open(requested);else if(!state.practice&&!requested&&state.versions.length)await open(state.versions[0].id);else{rememberVersion(null);paint(null);}await buyerSites();await registrationInfo();if(!state.practice&&query.has('quote'))await restoreQuoteInputs(query.get('quote'));if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}})();
 
 }
 export function renderR3PricePage(nonce) {
-  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>가격·배송 조건 | Order</title>
-<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error] #quoteAvatar{display:none}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}html{scrollbar-width:none}body{font-family:system-ui,sans-serif}button{background:#edf1f6;border:0;font-weight:600}button.primary{background:#2455ce;color:white}input,select{border:1px solid #cdd5e1;background:white}section{border-top:1px solid #e0e6ef}.desk-heading,.bar,.weekdays{display:flex;flex-wrap:wrap;gap:.625rem}.desk-heading a{line-height:44px;color:#354965}.editor-fields{display:block;min-width:0;border:0;margin:0;padding:0}.weekdays label{display:inline-flex;align-items:center;flex:none;gap:.25rem}.weekdays input{width:1rem;min-height:1rem}.fields label,.bar label{flex-basis:9rem}pre{overflow:auto;white-space:pre-wrap}.matrix-scroll,body,main{scrollbar-width:none}${matrixCss}${carrierCss}${buyerResultCss}</style></head><body>
-<header class="desk-heading"><a href="/ia/">IA 포털</a><a href="/ia?view=roles-r3">내 업무</a><a href="/ia?view=qa-lab">QA랩</a></header>
-<h1>상품 단가와 배송</h1><p><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></p>
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>계란 가격표 | Order</title>
+<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error] #quoteAvatar{display:none}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}html{scrollbar-width:none}body{font-family:system-ui,sans-serif}button{background:#edf1f6;border:0;font-weight:600}button.primary{background:#2455ce;color:white}input,select{border:1px solid #cdd5e1;background:white}section{border-top:1px solid #e0e6ef}.desk-heading,.bar,.weekdays{display:flex;flex-wrap:wrap;gap:.625rem}.desk-heading a{line-height:44px;color:#354965}.editor-fields{display:block;min-width:0;border:0;margin:0;padding:0}.weekdays label{display:inline-flex;align-items:center;flex:none;gap:.25rem}.weekdays input{width:1rem;min-height:1rem}.fields label,.bar label{flex-basis:9rem}pre{overflow:auto;white-space:pre-wrap}.matrix-scroll,body,main{scrollbar-width:none}.price-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;position:sticky;top:0;background:white;z-index:4;border-bottom:1px solid #d4dce5;padding:.45rem 0}.price-tabs{display:flex;gap:.25rem}.price-tabs button{background:transparent;color:#526074}.price-tabs button[aria-pressed=true]{color:#172b4a;background:#e8edf5}.desk-heading>span{font-weight:bold}#notice:empty{margin:0}#price-registration>summary{font-weight:650}#price-registration input:read-only{background:#f2f4f7}.subtle{color:#526074;font-size:.9rem}.price-title{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.price-title p{margin:0;color:#526074}.price-title h1{margin:.5rem 0}.product-setup{display:grid;gap:.75rem;margin-top:.5rem;padding-bottom:.5rem}.product-setup button{justify-self:start}.price-meta{margin:.5rem 0}.price-meta label{flex-basis:8rem}.desk-heading a{line-height:1.4}details:has(>summary){padding:.65rem 0}.desk-heading{align-items:center}.connection-list:empty{display:none}#practice-entry{font-size:.85rem}#practice-entry a{color:#657184}@media(max-width:680px){body{padding:.75rem}.price-title h1{font-size:1.5rem}.product-setup .fields{display:grid;grid-template-columns:1fr 1fr}.price-meta{display:grid;grid-template-columns:1fr 1fr}}
+${matrixCss}${carrierCss}${buyerResultCss}</style></head><body>
+<header class="desk-heading"><a href="/ia/">IA 포털</a></header>
+<div class="price-title"><h1>계란 가격표</h1><span id="practice-entry" hidden><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></span></div>
 <fieldset id="practice" hidden><legend>연습 공간</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset>
 <output aria-live="polite" id="notice"></output>
-<div id="staff-desk" hidden><nav class="desk-heading"><a href="#prices">단가표</a><a href="#shipping">배송 조건</a><a href="#simulation">미리 계산</a></nav></div>
-<div id="pricing-editor" hidden>
-<section id="prices"><h2>단가표</h2><div class="bar"><label>공급처 · 거점 · 상품<select id="scope"></select></label><label>저장된 가격표<select id="versions"></select></label><button id="open">열기</button><button id="new">새 가격표</button><button id="next">후속 버전</button></div><p id="current"></p>
+<details id="price-registration" hidden><summary id="registrationTitle">공급처·출고장·상품 등록</summary>
+<div class="product-setup" id="productSetup" hidden><div class="fields"><label>등록할 소속<select id="setupOrg"></select></label><label>공급처명<input id="setupSupplier" maxlength="60"></label><label>출고장명<input id="setupOrigin" maxlength="60"></label><label>상품명<input id="setupProduct" maxlength="60"></label><label>판매 난각번호<select id="setupShell"><option value="">선택</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="setupPack" inputmode="numeric" type="number" min="1" max="360"></label></div><button id="registerProduct" class="primary">상품 등록하고 가격 입력</button><a id="supplierInvite" hidden>공급처 담당자용 연결 주소</a></div>
+<div id="connectionForm" hidden><p>담당 공급처에 상품 연결을 요청하면 이곳에서 진행 상태를 확인할 수 있습니다.</p><label>연결할 공급처 이름<input id="requestCompany" maxlength="60"></label><button id="requestConnection">담당 가격표 연결 요청</button></div><ul class="connection-list" id="connectionStatus" aria-live="polite"></ul><div id="connectionReview"></div></details>
+<div id="staff-desk" class="price-toolbar" hidden><nav class="price-tabs" aria-label="가격표와 배송"><button type="button" id="priceTab" aria-pressed="true">계란 가격표</button><button type="button" id="shippingTab" aria-pressed="false">배송 정책</button></nav><button class="primary" data-action="save">초안 저장</button></div>
+<div id="pricing-editor" hidden><p id="current"></p>
+<details id="versions-panel"><summary>저장한 가격표 · 새 가격표</summary><div class="bar"><label>저장된 가격표<select id="versions"></select></label><button id="open">열기</button><button id="new">새 계란 가격표</button><button id="next">후속 버전</button></div></details>
+<section id="prices"><div class="bar"><label>공급처 · 출고장 · 상품<select id="scope"></select></label></div>
 <details id="catalogSettings" hidden><summary>상품 표시 정보 관리</summary><p>배정된 상품의 공급처명·거점명과 판매 규격을 등록합니다.</p><details><summary>배정 정보</summary><code id="catalogCode"></code></details><div class="fields"><label>공급처명<input id="supplierName" maxlength="60"></label><label>거점명<input id="originName" maxlength="60"></label><label>상품명<input id="productName" maxlength="60"></label><label>규격명 (쉼표로 구분)<input id="catalogGrades"></label><label>포장당 구수 (쉼표로 구분)<input id="catalogPacks"></label></div><fieldset class="weekdays" id="catalogShells"><legend>판매 난각번호</legend><label><input type="checkbox" value="1">1번</label><label><input type="checkbox" value="2">2번</label><label><input type="checkbox" value="3">3번</label><label><input type="checkbox" value="4">4번</label><label><input type="checkbox" value="unspecified">구분 없음</label></fieldset><button id="saveCatalog">상품 표시 정보 저장</button></details>
 <p id="requires-catalog" hidden>이 상품에 등록된 규격이 없습니다. 운영자가 상품 표시 정보를 등록하면 가격표를 작성할 수 있습니다.</p></section>
 <div id="legacyTerms" hidden><h3>기존 단가표</h3><p id="legacyTiers"></p><div class="fields"><label>옮길 규격<select id="legacy-grade"></select></label><label>기존 확정 단가의 종류<select id="legacy-packing"><option value="">선택</option><option value="raw">원란</option><option value="packed">포장</option></select></label></div><button type="button" id="convertLegacy">상품 규격표로 옮기기</button></div>
 <fieldset class="editor-fields" id="pricing-fields"><legend class="sr-only">가격과 배송 조건 편집</legend>
-<div class="fields"><label>난각번호<select id="egg-shell"></select></label><label>포장 단위<select id="pack-size"></select></label><label>최소 주문량 (판)<input id="minimum" type="number" min="1"></label><label>유효 시작일<input id="start-date" type="date"></label><label>종료일 (이날부터 미적용)<input id="end-date" type="date"></label></div>
+<div id="price-content"><div class="fields price-meta"><label>난각번호<select id="egg-shell"></select></label><label>포장 단위<select id="pack-size"></select></label><label>최소 주문량 (판)<input id="minimum" type="number" min="1"></label><label>유효 시작일<input id="start-date" type="date"></label><label>종료일 (이날부터 미적용)<input id="end-date" type="date"></label></div>
 <div id="matrix">${matrixMarkup}</div>
-<details><summary>고급 단가 정책</summary><div class="fields" id="basis"></div><p id="performanceNote">전월 실적은 확정된 취소·반품 집계 기준이 있는 경우에 적용됩니다.</p><div class="fields" id="cost"></div></details>
+<details><summary>고급 단가 정책</summary><div class="fields" id="basis"></div><p id="performanceNote">전월 실적은 확정된 취소·반품 집계 기준이 있는 경우에 적용됩니다.</p><div class="fields" id="cost"></div></details></div>
 <section id="shipping"><h2>배송 조건</h2>${carrierMarkup}<details><summary>지역별 직접 배송</summary><label>배송비 적용 기준<select id="groupBasis"><option value="SHIPMENT">출고 회차별</option><option value="SITE">납품일·사업장별</option><option value="PACK">포장 수량별</option></select></label><div id="regions"></div><button id="addRegion">지역 추가</button></details></section>
 </fieldset>
-<section><h2>저장·검토</h2><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button class="primary" data-action="save">초안 저장</button><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button><button id="replaceApproved" hidden>기존 가격표 종료 후 승인</button></div><div id="conflict" hidden><p>다른 사용자가 저장한 가격표가 있습니다. 현재 입력과 서버 버전을 비교해 주세요.</p><details><summary>서버 버전 보기</summary><div id="remoteVersion" class="matrix-scroll"></div></details><button id="keepInput">서버 변경 확인 후 내 입력 유지</button><button id="remoteInput">서버 버전 열기</button></div></section>
-<section id="simulation"><h2>미리 계산</h2><label>단가 규격<select id="simGrade"></select></label><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output><output id="freightResult" aria-live="polite"></output></section><details><summary>변경 이력</summary><ol id="history"></ol></details></div>
+<details id="review-actions"><summary>검토 요청·승인</summary><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button><button id="replaceApproved" hidden>기존 가격표 종료 후 승인</button></div></details><div id="conflict" hidden><p>다른 사용자가 저장한 가격표가 있습니다. 현재 입력과 서버 버전을 비교해 주세요.</p><details><summary>서버 버전 보기</summary><div id="remoteVersion" class="matrix-scroll"></div></details><button id="keepInput">서버 변경 확인 후 내 입력 유지</button><button id="remoteInput">서버 버전 열기</button></div>
+<details id="simulation-panel"><summary>미리 계산</summary><div id="simulation"><label>단가 규격<select id="simGrade"></select></label><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output><output id="freightResult" aria-live="polite"></output></div></details><details><summary>변경 이력</summary><ol id="history"></ol></details></div>
 <section id="quote" hidden><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label id="buyerGradeGroup" hidden>단가 규격<select id="buyerGrade"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" role="status" hidden><strong id="quoteWaitTitle"></strong><div id="quoteAvatar" aria-hidden="true"></div><ul id="quoteBanners"></ul></div><div aria-live="polite" id="buyerResult"></div></section>
 <script nonce="${nonce}">${bloubScript}
-;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${JSON.stringify(bloubMontages)},${browserFunction(createBuyerResult)},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)});</script></body></html>`;
+;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${JSON.stringify(bloubMontages)},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)});</script></body></html>`;
 }

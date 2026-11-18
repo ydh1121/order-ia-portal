@@ -25,7 +25,7 @@ export async function handleIaRequest(request,env,dependencies={}) {
       if(session.id!==actor.id || request.headers.get('X-IA-CSRF')!==session.csrf)return json({error:'CSRF_DENIED'},403);
       actor={...actor,csrf:session.csrf};
     }
-    if(r3[1]==='role' && r3[2]==='/session' && request.method==='GET'){
+    if((r3[1]==='role'||r3[1]==='price') && r3[2]==='/session' && request.method==='GET'){
       try{const session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);return json({csrf:session.csrf,expiresAt:session.expiresAt,practiceAllowed:actor.role==='OWNER'});}
       catch{return json({error:'SESSION_DENIED'},403);}
     }

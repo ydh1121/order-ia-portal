@@ -1,6 +1,6 @@
 // Seal the approved product build into server-private assets. Never copy dist
 // into public: every resource is returned by the existing OWNER gate.
-import {readFile,writeFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {gzipSync} from 'node:zlib';
@@ -57,4 +57,21 @@ const value='// Generated only by scripts/seal-r3-product.mjs from verified prod
  'export const quoteCommit='+JSON.stringify(commit)+';\nexport const quoteTemplate='+JSON.stringify(html)+';\n'+
  'export const quoteSourceHashes='+JSON.stringify(sourceHashes)+';\nexport const quoteFiles='+JSON.stringify(files)+';\n';
 await writeFile(output,value);
+// The Worker and offline QA generator execute the very same reviewed presentation module.
+const sharedPath='web/quote-result-screen.mjs';
+if(!sourceHashes[sharedPath])throw Error('Missing shared quote result in product build');
+const copyDir=new URL('../src/server/order-engine/browser/',import.meta.url);
+await mkdir(copyDir,{recursive:true});
+await writeFile(new URL('quote-result-screen.mjs',copyDir),git('show',commit+':'+sharedPath));
+const manifestPath=new URL('../src/server/order-engine/SOURCE.json',import.meta.url);
+const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+for(const file of manifest.files.filter(file=>!file.path.startsWith('browser/'))){
+  const source=git('show',commit+':src/engine/'+file.path);
+  if(hash(source)!==hash(await readFile(new URL('../src/server/order-engine/'+file.path,import.meta.url))))throw Error('Private engine copy differs from product: '+file.path);
+  file.sha256=hash(source);
+}
+manifest.commit=commit;
+manifest.files=manifest.files.filter(file=>!file.path.startsWith('browser/'));
+manifest.files.push({path:'browser/quote-result-screen.mjs',source:sharedPath,sha256:sourceHashes[sharedPath]});
+await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({commit,files:Object.keys(files).length,bytes:Buffer.byteLength(value),sha256:hash(value)}));

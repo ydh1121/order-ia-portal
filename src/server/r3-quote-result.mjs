@@ -1,3 +1,5 @@
+import {mountQuoteResult,quoteResultScreenCss} from './order-engine/browser/quote-result-screen.mjs';
+import {browserFunction} from './browser-source.mjs';
 // Only the verified buyer response may provide amounts. Pricing drafts, local form
 // entries, issuer diagnostics and practice totals never participate in this view.
 export function projectBuyerResult(snapshot, now = Date.now()) {
@@ -21,6 +23,8 @@ export function projectBuyerResult(snapshot, now = Date.now()) {
   const proposed=exact(total);
   if (quote.currency!=='KRW' || proposed===null || !Number.isFinite(issued) || issued>=end) return {state:'unavailable'};
   const base={state:'offer',proposed:total.decimal,issued,end};
+  const p=snapshot.presentation;
+  for(const field of ['quantityLabel','productLabel'])if(typeof p?.[field]==='string'&&p[field].length<=100)base[field]=p[field];
   if (quote.comparisonEligibility!=='ELIGIBLE') return base;
   const current=quote.comparison?.current, difference=quote.comparison?.difference;
   const original=exact(current), delta=exact(difference,true);
@@ -28,114 +32,38 @@ export function projectBuyerResult(snapshot, now = Date.now()) {
       difference.scale!==total.scale || delta!==original-proposed) return base;
   const greatest=original>proposed?original:proposed;
   const ratio=value=>greatest?Number(value*1000n/greatest)/10:0;
-  return {...base,state:delta>0n?'saving':delta<0n?'current-lower':'equal',
+  const absolute=delta<0n?-delta:delta;
+  const percent=den=>{if(!den)return undefined;const n=(absolute*10000n+den/2n)/den;return String(n/100n)+'.'+String(n%100n).padStart(2,'0');};
+  const shown={savingRate:percent(original),currentPremium:percent(proposed)};
+  if(Number.isSafeInteger(p?.annualCount)&&p.annualCount>0&&typeof p.annualSaving==='string'&&/^\d+(?:\.\d+)?$/.test(p.annualSaving)){
+    shown.annualCount=p.annualCount;shown.annualSaving=p.annualSaving;
+  }
+  return {...base,...shown,state:delta>0n?'saving':delta<0n?'current-lower':'equal',
     current:current.decimal,difference:difference.decimal.replace(/^-/,''),
     currentRatio:ratio(original),proposedRatio:ratio(proposed)};
 }
 
-export function createBuyerResult(host,project,readDetail,recompare) {
-  const make=(tag,copy)=>{const el=document.createElement(tag);if(copy!==undefined)el.textContent=copy;return el;};
-  const action=(label,fn)=>{const b=make('button',label);b.type='button';b.onclick=fn;return b;};
-  const currency=decimal=>{
-    const [integer,fraction]=decimal.split('.');
-    return integer.replace(/\B(?=(\d{3})+(?!\d))/g,',')+(fraction?'.'+fraction:'')+'원';
-  };
-  const date=new Intl.DateTimeFormat('ko-KR',{year:'numeric',month:'long',day:'numeric',timeZone:'Asia/Seoul'});
-  let timer=null,generation=0;
-  function clear(){generation++;clearTimeout(timer);timer=null;host.replaceChildren();delete host.dataset.state;}
-  function message(state,title,detail){
-    clear();host.dataset.state=state;host.append(make('h3',title));if(detail)host.append(make('p',detail));
-  }
-  function chooseConditions(){
-    const dialog=make('dialog'),title=make('h3','어떤 조건으로 다시 비교할까요?');
-    dialog.setAttribute('aria-label',title.textContent);
-    dialog.append(title,action('동일한 조건',()=>{dialog.close();recompare('same');}),
-      action('새로운 견적',()=>{dialog.close();recompare('new');}),action('닫기',()=>dialog.close()));
-    dialog.addEventListener('close',()=>dialog.remove(),{once:true});host.append(dialog);dialog.showModal();
-  }
-  function show(snapshot,selected=null) {
-    clear();const m=project(snapshot),token=generation;
-    host.dataset.state=m.state;
-    if(m.state==='expired'){
-      message('expired','견적 유효기간이 지났어요',date.format(m.end)+' 만료');
-      host.append(action('납품 조건 다시 확인하기',chooseConditions));return;
-    }
-    if(m.state==='unavailable'){message('unavailable','견적을 불러올 수 없어요');return;}
-    const comparable=m.current!==undefined;
-    const title=m.state==='equal'?'현재 납품가와 가격이 같아요':m.state==='current-lower'?'현재 납품가가 더 낮아요':m.state==='saving'?currency(m.difference)+' 줄일 수 있어요':'이번 조건의 제안 납품가';
-    host.append(make('h3',title));
-    if(!comparable)host.append(make('p','현재 납품가와 비교할 자료가 없어요.'));
-    const chart=make('div');chart.className='buyer-chart';chart.dataset.detail=String(Boolean(selected));host.append(chart);
-    const detail=(label)=>{const mine=++generation;clearTimeout(timer);timer=null;host.replaceChildren(make('p','견적을 확인하고 있어요.'));
-      Promise.resolve().then(()=>readDetail(snapshot.id)).then(next=>{if(generation===mine)show(next,label);})
-        .catch(error=>{
-          if(generation!==mine)return;
-          if(error.message==='ACCESS_REQUIRED'||error.status===401||error.status===403)message('unverified','사업자 확인 후 납품가를 볼 수 있어요');
-          else message('unavailable','이 견적을 열 수 없어요','사업장을 다시 선택해 주세요.');
-        });};
-    const emphasis=m.state==='current-lower'?'current':'proposed';
-    for(const [key,label,amount,ratio] of [['current','현재 납품가',m.current,m.currentRatio],['proposed','제안 납품가',m.proposed,m.proposedRatio]]){
-      if(amount===undefined)continue;
-      const card=action('',()=>detail(key));card.className='buyer-price';card.dataset.kind=key;card.dataset.emphasis=String(key===emphasis);
-      card.setAttribute('aria-label',label+' '+currency(amount)+' 상세 보기');
-      const value=make('strong',currency(amount));card.append(make('span',label),value);
-      if(key==='proposed'&&comparable&&!selected&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
-        const [whole,fraction='']=amount.split('.'),scale=BigInt(10)**BigInt(fraction.length);
-        const target=BigInt(whole+fraction),start=performance.now();
-        function animate(now){
-          if(token!==generation)return;
-          const progress=Math.max(0,Math.min(1000,Math.round((now-start)*1000/350)));
-          const count=target*BigInt(progress)/1000n;
-          value.textContent=currency(String(count/scale)+(fraction?'.'+String(count%scale).padStart(fraction.length,'0'):''));
-          if(progress<1000)requestAnimationFrame(animate);
-        }
-        requestAnimationFrame(animate);
-      }
-      if(comparable&&!selected){
-        const track=make('span'),bar=make('span');track.className='buyer-track';bar.className='buyer-bar';
-        track.setAttribute('aria-hidden','true');bar.style.height=ratio+'%';track.append(bar);card.append(track);
-      }
-      if(selected===key){card.classList.add('buyer-selected');card.setAttribute('aria-pressed','true');}
-      chart.append(card);
-    }
-    if(selected){
-      const meta=make('dl');
-      for(const [label,value] of [['견적 기준일',m.issued],['견적 만료일',m.end]])meta.append(make('dt',label),make('dd',date.format(value)));
-      host.insertBefore(meta,chart);host.append(action('견적 요약으로 돌아가기',()=>detail(null)));
-    }
-    const countdown=make('small');countdown.setAttribute('aria-live','off');host.append(countdown);
-    function tick(){
-      if(generation!==token)return;
-      const ms=m.end-Date.now();
-      if(ms<=0){show({id:snapshot.id,status:'EXPIRED',expiresAt:new Date(m.end).toISOString()});return;}
-      const seconds=Math.ceil(ms/1000),days=Math.floor(seconds/86400),hours=Math.floor(seconds/3600)%24,minutes=Math.floor(seconds/60)%60;
-      countdown.textContent='유효시간 '+days+'일 '+hours+'시간 '+minutes+'분 '+seconds%60+'초';
-      timer=setTimeout(tick,Math.min(ms,1000));
-    }
-    host.append(action('다시 비교하기',chooseConditions));
-    tick();
-  }
-  return {clear,show,gate:()=>message('unverified','사업자 확인 후 납품가를 볼 수 있어요'),
-    empty:()=>{message('no-offer','길을 잃으셨나요?','표시할 견적을 찾을 수 없어요.');host.append(action('이전 페이지로 돌아가기',()=>recompare('same')));}};
-}
 
-export const buyerResultCss=`
-#buyerResult:not(:empty){display:grid;gap:1rem;justify-items:center;max-width:36rem;margin:1.5rem auto;padding:clamp(1rem,5vw,2.5rem);background:#fff;text-align:center;border-radius:1rem}
-#buyerResult h3,#buyerResult p{margin:0}#buyerResult h3{font-size:clamp(1.25rem,4vw,1.8rem);line-height:1.35;color:#202830}
-#buyerResult .buyer-chart{display:flex;width:100%;align-items:end;justify-content:center;gap:.65rem}
-#buyerResult .buyer-price{min-width:0;flex:1;max-width:15rem;display:grid;gap:.45rem;align-items:end;justify-items:center;border:1px solid #cbd0d9;background:white;color:#525e70;overflow-wrap:anywhere;padding:.75rem .4rem}
-#buyerResult .buyer-price[data-emphasis=true]{color:#294acb;border-color:#4568db}#buyerResult .buyer-price strong{font-size:clamp(1.1rem,4vw,1.7rem)}
-#buyerResult .buyer-selected{outline:2px solid currentColor;outline-offset:-2px}
-#buyerResult .buyer-track{display:flex;align-items:end;justify-content:center;height:clamp(5rem,14vw,9rem);width:100%}
-#buyerResult .buyer-bar{width:clamp(1.2rem,5vw,3.25rem);min-height:0;background:#9da4af;border-radius:5px 5px 0 0}
-#buyerResult [data-emphasis=true] .buyer-bar{background:#3659dc}
-#buyerResult .buyer-price[data-kind=proposed] .buyer-bar{transform-origin:bottom;animation:r3-buyer-bar .35s ease-out both}@keyframes r3-buyer-bar{from{transform:scaleY(0)}to{transform:scaleY(1)}}@media(prefers-reduced-motion:reduce){#buyerResult .buyer-price[data-kind=proposed] .buyer-bar{animation:none}}
-#buyerResult dl{display:grid;grid-template-columns:auto 1fr;text-align:left;font-size:.9rem;gap:.35rem 1rem;margin:0}
-#buyerResult .buyer-chart[data-detail=true]{align-items:center;isolation:isolate}
-#buyerResult [data-detail=true] .buyer-price{border-radius:.7rem;background:#f1f3f7;min-height:5rem}
-#buyerResult [data-detail=true] .buyer-selected{z-index:1;flex:1.45;min-height:9rem;background:#fff}
-#buyerResult[data-state=equal] .buyer-price[data-kind=current]{color:#3b4860;border-color:#acb8cc}
-#buyerResult>dialog[open]{border:0;max-width:min(92%,24rem);padding:1.3rem;border-radius:1rem}
-#buyerResult>dialog[open] button{min-height:44px;margin:.25rem}
-#buyerResult dd{margin:0}#buyerResult small{color:#506070}
-`;
+// Keep the quote id in the authenticated controller, outside the renderer and the exported QA data.
+function createBuyerResult(host,project,readDetail,recompare,mount) {
+  let id=null;
+  let guide=true;
+  const guideKey='order_result_graph_guide_v1';
+  try{guide=localStorage.getItem(guideKey)!=='seen';}catch{}
+  const view=mount(host,{
+    guide,onGuideSeen(){try{localStorage.setItem(guideKey,'seen');}catch{}},
+    async onDetail(){return project(await readDetail(id));},
+    onAction(action){
+      if((action==='consult'||action==='delivery')&&id){
+        location.assign('/ia?'+new URLSearchParams({view:'roles-r3',menu:action,quote:id}));
+      }else if(action==='verify')location.assign('/ia?view=roles-r3&menu=business');
+      else recompare(action==='new'?'new':'same',id);
+    }
+  });
+  return {
+    clear(){id=null;view.clear();},gate(){id=null;view.gate();},empty(){id=null;view.empty();},
+    show(snapshot,selected=null){id=snapshot?.id||null;view.show(project(snapshot),selected);}
+  };
+}
+export const buyerResultClient='((mount,controller)=>(...args)=>controller(...args,mount))('+browserFunction(mountQuoteResult)+','+browserFunction(createBuyerResult)+')';
+export const buyerResultCss=quoteResultScreenCss;

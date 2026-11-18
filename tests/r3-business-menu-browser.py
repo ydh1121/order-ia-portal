@@ -31,17 +31,67 @@ try:
             expect(page.locator('#role-menu a').first).to_be_visible()
             expect(page.locator('#r3-practice')).to_be_hidden()
         def act(page,action,memo=None):
-            form = page.locator('#detail form').last
-            form.locator('[name=action]').select_option(action)
+            section = page.locator(f'#detail [data-case-action="{action}"]')
+            if not section.evaluate('(el)=>el.open'): section.locator('summary').click()
+            form = section.locator('form')
+            if action in ['schedule','reschedule']: form.locator('[name=desiredDate]').fill('2027-01-05')
             if memo: form.locator('[name=memo]').fill(memo)
             with page.expect_response(lambda r:r.url.endswith('/api/ia/r3-role') and r.request.method=='POST') as response:
-                form.get_by_role('button',name='선택한 처리 확인').click()
+                form.get_by_role('button').click()
             assert response.value.status==200, response.value.status
             expect(page.locator('#status')).to_have_text('저장했습니다.')
         buyer, operator, supplier, other = (persona('buyer',390),persona('operator',1440),persona('supplier',320),persona('buyer2',390))
         visit(buyer,'quotes')
+        initial=buyer.url
+        buyer.get_by_role('button',name='내 계정',exact=True).click()
+        panel=buyer.get_by_role('region',name='계정 패널')
+        panel.get_by_role('button',name='사업자 정보',exact=True).click()
+        for label,value in [('상호','시험 매장'),('업태','음식점'),('종목','제과'),('개업일','2026-08-01')]:
+            panel.get_by_label(label,exact=True).fill(value)
+        panel.get_by_role('button',name='사업자 정보 초안 저장').click()
+        expect(panel.locator('dd').first).to_have_text('시험 매장')
+        panel.get_by_role('button',name='내 계정으로').click()
+        panel.get_by_role('button',name='구성원과 권한').click()
+        panel.get_by_label('대상 이메일').fill('sample@example.invalid')
+        panel.get_by_role('button',name='관리자에게 요청').click()
+        expect(panel.get_by_text('sample@example.invalid',exact=False)).to_be_visible()
+        assert buyer.url==initial
+        panel.get_by_role('button',name='닫기').click()
         expect(buyer.locator('#role-menu')).not_to_contain_text('검토함')
         expect(buyer.locator('#queue-list')).to_contain_text('시험 특란')
+        result_link=buyer.locator('#queue-list').get_by_role('link',name='견적 결과 보기')
+        result_path=result_link.get_attribute('href')
+        product_views=[]
+        for mode,width in [('simple',390),('detailed',1440)]:
+            tab=persona('buyer',width)
+            try:
+                path=result_path.replace('view=simple-r3','view='+mode+'-r3')
+                with tab.expect_response(lambda response:'/api/ia/r3-price/quote?id=' in response.url) as read:
+                    tab.goto(base+path)
+                assert read.value.status==200 and 'no-store' in read.value.headers.get('cache-control','')
+                stage=tab.locator('[data-order-result]')
+                expect(stage).to_have_attribute('data-state','offer')
+                amount=stage.locator('.oq-series[data-kind=proposed]')
+                expect(amount).to_have_attribute('aria-label','제안 납품가 300원 상세 보기')
+                expect(stage.locator('.oq-guide')).to_be_visible()
+                amount.click()
+                expect(stage).to_have_attribute('data-selection','proposed')
+                expect(stage.locator('.oq-guide')).to_be_hidden()
+                tab.screenshot(path=evidence/('product-'+mode+'-issued-detail.png'))
+                # Change the isolated identity used by the issuer transport. A real
+                # cross-company read must fail and scrub the previously displayed amount.
+                tab.context.set_extra_http_headers({'x-test-subject':'buyer2'})
+                with tab.expect_response(lambda response:'/api/ia/r3-price/quote?id=' in response.url) as retry:
+                    amount.click()
+                assert retry.value.status==403
+                expect(stage).to_have_attribute('data-state','unverified')
+                assert '300원' not in stage.inner_text() and '300원' not in stage.inner_html()
+                product_views.append({'mode':mode,'viewport':width,'issuedRead':200,'recheckedOtherCompany':403})
+            finally:
+                tab.context.close()
+        (evidence/'issued-product-routes.json').write_text(json.dumps({
+            'environment':'SQLite and independently signed test accounts on normal private product routes',
+            'routes':product_views},ensure_ascii=False,indent=2))
         buyer.locator('#queue-list').get_by_role('button',name='상담 예약').click()
         new = buyer.locator('#create')
         assert new.locator('select[name=targets]').evaluate('(e)=>e.selectedOptions.length') == 1
@@ -50,7 +100,7 @@ try:
         expect(new).to_have_attribute('data-draft-saved','1')
         buyer.reload()
         expect(new.locator('[name=memo]')).to_have_value('이번 발급 견적 상담')
-        new.get_by_role('button',name='작성 시작').click()
+        new.get_by_role('button',name='상담 내용 저장').click()
         expect(buyer.locator('#detail h2')).to_have_text('상담 · 작성 중')
         case=parse_qs(urlparse(buyer.url).query)['case'][0]
         act(buyer,'submit')
@@ -76,7 +126,7 @@ try:
         assert other.request.get(base+'/api/ia/r3-role?context=1&id='+case).status==404
         visit(buyer,'quotes')
         buyer.locator('#queue-list').get_by_role('button',name='납품 요청').click()
-        buyer.locator('#create').get_by_role('button',name='작성 시작').click()
+        buyer.locator('#create').get_by_role('button',name='납품 신청서 작성').click()
         expect(buyer.locator('#detail h2')).to_have_text('납품 신청 · 작성 중')
         delivery=parse_qs(urlparse(buyer.url).query)['case'][0]
         act(buyer,'submit')

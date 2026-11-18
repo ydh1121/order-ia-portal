@@ -150,14 +150,14 @@ R.push({id:'search',group:'내 견적·메뉴',label:'견적 검색·태그',des
 
 const noticeKinds = ['견적·납품 알림', '시세 변동 알림', '소식', '혜택'];
 const panelNames = {home:'내 계정',business:'사업자 정보',people:'구성원과 권한',switch:'계정 전환',alerts:'알림'};
-function accountPanel(name,s,settings){
+function accountPanel(name,s,settings,profile={site:'샘플베이커리',industry:'제과점',members:[{email:'내 계정',role:'매장 관리자'}]}){
   const top=name==='home'?'<h2>내 계정</h2>':button('뒤로','panel-home','text')+'<h2>'+panelNames[name]+'</h2>';
   const row=(key,title)=>button(title+icon('next',16),'panel-'+key,'menu-line');
-  if(name==='home')return top+'<p>샘플베이커리 · 매장 관리자</p>'+row('alerts','알림')+row('business','사업자 정보')+row('people','구성원과 권한')+row('switch','계정 전환')+roleButton('quotes','내 견적·오더 패스');
+  if(name==='home')return top+'<p>'+esc(profile.site)+' · 매장 관리자</p>'+row('alerts','알림')+row('business','사업자 정보')+row('people','구성원과 권한')+row('switch','계정 전환')+roleButton('quotes','내 견적·오더 패스');
   if(name==='alerts')return top+roleButton('activity','내 업무 알림 열기')+'<p role="status">'+(s==='notification'?'매장에 새 견적이 도착했어요.':'새로운 알림이 없어요.')+'</p><h3>'+icon('bell',18)+' 알림 받기</h3>'+noticeKinds.map((title,i)=>'<button class="menu-line" role="switch" data-action="notice-'+i+'" aria-checked="'+settings[i]+'">'+title+'<span aria-hidden="true">'+(settings[i]?'켬':'끔')+'</span></button>').join('');
-  if(name==='switch')return top+'<p>샘플베이커리 · 매장 관리자</p>'+button('사업장 선택','choose-site','secondary');
-  if(name==='people')return top+'<p>샘플베이커리 · 관리자 1명</p>'+roleButton('business','연결된 사업장 확인');
-  return top+'<p>샘플베이커리</p>'+button('사업자 정보 확인','view-business','secondary')+roleButton('business','내 사업자 업무');
+  if(name==='switch')return top+'<label>검수용 사업장<select name="profile-site">'+sites.map(site=>'<option'+(profile.site===site?' selected':'')+'>'+esc(site)+'</option>').join('')+'</select></label>'+button('사업장 선택','choose-site','secondary');
+  if(name==='people')return top+'<small>검수용 구성원</small><ul>'+profile.members.map((m,i)=>'<li>'+esc(m.email)+' · '+esc(m.role)+(i?button('권한 변경','member-role-'+i,'text'):'')+'</li>').join('')+'</ul><label>초대할 이메일<input type="email" name="profile-email" required></label><label>권한<select name="profile-role"><option>구성원</option><option>매장 관리자</option></select></label>'+button('검수용 구성원 추가','add-member','secondary')+'<p role="status"></p>';
+  return top+'<small>검수용 사업자 정보</small><label>상호<input name="profile-name" required maxlength="100" value="'+esc(profile.site)+'"></label><label>업태<input name="profile-industry" required maxlength="100" value="'+esc(profile.industry)+'"></label>'+button('변경 내용 저장','save-business','secondary')+'<p role="status"></p>';
 }
 R.push({
   id:'profile',group:'내 견적·메뉴',label:'프로필·알림 설정',description:'계정 패널과 알림 수신 설정',width:'mobile',
@@ -169,15 +169,33 @@ R.push({
   mount(root,s,api){
     const controller=new AbortController(),trigger=root.querySelector('.account-trigger'),panel=root.querySelector('.account-panel');
     roleLinks(root,controller.signal,api);const settings=[true,false,false,false];
+    const profile={site:'샘플베이커리',industry:'제과점',members:[{email:'내 계정',role:'매장 관리자'}]};
+    function show(key,message){
+      panel.innerHTML=accountPanel(key,s,settings,profile);
+      if(message&&panel.querySelector('[role=status]'))panel.querySelector('[role=status]').textContent=message;
+      const heading=panel.querySelector('h2');heading.tabIndex=-1;heading.focus();
+      if(!api.reduced?.())panel.animate([{opacity:.55,transform:'translateX(8px)'},{opacity:1,transform:'translateX(0)'}],{duration:160});
+    }
     function close(){panel.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();}
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]');if(!btn)return;
       const action=btn.dataset.action;
-      if(action==='account-menu'){if(!panel.hidden){close();return;} panel.hidden=false;trigger.setAttribute('aria-expanded','true');panel.innerHTML=accountPanel('home',s,settings);panel.querySelector('button').focus();}
-      if(action.startsWith('panel-')){const key=action.slice(6);if(!Object.hasOwn(panelNames,key))return;panel.innerHTML=accountPanel(key,s,settings);panel.querySelector('button')?.focus();}
+      if(action==='account-menu'){if(!panel.hidden){close();return;} panel.hidden=false;trigger.setAttribute('aria-expanded','true');show('home');}
+      if(action.startsWith('panel-')){const key=action.slice(6);if(!Object.hasOwn(panelNames,key))return;show(key);}
       if(action.startsWith('notice-')){const i=Number(action.slice(7));if(!Number.isInteger(i)||i<0||i>=settings.length)return;settings[i]=!settings[i];btn.setAttribute('aria-checked',String(settings[i]));btn.lastElementChild.textContent=settings[i]?'켬':'끔';}
-      if(action==='choose-site')api.select('q3','closed');
-      if(action==='view-business')api.select('business','filled');
+      if(action==='choose-site'){profile.site=panel.querySelector('[name=profile-site]').value;show('home');}
+      if(action==='save-business'){
+        const name=panel.querySelector('[name=profile-name]'),industry=panel.querySelector('[name=profile-industry]');
+        if(!name.value.trim()||!industry.value.trim()){(!name.value.trim()?name:industry).focus();return;}
+        profile.site=name.value.trim();profile.industry=industry.value.trim();show('business','검수용 사업자 정보를 변경했어요.');
+      }
+      if(action==='add-member'){
+        const email=panel.querySelector('[name=profile-email]');if(!email.reportValidity())return;
+        const value=email.value.trim().toLowerCase();
+        if(profile.members.some(m=>m.email===value)){panel.querySelector('[role=status]').textContent='이미 있는 구성원이에요.';return;}
+        profile.members.push({email:value,role:panel.querySelector('[name=profile-role]').value});show('people','검수용 구성원을 추가했어요.');
+      }
+      if(action.startsWith('member-role-')){const member=profile.members[Number(action.slice('member-role-'.length))];if(member){member.role=member.role==='구성원'?'매장 관리자':'구성원';show('people','검수용 권한을 변경했어요.');}}
     },{signal:controller.signal});
     root.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){e.preventDefault();close();}},{signal:controller.signal});
     return ()=>controller.abort();

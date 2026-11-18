@@ -130,7 +130,7 @@ html,body,.sidebar,#nav{scrollbar-width:none}html::-webkit-scrollbar,body::-webk
 s=s.replace('</style>','\n'+UX_CSS+'\n'+toolStyles+'</style>');
 // Keep QA in the existing IA menu, with a real user-activated new-window link.
 // It remains available even when the live Google dashboard reports a loading error.
-const tools='<div class="ia-tool-label">검토 도구</div><a class="ia-tool-link" href="/ia?view=qa-lab" target="_blank" rel="noopener noreferrer" aria-label="QA랩 새 창에서 열기"><span>09</span>QA랩</a><details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details><a class="ia-tool-link" href="/ia?view=pricing-r3"><span>10</span>가격표·배송 정책</a>';
+const tools='<div class="ia-tool-label">검토 도구</div><a class="ia-tool-link" href="/ia?view=qa-lab" target="_blank" rel="noopener noreferrer" aria-label="QA랩 새 창에서 열기"><span>09</span>QA랩</a><details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details><a class="ia-tool-link" href="/ia?view=pricing-r3"><span>10</span>계란 가격표·배송 정책</a>';
 s=s.replace('</nav><div class="sidefoot">',tools+'</nav><div class="sidefoot">');
 s=s.replace('<body>','<body><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
 s=s.replace('<script>','<script nonce="'+nonce+'">'+prelude);

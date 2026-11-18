@@ -300,7 +300,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   // Actual snapshot values stay in the trusted host and never enter comments, HTML exports or the frame.
   let quoteGeneration=0,allowedSites=[];
   const buyerView=createBuyerResult($('snapshot'),projectBuyerResult,
-    id=>api('/api/ia/r3-price/quote?id='+encodeURIComponent(id)),step=>{
+    id=>api('/api/ia/r3-price/quote?id='+encodeURIComponent(id)),(step,id)=>{
+      if(step==='same'&&id){location.assign('/ia?view=pricing-r3&quote='+encodeURIComponent(id)+'#quote');return;}
       location.assign('/ia?view=simple-r3&step='+(step==='new'?'q2':'review')+'#/form');
     });
   function clearPrivateQuote(){buyerView.clear();quoteGeneration++;allowedSites=[];$('buyer-sites').replaceChildren();$('buyer-quotes').replaceChildren();$('snapshot').textContent='';}
@@ -338,7 +339,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       return a.html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
   }
   // The source step is short-lived and belongs to this QA tab's guest authentication flow.
-  let authOriginStep = null;
+  let authOriginStep = null, arrivalScreen = null;
   async function select(row,version=$('version').value,originStep=null,pinnedHash=null){
     if(row && row.id !== current?.id) authOriginStep = originStep;
     if(!row)return;if(wantsPoint)send('mode',false);wantsPoint=false;clearPrivateQuote();$('buyer').hidden=row.screen!=='quote-result'||version!=='current';remember();editor=null;drawer.hidden=true;$('pick-cancel').hidden=true;$('conflict').hidden=true;
@@ -352,7 +353,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     try{
       const a=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version+(pinnedHash?'&artifactHash='+encodeURIComponent(pinnedHash):''));
       if(n!==generation)return;
-      if(version==='recorded'){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
+      if(version==='recorded'||version!==a.version){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
       artifact=a;session=crypto.randomUUID();if(version==='current'){row.hashes??={};row.hashes[width]=a.hash;}
       target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash};
       frame.srcdoc=frameDocument(a,row,session);
@@ -448,7 +449,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       journeyDraft={basis:d.basis,qty:d.qty,unit:d.unit,price:d.price,unknown:d.unknown};
       select(screens.find(r=>r.id==='quote-review/normal/email'));return;
     }
-    if(m.type==='ready'){if(input&&journeyDraft)send('journeyDraft',journeyDraft);
+    if(m.type==='ready'){if(isCurrent&&arrivalScreen===current.id){send('memberArrival',true);arrivalScreen=null;}
+      if(input&&journeyDraft)send('journeyDraft',journeyDraft);
       if(isCurrent&&questionScreens.includes(current.screen))send('menuPublication',menuPublished);
       if(notices)send('noticeFixture',fixtureNotices);if(consultation)send('consultationFixture',consultationFixture);syncPins();if(wantsPoint)send('mode',true);return;}
     if(m.type==='point'&&wantsPoint&&editor&&m.payload?.artifactHash===artifact.hash&&m.payload.instance===target.screen){
@@ -490,7 +492,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const preferred=current.screen==='onboarding' && screen==='login' && state==='empty'?'compact':current.variant;
       const row=screens.find(r=>r.screen===screen && (!state || state===r.state) && r.variant===preferred)
         || screens.find(r=>r.screen===screen && (!state || state===r.state) && r.variant==='email');
-      if(row)select(row,undefined,originStep);
+      if(row){
+        arrivalScreen=authOriginStep&&['login','signup','otp'].includes(current.screen)&&row.screen==='onboarding'&&row.state.startsWith('member-')?row.id:null;
+        select(row,undefined,originStep);
+      }
     }
   });
   $('open').onclick=()=>{$('choose').showModal();$('search').focus();};$('close-choose').onclick=()=>$('choose').close();

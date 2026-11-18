@@ -7,7 +7,7 @@ import {renderR3RolePage} from '../src/server/r3-role-page.mjs';
 
 function workspace(){
   const sql=new DatabaseSync(':memory:');
-  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
+  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
   const prepare=(query,params=[])=>({query,params,bind:(...v)=>prepare(query,v),first:async()=>sql.prepare(query).get(...params),all:async()=>({results:sql.prepare(query).all(...params)})});
   const db={prepare,batch:async rows=>{sql.exec('BEGIN');try{for(const {query,params} of rows)sql.prepare(query).run(...params);sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}};
   const grant=(actor,role,org,site='')=>sql.prepare('INSERT INTO r3_membership VALUES(?,?,?,?,1)').run(actor,role,org,site);
@@ -108,4 +108,22 @@ test('signed IA route carries validated CSRF into the independently granted role
   const post=token=>handleIaRequest(new Request(origin+'/api/ia/r3-role',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',Cookie:session.cookie.split(';')[0],'X-IA-CSRF':token},body:JSON.stringify(cmd)}),env);
   assert.equal((await post(session.csrf)).status,403);grant('owner','BUYER','specific','qa');assert.equal((await post('wrong')).status,403);
   const res=await post(session.csrf);assert.equal(res.status,200,JSON.stringify(await res.clone().json()));assert.equal((await res.json()).committedRevision,1);
+});
+
+test('in-panel requests stay pending, retain one request on retry, and reveal no cross-company members',async()=>{
+  const {sql,request}=workspace();
+  const body={requestKey:crypto.randomUUID(),orgId:'store',siteId:'one',purpose:'INVITE',contact:'Team@Example.invalid',role:'BUYER'};
+  const members=()=>sql.prepare('SELECT COUNT(*) n FROM r3_membership').get().n;
+  const before=members();
+  assert.equal((await request('buyer',body,'/account')).pending,true);
+  assert.equal((await request('buyer',body,'/account')).pending,true);
+  assert.equal((await request('other',body,'/account')).status,403);
+  assert.equal((await request('buyer',{...body,role:'SUPPLIER'},'/account')).status,403);
+  assert.equal((await request('buyer',{...body,role:'OPERATOR'},'/account')).status,400);
+  const account=await request('buyer',null,'/account');
+  assert.equal(account.requests.length,1);assert.equal(account.requests[0].contact,'team@example.invalid');
+  assert.ok(account.members.every(m=>m.self));
+  assert.equal((await request('other',null,'/account')).requests.length,0);
+  assert.equal((await request('ops',null,'/account')).requests.length,1);
+  assert.equal(members(),before);
 });

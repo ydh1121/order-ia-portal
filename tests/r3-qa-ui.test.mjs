@@ -26,9 +26,17 @@ test('reviewed files include one selected screen, a SHA and no remote source or 
   assert.match(result.editable,/"viewport":1440/);assert.match(result.editable,new RegExp(result.hash));
   assert.equal((await serveR3Artifact(new Request(url+'?id=https://example.org&width=390&version=current'))).status,404);
 });
-test('new result artifacts project the locked presentation; customer data is requested only in the trusted parent',async()=>{
-  const hidden=await row('quote-result/locked/email');const detail=await row('quote-result/new-detail/email');
-  for(const doc of [hidden,detail]){assert.doesNotMatch(doc.editable,/12,540,000|11,940,000|600,000|data-price=|compareData=/);assert.equal(doc.mount,null);}
+test('locked results redact all values; only the named protected design fixture supplies visual comparison prices',async()=>{
+  const hidden=await row('quote-result/locked/email'),detail=await row('quote-result/new-detail/email');
+  assert.doesNotMatch(hidden.editable,/12,540,000|11,940,000|600,000/);
+  assert.match(hidden.editable,/data-state="unverified"/);
+  assert.match(detail.editable,/data-quote-fixture="figma-20261118"/);
+  assert.match(detail.editable,/11,940,000/);
+  for(const doc of [hidden,detail]){
+    assert.match(doc.mount,/installReviewQuote/);
+    assert.doesNotMatch(doc.editable,/data-price=|compareData=|minorUnits|issuerDiagnostics/);
+    assert.doesNotMatch(doc.mount,/r3-price\/quote|r3-role|X-IA-CSRF|localStorage|sessionStorage|\bfetch\s*\(/);
+  }
   assert.match(hostCode,/r3-price\/quote/);assert.doesNotMatch(frameCode,/r3-price|r3-role|X-IA-CSRF/);
 });
 test('selected source code parses under CSP; opaque content cannot call storage or reuse another target',()=>{

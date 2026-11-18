@@ -22,6 +22,7 @@ try:
         page.locator('#startPractice').click()
         expect(page.locator('#scope option')).to_have_count(1)
         page.locator('#practiceSample').click()
+        page.locator('#shippingTab').click()
         carrier=page.locator('#carrier-editor')
         reference=carrier.get_by_label('공개표 선택')
         expect(reference.locator('option')).to_have_count(4)
@@ -34,7 +35,15 @@ try:
         reference.select_option('SEMA_DISTANCE_VEHICLE_PUBLIC')
         expect(carrier.get_by_text('112개 요금',exact=False)).to_be_visible()
         reference.select_option('EPOST_PICKUP_PUBLIC')
+        carrier.get_by_role('checkbox',name='우체국',exact=True).check()
+        carrier.get_by_role('checkbox',name='한진',exact=True).check()
+        carrier.get_by_role('button',name='선택한 운송사 추가').click()
+        contract_list=carrier.locator('[data-contract-list]')
+        expect(contract_list.locator('tbody tr')).to_have_count(2)
+        expect(contract_list.locator('input:checked')).to_have_count(0)
+        # Selecting an already copied source reopens its draft without duplicating it.
         carrier.get_by_role('button',name='계약표로 복사',exact=True).click()
+        expect(contract_list.locator('tbody tr')).to_have_count(2)
         expect(carrier.get_by_label('계약 사용',exact=True)).not_to_be_checked()
         expect(carrier.get_by_label('요금 상태')).to_have_value('UNSET')
         # Distinct quantities belong to this practice product and the supplier's practice contract.
@@ -73,6 +82,8 @@ try:
         assert simulation.value.ok,data
         fee=data['issuer']['freight'][0]
         assert [fee['chosen']['name'],fee['chosen']['total'],fee['load']['TRAYS'],fee['load']['BOXES']]==['운송 회귀 검수','274',10,2]
+        expect(contract_list.locator('tbody tr')).to_have_count(2)
+        expect(contract_list.locator('input:checked')).to_have_count(1)
         expect(page.locator('#freightResult')).to_contain_text('운송 회귀 검수')
         expect(page.locator('#result')).to_contain_text('배송 274원')
         capture_pair('cost-review',page.locator('#freightResult'))

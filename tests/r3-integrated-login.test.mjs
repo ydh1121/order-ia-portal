@@ -17,6 +17,9 @@ test('integrated entry contains unchanged native provider button files and keeps
     assert.ok(body.includes('data:image/png;base64,'+ref.png));
     assert.equal(createHash('sha256').update(Buffer.from(ref.png,'base64')).digest('hex'),ref.pngSha256);
   }
+  const signup=await (await serveR3Artifact(new Request('https://private.invalid/artifact?id=signup/empty/email&width=390&version=current'))).json();
+  for(const ref of Object.values(assets))assert.ok(signup.editable.includes('data:image/png;base64,'+ref.png));
+  assert.match(signup.editable,/aria-label="간편 가입"/);
   assert.equal((await get('email',390,'prior-r3')).hash,'3ce1e61428ca87c7202fe73272ad0234f0d492cd15bdb81cafaca3b409354f36');
   assert.equal((await get('social',390,'prior-r3')).hash,'acc406d815bd95f8fbdf66905e290b6dae3d2952b2b9ed5cde70bd2fd1e956a3');
   const email=await get('email',390);

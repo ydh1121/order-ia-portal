@@ -1,6 +1,7 @@
 """Exercise QA purchase input, review hand-off and each read-only result design in Chromium."""
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,11 +26,114 @@ def capture_reference_viewports(qa_page, folder):
                 return (await response.json()).editable;
             }''', path)
             page.set_content(artifact,wait_until='load')
-            expect(page.locator('.journey-result')).to_have_attribute('data-view',state)
+            wrapper=page.locator('[data-review-result]')
+            expect(wrapper).to_have_attribute('data-view',state)
+            expect(wrapper).to_have_attribute('data-quote-fixture','figma-20261118')
+            check_result(wrapper.locator('[data-order-result]'),state)
+            if state=='new-detail':
+                expect(wrapper.locator('.oq-clock:visible')).to_have_text('6일 21시간 13분 59초')
+            assert page.locator('iframe').count()==0
             page.evaluate('document.fonts.ready')
             page.screenshot(path=str(out/('reference-'+state+'-375x828.png')),animations='disabled')
     finally:
         page.close()
+
+def check_result(view, state):
+    direct=['saving','new-detail','current-detail','equal','current-lower']
+    if state in direct:
+        state_name={'new-detail':'saving','current-detail':'saving'}.get(state,state)
+        expect(view).to_have_attribute('data-state',state_name)
+        expect(view.locator('.oq-series:visible')).to_have_count(2)
+        current=view.locator('.oq-series[data-kind=current]')
+        proposed=view.locator('.oq-series[data-kind=proposed]')
+        expect(current).to_have_attribute('aria-label',re.compile('12,540,000원'))
+        target={'equal':'12,540,000','current-lower':'13,140,000'}.get(state,'11,940,000')
+        expect(proposed).to_have_attribute('aria-label',re.compile(target+'원'))
+        if state in ('new-detail','current-detail'):
+            front=proposed if state=='new-detail' else current
+            expect(front).to_have_attribute('data-front','true')
+            expect(front.locator('.oq-card-copy')).to_be_visible()
+            expect(front.locator('.oq-annual')).to_contain_text('7,200,000')
+            if state=='new-detail':
+                expect(front.locator('.oq-rate')).to_contain_text('4.78%')
+                expect(front.locator('.oq-clock')).to_have_text(re.compile(r'6일 21시간 13분 \d{2}초'))
+                expect(view.locator('.oq-meta')).to_contain_text('2,000판')
+                expect(view.locator('.oq-meta')).to_contain_text('2026.11.21')
+            else:
+                expect(front.locator('.oq-rate')).to_contain_text('300원')
+            boxes=[current.bounding_box(),proposed.bounding_box()]
+            assert all(boxes)
+            assert min(a['x']+a['width'] for a in boxes)>max(a['x'] for a in boxes),'the selected card should overlap the other card'
+        elif state=='equal':
+            heights=[el.bounding_box()['height'] for el in (current,proposed)]
+            assert abs(heights[0]-heights[1])<=1,heights
+        elif state=='current-lower':
+            expect(current).to_have_attribute('data-accent','true')
+    elif state in ('no-current','new-only-detail'):
+        expect(view.locator('.oq-series:visible')).to_have_count(1)
+        expect(view.locator('.oq-series[data-kind=proposed]')).to_be_visible()
+    elif state=='recompare':
+        expect(view.get_by_role('button',name='새로운 견적')).to_be_visible()
+        expect(view.get_by_role('button',name='동일한 조건')).to_be_visible()
+    else:
+        expect(view).to_have_attribute('data-state',{'locked':'unverified','no-result':'no-offer','expired':'expired'}[state])
+        expect(view.locator('.oq-series:visible')).to_have_count(0)
+        assert not re.search(r'12,540,000|11,940,000|13,140,000',view.inner_text())
+
+
+def check_motion(page, origin):
+    # Collect actual animation values in the sandboxed frame before the module paints,
+    # even if the host receives its ready acknowledgement after the animation starts.
+    page.add_init_script("""if(window!==top){
+      const trace=window.__resultTrace={graph:[],morph:[]};
+      let last=null;
+      const observer=new MutationObserver(records=>{
+        const view=document.querySelector('[data-order-result]');
+        if(!view || view.dataset.state!=='saving')return;
+        const p=view.querySelector('[data-kind=proposed]'), c=view.querySelector('[data-kind=current]');
+        if(!p||!c)return;
+        const grow=Number(p.style.getPropertyValue('--grow'));
+        const price=el=>Number(el.querySelector('.oq-price-value').textContent.replaceAll(',',''));
+        if(last!==grow){trace.graph.push({grow,current:price(c),proposed:price(p)});last=grow;}
+      });
+      observer.observe(document,{subtree:true,attributes:true,attributeFilter:['style'],childList:true,characterData:true});
+    }""")
+    screens=ReviewScreens(page,origin,390)
+    frame=screens.screen('quote-result','saving')
+    view=frame.locator('[data-order-result]')
+    proposed=view.locator('.oq-series[data-kind=proposed]')
+    expect(proposed.locator('.oq-price-value')).to_have_text('11,940,000')
+    graph=view.evaluate('el=>window.__resultTrace.graph')
+    assert any(0 < item['grow'] < 1 for item in graph),graph
+    animated=[item for item in graph if 0 < item['grow'] < 1]
+    assert all(item['current']==12540000 and 0<item['proposed']<11940000 for item in animated),animated
+    # The identical graph button grows into the card while the fresh-detail data loads.
+    token=proposed.evaluate("el=>{window.__originalGraph=el;return el.getBoundingClientRect().width}")
+    frame_click(page,proposed)
+    expect(view).to_have_attribute('data-selection','proposed')
+    expect(proposed.locator('.oq-card-copy')).to_be_visible()
+    expect(proposed.locator('.oq-clock')).to_have_text(re.compile(r'6일 21시간 13분 \d{2}초'))
+    assert proposed.evaluate('el=>el===window.__originalGraph')
+    expect(proposed).to_have_css('border-top-width','3px')
+    assert proposed.bounding_box()['width'] > token+60
+    clock=proposed.locator('.oq-clock')
+    before=clock.inner_text()
+    expect(clock).not_to_have_text(before,timeout=2500)
+    remaining=clock.inner_text()
+    # Switch by keyboard, so the physically overlapped portion isn't used as a hit target.
+    current=view.locator('.oq-series[data-kind=current]')
+    current.press('Enter')
+    expect(view).to_have_attribute('data-selection','current')
+    expect(current.locator('.oq-rate')).to_contain_text('300원')
+    view.get_by_role('button',name='상담 예약').wait_for()
+    path=os.environ.get('R3_EVIDENCE_DIR')
+    if path:
+        (Path(path)/'result-motion.json').write_text(json.dumps({
+            'environment':'protected QA frame, Chromium, isolated design amounts',
+            'currentStaticAndProposedGrowing':animated, 'sameGraphButtonRetained':True,
+            'countdownObserved':[before,remaining],'textSwapSelection':'current'
+        },ensure_ascii=False,indent=2))
+
 
 def run(page, origin, width):
     screens = ReviewScreens(page, origin, width)
@@ -47,21 +151,19 @@ def run(page, origin, width):
     expect(frame.locator('[name=unknown]')).to_be_checked()
     frame_click(page,frame.get_by_role("button",name="입력 내용 확인"))
     expect(frame.locator('[data-summary-price]')).to_have_text('현재 구매가 모름')
-    for state in ['saving','new-detail','new-only-detail','equal','current-lower','no-current','expired','recompare','no-result']:
+    for state in ['saving','new-detail','current-detail','new-only-detail','equal','current-lower','no-current','expired','recompare','no-result','locked']:
         frame = screens.screen('quote-result',state)
-        view=frame.locator('.journey-result')
-        expect(view).to_have_attribute('data-view',state)
-        expect(view.locator('h1')).to_be_visible()
+        wrapper=frame.locator('[data-review-result]')
+        expect(wrapper).to_have_attribute('data-view',state)
+        view=wrapper.locator('[data-order-result]')
+        check_result(view,state)
         assert '7,300' not in view.inner_text()
         assert view.evaluate('(el)=>document.documentElement.scrollWidth<=innerWidth')
-        if state in ('saving','equal','current-lower'):expect(view.locator('.bars .journey-series')).to_have_count(2)
-        if state in ('no-current','new-only-detail'):expect(view.locator('.journey-series')).to_have_count(1)
-        if state == 'recompare':expect(view.get_by_role('button',name='새로운 견적')).to_be_visible()
         folder=os.environ.get('R3_EVIDENCE_DIR')
-        if folder and width==390:
+        if folder and width in (390,1440):
             path=Path(folder);path.mkdir(parents=True,exist_ok=True)
             view.screenshot(path=str(path / ('result-'+state+'-'+str(width)+'.png')))
-    print('PASS browser: Q2 → review → edit, 9 masked result states and viewport',width,flush=True)
+    print('PASS browser: Q2 → review → edit, 11 protected shared result states and viewport',width,flush=True)
 if __name__=='__main__':
     host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:
@@ -79,6 +181,8 @@ if __name__=='__main__':
                 run(page,conf['url'],width)
                 if width==390 and os.environ.get('R3_EVIDENCE_DIR'):
                     capture_reference_viewports(page,os.environ['R3_EVIDENCE_DIR'])
+                    page.emulate_media(reduced_motion='no-preference')
+                    check_motion(page, conf['url'])
                 context.close()
             browser.close()
     finally:

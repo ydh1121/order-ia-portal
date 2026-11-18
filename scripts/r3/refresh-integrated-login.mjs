@@ -17,14 +17,22 @@ const mount=runtimes.accountFeedback+';('+mountIntegratedLogin.toString()+')();'
 const scriptHash=hash(frameCode.replace(/^function /,'')+mount);
 const frames={...original.frames};
 const catalog=original.catalog.map(row=>{
-  if(row.screen!=='login')return row;
+  if(!['login','signup'].includes(row.screen)||row.state==='success')return row;
   let body=gunzipSync(Buffer.from(frames[row.current],'base64')).toString();
+  if(row.screen==='signup'&&!body.includes('class="integrated-login-style"')){
+    if(!body.includes('data-submit-action="submit-signup"'))return row;
+    const signupButtons=buttons.replaceAll(' 로그인"',' 가입"');
+    const group='<div class="social-buttons integrated-providers" role="group" aria-label="간편 가입">'+signupButtons+'</div>';
+    body=body.replace('</form>',()=>'</form>'+group).replace('</main>',()=>css+'</main>');
+  }
   if(!body.includes('class="social-buttons"')&&!body.includes('class="integrated-login-style"'))return row;
   if(!body.includes('class="integrated-login-style"'))body=body.replace(/<div class="social-buttons">[\s\S]*?<\/div>/,()=>'<div class="social-buttons integrated-providers">'+buttons+'</div>').replace('</main>',()=>css+'</main>');
   const current=hash(body);
   frames[current]=gzipSync(body).toString('base64');
-  const hashes=Object.fromEntries(Object.keys(row.hashes).map(w=>[w,hash([row.id,'current',current,original.cssHash,w,scriptHash].join('|'))]));
-  return {...row,current,hashes,authoredChange:true,runtimeFamily:'integratedLogin'};
+  const family=row.screen==='signup'?'accountFeedback':'integratedLogin';
+  const effectiveHash=row.screen==='signup'?hash(frameCode.replace(/^function /,'')+runtimes.accountFeedback):scriptHash;
+  const fingerprints=Object.fromEntries(Object.keys(row.hashes).map(width=>[width,hash([row.id,'current',current,original.cssHash,width,effectiveHash].join('|'))]));
+  return {...row,current,hashes:fingerprints,authoredChange:true,runtimeFamily:family};
 });
 const used=new Set(catalog.flatMap(r=>[r.current,r.previous]));
 async function fields(file,updates){

@@ -1,45 +1,6 @@
 // Render archived QA screens without retrieving, embedding or exporting a buyer's quote.
 // Button destinations are approved host actions. Production amounts live in the signed buyer view.
 const go=(text,screen,state='',kind='secondary')=>'<button type="button" class="journey-btn '+kind+'" data-mf-go="'+screen+'" data-mf-state="'+state+'">'+text+'</button>';
-const resultNames={
- saving:['이번 견적으로','원가를 줄일 수 있어요'], 'new-detail':['이번 견적으로','원가를 줄일 수 있어요'],
- 'new-only-detail':['이번 견적의','제안 납품가'], 'current-detail':['현재 납품가','높은 가격이에요'],
- equal:['현재 납품가와','가격이 동일해요'], 'current-lower':['현재 납품가가','더 낮아요'],
- 'no-current':['현재 가격 없이','새 납품가를 확인해요'],expired:['견적 유효기간이','지났어요'],
- recompare:['어떤 조건으로','다시 비교할까요?'], 'no-result':['길을','잃으셨나요?'],
- locked:['사업자 확인 후','납품가를 볼 수 있어요']
-};
-export function designResult(state){
- const [lead,ending]=resultNames[state];
- if(state==='no-result')return '<article class="journey-result" data-view="no-result"><header class="journey-title"><h1>길을 잃으셨나요?</h1></header><div class="journey-visual"><p>표시할 견적을 찾을 수 없어요.</p></div><footer>'+go('이전 페이지로 돌아가기','quote-review','normal','primary')+'</footer></article>';
-
- const detail=['new-detail','current-detail','new-only-detail'].includes(state);
- const single=['no-current','new-only-detail'].includes(state);
- const action=(text,to,cls='')=>'<button type="button" class="'+cls+'" data-mf-go="quote-result" data-mf-state="'+to+'">'+text+'</button>';
- const series=(key,label,to)=>{
-  const selected=key==='current'?state==='current-detail':state!=='current-detail';
-  const accent=key===(state==='current-lower'?'current':'offered');
-  const css='journey-series '+key+(accent?' accent':'')+(selected&&detail?' front':'');
-  return action('<span>'+label+'</span><strong aria-label="금액 비공개">—</strong>'+(detail?'':'<i aria-hidden="true"></i>'),to,css);
- };
- let visual='';
- if(state==='locked')visual='<div class="journey-gate">'+go('사업자 확인','business','empty','primary')+'</div>';
- else if(state==='recompare')visual='<div class="journey-choices">'+go('동일한 조건','quote-review','normal','primary')+go('새로운 견적','q1','before')+'</div>';
- else if(state==='expired')visual='<section class="journey-chart expired-chart" aria-label="만료된 견적"><div>현재 납품가<strong>—</strong></div><div>제안 납품가<strong>—</strong></div></section><p class="journey-meta">견적 만료일 —</p>';
- else{
-  const graph='<section class="journey-chart '+(detail?'cards':'bars')+'" aria-label="가격 비교 배치 예시">'+
-    (single?'':series('current','현재 납품가','current-detail'))+series('offered',state==='saving'?'최저가':'검색된 가격',single?'new-only-detail':'new-detail')+'</section>';
-  visual=(detail?'<p class="journey-meta">동일한 1회 납품 기준<br>견적 기준일 —<br>견적 만료일 —</p>':'')+graph+
-    (detail?action('그래프로 보기',single?'no-current':'saving','journey-back'):'<small>그래프를 누르면 상세를 확인할 수 있어요.</small>');
- }
- const caption=state==='equal'?'거래 변경 혜택을 확인해 보세요.':state==='current-lower'?'필요한 납품 조건을 요청해 주세요.':'';
- const large=['saving','new-detail','current-detail','new-only-detail'].includes(state);
- const title='<header class="journey-title">'+(large?'<p>'+lead+'</p><h1><em aria-label="금액 비공개">—</em><br>'+ending+'</h1>':'<h1>'+lead+'<br>'+ending+'</h1>')+'</header>';
- const next=state==='expired'?action('다시 비교하기','recompare','journey-btn primary'):state==='recompare'?'':
-    state==='locked'?go('내 입력 내용','quote-review','normal','primary'):detail?go('납품 요청','role-delivery','','primary'):go('다시 비교하기','quote-result','recompare','primary');
- return '<article class="journey-result" data-view="'+state+'">'+title+(caption?'<p>'+caption+'</p>':'')+'<div class="journey-visual">'+visual+'</div><p class="journey-privacy">금액은 인증된 사업장의 내 견적에서 확인할 수 있어요.</p><footer>'+
-      go('상담 예약','role-consult')+next+'</footer></article>';
-}
 export function inputJourney(screen,state){
  if(screen==='q2'){
   const help={empty:'입력 전',filled:'입력한 조건',unknown:'정확한 금액을 모를 때',single:'한 품목',error:'입력 확인',mixed:'여러 품목'}[state];

@@ -89,7 +89,9 @@ jobs:
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-price-browser.py
+        run: |
+          python tests/r3-price-browser.py
+          python tests/r3-price-first-browser.py
       - name: Check freight references and quantity policies
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:

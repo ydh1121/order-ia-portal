@@ -59,6 +59,11 @@ def check_matrix(page):
  page.locator('html').evaluate("el=>el.style.zoom=''");page.set_viewport_size({'width':390,'height':844})
  page.get_by_role('button',name='합성 예시 불러오기').click()
 
+def open_section(page, selector):
+ section=page.locator(selector)
+ if not section.evaluate("el=>el.open"):
+  section.locator(':scope > summary').click()
+
 def check_concurrent_draft(ctx,page):
  at=lambda p:p.locator('#matrix input[data-r="0"][data-c="2"]')
  page.reload();expect(page.locator('#current')).to_contain_text('r1');expect(at(page)).to_have_value('25')
@@ -76,6 +81,7 @@ def check_concurrent_draft(ctx,page):
  other.get_by_role('button',name='초안 저장').click();expect(other.locator('#current')).to_contain_text('r3')
  other.reload();expect(at(other)).to_have_value('27');at(other).fill('25');other.get_by_role('button',name='초안 저장').click();expect(other.locator('#current')).to_contain_text('r4')
  other.close();page.reload();expect(page.locator('#current')).to_contain_text('r4');expect(at(page)).to_have_value('25')
+ open_section(page,'#simulation-panel')
  page.locator('#scenario [data-field=serviceDate]').fill((datetime.now(timezone.utc)+timedelta(days=1)).date().isoformat())
  page.locator('#scenario [data-field=quantity]').fill('10');page.locator('#scenario [data-field=region]').select_option('11')
  out=root/'artifacts'/'price-matrix'/'save-refresh-conflict.json'
@@ -100,22 +106,24 @@ try:
   p.get_by_role('button',name='초안 저장').click();expect(p.locator('#current')).to_contain_text('초안')
   check_concurrent_draft(ctx,p)
   p.get_by_role('button',name='저장된 조건으로 계산').click();expect(p.locator('#result')).to_contain_text('합계 255원')
+  open_section(p,'#review-actions')
   p.get_by_role('button',name='검토 요청').click();expect(p.locator('#current')).to_contain_text('검토 중')
   p.locator('#current').scroll_into_view_if_needed();p.screenshot(path=out/'pending-review.png')
   expect(p.get_by_role('button',name='승인',exact=True)).to_have_count(0)
   p.locator('#persona').select_option('operator');expect(p.locator('#versions option')).to_have_count(2)
+  open_section(p,'#versions-panel')
   p.locator('#versions').select_option(index=1);p.locator('#open').click();expect(p.locator('#current')).to_contain_text('검토 중')
   p.get_by_role('button',name='승인',exact=True).click();expect(p.locator('#current')).to_contain_text('승인')
   p.locator('#persona').select_option('buyer');expect(p.locator('#buyerSite option')).to_have_count(2);p.locator('#buyerSite').select_option(index=1);expect(p.locator('#offerSelect option')).to_have_count(1)
   p.locator('#quoteQty').fill('10');p.locator('#quoteDay').fill((datetime.now(timezone.utc)+timedelta(days=1)).date().isoformat());p.get_by_role('button',name='견적 발급').click();expect(p.locator('#buyerResult')).to_contain_text('255원')
   card=p.locator('#buyerResult');expect(card).to_have_attribute('data-state','offer')
   expect(card.get_by_role('button',name='제안 납품가 255원 상세 보기')).to_be_visible()
-  expect(card.get_by_text('현재 납품가',exact=True)).to_have_count(0)
+  expect(card.locator('.oq-series[data-kind=current]')).to_be_hidden()
   card.get_by_role('button',name='제안 납품가 255원 상세 보기').click()
-  expect(card.get_by_text('견적 기준일',exact=True)).to_be_visible()
-  expect(card.get_by_text('견적 만료일',exact=True)).to_be_visible()
-  card.get_by_role('button',name='견적 요약으로 돌아가기').click()
-  expect(card.get_by_text('견적 기준일',exact=True)).to_have_count(0)
+  expect(card.locator('.oq-meta')).to_contain_text('견적 기준일')
+  expect(card.locator('.oq-meta')).to_contain_text('견적 만료일')
+  card.get_by_role('button',name='제안 납품가 255원 요약 보기').click()
+  expect(card.locator('.oq-meta')).not_to_contain_text('견적 기준일')
   # A detail click rechecks the snapshot grant. A refused read must remove the visible amount.
   card.get_by_role('button',name='제안 납품가 255원 상세 보기').wait_for()
   protected_read='**/api/ia/r3-price/practice/buyer/quote?id=*'

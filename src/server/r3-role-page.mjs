@@ -25,9 +25,11 @@ export function renderR3RolePage(nonce){
   label{display:grid;gap:4px;font-size:.92rem;font-weight:600;min-width:0}form{display:grid;gap:8px;margin:12px 0}form>div,form>div>div{display:grid;gap:8px}
   input,select,textarea{border:1px solid #cbd3dc;border-radius:7px;padding:8px;background:white;color:#1e2f3c}input:invalid:not(:placeholder-shown):focus{outline-color:#a33}input[type=checkbox]{width:22px;min-height:22px}
   #filter-bar{display:grid;gap:6px;margin:12px 0}#r3-practice{margin:18px 0}summary{cursor:pointer;min-height:40px}dl{display:grid;grid-template-columns:minmax(4rem,max-content) minmax(0,1fr);gap:7px 14px}dt{color:#526578}dd{margin:0;overflow-wrap:anywhere}
+  #account-panel{position:relative;display:grid;gap:9px;background:white;border-radius:16px;padding:18px;margin:0 0 18px;max-width:34rem}#account-panel :focus-visible{outline-offset:2px}#detail details[data-case-action]{margin:8px 0;border-top:1px solid #dde3ec}#detail details[data-case-action]>summary{padding:9px 0;font-weight:600}
   *{scrollbar-width:none}select[multiple]{scrollbar-width:thin}:focus-visible{outline:3px solid #3966bd;outline-offset:2px}
   @media(max-width:700px){main{grid-template-columns:minmax(0,1fr)}#detail:not(:empty){grid-row:1}body{padding:12px}}@media(prefers-reduced-motion:no-preference){#detail:not(:empty){animation:appear .15s ease-out}@keyframes appear{from{opacity:.4;transform:translateY(3px)}}}
-  </style></head><body><header><h1>내 업무</h1><a id="home" href="/ia?view=roles-r3">내 업무 홈</a></header>
+  </style></head><body><header><h1>내 업무</h1><button hidden id="account-trigger" type="button" aria-expanded="false" aria-controls="account-panel">내 계정</button><a id="home" href="/ia?view=roles-r3">내 업무 홈</a></header>
+  <section id="account-panel" aria-label="계정 패널" hidden></section>
   <nav id="role-menu" aria-label="내 역할의 업무"></nav><p role="status" id="status"></p>
   <main><section class="panel"><h2 id="section-title">지금 할 일</h2><div id="filter-bar" hidden><input id="query" type="search" placeholder="상호·업무·상태 검색" aria-label="업무 검색"><div id="filters" aria-label="업무 상태"><button data-filter="all">전체</button><button data-filter="todo">내가 처리할 일</button><button data-filter="done">종료</button></div></div>
   <ul id="queue-list"></ul><ul id="list"></ul><button type="button" hidden id="more">다음 50건</button><button type="button" id="refresh">새로고침</button>

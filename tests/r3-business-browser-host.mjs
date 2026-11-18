@@ -6,10 +6,11 @@ import {signedWorkspace,issueExampleQuote,origin} from './r3-business-identities
 
 // Ephemeral loopback identity provider for the Chromium fixture. Each browser
 // context receives a distinct signed subject; all authorization runs in the normal Page/API.
-const fixture=signedWorkspace();
-await issueExampleQuote(fixture);
+const firstRegistration=process.argv.includes('--first-price');
+const fixture=signedWorkspace({emptyPriceCatalog:firstRegistration});
+if(!firstRegistration)await issueExampleQuote(fixture);
 globalThis.fetch=fixture.certs;
-const subjects=new Set(['buyer','operator','supplier','buyer2']);
+const subjects=new Set(firstRegistration?['operator','supplier','supplier2','unassigned']:['buyer','operator','supplier','buyer2']);
 const server=createServer(async(req,res)=>{
   try{
     const localOrigin='http://127.0.0.1:'+server.address().port;
@@ -22,7 +23,7 @@ const server=createServer(async(req,res)=>{
     const chunks=[];for await(const chunk of req)chunks.push(chunk);
     const request=new Request(url,{method:req.method,headers,body:chunks.length?Buffer.concat(chunks):undefined});
     const context={request,env:fixture.env};let response;
-    if(url.pathname==='/ia')response=await page(context);
+    if(url.pathname==='/ia' || url.pathname.startsWith('/ia/r3-product/'))response=await page(context);
     else if(url.pathname==='/api/order/features')response=await features(context);
     else if(url.pathname.startsWith('/api/ia/'))response=await handleIaRequest(request,fixture.env,{fetcher:fixture.certs});
     else response=new Response(null,{status:404});

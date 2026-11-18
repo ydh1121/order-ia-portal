@@ -1,3 +1,4 @@
+import {readAccountPanel,requestMemberChange} from './r3-role-account.mjs';
 import {workspaceOptions,caseQuotes,publishMenu,validCaseContext,targetsOwnedSql} from './r3-role-workspace.mjs';
 import {handleR3Evidence} from './r3-evidence.mjs';
 import {caseKinds, creatorRole, dispositionReasons, reasonRequired, transitions} from './r3-role-rules.mjs';
@@ -141,17 +142,18 @@ export async function handleR3Role({request,env,actor,path}) {
   const url=new URL(request.url);const suffix=url.pathname.replace(/^\/api\/ia\/r3-role\/?/,'');
   if(suffix==='evidence') return handleR3Evidence({request,env,actor});
   if(suffix==='session'&&request.method==='GET'&&actor.csrf)return json({csrf:actor.csrf,expiresAt:actor.expiresAt,practiceAllowed:actor.role!=='BUSINESS'});
-  if(!['','workspace','publication'].includes(suffix)) return json({error:'NOT_FOUND'},404);
+  if(!['','workspace','publication','account'].includes(suffix)) return json({error:'NOT_FOUND'},404);
   try {
-    if(suffix==='publication'){
+    if(suffix==='publication'||suffix==='account'&&request.method==='POST'){
       if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
       if(request.headers.get('Origin')!==url.origin||!actor.csrf||request.headers.get('X-IA-CSRF')!==actor.csrf)return json({error:'CSRF_DENIED'},403);
       if(!request.headers.get('Content-Type')?.startsWith('application/json'))return json({error:'JSON_REQUIRED'},415);
-      let data;try{const reader=request.body?.getReader();if(!reader)return json({error:'INVALID_INPUT'},400);const buf=new Uint8Array(512);let length=0;for(;;){const {value,done}=await reader.read();if(done)break;if(length+value.length>buf.length){await reader.cancel();return json({error:'REQUEST_TOO_LARGE'},413);}buf.set(value,length);length+=value.length;}data=JSON.parse(new TextDecoder().decode(buf.subarray(0,length)));}catch{return json({error:'INVALID_INPUT'},400);}
-      const out=await publishMenu(db,actor.id,data,new Date().toISOString());return json(out,out.status);
+      let data;try{const reader=request.body?.getReader();if(!reader)return json({error:'INVALID_INPUT'},400);const buf=new Uint8Array(2048);let length=0;for(;;){const {value,done}=await reader.read();if(done)break;if(length+value.length>buf.length){await reader.cancel();return json({error:'REQUEST_TOO_LARGE'},413);}buf.set(value,length);length+=value.length;}data=JSON.parse(new TextDecoder().decode(buf.subarray(0,length)));}catch{return json({error:'INVALID_INPUT'},400);}
+      const out=await (suffix==='account'?requestMemberChange:publishMenu)(db,actor.id,data,new Date().toISOString());return json(out,out.status);
     }
     const grants=await readRoleScope(db,actor.id);
     if(!grants.length)return json({error:'NO_BUSINESS_MEMBERSHIP'},403);
+    if(suffix==='account')return request.method==='GET'?json(await readAccountPanel(db,actor.id)):json({error:'METHOD_NOT_ALLOWED'},405);
     if(suffix==='workspace'){
       if(request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
       const options=await workspaceOptions(db,actor.id);

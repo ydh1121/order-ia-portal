@@ -109,10 +109,24 @@
     const c=new AbortController();
     const close=()=>{if(!consumeAuthReturn(api,authenticated))navigate(api,'onboarding',authenticated?'member-4':'guest-4');};
     const handle=root.querySelector('.sheet-handle');
+    const sheet=root.querySelector('.auth-sheet');
     let pointer=null;
-    handle?.addEventListener('pointerdown',e=>{pointer={id:e.pointerId,y:e.clientY};handle.setPointerCapture(e.pointerId);},{signal:c.signal});
-    handle?.addEventListener('pointerup',e=>{if(pointer?.id===e.pointerId && e.clientY-pointer.y>=48)close();pointer=null;},{signal:c.signal});
-    handle?.addEventListener('pointercancel',()=>{pointer=null;},{signal:c.signal});
+    function settle(){if(sheet){sheet.style.removeProperty('transform');sheet.style.removeProperty('transition');}pointer=null;}
+    handle?.addEventListener('pointerdown',e=>{
+      pointer={id:e.pointerId,y:e.clientY};handle.setPointerCapture(e.pointerId);sheet.style.transition='none';
+    },{signal:c.signal});
+    handle?.addEventListener('pointermove',e=>{
+      if(pointer?.id!==e.pointerId)return;
+      const delta=e.clientY-pointer.y;
+      sheet.style.transform='translateY('+(delta>=0?delta:-Math.sqrt(-delta)*1.6)+'px)';
+    },{signal:c.signal});
+    handle?.addEventListener('pointerup',e=>{
+      if(pointer?.id!==e.pointerId)return;
+      const dy=e.clientY-pointer.y,from=sheet.style.transform;settle();
+      if(dy>=48){close();return;}
+      if(!api.reduced?.()&&from)sheet.animate([{transform:from},{transform:'translateY(0)'}],{duration:190,easing:'cubic-bezier(.2,.9,.3,1)'});
+    },{signal:c.signal});
+    handle?.addEventListener('pointercancel',settle,{signal:c.signal});
     if(authenticated && interactive(api)){
       const timer=setTimeout(()=>exitSheet(root,api,close,c.signal),api.reduced?.()?250:780);
       c.signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});

@@ -66,7 +66,21 @@ def check(page, origin, width):
     expect(toggle).to_have_attribute("aria-checked", "true")
     frame_click(page, toggle)
     expect(toggle).to_have_attribute("aria-checked", "false")
-    toggle.press("Escape")
+    frame_click(page, frame.locator('[data-action="panel-home"]'))
+    frame_click(page, frame.locator('[data-action="panel-business"]'))
+    url=page.url
+    frame.locator('[name="profile-name"]').fill("검수 매장")
+    frame_click(page,frame.locator('[data-action="save-business"]'))
+    expect(frame.locator('[name="profile-name"]')).to_have_value("검수 매장")
+    frame_click(page,frame.locator('[data-action="panel-home"]'))
+    frame_click(page,frame.locator('[data-action="panel-people"]'))
+    frame.locator('[name="profile-email"]').fill('test@example.invalid')
+    frame_click(page,frame.locator('[data-action="add-member"]'))
+    expect(frame.locator(".account-panel ul")).to_contain_text("test@example.invalid · 구성원")
+    frame_click(page,frame.locator('[data-action="member-role-1"]'))
+    expect(frame.locator(".account-panel ul")).to_contain_text("test@example.invalid · 매장 관리자")
+    assert page.url==url
+    frame.locator(".account-panel h2").press("Escape")
     expect(frame.locator(".account-panel")).to_be_hidden()
 
     frame = screen("terms", "optional")

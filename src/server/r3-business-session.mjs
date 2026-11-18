@@ -15,8 +15,13 @@ export async function businessActor(request,env,fetcher=fetch,now=Math.floor(Dat
   const identity=await verifyAccessIdentity(request,env.IA_ACCESS_TEAM_DOMAIN,env.IA_BUSINESS_ACCESS_AUD,fetcher,now);
   if(typeof identity.id!=='string' || !identity.id || identity.id==='owner' || identity.id.length>255)throw Error('BUSINESS_ID_DENIED');
   const grant=await env.ORDER_QA_DB?.prepare('SELECT 1 ok FROM r3_membership WHERE actor_id=? AND active=1 LIMIT 1').bind(identity.id).first();
-  if(!grant)throw Error('BUSINESS_MEMBERSHIP_REQUIRED');
+  // An unassigned, verified business identity may request a product connection. Every
+  // commercial read/write still requires its own product grant; other surfaces remain closed.
+  const url=new URL(request.url);
+  const pricingOnly=(/^\/ia\/?$/.test(url.pathname)&&url.searchParams.get('view')==='pricing-r3')
+    || /^\/api\/ia\/r3-price\/(registration|session|desk|version|sites|simulate)$/.test(url.pathname);
+  if(!grant&&!pricingOnly)throw Error('BUSINESS_MEMBERSHIP_REQUIRED');
   // Token-bound synchronizer value is returned only by the same-origin authenticated session endpoint.
   const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('order.business.csrf.v1.'+request.headers.get('Cf-Access-Jwt-Assertion')));
-  return {id:identity.id,role:'BUSINESS',expiresAt:identity.expiresAt,csrf:Array.from(new Uint8Array(bytes),v=>v.toString(16).padStart(2,'0')).join('')};
+  return {id:identity.id,email:identity.email,role:'BUSINESS',expiresAt:identity.expiresAt,csrf:Array.from(new Uint8Array(bytes),v=>v.toString(16).padStart(2,'0')).join('')};
 }

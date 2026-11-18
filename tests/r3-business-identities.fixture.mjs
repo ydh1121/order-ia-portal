@@ -3,7 +3,7 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {handleIaRequest} from '../src/server/router.mjs';
 export const origin='https://order-ia-portal.pages.dev';
-export function signedWorkspace(){
+export function signedWorkspace({emptyPriceCatalog=false}={}){
   const db=new DatabaseSync(':memory:');
   const folder=new URL('../migrations/',import.meta.url);
   for(const file of readdirSync(folder).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(new URL(file,folder),'utf8'));
@@ -17,8 +17,14 @@ export function signedWorkspace(){
   const objects=new Map();
   const bucket={put:async(k,b)=>objects.set(k,new Uint8Array(b)),delete:async k=>objects.delete(k),get:async k=>objects.has(k)?{size:objects.get(k).length,body:objects.get(k)}:null};
   const env={IA_ACCESS_TEAM_DOMAIN:team,IA_BUSINESS_ACCESS_AUD:aud,ORDER_QA_DB:store,ORDER_PRIVATE_EVIDENCE:bucket};
-  db.exec("INSERT INTO r3_membership VALUES('buyer','BUYER','store','site',1),('buyer2','BUYER','other','site',1),('supplier','SUPPLIER','farm','',1),('operator','OPERATOR','store','',1),('operator','OPERATOR','farm','',1); INSERT INTO r3_release_admin VALUES('operator',1); INSERT INTO r3_business_site VALUES('store','site','VERIFIED',1); INSERT INTO r3_price_scope VALUES('farm','dep','sku',1); INSERT INTO r3_price_destination VALUES('store','site','1100000000','v1','08843')");
-  db.prepare('INSERT INTO r3_price_catalog VALUES(?,?,?,?,?,?,?)').run('farm','dep','sku',1,JSON.stringify({productName:'시험 특란',originName:'시험 출고장',supplierName:'시험 공급사'}),'operator',new Date().toISOString());
+  if(emptyPriceCatalog){
+    // Already authorized fixture subjects start without any catalog, assignment or price version.
+    // Supplier and operator can only act within their shared farm.
+    db.exec("INSERT INTO r3_membership VALUES('operator','OPERATOR','farm','',1),('supplier','SUPPLIER','farm','',1),('supplier2','SUPPLIER','other-farm','',1)");
+  }else{
+    db.exec("INSERT INTO r3_membership VALUES('buyer','BUYER','store','site',1),('buyer2','BUYER','other','site',1),('supplier','SUPPLIER','farm','',1),('operator','OPERATOR','store','',1),('operator','OPERATOR','farm','',1); INSERT INTO r3_release_admin VALUES('operator',1); INSERT INTO r3_business_site VALUES('store','site','VERIFIED',1); INSERT INTO r3_price_scope VALUES('farm','dep','sku',1); INSERT INTO r3_price_destination VALUES('store','site','1100000000','v1','08843')");
+    db.prepare('INSERT INTO r3_price_catalog VALUES(?,?,?,?,?,?,?)').run('farm','dep','sku',1,JSON.stringify({productName:'시험 특란',originName:'시험 출고장',supplierName:'시험 공급사'}),'operator',new Date().toISOString());
+  }
   const tokens=new Map();
   function token(id,ttl=3600){
     const now=Math.floor(Date.now()/1000);const enc=x=>Buffer.from(JSON.stringify(x)).toString('base64url');

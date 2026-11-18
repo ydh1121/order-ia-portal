@@ -68,3 +68,15 @@
 @media(min-width:650px){.ob .ob-mode-grid{max-width:380px}.ob .ob-copy{padding-top:45px}}
 @media(max-height:720px){.ob .ob-main{grid-template-rows:auto minmax(140px,1fr) 54px}.ob .ob-copy{padding-top:20px}.ob .ob-art{max-height:190px}}
 @media(prefers-reduced-motion:no-preference){.ob .ob-mode.card svg{transition:transform .18s}.ob .ob-mode.card:hover svg,.ob .ob-mode.card:focus-visible svg{transform:translateY(-2px)}.ob .ob-quick-items,.ob .ob-drawer{animation:ob-reveal .18s ease-out}@keyframes ob-reveal{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}}
+
+.ob.member .ob-wordmark{background:linear-gradient(90deg,#131719,#686560 65%,#d58c1b);color:transparent;background-clip:text}
+.ob .ob-period{opacity:0}
+.ob .ob-quick-items{background:transparent;border:0;box-shadow:none;gap:9px;align-items:end}
+.ob .ob-quick-items button{border-radius:999px;min-height:42px;padding:0 17px;background:#292f32;color:white;box-shadow:0 2px 8px #0002}
+.ob .ob-quick-items button:hover,.ob .ob-quick-items button:focus-visible{background:#46515b}
+.ob.footer-open .ob-stage *,.ob.footer-open .ob-stage *::before,.ob.footer-open .ob-stage *::after{animation-play-state:paused!important}
+@media(prefers-reduced-motion:no-preference){
+ .ob .ob-period{animation:ob-dot-fade .3s both}.ob .ob-mark-btn .ob-dots-logo{animation:ob-idle 3.8s ease-in-out infinite}
+ .ob .ob-quick-items{animation:none}.ob .ob-quick-items button{transform-origin:bottom right;animation:ob-dial .28s cubic-bezier(.23,.9,.44,1.14) both}.ob .ob-quick-items button:first-child{animation-delay:45ms}
+ @keyframes ob-dot-fade{from{opacity:1}to{opacity:0}}@keyframes ob-idle{50%{transform:translateY(-1.5px) scale(1.02)}}@keyframes ob-dial{from{opacity:0;transform:translateY(18px) scale(.55)}to{opacity:1;transform:none}}
+}

@@ -62,7 +62,13 @@ export function runRolePage(labels,createEvidenceEditor){
   }
   const activeRoles=()=>new Set(grants.map(g=>g.role));
   const allowed=key=>menus[key]?.[1].some(role=>activeRoles().has(role));
-  const menu=()=>query().get('menu')||'inbox';
+  function menu(){
+    if(query().get('menu'))return query().get('menu');
+    const roles=activeRoles();
+    if(roles.has('BUYER'))return 'quotes';
+    if(roles.has('SUPPLIER'))return 'delivery';
+    return roles.has('OPERATOR')?'review':'inbox';
+  }
   const qMap=id=>opts.quotes.find(q=>q.id===id);
   const status=s=>{$('status').textContent=s;};
   const error=e=>status(messages[e.message]||(navigator.onLine?'업무를 불러오지 못했습니다. 새로고침해 주세요.':'연결이 끊겼습니다. 연결 후 다시 저장해 주세요.'));
@@ -77,6 +83,7 @@ export function runRolePage(labels,createEvidenceEditor){
   function clear(){
     ++epoch;cipher=null;drafts={};clearTimeout(expiryTimer);dispose();dispose=()=>{};ready=false;csrf='';pending=null;grants=[];cases=[];next='';opts={quotes:[],products:[],businesses:[]};
     for(const id of ['role-menu','queue-list','list','detail','create','publication'])$(id).replaceChildren();
+    $('account-trigger').hidden=true;$('account-panel').hidden=true;$('account-panel').replaceChildren();
     $('create').hidden=true;$('filter-bar').hidden=true;$('more').hidden=true;$('r3-practice').hidden=true;
   }
   function historyChange(changes,replace=false){
@@ -89,7 +96,7 @@ export function runRolePage(labels,createEvidenceEditor){
   function renderMenu(){
     const area=$('role-menu');area.replaceChildren();
     for(const [key,[title]] of Object.entries(menus)){
-      if(!allowed(key))continue;
+      if(key==='inbox'||!allowed(key))continue;
       const a=link(title,'/ia?view=roles-r3&menu='+key);
       a.onclick=e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();go({menu:key,case:null,quote:null,filter:null,q:null});};
       if(menu()===key)a.setAttribute('aria-current','page');area.append(a);
@@ -120,6 +127,7 @@ export function runRolePage(labels,createEvidenceEditor){
       for(const q of opts.quotes){
         if(![qTitle(q),q.supplierName,gName(q),name(q.deliveryState)].some(contains))continue;
         const li=node('li');li.append(node('strong',qTitle(q)),node('small',[gName(q),q.supplierName,money(q.total),q.deliveryState?name(q.deliveryState):null].filter(Boolean).join(' · ')));
+        li.append(link('견적 결과 보기','/ia?view=simple-r3&quote='+encodeURIComponent(q.id)+'#/result'));
         if(q.deliveryCase)li.append(button('납품 내역',()=>go({menu:'delivery',case:q.deliveryCase})));
         if(Date.parse(q.expires_at)>Date.now()){
           for(const [cmd,label] of [['consult','상담 예약'],['reprice','가격 재검토'],['delivery','납품 요청']]){
@@ -167,6 +175,7 @@ export function runRolePage(labels,createEvidenceEditor){
     function populate(){
       fields.replaceChildren();const g=creators[Number(scope.value)],kinds=allowCreate[g.role].filter(k=>key==='inbox'||k===key);
       const kind=field(fields,'업무','kind',kinds.map(k=>[k,name(k)]));
+      if(kinds.length===1)kind.parentElement.hidden=true;
       const rest=node('div');fields.append(rest);
       function extras(){
         caseId=crypto.randomUUID();rest.replaceChildren();const k=kind.value;
@@ -198,7 +207,8 @@ export function runRolePage(labels,createEvidenceEditor){
     }
     const remember=()=>{delete form.dataset.draftSaved;const g=creators[Number(scope.value)];drafts[keyDraft]={fields:values(form),caseId,scope:scope.value,orgId:g.org_id,siteId:g.site_id,kind:form.elements.namedItem('kind').value};const expected=JSON.stringify(drafts[keyDraft]);persistDrafts().then(()=>{if(expected===JSON.stringify(drafts[keyDraft]))form.dataset.draftSaved='1';});};
     form.oninput=remember;form.onchange=remember;
-    const submit=node('button','작성 시작');submit.type='submit';form.append(submit);
+    const entryLabels={business:'사업자 정보 등록',supply:'공급 참여 신청서 작성',catalog:'심사할 상품 저장',consult:'상담 내용 저장',delivery:'납품 신청서 작성',reprice:'재검토 요청서 작성'};
+    const submit=node('button',entryLabels[key]||'작성 시작');submit.type='submit';form.append(submit);
     form.onsubmit=e=>{e.preventDefault();const v=new FormData(form),g=creators[Number(scope.value)],data={action:'create',caseId,expectedRevision:0,kind:v.get('kind'),orgId:g.org_id};
       if(g.site_id)data.siteId=g.site_id;
       for(const k of ['quoteId','productId'])if(v.has(k))data[k]=v.get(k);
@@ -207,6 +217,62 @@ export function runRolePage(labels,createEvidenceEditor){
       if(Object.keys(ctx).length)data.context=ctx;remember();save(data,keyDraft);
     };
   }
+  let panelRequest=0;
+  async function accountPanel(view='home',active=0){
+    const panel=$('account-panel'),at=epoch,request=++panelRequest;panel.hidden=false;
+    const state=await api(endpoint+'/account');if(at!==epoch||panel.hidden||request!==panelRequest)return;
+    panel.replaceChildren();const top=node('header'),heading=node('h2',({home:'내 계정',business:'사업자 정보',people:'구성원과 권한'})[view]);
+    const show=(next,scope=active)=>accountPanel(next,scope).catch(error);
+    const close=()=>{panel.hidden=true;$('account-trigger').setAttribute('aria-expanded','false');$('account-trigger').focus();};
+    top.append(heading,button('닫기',close));panel.append(top);
+    if(view!=='home')panel.append(button('내 계정으로',()=>show('home')));
+    const pick=field(panel,'사업장','business-scope',state.sites.map((site,i)=>[String(i),[site.info.businessName||gName(site),name(site.role)].join(' · ')]));
+    pick.value=String(active);pick.onchange=()=>show(view,Number(pick.value));const site=state.sites[active];if(!site)return;
+    if(view==='home'){
+      panel.append(button('사업자 정보',()=>show('business')),button('구성원과 권한',()=>show('people')));
+    }else if(view==='business'){
+      const dl=node('dl');
+      for(const [label,value] of [['상호',site.info.businessName],['업태',site.info.industry],['종목',site.info.trade],['개업일',site.info.openingDate],['확인 상태',({VERIFIED:'확인 완료',PENDING:'확인 대기',REVOKED:'취소됨'})[site.verification]]]){
+        dl.append(node('dt',label),node('dd',value||'등록 전'));
+      }
+      panel.append(dl);
+      if(site.role==='BUYER'){
+        const form=node('form');
+        for(const [label,key] of [['상호','businessName'],['업태','industry'],['종목','trade'],['개업일','openingDate']]){
+          field(form,label,key,null,key==='openingDate'?'date':'text').value=site.info[key]||'';
+        }
+        const submit=node('button','사업자 정보 초안 저장');submit.type='submit';form.append(submit);panel.append(form);
+        const id=crypto.randomUUID(),requestKey=crypto.randomUUID();
+        form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;
+          try{await api(endpoint,{action:'create',caseId:id,requestKey,orgId:site.org_id,siteId:site.site_id,kind:'business',expectedRevision:0,context:Object.fromEntries(new FormData(form))});await accountPanel('business',active);status('사업자 정보 초안을 저장했습니다.');}
+          catch(e){error(e);submit.disabled=false;}
+        };
+      }
+    }else{
+      const members=node('ul');for(const member of state.members.filter(m=>m.org_id===site.org_id&&(site.role==='OPERATOR'||m.site_id===site.site_id))){
+        members.append(node('li',(member.self?'나':member.actor_id)+' · '+name(member.role)+(member.site_id?' · '+member.site_id:'')));
+      }
+      panel.append(members);
+      const form=node('form');field(form,'신청 종류','purpose',[['INVITE','구성원 초대 요청'],['CHANGE','권한 변경 요청']]);
+      field(form,'대상 이메일','contact',null,'email');
+      const roleOptions=site.role==='OPERATOR'?[['BUYER','매장'],['SUPPLIER','공급처']]:[[site.role,name(site.role)]];
+      field(form,'요청 권한','role',roleOptions);
+      const submit=node('button','관리자에게 요청');submit.type='submit';form.append(submit);panel.append(form);
+      const key=crypto.randomUUID();form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;
+        try {await api(endpoint+'/account',{...Object.fromEntries(new FormData(form)),orgId:site.org_id,siteId:site.site_id,requestKey:key});await accountPanel('people',active);status('요청을 저장했습니다. 권한 담당자의 확인이 필요합니다.');}
+        catch(e){error(e);submit.disabled=false;}
+      };
+      const pending=state.requests.filter(r=>r.org_id===site.org_id&&(site.role==='OPERATOR'||r.site_id===site.site_id));
+      if(pending.length){panel.append(node('h3','확인 대기'));const list=node('ul');for(const r of pending)list.append(node('li',[r.contact,name(r.requested_role),r.purpose==='INVITE'?'초대 요청':'권한 변경 요청'].join(' · ')));panel.append(list);}
+    }
+    heading.tabIndex=-1;heading.focus();
+  }
+  $('account-trigger').onclick=()=>{
+    const panel=$('account-panel');
+    if(!panel.hidden){panel.hidden=true;$('account-trigger').setAttribute('aria-expanded','false');return;}
+    $('account-trigger').setAttribute('aria-expanded','true');accountPanel().catch(error);
+  };
+  $('account-panel').onkeydown=e=>{if(e.key==='Escape')$('account-trigger').click();};
   function publication(){
     const el=$('publication');el.replaceChildren();if(!opts.publication)return;
     const form=node('form'),cb=node('input');cb.type='checkbox';cb.checked=Boolean(opts.publication.enabled);
@@ -227,7 +293,7 @@ export function runRolePage(labels,createEvidenceEditor){
     const start=epoch;
     const [r,w]=await Promise.all([api(endpoint+'?context=1'+(append&&next?'&after='+encodeURIComponent(next):'')),append?Promise.resolve(opts):api(endpoint+'/workspace')]);
     if(start!==epoch)return;
-    grants=r.grants;opts=w;cases=append?[...cases,...r.cases]:r.cases;next=r.next;ready=true;render();
+    grants=r.grants;$('account-trigger').hidden=!grants.length;opts=w;cases=append?[...cases,...r.cases]:r.cases;next=r.next;ready=true;render();
   }
   async function save(data,keyDraft){
     if(loading)return;loading=true;
@@ -266,17 +332,52 @@ export function runRolePage(labels,createEvidenceEditor){
         detail.append(retained);
       }
       if(!actions.length)return;
-      const form=node('form'),act=field(form,'다음 처리','action',actions.map(a=>[a,name(a)])),extras=node('div');form.append(extras);
-      const keyDraft='case:'+c.id+':'+c.revision,stored=drafts[keyDraft];
-      const preferred=conflicted?.action||stored?.action?.[0];if(actions.includes(preferred))act.value=preferred;
-      function inputs(){
-        extras.replaceChildren();if(['supplement','reject','revoke','report-issue'].includes(act.value))field(extras,'사유','reason',['MISSING_EVIDENCE','SCOPE_MISMATCH','INVALID_DETAILS','DELIVERY_EXCEPTION','REVIEW_DECISION'].map(r=>[r,name(r)]));
-        if(act.value==='link-requote'){const choices=opts.quotes.filter(q=>q.id!==c.quote_id&&q.org_id===c.org_id&&q.site_id===c.site_id&&q.issued_at>=c.updated_at&&Date.parse(q.expires_at)>Date.now());field(extras,'다시 발급한 견적','replacementQuoteId',choices.map(q=>[q.id,qTitle(q)]));if(!choices.length)extras.append(link('견적 다시 발급','/ia?view=pricing-r3#quote'));}
-        const memo=field(extras,'처리 메모','memo',null,'textarea',false);if(conflicted?.context?.memo)memo.value=conflicted.context.memo;
-        if(conflicted){extras.prepend(node('p','현재 상태와 보관한 입력을 확인한 뒤 다시 처리해 주세요.'));}
+      const kindLabels={
+        business:{submit:'사업자 확인 요청',manual:'서류로 사업자 확인 요청',verify:'사업자 정보 확인 완료'},
+        consult:{submit:'상담 예약 요청',respond:'상담 답변 보내기',followup:'추가 문의 보내기',resolve:'상담 종료'},
+        supply:{submit:'공급 참여 심사 요청',approve:'공급 참여 승인'},
+        catalog:{submit:'상품 심사 요청',approve:'상품 승인'},
+        delivery:{submit:'납품 요청 보내기',accept:'납품 요청 수락',schedule:'납품 일정 등록',dispatch:'출고 기록',receive:'납품 수령 확인',reschedule:'납품 일정 변경'}
+      };
+      const storageKey='case:'+c.id+':'+c.revision;
+      for(const action of actions){
+        const title=kindLabels[c.kind]?.[action]||name(action);
+        const section=node('details'),summary=node('summary',title),form=node('form');
+        section.dataset.caseAction=action;section.append(summary,form);detail.append(section);
+        const draftKey=storageKey+':'+action;
+        const prior=drafts[draftKey]||(drafts[storageKey]?.action?.[0]===action?drafts[storageKey]:null);
+        if(conflicted?.action===action||prior)section.open=true;
+        if(['supplement','reject','revoke','report-issue'].includes(action)){
+          field(form,'사유','reason',['MISSING_EVIDENCE','SCOPE_MISMATCH','INVALID_DETAILS','DELIVERY_EXCEPTION','REVIEW_DECISION'].map(reason=>[reason,name(reason)]));
+        }
+        if(action==='link-requote'){
+          const choices=opts.quotes.filter(q=>q.id!==c.quote_id&&q.org_id===c.org_id&&q.site_id===c.site_id&&q.issued_at>=c.updated_at&&Date.parse(q.expires_at)>Date.now());
+          field(form,'다시 발급한 견적','replacementQuoteId',choices.map(q=>[q.id,qTitle(q)]));
+          if(!choices.length)form.append(link('견적 다시 발급','/ia?view=pricing-r3#quote'));
+        }
+        if(['schedule','reschedule'].includes(action)){
+          const date=field(form,'납품 예정일','desiredDate',null,'date');date.value=ctx.desiredDate||'';
+        }
+        const memoLabel={respond:'답변 내용',followup:'추가 문의 내용',supplement:'보완 요청 사항','report-issue':'납품 이상 내용',dispatch:'출고 메모',receive:'수령 메모'}[action]||'메모';
+        const memo=field(form,memoLabel,'memo',null,'textarea',['respond','followup'].includes(action));
+        if(prior)restore(form,prior);
+        if(conflicted?.action===action){
+          if(conflicted.context?.memo)memo.value=conflicted.context.memo;
+          form.prepend(node('p','최근 처리 내용과 내 입력을 확인한 뒤 저장해 주세요.'));
+        }
+        form.oninput=form.onchange=()=>{drafts[draftKey]=values(form);persistDrafts();};
+        const saveAction=node('button',title);saveAction.type='submit';form.append(saveAction);
+        form.onsubmit=e=>{
+          e.preventDefault();
+          const values=new FormData(form),data={action,caseId:c.id,expectedRevision:c.revision},context={};
+          if(values.get('reason'))data.reason=values.get('reason');
+          for(const key of ['memo','desiredDate','replacementQuoteId']){
+            const val=values.get(key)?.trim();if(val)context[key]=val;
+          }
+          if(Object.keys(context).length)data.context=context;
+          save(data,draftKey);
+        };
       }
-      act.onchange=inputs;inputs();if(stored&&!conflicted)restore(form,stored);
-      form.oninput=form.onchange=()=>{drafts[keyDraft]=values(form);persistDrafts();};form.append(node('button','선택한 처리 확인'));form.onsubmit=e=>{e.preventDefault();const data=Object.fromEntries(new FormData(form)),memo=data.memo.trim();delete data.memo;const replacementQuoteId=data.replacementQuoteId;delete data.replacementQuoteId;if(memo||replacementQuoteId)data.context={...(memo?{memo}:{}),...(replacementQuoteId?{replacementQuoteId}:{})};save({...data,caseId:c.id,expectedRevision:c.revision},keyDraft);};detail.append(form);
     }catch(e){detail.replaceChildren();error(e);}
   }
   $('filters').onclick=e=>{if(e.target.dataset.filter)go({filter:e.target.dataset.filter});};
