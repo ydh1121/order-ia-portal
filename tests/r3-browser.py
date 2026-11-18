@@ -43,9 +43,11 @@ try:
         page.goto(cfg['url']+'/ia/')
         anchor=page.locator('a[href="/ia?view=qa-lab"]')
         with page.expect_popup() as popup:anchor.click()
-        popup.value.wait_for_load_state('domcontentloaded')
-        assert popup.value.evaluate('window.opener===null')
-        assert popup.value.locator('#ia-live-banner').count()==0
+        qa_tab=popup.value
+        qa_tab.wait_for_url('**/ia?view=qa-lab**',wait_until='domcontentloaded')
+        qa_tab.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+        assert qa_tab.evaluate('window.opener===null')
+        assert qa_tab.locator('#ia-live-banner').count()==0
         anon=browser.new_context()
         assert anon.request.get(cfg['url']+'/api/ia/r3-qa/records?release=MSG0585-R3').status==403
         check_private_product(context,cfg['url'])
