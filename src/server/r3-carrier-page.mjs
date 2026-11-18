@@ -1,5 +1,5 @@
-import published from './r3-freight-public.json' with {type:'json'};
-import regions from './r3-freight-regions.json' with {type:'json'};
+import published from './r3-freight-public.gen.mjs';
+import regions from './r3-freight-regions.gen.mjs';
 export const freightPack={...published,regionChoices:regions.regions,regionVersion:regions.version};
 export const carrierMarkup='<div id="carrier-editor"></div>';
 export const carrierCss=`

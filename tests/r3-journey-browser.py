@@ -9,6 +9,26 @@ from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
 
 ROOT = Path(__file__).resolve().parents[1]
+def capture_reference_viewports(context, origin, folder):
+    # Match the five preserved Figma artboards at the original 375 × 828 CSS pixels.
+    # Use the current editable export; issued customer numbers cannot enter this file.
+    out = Path(folder)
+    out.mkdir(parents=True, exist_ok=True)
+    page = context.new_page()
+    page.set_viewport_size({'width':375,'height':828})
+    try:
+        for state in ['saving','new-detail','current-detail','equal','current-lower']:
+            url = origin+'/api/ia/r3-qa/artifact?'+urlencode({'id':'quote-result/'+state+'/email','width':375,'version':'current'})
+            response = context.request.get(url)
+            assert response.ok,(state,response.status)
+            artifact = response.json()
+            page.set_content(artifact['editable'],wait_until='load')
+            expect(page.locator('.journey-result')).to_have_attribute('data-view',state)
+            page.evaluate('document.fonts.ready')
+            page.screenshot(path=str(out/('reference-'+state+'-375x828.png')),animations='disabled')
+    finally:
+        page.close()
+
 def run(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("q2","empty")
@@ -54,6 +74,8 @@ if __name__=='__main__':
                 page.locator('button[type=submit]').click()
                 page.wait_for_url('**/ia?view=qa-lab**')
                 run(page,conf['url'],width)
+                if width==390 and os.environ.get('R3_EVIDENCE_DIR'):
+                    capture_reference_viewports(page.context,conf['url'],os.environ['R3_EVIDENCE_DIR'])
                 page.close()
             browser.close()
     finally:

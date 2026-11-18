@@ -170,3 +170,17 @@ test('published freight references are read-only; contract edits, independent ap
   const compare=await api('s','/version?id=v1');assert.equal(compare.data.version.policy.delivery.carrierPolicy.contracts[0].rates[0].amount,'137');
   assert.deepEqual((await api('s','/desk')).data.freightPack.rates.find(r=>r.id===ref.id),ref);
 });
+
+test('Pages freight modules preserve exact adjacent original JSON bytes',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const {createHash}=await import('node:crypto');
+  for(const name of ['r3-freight-public','r3-freight-regions']){
+    const source=await readFile(new URL('../src/server/'+name+'.json',import.meta.url));
+    const wrapper=await readFile(new URL('../src/server/'+name+'.gen.mjs',import.meta.url));
+    const prefix=Buffer.from('// Lossless ESM wrapper for the adjacent source JSON and the Pages bundler.\nexport default ');
+    assert.deepEqual(wrapper,Buffer.concat([prefix,source,Buffer.from(';\n')]));
+    const compiled=(await import('../src/server/'+name+'.gen.mjs')).default;
+    assert.deepEqual(compiled,JSON.parse(source));
+    if(name==='r3-freight-public')assert.equal(createHash('sha256').update(source).digest('hex'),'5fcd88e069e084cfea9004658349527da5f4aa693d0c0c6465434e1ecbe078c0');
+  }
+});
