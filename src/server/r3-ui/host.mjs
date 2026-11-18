@@ -202,9 +202,20 @@ export function bootQaHost(nonce, frameBootstrap) {
   }
   async function refresh(first=false){
     try{
-      const page=await api(base+'/records?release='+release+'&since='+cursor+'&limit=150');
-      for(const r of page.items)records.set(localKey(r.kind,r.id),r);cursor=page.nextCursor;reviewAvailable=true;
-      if(page.hasMore)await refresh();list();syncPins();if(!drawer.hidden&&!editor)notes(subset);
+      let changed=!reviewAvailable;
+      for(;;){
+        const page=await api(base+'/records?release='+release+'&since='+cursor+'&limit=150');
+        for(const row of page.items){
+          const key=localKey(row.kind,row.id);
+          if((records.get(key)?.revision??0)>=row.revision)continue;
+          records.set(key,row);changed=true;
+        }
+        cursor=Math.max(cursor,page.nextCursor);reviewAvailable=true;
+        if(!page.hasMore)break;
+      }
+      // Focusing a drawer control from the iframe must not replace the button
+      // between pointerdown and click when its records already match the server.
+      if(changed){list();syncPins();if(!drawer.hidden&&!editor)notes(subset);}
     }catch(e){if(first)reviewAvailable=false;announceError(e);}
   }
   async function readLegacy(){
