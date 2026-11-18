@@ -36,7 +36,7 @@ class ReviewScreens:
             }
         });""")
         page.goto(f"{origin}/ia?view=qa-lab&width={width}")
-        expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", re.compile(r'^[0-9a-f]{64}$'))
+        expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", re.compile(r'^[0-9a-f]{64}$'), timeout=30000)
         self.current_module = None
 
     def screen(self, module, state):

@@ -9,20 +9,22 @@ from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
 
 ROOT = Path(__file__).resolve().parents[1]
-def capture_reference_viewports(context, origin, folder):
+def capture_reference_viewports(qa_page, folder):
     # Match the five preserved Figma artboards at the original 375 × 828 CSS pixels.
     # Use the current editable export; issued customer numbers cannot enter this file.
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
-    page = context.new_page()
+    page = qa_page.context.new_page()
     page.set_viewport_size({'width':375,'height':828})
     try:
         for state in ['saving','new-detail','current-detail','equal','current-lower']:
-            url = origin+'/api/ia/r3-qa/artifact?'+urlencode({'id':'quote-result/'+state+'/email','width':375,'version':'current'})
-            response = context.request.get(url)
-            assert response.ok,(state,response.status)
-            artifact = response.json()
-            page.set_content(artifact['editable'],wait_until='load')
+            path = '/api/ia/r3-qa/artifact?'+urlencode({'id':'quote-result/'+state+'/email','width':375,'version':'current'})
+            artifact = qa_page.evaluate('''async path => {
+                const response = await fetch(path, {credentials:'same-origin'});
+                if (!response.ok) throw Error('Protected export returned HTTP '+response.status);
+                return (await response.json()).editable;
+            }''', path)
+            page.set_content(artifact,wait_until='load')
             expect(page.locator('.journey-result')).to_have_attribute('data-view',state)
             page.evaluate('document.fonts.ready')
             page.screenshot(path=str(out/('reference-'+state+'-375x828.png')),animations='disabled')
@@ -76,7 +78,7 @@ if __name__=='__main__':
                 page.wait_for_url('**/ia?view=qa-lab**')
                 run(page,conf['url'],width)
                 if width==390 and os.environ.get('R3_EVIDENCE_DIR'):
-                    capture_reference_viewports(page.context,conf['url'],os.environ['R3_EVIDENCE_DIR'])
+                    capture_reference_viewports(page,os.environ['R3_EVIDENCE_DIR'])
                 context.close()
             browser.close()
     finally:
