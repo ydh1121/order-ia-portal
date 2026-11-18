@@ -267,5 +267,5 @@ export function bootApprovedShell(h) {
   }).observe(live,{childList:true,subtree:true,characterData:true});
   new ResizeObserver(layout).observe(stage);
   setTab('review');
-  return {render,historyLinks,setTab,openTab,activeTab:()=>panel,focusForPoint:()=>{},setActiveMode:setMode};
+  return {render,historyLinks,setTab,openTab,activeTab:()=>panel,reviewWidths:()=>mode==='dual'?[mobileWidth,pcWidth]:[],focusForPoint:()=>{},setActiveMode:setMode};
 }

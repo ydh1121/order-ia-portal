@@ -24,7 +24,7 @@ for (const comment of trace.comments) {
   if (!row || !row.hashes[viewport] || comment.record !== row.id+'/'+viewport) throw new Error('Unmatched target '+comment.id);
   const artifactHash = row.hashes[viewport];
   const change = comment.disposition === 'SOURCE_DELTA_REVIEW_REQUIRED';
-  const related = comment.disposition === 'RELATED_PRICE_ROUTE_ONLY';
+  const related = ['RELATED_PRICE_ROUTE_ONLY','RELATED_LAUNCH_ROUTE_ONLY','RELATED_LOGIN_VARIANT_ONLY'].includes(comment.disposition);
   if ((change || related) && !comment.evidence?.observed) throw new Error('Missing observation '+comment.id);
   const data = {
     target:{screen:row.screen, state:row.state, variant:row.variant, viewport, artifactHash},

@@ -7,7 +7,7 @@ import subprocess
 
 from playwright.sync_api import expect, sync_playwright
 
-from r3_feedback_browser_support import ReviewScreens
+from r3_feedback_browser_support import ReviewScreens, frame_click
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,10 +20,13 @@ def check(page, origin, width):
     expect(frame.get_by_role("button",name="회원가입")).to_be_visible()
     expect(frame.locator(".ob-pages [aria-current]")).to_have_attribute("data-mf-intro","2")
 
-    frame.get_by_role("button",name="로그인",exact=True).click()
-    frame.locator('[data-action="close-sheet"]').click()
+    frame_click(page, frame.get_by_role("button",name="로그인",exact=True))
+    expect(page.locator('#state-buttons [data-variant="compact"]')).to_have_class("active")
+    for name in ("카카오 로그인", "네이버 로그인", "Google 로그인"):
+        expect(frame.get_by_role("button",name=name).locator("img")).to_be_visible()
+    frame_click(page, frame.locator('[data-action="close-sheet"]'))
     expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step","2")
-    frame.get_by_role("button",name="소개 3페이지").click()
+    frame_click(page, frame.get_by_role("button",name="소개 3페이지"))
     expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step","3")
     expect(frame.locator(".ob-art")).to_have_count(0)
     frame.locator(".ob-main").press("ArrowRight")
@@ -33,7 +36,7 @@ def check(page, origin, width):
     assert box and abs(box["width"]-box["height"]) < 1.1, box
 
     frame = screens.screen("onboarding", "member-1")
-    frame.get_by_role("button",name="알림과 빠른 메뉴").click()
+    frame_click(page, frame.get_by_role("button",name="알림과 빠른 메뉴"))
     expect(frame.get_by_role("button",name="오더패스")).to_be_visible()
     frame.get_by_role("button",name="알림과 빠른 메뉴").press("Escape")
     expect(frame.get_by_role("button",name="오더패스")).to_be_hidden()
@@ -41,7 +44,7 @@ def check(page, origin, width):
     for label in ("소식", "혜택"):
         toggle = profile.get_by_role("switch",name=label)
         old = toggle.get_attribute("aria-checked")
-        toggle.click()
+        frame_click(page, toggle)
         expect(toggle).to_have_attribute("aria-checked","false" if old=="true" else "true")
     expect(profile.locator(".terms-reading")).to_have_count(0)
 
@@ -50,17 +53,17 @@ def check(page, origin, width):
     expect(frame.locator(".ob-tasks button")).to_have_count(0)
     expect(frame.locator(".ob-mode-grid button")).to_have_count(2)
 
-    frame.get_by_role("button",name="사업자 정보",exact=True).click()
+    frame_click(page, frame.get_by_role("button",name="사업자 정보",exact=True))
     modal = frame.get_by_role("dialog",name="사업자 정보")
     expect(modal).to_be_visible()
     expect(frame.locator(".ob-stage")).to_have_js_property("inert",True)
     expect(modal.get_by_text("Cloudflare")).to_be_visible()
-    modal.get_by_role("button",name="배송·취소·환불").click()
+    frame_click(page, modal.get_by_role("button",name="배송·취소·환불"))
     expect(modal.get_by_role("button",name="문의하기")).to_be_visible()
     modal.get_by_role("button",name="문의하기").press("Escape")
     expect(modal).to_be_hidden()
     expect(frame.get_by_role("button",name="사업자 정보",exact=True)).to_be_focused()
-    frame.get_by_role("button",name="상세 견적").click()
+    frame_click(page, frame.get_by_role("button",name="상세 견적"))
     page.wait_for_url("**/ia?view=detailed-r3")
     print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3"}))
 

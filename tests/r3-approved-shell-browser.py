@@ -64,6 +64,20 @@ def write_json(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def korean_font_for_mode_button(page):
+    # Computed font-family only gives the CSS fallback list. Chromium reports the actual faces used.
+    cdp=page.context.new_cdp_session(page)
+    try:
+        cdp.send("DOM.enable");cdp.send("CSS.enable")
+        selector=page.evaluate("""()=>[...document.querySelectorAll('#state-buttons button[data-state]')].filter(e=>e.offsetWidth && e.innerText.match(/[가-힣]/g)?.length>=2).map(e=>'#state-buttons [data-state="'+e.dataset.state+'"]')[0]||'button[data-mode=focus]'""")
+        root=cdp.send("DOM.getDocument")["root"]["nodeId"]
+        node=cdp.send("DOM.querySelector",{"nodeId":root,"selector":selector})["nodeId"]
+        fonts=cdp.send("CSS.getPlatformFontsForNode",{"nodeId":node})["fonts"]
+        assert any("Noto Sans CJK" in f["familyName"] and f["glyphCount"]>=2 for f in fonts), fonts
+        return fonts
+    finally:cdp.detach()
+
+
 def configure(page, url, candidate, preview_width, mode, panel):
     page.goto(url, wait_until="domcontentloaded")
     canvas = page.locator(".preview-unit:not([hidden]) .preview-canvas").first
@@ -117,6 +131,19 @@ def compare(name, original, candidate, drawer, mode):
             require(rail["railPx"]<=1,f"{key} visible rail {rail['railPx']}px")
             require(rail["scrollWorked"],f"{key} scroll not operable")
     return [f"{name}: {e}" for e in errors]
+
+
+def check_stage_wheel(page):
+    stage=page.locator(".lab-stage")
+    assert stage.evaluate("e=>e.scrollHeight>e.clientHeight")
+    box=stage.bounding_box()
+    page.mouse.move(box["x"]+6,box["y"]+box["height"]/2)
+    page.mouse.wheel(0,250)
+    page.wait_for_function("document.querySelector('.lab-stage').scrollTop>0")
+    moved=stage.evaluate("e=>e.scrollTop")
+    page.mouse.wheel(0,-1000)
+    page.wait_for_function("document.querySelector('.lab-stage').scrollTop===0")
+    return moved
 
 
 def verify_review_controls(browser, auth, origin):
@@ -198,6 +225,8 @@ def main():
                     try:
                         configure(page,url,current,preview,mode,panel)
                         evidence[key]=page.evaluate(MEASURE)
+                        evidence[key]["koreanFonts"]=korean_font_for_mode_button(page)
+                        if name=="desktop390":evidence[key]["wheelScrollPx"]=check_stage_wheel(page)
                         if current:
                             info=page.evaluate("""async w=>{const u='/api/ia/r3-qa/artifact?id=login%2Fempty%2Femail&version=current&width='+w; const j=await (await fetch(u)).json();return {release:j.release,artifact:j.hash}}""",preview)
                             evidence["identity"]=info

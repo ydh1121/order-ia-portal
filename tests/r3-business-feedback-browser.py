@@ -7,7 +7,7 @@ import subprocess
 
 from playwright.sync_api import expect, sync_playwright
 
-from r3_feedback_browser_support import ReviewScreens
+from r3_feedback_browser_support import ReviewScreens, frame_click
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,23 +69,23 @@ def check(page, origin, width):
     expect(frame.get_by_role("button",name="다시 하기")).to_be_visible()
     thumbnails = frame.locator(".document-thumb")
     expect(thumbnails).to_have_count(2)
-    thumbnails.first.click()
+    frame_click(page, thumbnails.first)
     dialog = frame.get_by_role("dialog",name="제출 자료 미리보기")
     expect(dialog).to_be_visible()
     display = dialog.locator("output")
     expect(display).to_contain_text("1 / 2")
-    dialog.get_by_role("button",name="다음").click()
+    frame_click(page, dialog.get_by_role("button",name="다음"))
     expect(display).to_contain_text("2 / 2")
-    dialog.get_by_role("button",name="확대",exact=True).click()
+    frame_click(page, dialog.get_by_role("button",name="확대",exact=True))
     expect(dialog.locator(".document-viewport")).to_have_class("document-viewport is-zoomed")
-    dialog.get_by_role("button",name="추가 가림").click()
-    dialog.get_by_role("button",name="가운데 행 가리기").click()
-    dialog.get_by_role("button",name="가림 저장").click()
+    frame_click(page, dialog.get_by_role("button",name="추가 가림"))
+    frame_click(page, dialog.get_by_role("button",name="가운데 행 가리기"))
+    frame_click(page, dialog.get_by_role("button",name="가림 저장"))
     marker = dialog.locator("canvas").evaluate("c=>Array.from(c.getContext('2d').getImageData(c.width*.2,c.height*.45,1,1).data)")
     assert marker == [0,0,0,255], marker
     dialog.get_by_role("button",name="닫기").press("Escape")
     expect(dialog).to_be_hidden()
-    frame.get_by_role("button",name="제출하기").click()
+    frame_click(page, frame.get_by_role("button",name="제출하기"))
     expect(frame.locator(".signature-error")).to_contain_text("서명이 필요해요.")
     frame = screen("signature", "processing")
     expect(frame.get_by_role("button",name="제출 중")).to_be_disabled()

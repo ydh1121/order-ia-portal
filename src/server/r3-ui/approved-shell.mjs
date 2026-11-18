@@ -77,7 +77,7 @@ export function approvedShellBody(){
       <div id="blocks">
         <h3 id="review-heading">이 화면 검토</h3><div id="review-viewports" class="review-viewports"></div>
         <div class="review-options"><button data-review="unreviewed">미검토</button><button data-review="approved">사용자 통과</button><button data-review="changes_requested">수정 요청</button></div>
-        <label for="review-note">화면 의견<textarea id="review-note" maxlength="10000" placeholder="이 화면의 메모를 남겨 주세요."></textarea></label>
+        <label for="review-note">화면 의견<textarea id="review-note" maxlength="8000" placeholder="수정할 부분을 남겨 주세요."></textarea></label>
         <button class="drawer-button" id="save-review-note">화면 의견 저장</button><output id="review-note-state" aria-live="polite"></output>
         <details id="history-details" hidden><summary>가져온 이전 기록</summary><div id="record-history"></div></details>
         <div id="other-width-history"></div>

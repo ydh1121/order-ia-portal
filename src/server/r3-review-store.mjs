@@ -45,7 +45,7 @@ function validData(kind,d) {
   if ('sourceKey' in d && !recordId(d.sourceKey)) return false;
   if ('sourceCommentId' in d && !recordId(d.sourceCommentId)) return false;
   if ('evidenceRef' in d && (!text(d.evidenceRef,512) || !d.evidenceRef.trim())) return false;
-  if ('body' in d && !text(d.body,10000)) return false;
+  if ('body' in d && !text(d.body,kind==='screen'?8000:10000)) return false;
   if (d.anchor!=null && (!validAnchor(d.anchor) || d.anchor.artifactHash!==d.target.artifactHash)) return false;
   if ('parent' in d && (!keys(d.parent,allowed('origin','id')) ||
       !['current','legacy'].includes(d.parent.origin) || !recordId(d.parent.id))) return false;

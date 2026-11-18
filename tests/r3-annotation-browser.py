@@ -1,5 +1,6 @@
 """Chromium interaction tests of the actual authenticated Pages UI with ephemeral SQLite/actor."""
 from pathlib import Path
+from r3_feedback_browser_support import frame_click
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
@@ -111,13 +112,16 @@ def run():
     # Same viewport point can hold independent comments; typing alone never submits.
     for i in range(2):
      if i:page.locator('#close-drawer').click();page.locator('#new').click()
-     veil=frame.locator('#r3-veil');veil.click(position={'x':100,'y':120})
+     veil=frame.locator('#r3-veil');frame_click(page,veil,position={'x':100,'y':120})
      page.locator('#body-text').fill('위치 '+str(i));page.locator('#save').click()
      page.locator('#live').filter(has_text='저장됨').wait_for()
      page.locator('#blocks:not([hidden])').wait_for()
     page.locator('#close-drawer').click();pin=frame.locator('.r3-pin');pin.first.wait_for()
-    assert pin.count()==1 and '2' in pin.first.inner_text()
-    box=pin.first.bounding_box();pin.first.click();assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
+    expect(pin).to_have_count(1)
+    expect(pin.first).to_have_text('1')
+    expect(pin.first).to_have_attribute('data-cluster','+1')
+    expect(pin.first).to_have_attribute('aria-label','위치 코멘트 1, 2번 열기')
+    box=pin.first.bounding_box();frame_click(page,pin.first);assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
     parent=page.locator('#notes article').filter(has=page.get_by_text('위치 0',exact=True))
     parent.get_by_role('button',name='답글 작성').click()
     page.locator('#body-text').fill('저장한 답글');page.get_by_role('button',name='답글 저장').click()

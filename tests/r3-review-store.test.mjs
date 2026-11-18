@@ -148,7 +148,7 @@ test('screen memo is independently versioned, clearable and does not change the 
   const stale=await send(memo('먼저 읽은 탭의 메모',1,'memo-old-tab'));
   assert.equal(stale.status,409);assert.equal((await stale.json()).current.data.body,'수정한 메모');
   assert.equal((await send(memo('',2,'memo-clear'))).status,200);
-  assert.equal((await send(memo('a'.repeat(10001),3,'memo-over-limit'))).status,400);
+  assert.equal((await send(memo('a'.repeat(8001),3,'memo-over-limit'))).status,400);
   const history=await (await read('/events?release=MSG0585-R3&kind=screen&id=memo-fixture')).json();
   assert.deepEqual(history.items.map(r=>r.data.body),['매장별 확인 사항','수정한 메모','']);
   assert.equal(db.prepare("SELECT count(*) AS n FROM qa_review_events WHERE kind='review' AND id='memo-fixture'").get().n,0);

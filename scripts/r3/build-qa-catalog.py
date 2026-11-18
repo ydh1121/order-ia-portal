@@ -86,6 +86,7 @@ for family_name in ("business", "navigation", "onboarding", "account", "question
                     "--catalog", str(args.out.resolve())], check=True)
 if args.out.resolve() == src / "catalog.gen.mjs":
     subprocess.run(["node", str(Path(__file__).with_name("refresh-wait-artifacts.mjs"))], check=True)
+    subprocess.run(["node", str(Path(__file__).with_name("refresh-integrated-login.mjs"))], check=True)
 
 if args.exports:
     with tempfile.TemporaryDirectory() as td:

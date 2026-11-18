@@ -168,7 +168,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
     const key=reviewKey(target,target.viewport);const past=legacy.get(key),live=comments();
     const info=stateInfo(current,target.viewport,showRecords());
     $('review-heading').textContent=current.label+' / '+current.stateLabel;
-    $('review-viewports').textContent=target.viewport+'px';
+    const widths=shell?.reviewWidths()||[];
+    $('review-viewports').replaceChildren(...(widths.length?widths:[target.viewport]).map(width=>{
+      const choice=btn(width+'px',async()=>{if(width!==target.viewport){$('width').value=String(width);await select(current);if(target)notes();}});
+      choice.dataset.reviewViewport=width;choice.classList.toggle('active',width===target.viewport);return choice;
+    }));
     $('comment-count').textContent=(live.length+(past?.comments||[]).filter(c=>!c.deleted).length)+'개';
     for(const b of document.querySelectorAll('[data-review]'))b.classList.toggle('active',b.dataset.review===(info.approved?'approved':info.requested?'changes_requested':'unreviewed'));
     for(const b of document.querySelectorAll('[data-comment-filter]'))b.classList.toggle('active',b.dataset.commentFilter===commentFilter);
@@ -409,7 +413,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
           originStep=null;
         }
       }
-      const row=screens.find(r=>r.screen===screen && (!state || state===r.state) && r.variant===current.variant)
+      // Product entry chooses the requested integrated design. QA deep links keep their explicit variant.
+      const preferred=current.screen==='onboarding' && screen==='login' && state==='empty'?'compact':current.variant;
+      const row=screens.find(r=>r.screen===screen && (!state || state===r.state) && r.variant===preferred)
         || screens.find(r=>r.screen===screen && (!state || state===r.state) && r.variant==='email');
       if(row)select(row,undefined,originStep);
     }
@@ -423,7 +429,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
   if(exportReview) exportReview({release, notify:status, getLocalDrafts:()=>{remember();return [...edits];}});
   $('export').onclick=async()=>{if(!artifact)return;const item=artifact, snapshotTarget={...target};download(item.file,item.editable,'text/html');await write('figma',crypto.randomUUID(),{target:snapshotTarget,status:'exported',evidenceRef:'sha256:'+item.exportHash},0);};
   const memoDrafts=new Map();
-  let memoTimer=0;
+  const memoTimers=new Map();
   const memoId=t=>'memo/'+reviewKey(t,t.viewport)+'/'+t.artifactHash;
   function memoDraftKey(id){return draftStorageKey+'.screen.'+id;}
   function loadMemoDraft(id){
@@ -469,9 +475,15 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
       list.append(item);
     }
   }
+  function queueMemo(t,delay=850){
+    const id=memoId(t);
+    clearTimeout(memoTimers.get(id));
+    memoTimers.set(id,setTimeout(()=>{memoTimers.delete(id);saveMemo(t);},delay));
+  }
   async function saveMemo(t){
     const id=memoId(t),draft=loadMemoDraft(id);
     if(!draft||draft.saving)return;
+    if(storing){queueMemo(t,200);return;}
     const prior=records.get(localKey('screen',id));
     const isVisible=()=>target&&memoId(target)===id&&!drawer.hidden;
     if((prior?.revision??0)!==draft.revision){
@@ -484,7 +496,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
     if(ok){
       const currentDraft=loadMemoDraft(id);
       if(currentDraft?.body===body)storeMemoDraft(id,null);
-      else if(currentDraft)storeMemoDraft(id,{body:currentDraft.body,revision:revision+1});
+      else if(currentDraft){storeMemoDraft(id,{body:currentDraft.body,revision:revision+1});queueMemo(t);}
     }
     if(isVisible())syncScreenMemo(legacy.get(reviewKey(t,t.viewport)));
   }
@@ -493,10 +505,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview) {
     const t={...target},id=memoId(t),field=$('review-note');
     storeMemoDraft(id,{body:field.value,revision:Number(field.dataset.revision)});
     $('review-note-state').textContent='이 탭의 미저장 메모';
-    clearTimeout(memoTimer);memoTimer=setTimeout(()=>saveMemo(t),850);
+    queueMemo(t);
   };
   $('save-review-note').onclick=()=>{
-    clearTimeout(memoTimer);if(target&&$('version').value==='current')saveMemo({...target});
+    if(!target||$('version').value!=='current')return;
+    const id=memoId(target);clearTimeout(memoTimers.get(id));memoTimers.delete(id);saveMemo({...target});
   };
   const figmaId=t=>'figma/'+reviewKey(t,t.viewport)+'/'+t.artifactHash;
   function syncFigma(past){
