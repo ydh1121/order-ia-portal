@@ -1,4 +1,7 @@
-function priceDesk() {
+import {bloubScript,bloubMontages} from './r3-bloub.mjs';
+import {createQuoteWait} from './r3-quote-wait.mjs';
+
+function priceDesk(createWait,montages) {
   const $=id=>document.getElementById(id);
   const state={csrf:'',scope:[],current:null,pending:null,operation:false,practice:new URLSearchParams(location.search).get('practice')==='1'};
   const number=v=>v===''?null:Number(v);
@@ -24,8 +27,8 @@ function priceDesk() {
     for(const [k,title] of Object.entries({fee:'기본 배송비 (원)',freeQty:'무료 수량 기준',freeAmount:'무료 금액 기준 (원)',surcharge:'지역 추가 요금 (원)'}))field(r,k,title,v[k]);
   });
   const say=t=>{$('notice').textContent=t;};
-  async function api(path,body){
-    const res=await fetch('/api/ia/r3-price'+(state.practice?'/practice/'+$('persona').value:'')+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
+  async function api(path,body,signal){
+    const res=await fetch('/api/ia/r3-price'+(state.practice?'/practice/'+$('persona').value:'')+path,{signal,method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
     const data=await res.json();if(!res.ok)throw new Error(data.error||'SERVICE_UNAVAILABLE');return data;
   }
   const localized={GRANT_REQUIRED:'이 공급 조건을 변경할 권한이 없습니다.',ACCESS_REQUIRED:'대상 공급처 또는 사업장의 권한을 확인해 주세요.',CONFLICT:'같은 버전이 변경되었거나 승인 기간이 겹칩니다. 입력을 복사한 뒤 버전을 다시 열어 주세요.',REVISION_CONFLICT:'다른 변경이 먼저 저장되었습니다. 현재 입력을 보관한 뒤 버전을 다시 열어 주세요.',IDEMPOTENCY_CONFLICT:'다른 내용으로 이미 처리된 요청입니다.',SERVICE_UNAVAILABLE:'저장소에 연결할 수 없습니다. 입력을 유지했습니다.',PERFORMANCE_UNCONFIRMED:'확정된 전월 실적이 필요합니다.',SEVEN_DAY_GUARANTEE_UNRESOLVED:'공급 조건이 견적 유효기간 전에 끝납니다.',REGION_PRIORITY_CONFLICT:'겹치는 지역 규칙의 우선순위를 구분해 주세요.',TIER_COVERAGE_INVALID:'수량 1부터 구간을 빈틈없이 이어 주세요.'};
@@ -93,13 +96,41 @@ function priceDesk() {
   for(const [k,t] of Object.entries({asOf:'조회 시각 (선택)',serviceDate:'납품일 (YYYY-MM-DD)',quantity:'이번 납품량',region:'배송지 행정구역 코드',zip:'우편번호',previous:'전월 인정 수량'}))f('scenario',k,t);
   f('scenario','performanceStatus','실적 상태',opts(['FINAL','확정'],['PENDING','집계 중'],['UNAVAILABLE','조회 실패']));
   const buyerState={sites:[],offers:[],retry:null};
+  let waitPlayer=null,motionGeneration=0,previousPhase='',inputRevision=1,offerScope=0;
+  const quoteWait=createWait({paint(phase,banners){
+    const host=$('quotePending'),slot=$('quoteAvatar');
+    host.hidden=phase==='idle'||phase==='complete';
+    host.dataset.phase=phase;
+    $('quoteBanners').replaceChildren(...banners.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
+    $('quoteWaitTitle').textContent=phase==='error'?'견적을 불러오지 못했습니다.':'납품가를 확인하고 있어요';
+    if(phase===previousPhase)return;
+    previousPhase=phase;const gen=++motionGeneration;waitPlayer?.destroy();waitPlayer=null;slot.replaceChildren();
+    if(!montages[phase])return;
+    const mount=document.createElement('div');slot.append(mount);
+    window.BloubR4.mountBloub(mount,montages[phase],{autoplay:false,ariaLabel:'계란 애니메이션'}).then(player=>{
+      if(gen!==motionGeneration){player.destroy();return;}
+      waitPlayer=player;
+      if(matchMedia('(prefers-reduced-motion: reduce)').matches)player.seek(phase==='entry'?3.5:0);
+      else player.play();
+    }).catch(()=>{if(gen===motionGeneration)slot.replaceChildren();});
+  }});
+  function invalidateQuote(){
+    inputRevision++;quoteWait.stop();buyerState.retry=null;$('buyerResult').textContent='';
+  }
+  for(const id of ['offerSelect','quoteQty','quoteDay','quoteHistory'])$(id).addEventListener('input',invalidateQuote);
+  window.addEventListener('offline',()=>{
+    if (!['entry','comparing'].includes(previousPhase)) return;
+    quoteWait.stop('error');
+    // Keep the request key, as the server may have issued the quote before disconnect.
+  });
   function clearQuote(){
+    offerScope++;invalidateQuote();
     $('offerSelect').replaceChildren();$('quoteHistory').replaceChildren();$('buyerResult').textContent='';buyerState.offers=[];buyerState.retry=null;
   }
   async function showOffers(){
     clearQuote();
     const site=buyerState.sites[Number($('buyerSite').value)];if(!site || site.verification!=='VERIFIED')return;
-    const d=await api('/offers?org='+encodeURIComponent(site.org_id)+'&site='+encodeURIComponent(site.site_id));buyerState.offers=d.offers;
+    const scope=offerScope;const d=await api('/offers?org='+encodeURIComponent(site.org_id)+'&site='+encodeURIComponent(site.site_id));if(scope!==offerScope)return;buyerState.offers=d.offers;
     $('offerSelect').replaceChildren(...d.offers.map((o,i)=>new Option([o.product_id,o.packaging,o.unit].join(' · '),String(i))));
     $('quoteHistory').replaceChildren(...d.quotes.map(q=>new Option(q.id,q.id)));
   }
@@ -112,16 +143,20 @@ function priceDesk() {
     const amount=result.response?.quotes?.[0]?.total?.decimal;
     $('buyerResult').textContent='견적 '+result.id+' · '+amount+'원 · 유효 종료 '+new Date(result.expiresAt).toLocaleString('ko-KR');
   }
-  $('buyerSite').onchange=run(async()=>{if($('buyerSite').value===''){clearQuote();return;}await showOffers();});
+  $('buyerSite').onchange=async()=>{
+    if($('buyerSite').value===''){clearQuote();return;}
+    try{await showOffers();}catch(error){say(localized[error.message]||'승인 상품을 불러오지 못했습니다.');}
+  };
   $('quoteIssue').onclick=run(async()=>{
     $('buyerResult').textContent='';
     const site=buyerState.sites[Number($('buyerSite').value)],offer=buyerState.offers[Number($('offerSelect').value)];
-    if(!site||!offer||site.verification!=='VERIFIED')throw new Error('ACCESS_REQUIRED');
-    const body={orgId:site.org_id,siteId:site.site_id,inputRevision:1,lines:[{id:'line',shipmentId:'first',productId:offer.product_id,versionId:offer.id,unit:offer.unit,serviceDate:$('quoteDay').value,deliveryQty:number($('quoteQty').value)}]};
+    if($('buyerSite').value===''||!site||!offer||site.verification!=='VERIFIED')throw new Error('ACCESS_REQUIRED');
+    const body={orgId:site.org_id,siteId:site.site_id,inputRevision,lines:[{id:'line',shipmentId:'first',productId:offer.product_id,versionId:offer.id,unit:offer.unit,serviceDate:$('quoteDay').value,deliveryQty:number($('quoteQty').value)}]};
     const signature=JSON.stringify(body);if(buyerState.retry?.signature!==signature)buyerState.retry={signature,key:crypto.randomUUID()};
-    const result=await api('/quote',{...body,requestKey:buyerState.retry.key});showResult(result);$('quoteHistory').add(new Option(result.id,result.id));$('quoteHistory').value=result.id;
+    const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[offer.product_id,String(body.lines[0].deliveryQty)+' '+offer.unit,body.lines[0].serviceDate]);
+    if(!result)return;showResult(result);$('quoteHistory').add(new Option(result.id,result.id));$('quoteHistory').value=result.id;
   });
-  $('quoteRecall').onclick=run(async()=>{$('buyerResult').textContent='';showResult(await api('/quote?id='+encodeURIComponent($('quoteHistory').value)));});
+  $('quoteRecall').onclick=run(async()=>{$('buyerResult').textContent='';const result=await quoteWait.request(signal=>api('/quote?id='+encodeURIComponent($('quoteHistory').value),undefined,signal),[]);if(result)showResult(result);});
   // Re-entering a restored page requires a fresh server grant before redisplay.
   window.addEventListener('pagehide',clearQuote);
   window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
@@ -146,13 +181,14 @@ function priceDesk() {
 }
 export function renderR3PricePage(nonce) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>가격·배송 조건 | Order</title>
-<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}</style></head><body>
+<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error] #quoteAvatar{display:none}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}</style></head><body>
 <a href="/ia?view=qa-lab">QA랩으로</a><h1>가격·배송 조건</h1><p><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></p><fieldset id="practice" hidden><legend>비공개 합성 QA · 실제 사업장과 분리된 연습 데이터</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset><div class="bar"><label>정책 버전<select id="versions"></select></label><button id="open">열기</button><button id="new">새 정책</button><button id="next">후속 버전</button></div><p id="current"></p><output aria-live="polite" id="notice"></output>
 <section><h2>상품과 유효기간</h2><label>공급처 · 거점 · 상품<select id="scope"></select></label><div class="fields" id="product"></div></section>
 <section><h2>수량별 가격</h2><div class="fields" id="basis"></div><div id="tiers"></div><button id="addTier">구간 추가</button></section>
 <details><summary>세금과 반올림</summary><div class="fields" id="cost"></div></details>
 <section><h2>지역 배송 조건</h2><div class="fields" id="delivery"></div><div id="regions"></div><button id="addRegion">지역 추가</button></section>
 <section><h2>저장·검토</h2><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button data-action="save">초안 저장</button><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button></div></section>
-<section><h2>미리 계산</h2><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output></section><section id="quote"><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><output aria-live="polite" id="buyerResult"></output></section><details><summary>변경 이력</summary><ol id="history"></ol></details>
-<script nonce="${nonce}">(${priceDesk.toString()})();</script></body></html>`;
+<section><h2>미리 계산</h2><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output></section><section id="quote"><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" role="status" hidden><strong id="quoteWaitTitle"></strong><div id="quoteAvatar" aria-hidden="true"></div><ul id="quoteBanners"></ul></div><output aria-live="polite" id="buyerResult"></output></section><details><summary>변경 이력</summary><ol id="history"></ol></details>
+<script nonce="${nonce}">${bloubScript}
+;(${priceDesk.toString()})(${createQuoteWait.toString()},${JSON.stringify(bloubMontages)});</script></body></html>`;
 }

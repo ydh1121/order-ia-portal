@@ -30,6 +30,13 @@ def run():
     page.locator('#close-drawer').click();pin=frame.locator('.r3-pin');pin.first.wait_for()
     assert pin.count()==1 and '2' in pin.first.inner_text()
     box=pin.first.bounding_box();pin.first.click();assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
+    parent=page.locator('#notes article').filter(has=page.get_by_text('위치 0',exact=True))
+    parent.get_by_role('button',name='답글 작성').click()
+    page.locator('#body-text').fill('저장한 답글');page.get_by_role('button',name='답글 저장').click()
+    parent.get_by_text('저장한 답글',exact=True).wait_for()
+    second=ctx.new_page();second.goto(page.url);second.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');second.locator('#points').click()
+    other=second.locator('#notes article').filter(has=second.get_by_text('위치 0',exact=True));other.get_by_text('저장한 답글',exact=True).wait_for()
+    second.close()
     page.locator('#close-drawer').click();page.reload()
     pin.first.wait_for();again=pin.first.bounding_box()
     error=((again['x']-box['x'])**2+(again['y']-box['y'])**2)**.5

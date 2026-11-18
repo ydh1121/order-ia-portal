@@ -53,6 +53,8 @@ export async function onRequest({request,env}){
    // Only the document review desk imports the vendored PDF renderer and uses its local worker.
    headers['Content-Security-Policy']=headers['Content-Security-Policy'].replace("script-src 'nonce-"+nonce+"'", "script-src 'nonce-"+nonce+"' 'strict-dynamic'")+"; worker-src 'self'; object-src 'none'";
    const {renderR3RolePage}=await import('../../src/server/r3-role-page.mjs');html=renderR3RolePage(nonce);
+ }else if(env.IA_PREVIEW_OWNER_ORIGIN!==undefined){
+   const {renderPreviewIndex}=await import('../../src/server/r3-preview-index.mjs');html=renderPreviewIndex();
  }else html=v03OwnerHtml(nonce);
  return new Response(request.method==='HEAD'?null:html,{status:200,headers});
 }

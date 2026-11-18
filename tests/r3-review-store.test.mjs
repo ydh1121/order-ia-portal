@@ -93,3 +93,35 @@ test('verified role mutation receives the same signed session as the router',asy
   assert.equal(valid.status,400);
   assert.equal((await valid.json()).error,'INVALID_INPUT');
 });
+
+test('replies attach to an existing comment at the same target and retain independent history',async()=>{
+  const note={...event('thread-parent','부모 의견'),id:'thread-parent'};
+  assert.equal((await send(note)).status,200);
+  const reply={...event('thread-reply','답글'),id:'thread-reply',kind:'reply',
+    data:{...data('답글'),parent:{origin:'current',id:note.id}}};
+  const first=await (await send(reply)).json();
+  assert.equal(first.revision,1);
+  assert.equal((await (await send(reply)).json()).replayed,true);
+  const edit={...reply,expectedRevision:1,idempotencyKey:'thread-edit',data:{...reply.data,body:'답글 정정'}};
+  assert.equal((await send(edit)).status,200);
+  assert.equal((await send({...edit,idempotencyKey:'stale-reply'})).status,409);
+  assert.equal((await send({...edit,idempotencyKey:'wrong-parent',expectedRevision:2,data:{...reply.data,parent:{origin:'current',id:'fixture'}}})).status,400);
+  const history=await (await read('/events?release=MSG0585-R3&kind=reply&id=thread-reply')).json();
+  assert.deepEqual(history.items.map(row=>row.data.body),['답글','답글 정정']);
+  const closed={...note,expectedRevision:1,idempotencyKey:'close-thread',action:'delete',reason:'QA 종료'};
+  assert.equal((await send(closed)).status,200);
+  const afterDelete=await send({...reply,id:'late',idempotencyKey:'reply-after-delete'});
+  assert.equal(afterDelete.status,409);assert.equal((await afterDelete.json()).error,'REPLY_PARENT_UNAVAILABLE');
+  const stillHere=await (await read('/records?release=MSG0585-R3&kind=reply&id=thread-reply')).json();
+  assert.equal(stillHere.items[0].data.body,'답글 정정');
+});
+test('historical replies match the imported comment ID, screen and viewport',async()=>{
+  const src='e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
+  db.prepare('INSERT INTO qa_legacy_sources(sha256,original_bytes,chunk_count,record_count,normalization_version) VALUES(?,0,0,1,1)').run(src);
+  db.prepare('INSERT INTO qa_legacy_records VALUES (?,?,?,?,?)').run(src,'login/empty/email/390','/records/fixture',1,JSON.stringify({comments:[{id:'legacy-1',body:'이전 의견',deleted:false},{id:'legacy-2',body:'삭제',deleted:true}]}));
+  db.prepare('UPDATE qa_legacy_sources SET complete=1 WHERE sha256=?').run(src);
+  const reply={...event('legacy-thread','답글'),id:'legacy-reply',kind:'reply',data:{...data('답글'),parent:{origin:'legacy',id:'legacy-1'}}};
+  assert.equal((await send(reply)).status,200);
+  const missing=await send({...reply,id:'legacy-other',idempotencyKey:'legacy-deleted',data:{...reply.data,parent:{origin:'legacy',id:'legacy-2'}}});
+  assert.equal(missing.status,409);
+});

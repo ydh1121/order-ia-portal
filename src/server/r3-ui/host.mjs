@@ -53,12 +53,30 @@ export function bootQaHost(nonce, frameBootstrap) {
   function comments(){return [...records.values()].filter(r=>r.kind==='comment'&&target&&match(r.data.target,target,target.viewport)&&r.action!=='delete');}
   function syncPins(){send('pins',comments().filter(r=>r.data.anchor&&r.action!=='resolve').map(r=>({id:r.id,anchor:r.data.anchor})));send('visible',displayPins);}
   function hideDrawer(){wantsPoint=false;remember();drawer.hidden=true;$('authoring').hidden=true;editor=null;subset=null;send('mode',false);$('points').focus();}
-  function edit(r=null,past=null,picking=false){
+  function edit(r=null,past=null,picking=false,parent=null){
     if(!target)return;
     $('blocks').hidden=true;drawer.hidden=false;$('authoring').hidden=false;
-    $('conflict').hidden=true;editor=r?{id:r.id,revision:r.revision,body:r.data.body,anchor:r.data.anchor,sourceKey:r.data.sourceKey,sourceCommentId:r.data.sourceCommentId}:past?{id:crypto.randomUUID(),body:past.body,sourceKey:reviewKey(target,target.viewport),sourceCommentId:past.id,revision:0}:edits.get(localDraft())||{id:crypto.randomUUID(),body:'',revision:0};
-    body.value=editor.body||'';body.readOnly=false;$('point-state').textContent=editor.anchor?'위치 지정됨':'화면 전체';
+    $('conflict').hidden=true;editor=parent?{id:crypto.randomUUID(),body:'',revision:0,parent}:r?{id:r.id,parent:r.data.parent,revision:r.revision,body:r.data.body,anchor:r.data.anchor,sourceKey:r.data.sourceKey,sourceCommentId:r.data.sourceCommentId}:past?{id:crypto.randomUUID(),body:past.body,sourceKey:reviewKey(target,target.viewport),sourceCommentId:past.id,revision:0}:edits.get(localDraft())||{id:crypto.randomUUID(),body:'',revision:0};
+    setEditorFields();
+    body.readOnly=false;
     if(picking)pick();else body.focus();
+  }
+  function setEditorFields(){
+    body.value=editor.body||'';
+    $('reposition').hidden=Boolean(editor.parent);
+    $('point-state').textContent=editor.parent?'답글':editor.anchor?'위치 지정됨':'화면 전체';
+    $('save').textContent=editor.parent?'답글 저장':'의견 저장';
+  }
+  function thread(card,parent,allowReply){
+    const replies=[...records.values()].filter(r=>r.kind==='reply'&&r.data.parent?.origin===parent.origin&&
+      r.data.parent.id===parent.id&&match(r.data.target,target,target.viewport));
+    for(const r of replies){
+      const line=node('div');
+      line.append(node('small','답글 · r'+r.revision),node('p',r.data.body));
+      if(allowReply&&r.data.target.artifactHash===target.artifactHash)line.append(btn('답글 수정',()=>edit(r)));
+      card.append(line);
+    }
+    if(allowReply)card.append(btn('답글 작성',()=>edit(null,null,false,parent)));
   }
   function pick(){wantsPoint=true;remember();drawer.hidden=true;send('mode',true);frame.focus();$('pick-cancel').hidden=false;status('위치를 선택하세요.');}
   const stage=()=>{wantsPoint=false;drawer.hidden=false;$('authoring').hidden=false;$('blocks').hidden=true;$('pick-cancel').hidden=true;send('mode',false);body.focus();};
@@ -69,10 +87,16 @@ export function bootQaHost(nonce, frameBootstrap) {
     const info=stateInfo(current,target.viewport,showRecords());
     box.append(node('p',[info.previous?'이전 수정 요청':null,info.blocked?'구현 보류':info.verified?'구현 검증':info.untouched?'미착수':info.changed?'이번 판 수정':info.unknown?'구현 확인 전':null,info.approved?'사용자 통과':info.requested?'이번 판 수정 요청':info.needs?'재검토 대기':'이번 판 미검토',info.oldApproval?'이전 판 통과':null].filter(Boolean).join(' · ')));
     if(!ids){
-      for(const d of [...records.values()].filter(r=>r.kind==='draft'&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash&&r.data.body&&records.get(localKey('comment',r.id))?.data.body!==r.data.body)){box.append(btn('임시 의견 이어쓰기',()=>{edit();editor={id:d.id,revision:0,body:d.data.body,anchor:d.data.anchor,draftRevision:d.revision};body.value=editor.body;$('point-state').textContent=editor.anchor?'위치 지정됨':'화면 전체';}));}
-      for(const c of past?.comments||[]){if(c.deleted)continue;const card=node('article');card.append(node('small','이전 의견 · '+c.id),node('p',c.body),btn('이번 판에 위치 연결',()=>edit(null,c,true)));box.append(card);}
+      for(const d of [...records.values()].filter(r=>r.kind==='draft'&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash&&r.data.body&&records.get(localKey(r.data.parent?'reply':'comment',r.id))?.data.body!==r.data.body)){box.append(btn('임시 의견 이어쓰기',()=>{edit();editor={id:d.id,revision:records.get(localKey(d.data.parent?'reply':'comment',d.id))?.revision??0,body:d.data.body,anchor:d.data.anchor,parent:d.data.parent,draftRevision:d.revision};setEditorFields();}));}
+      for(const c of past?.comments||[]){if(c.deleted)continue;const card=node('article');card.append(node('small','이전 의견 · '+c.id),node('p',c.body),btn('이번 판에 위치 연결',()=>edit(null,c,true)));thread(card,{origin:'legacy',id:c.id},true);box.append(card);}
       if(past?.figma?.url){const t=node('p','이전 Figma 링크 · '+past.figma.url);box.append(t);}
       if(past?.status==='fix'&&!(past.comments||[]).some(c=>!c.deleted))box.append(node('p','본문이 없는 이전 수정 요청'));
+    }
+    for(const r of records.values()){
+      if(r.kind!=='comment'||r.action!=='delete'||!match(r.data.target,target,target.viewport)||(ids&&!ids.includes(r.id)))continue;
+      const card=node('article');
+      thread(card,{origin:'current',id:r.id},false);
+      if(card.childElementCount){card.prepend(node('small','삭제된 의견'));box.append(card);}
     }
     for(const r of live.filter(r=>!ids||ids.includes(r.id))){
       const card=node('article'),same=r.data.target.artifactHash===target.artifactHash;
@@ -82,6 +106,7 @@ export function bootQaHost(nonce, frameBootstrap) {
       if(r.data.anchor&&same)card.append(btn('위치 보기',()=>{hideDrawer();for(const p of r.data.anchor.scroll||[]){if(p.id==='host-surface')$('surface').scrollTo(p.x,p.y);else if(p.id==='host-document')document.scrollingElement.scrollTo(p.x,p.y);}send('restore',r.data.anchor);}));
       if(r.action!=='resolve'&&same)card.append(btn('수정',()=>edit(r)),btn('위치 다시 연결',()=>{edit(r);editor.action='relocate';body.readOnly=true;pick();}));
       if(same)card.append(btn(r.action==='resolve'?'다시 열기':'해결',()=>eventReason(r,r.action==='resolve'?'reopen':'resolve')),btn('삭제',()=>eventReason(r,'delete')));
+      thread(card,{origin:'current',id:r.id},same&&r.action!=='resolve');
       card.append(btn('이력',async()=>{try{const j=await api(base+'/events?release='+release+'&kind=comment&id='+encodeURIComponent(r.id));for(const e of j.items)card.append(node('p','r'+e.revision+' · '+e.action+' · '+(e.reason||e.data.body||'')));}catch(e){announceError(e);}}));box.append(card);
     }
     for(const r of records.values())if(['figma','change'].includes(r.kind)&&match(r.data.target,target,target.viewport))box.append(node('small',[r.kind,r.data.status,r.data.evidenceRef,r.data.figmaUrl].filter(Boolean).join(' · ')));
@@ -98,13 +123,26 @@ export function bootQaHost(nonce, frameBootstrap) {
     }catch(e){
       if(e.current)records.set(localKey(kind,id),e.current);
       status(e.status===409?'다른 탭에서 먼저 저장했습니다. 내 입력을 보관했습니다.':'저장하지 못했습니다. 내 입력을 보관했습니다.');
-      if(e.current&&editor){$('conflict').textContent='다른 탭의 내용 · '+(e.current.data.body||e.current.data.decision||'');$('conflict').hidden=false;}
+      if(e.message==='REPLY_PARENT_UNAVAILABLE')status('원래 의견이 해결되었거나 삭제되었습니다. 답글은 초안으로 남아 있습니다.');
+      if(e.current&&editor){
+        const current=e.current,box=$('conflict');
+        box.replaceChildren(node('span','다른 탭의 내용 · '+(current.data.body||current.data.decision||'')));
+        if(['reply','comment','draft'].includes(kind)&&!['delete','resolve'].includes(current.action)){
+          box.append(btn('다른 탭의 내용을 확인하고 계속 수정',()=>{
+            if(kind==='draft')editor.draftRevision=current.revision;
+            else editor.revision=current.revision;
+            box.hidden=true;body.focus();
+          }));
+        }
+        box.hidden=false;
+      }
       return false;
     }finally{storing=false;}
   }
   async function eventReason(r,action){const why=window.prompt('이유를 입력해 주세요.');if(!why?.trim())return;const ok=await write(r.kind,r.id,r.data,r.revision,action,why.trim());if(ok)notes();}
   async function saveDraft(draft){if(!editor||!target)return;remember();const data={target,body:body.value,anchor:editor.anchor??null};if(editor.sourceKey)data.sourceKey=editor.sourceKey;if(editor.sourceCommentId)data.sourceCommentId=editor.sourceCommentId;
-    const kind=draft?'draft':'comment',rev=draft?editor.draftRevision??0:editor.revision;
+    if(editor.parent){data.parent=editor.parent;delete data.anchor;}
+    const kind=draft?'draft':editor.parent?'reply':'comment',rev=draft?editor.draftRevision??0:editor.revision;
     const why=!draft&&editor.action==='relocate'?window.prompt('위치를 바꾼 이유를 입력해 주세요.'):'';
     if(!draft&&editor.action==='relocate'&&!why?.trim())return;
     if(await write(kind,editor.id,data,rev,draft?'save':editor.action||'save',why||'')){

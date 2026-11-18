@@ -120,7 +120,7 @@ for(const [from,to] of currentRegistrationCopy){
 
 s=s.replace(/(<script id="pending-json" type="application\/json">)[\s\S]*?(<\/script>)/,(_,a,b)=>a+'[]'+b);
 s=s.replace('</style>','\n'+UX_CSS+'\n.ia-review-nav{display:flex;align-items:center;flex-wrap:wrap;gap:0 1rem;padding:0 1rem}.ia-review-nav a{display:inline-flex;align-items:center;min-height:44px;color:inherit}.ia-review-nav a:focus-visible{outline:2px solid currentColor}</style>');
-s=s.replace('<body>','<body><nav class="ia-review-nav" aria-label="QA 검토"><a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA 연구실</a> <a href="/ia?view=pricing-r3">가격·배송 설정</a> <a href="/ia?view=roles-r3">역할별 업무</a></nav><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
+s=s.replace('<body>','<body><nav class="ia-review-nav" aria-label="QA 검토"><a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA 연구실</a> <details><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA 연구실 열기</a></details> <a href="/ia?view=pricing-r3">가격·배송 설정</a> <a href="/ia?view=roles-r3">역할별 업무</a></nav><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
 s=s.replace('<script>','<script nonce="'+nonce+'">'+prelude);
 s=s.replace('</script></body></html>',after.replace('}catch(error){',UX_RUNTIME+'\n}catch(error){')+'</script></body></html>');
 return s;

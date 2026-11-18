@@ -1,5 +1,5 @@
 const sourceSha = 'e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
-const kinds = new Set(['comment','draft','review','change','figma','artifact','screen']);
+const kinds = new Set(['comment','reply','draft','review','change','figma','artifact','screen']);
 const actions = new Set(['save','relocate','resolve','delete','reopen']);
 const viewFields = new Set(['id','instance','x','y','viewport','scale','scroll','layers','artifactHash']);
 const pointId = x => typeof x === 'string' && /^[\w.:-]{1,120}$/u.test(x);
@@ -37,7 +37,7 @@ function figmaLink(raw) {
 }
 function validData(kind,d) {
   const types = {
-    comment:['body','anchor','sourceKey','sourceCommentId'], draft:['body','anchor','sourceKey','sourceCommentId'],
+    comment:['body','anchor','sourceKey','sourceCommentId'], reply:['body','parent'], draft:['body','anchor','sourceKey','sourceCommentId','parent'],
     review:['decision','sourceKey'], change:['status','evidenceRef','body','sourceKey','sourceCommentId'],
     figma:['figmaUrl','status','evidenceRef','sourceKey'], artifact:['evidenceRef','status'], screen:['sourceKey','evidenceRef','status']
   };
@@ -47,7 +47,10 @@ function validData(kind,d) {
   if ('evidenceRef' in d && (!text(d.evidenceRef,512) || !d.evidenceRef.trim())) return false;
   if ('body' in d && !text(d.body,10000)) return false;
   if (d.anchor!=null && (!validAnchor(d.anchor) || d.anchor.artifactHash!==d.target.artifactHash)) return false;
-  if (kind==='comment') return typeof d.body==='string' && d.body.trim().length>0;
+  if ('parent' in d && (!keys(d.parent,allowed('origin','id')) ||
+      !['current','legacy'].includes(d.parent.origin) || !recordId(d.parent.id))) return false;
+  if (kind==='reply' && !d.parent) return false;
+  if (kind==='reply'||kind==='comment') return typeof d.body==='string' && d.body.trim().length>0;
   if (kind==='draft') return typeof d.body==='string';
   if (kind==='review') return ['changes_requested','unreviewed','approved'].includes(d.decision);
   if (kind==='change') return ['unknown','not_started','implemented','verified','recheck','blocked'].includes(d.status) &&
@@ -92,6 +95,7 @@ async function write(db,actor,b) {
   if ((previous?.revision??0)!==b.expectedRevision) return conflict();
   if(previous){
     const data=JSON.parse(previous.data);
+    if (b.kind==='reply' && (data.parent.id!==b.data.parent.id || data.parent.origin!==b.data.parent.origin)) return invalid();
     // A moved point may attach to the next build of the same logical screen. The
     // old target/hash and coordinates remain on their previous immutable event.
     const oldTarget=action==='relocate'?{...data.target,artifactHash:b.data.target.artifactHash}:data.target;
@@ -102,13 +106,38 @@ async function write(db,actor,b) {
     if(['delete','resolve','reopen'].includes(action) && JSON.stringify(canonical(data))!==JSON.stringify(canonical(b.data))) return invalid();
   }
   // The comparison and insert are one SQL statement; validation never grants a stale write.
+  // A new reply must be attached to an existing comment on this exact screen.
+  // Evaluate the parent and revision in the insert so a concurrent delete wins cleanly.
+  let parentCondition='',parentArgs=[];
+  if(b.kind==='reply' && !previous){
+    const {parent,target}=b.data;
+    if(parent.origin==='legacy'){
+      parentCondition=` AND EXISTS (SELECT 1 FROM qa_legacy_records r JOIN qa_legacy_sources s ON s.sha256=r.source_sha AND s.complete=1,
+        json_each(r.payload,'$.comments') c
+        WHERE r.source_sha=? AND r.source_key=? AND json_extract(c.value,'$.id')=?
+        AND coalesce(json_extract(c.value,'$.deleted'),0)=0)`;
+      parentArgs=[sourceSha,[target.screen,target.state,target.variant,target.viewport].join('/'),parent.id];
+    }else{
+      parentCondition=` AND EXISTS (SELECT 1 FROM qa_review_events p
+        WHERE p.release=? AND p.kind='comment' AND p.id=? AND p.revision=(
+          SELECT max(newer.revision) FROM qa_review_events newer WHERE newer.release=p.release AND newer.kind=p.kind AND newer.id=p.id)
+        AND p.action NOT IN ('delete','resolve')
+        AND json_extract(p.data,'$.target.screen')=? AND json_extract(p.data,'$.target.state')=?
+        AND json_extract(p.data,'$.target.variant')=? AND json_extract(p.data,'$.target.viewport')=?
+        AND json_extract(p.data,'$.target.artifactHash')=?)`;
+      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,target.artifactHash];
+    }
+  }
   const insertion=await db.prepare(`INSERT OR IGNORE INTO qa_review_events
     (release,kind,id,revision,action,reason,data,actor,request_key,request_hash)
     SELECT ?,?,?,?,?,?,?,?,?,? WHERE ?=coalesce(
-      (SELECT max(revision) FROM qa_review_events WHERE release=? AND kind=? AND id=?),0)`)
+      (SELECT max(revision) FROM qa_review_events WHERE release=? AND kind=? AND id=?),0)`+parentCondition)
     .bind(b.release,b.kind,b.id,b.expectedRevision+1,action,reason,JSON.stringify(b.data),actor,b.idempotencyKey,hash,
-      b.expectedRevision,b.release,b.kind,b.id).run();
-  const saved=await replay();return saved?result(saved,insertion.meta.changes===0):conflict();
+      b.expectedRevision,b.release,b.kind,b.id,...parentArgs).run();
+  const saved=await replay();
+  if(saved)return result(saved,insertion.meta.changes===0);
+  if(parentCondition && !await getCurrent())return json({error:'REPLY_PARENT_UNAVAILABLE'},409);
+  return conflict();
 }
 function pageNumber(s,fallback,min,max) {
   if(s===null)return fallback;

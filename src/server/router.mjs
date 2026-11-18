@@ -18,7 +18,7 @@ export async function handleIaRequest(request,env,dependencies={}) {
     if(actor.role!=='OWNER')return json({error:'IA_PERMISSION_DENIED'},403);
     if(!['GET','HEAD','POST'].includes(request.method))return json({error:'METHOD_NOT_ALLOWED'},405);
     if(request.method==='POST') {
-      if(!sameOrigin(request))return json({error:'ORIGIN_DENIED'},403);
+      if(!sameOrigin(request,env))return json({error:'ORIGIN_DENIED'},403);
       let session;
       try {session=await readSession(request,env,dependencies.now);}catch{return json({error:'CSRF_DENIED'},403);}
       if(session.id!==actor.id || request.headers.get('X-IA-CSRF')!==session.csrf)return json({error:'CSRF_DENIED'},403);
