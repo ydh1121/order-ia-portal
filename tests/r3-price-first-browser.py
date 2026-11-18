@@ -112,8 +112,18 @@ def exercise_personal(page, reopen, origin, label, width):
     expect(renewed.locator('#personalProduct')).to_have_value('개인 초안 계란')
     expect(cell(renewed,0,2)).to_have_value('6,002')
     assert matrix_values(renewed)[1:]==reference[1:]
-    assert renewed.request.get(origin+'/api/ia/r3-price/desk').json()['versions']==[]
-    stored=renewed.request.get(origin+route).json()
+    # Use the signed page's own cookie jar. Chromium allows its secure __Host cookie
+    # on loopback while the standalone request client treats this HTTP URL differently.
+    def signed_read(path):
+        response=renewed.evaluate('''async path=>{
+            const response=await fetch(path,{credentials:'same-origin'});
+            return {status:response.status,body:await response.json()};
+        }''',path)
+        assert response['status']==200,(path,response['status'],response['body'].get('error'))
+        return response['body']
+    desk=signed_read('/api/ia/r3-price/desk')
+    assert desk['versions']==[] and desk['scopes']==[]
+    stored=signed_read(route)
     assert stored['revision']==3 and stored['draft']['productName']=='개인 초안 계란'
     assert stored['draft']['packSize'] is None
     renewed.context.close()
@@ -214,6 +224,19 @@ def check(browser, subject, width):
         grid = page.locator("#matrix")
         grid.scroll_into_view_if_needed()
         shoot(page, "reopened", width)
+        # The editor scrolls within the sheet. Capture the last open-ended tier as well
+        # as its first rows, including each grade in the phone's one-grade layout.
+        start=cell(page,18,0)
+        expect(start).to_have_value('501')
+        grade_names=['왕란','특란','대란','중란']
+        for index,name in enumerate(grade_names if width<680 else ['왕란']):
+            grid.locator('[data-mx=grade]').select_option(label=name)
+            last=cell(page,18,3+index*2)
+            last.scroll_into_view_if_needed()
+            expect(last).to_have_value(f'{int(reference[-1][3+index*2]):,}')
+            expect(last).to_be_in_viewport()
+            shoot(page,f'reopened-501-grade-{index+1}',width)
+        grid.locator('[data-mx=grade]').select_option(label='왕란')
 
         # Persist distinct blank, zero, negotiated, unavailable cells on a second revision.
         paste(cell(page, 0, 2), [["", "0", "협의", "미판매"]])
