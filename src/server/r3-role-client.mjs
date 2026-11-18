@@ -258,6 +258,13 @@ export function runRolePage(labels,createEvidenceEditor){
       history.append(events);detail.append(history);
       if(c.evidenceId||c.actions.includes('attach')){const holder=node('div');detail.append(holder);dispose=createEvidenceEditor({container:holder,caseId:c.id,kind:c.kind,csrf,evidenceId:c.evidenceId,readOnly:!c.actions.includes('attach'),onError:status,onReceipt:evidenceId=>save({caseId:c.id,action:'attach',expectedRevision:c.revision,evidenceId})});}
       const actions=c.actions.filter(a=>a!=='attach');
+      if(conflicted){
+        const retained=node('section');retained.append(node('h3','저장하지 않은 내 입력'),node('p',name(conflicted.action)));
+        for(const v of [conflicted.reason&&name(conflicted.reason),conflicted.context?.memo,conflicted.context?.desiredDate])if(v)retained.append(node('p',v));
+        const latest=r.notes?.at(-1)?.memo;if(latest)retained.append(node('p','최근 저장된 메모 · '+latest));
+        if(!actions.includes(conflicted.action))retained.append(node('p','다른 담당자가 이 단계를 마쳤습니다. 현재 가능한 다음 처리만 선택할 수 있습니다.'));
+        detail.append(retained);
+      }
       if(!actions.length)return;
       const form=node('form'),act=field(form,'다음 처리','action',actions.map(a=>[a,name(a)])),extras=node('div');form.append(extras);
       const keyDraft='case:'+c.id+':'+c.revision,stored=drafts[keyDraft];

@@ -74,25 +74,35 @@ jobs:
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-questions-browser.py
+      - name: Check saved input and nine quote result states
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
           R3_EVIDENCE_DIR: artifacts/quote-result
-        run: |
-          python tests/r3-questions-browser.py
-          python tests/r3-journey-browser.py
+        run: python tests/r3-journey-browser.py
       - name: Check price review and protected snapshots
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: |
-          python tests/r3-price-browser.py
-          python tests/r3-freight-browser.py
+        run: python tests/r3-price-browser.py
+      - name: Check freight references and quantity policies
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-freight-browser.py
       - name: Check role cases and masked evidence
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_ROLE_EVIDENCE_DIR: artifacts/role-browser
           R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: |
-          python tests/r3-role-browser.py
-          python tests/r3-business-menu-browser.py
+        run: python tests/r3-role-browser.py
+      - name: Check three signed business identities and connected workflows
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_ROLE_EVIDENCE_DIR: artifacts/role-browser
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-business-menu-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

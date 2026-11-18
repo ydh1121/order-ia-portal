@@ -33,6 +33,10 @@ for(const item of identity.files){
  let text=bytes.toString('utf8');
  if(publicPath==='web/index.html'){html=text;continue;}
  if(publicPath==='web/main.mjs')text=once(text,"new URL(location.href).searchParams.get('mode')==='simple'","document.documentElement.dataset.r3QuoteMode==='simple'");
+ // The private host's existing Access cookie is required even for its public boolean projection.
+ if(publicPath==='web/order-menu.mjs')text=once(text,
+  "fetch('/api/order/features',{credentials:'omit',redirect:'error'",
+  "fetch('/api/order/features',{credentials:'same-origin',redirect:'error'");
  if(publicPath==='web/storage.mjs')text=once(text,'export function createBrowserStorage(options={}){',`export function createBrowserStorage(options={}){
  const partition=document.documentElement.dataset.r3QuotePartition;
  if(!/^[a-f0-9]{64}$/.test(partition))throw TypeError('Private quote scope unavailable');

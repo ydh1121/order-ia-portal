@@ -146,6 +146,14 @@ def check(page, origin, width):
         page.locator('[data-drawer-tab="settings"]').click()
         page.locator("#version").select_option("previous")
         expect(links).to_be_hidden()
+        # Version selection persists while navigating the approved shell.
+        if not page.locator("#version").is_visible():
+            page.locator("#points").click()
+            page.locator('[data-drawer-tab="settings"]').click()
+        page.locator("#version").select_option("current")
+        expect(links).to_be_visible()
+        if page.locator("#drawer").is_visible():
+            page.locator("#close-drawer").click()
     print(json.dumps({"width": width, "checks": ["q1_empty_add_edit_delete", "q1_tags_icons_errors", "q3_header_contacts", "q3_swipe_cancel_scoped_detach", "q3_empty_completion", "q4_venue_unlink", "q4_empty_completion", "q2_review_product_links"]}))
 
 
