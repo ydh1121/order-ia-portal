@@ -6,6 +6,7 @@ import shutil
 import subprocess
 from playwright.sync_api import sync_playwright
 from r3_product_browser import check_private_product
+from r3_wait_layout import check_wait_layout
 
 root=Path(__file__).resolve().parent.parent
 host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=root,stdout=subprocess.PIPE,text=True)
@@ -48,6 +49,7 @@ try:
         anon=browser.new_context()
         assert anon.request.get(cfg['url']+'/api/ia/r3-qa/records?release=MSG0585-R3').status==403
         check_private_product(context,cfg['url'])
+        check_wait_layout(context,cfg['url'])
         browser.close()
     print('PASS real Chrome at 390px, loopback fixture. Login return link, independent new tab, no opener, CAS conflict, duplicate, reload, fresh tab, signed-out API denial.')
 finally:

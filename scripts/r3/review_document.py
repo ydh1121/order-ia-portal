@@ -7,6 +7,29 @@ safeTags=set('section div span svg g path button header nav footer main dl dt dd
 safeAttrs=set('id class type name for disabled hidden inert tabindex role title width height placeholder maxlength min max step required readonly checked selected rows inputmode autocomplete pattern scope x y d fill stroke stroke-width stroke-linecap stroke-linejoin transform opacity focusable viewbox mask maskunits attributename values keytimes dur repeatcount calcmode xmlns'.split())
 safeData=set('action op-route mf-go mf-state state section target ops-module motion open module field-message qa-action term-section term consent-feedback field id stable-id option mf-action help qa-demo submit-action level otp-clock otp-feedback terms-feedback banner-stack company-close company-open intro-member intro-step mf-intro mf-choice mf-form mf-success'.split())
 money=re.compile(r'(?:₩\s*)?[+-]?\d[\d,]*(?:\.\d+)?\s*(?:만\s*원|원|%)')
+def project_split_prices(root):
+    """A number and currency unit can be siblings, descendants or separate text nodes."""
+    count = 0
+    inline_tags = {'strong', 'small', 'span', 'b', 'i', 'em', 'output'}
+    for element in reversed(list(root.iterdescendants())):
+        if not len(element) or element.tag not in inline_tags | {'p','div','dd','td'}:
+            continue
+        # A price-sized container must consist entirely of inline, non-interactive markup.
+        if any(child.tag not in inline_tags for child in element):
+            continue
+        visible = ''.join(element.itertext()).strip()
+        if not re.fullmatch(r'(?:₩\s*)?[+-]?\d[\d,]*(?:\.\d+)?\s*(?:만\s*원|원|%)', visible):
+            continue
+        for descendant in element.iterdescendants():
+            descendant.text = None
+            descendant.tail = None
+        element.text = '—'
+        count += 1
+    return count
+
+def serialize_review_document(root):
+    return html.tostring(root,encoding='unicode',method='html').replace('viewbox=','viewBox=').replace('maskunits=','maskUnits=').replace('keytimes=','keyTimes=').replace('attributename=','attributeName=').replace('repeatcount=','repeatCount=').replace('calcmode=','calcMode=')
+
 def prepare(markup,screen,state, *, current=True, extra_data=()):
     root=html.fragment_fromstring(markup,create_parent='main');root.set('id','order-single');root.set('class','qa-screen ds');root.set('data-motion','on')
     for el in list(root.iterdescendants()):
@@ -32,6 +55,6 @@ def prepare(markup,screen,state, *, current=True, extra_data=()):
         if state=='locked':
             for el in list(root.xpath('//*[contains(@class,"chart") or contains(@class,"price") or contains(@class,"graph") or contains(@class,"amount") or contains(@class,"cost")]')):
                 if el.getparent() is not None:el.getparent().remove(el)
-    content=html.tostring(root,encoding='unicode',method='html').replace('viewbox=','viewBox=').replace('maskunits=','maskUnits=').replace('keytimes=','keyTimes=').replace('attributename=','attributeName=').replace('repeatcount=','repeatCount=').replace('calcmode=','calcMode=')
-    return content
+    project_split_prices(root)
+    return serialize_review_document(root)
 

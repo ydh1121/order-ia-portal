@@ -36,3 +36,34 @@ test('selected source code parses under CSP; opaque content cannot call storage 
   for(const s of Object.values(runtimes)){new Script(s);assert.doesNotMatch(s,/example-only-pass|12540000|11940000|r3-qa\/records|__Host-ia_session/i);}
   const page=renderR3Qa('012345');assert.match(page,/sandbox="allow-scripts"/);assert.doesNotMatch(page,/allow-same-origin|13,140,000|<iframe[^>]*src="\/ia/);
 });
+
+test('current and comparison catalog documents omit fixture prices split across child tags',async()=>{
+  const catalog=await read();
+  for(const screen of ['admin-overview','admin-price-approval','admin-offers','partner-storefront','consumer-product']){
+    const selected=catalog.items.filter(item=>item.screen===screen);
+    assert.ok(selected.length,screen);
+    for(const item of selected)for(const version of ['current','previous']){
+      const result=await row(item.id,390,version);
+      assert.doesNotMatch(result.editable,/(?:1,284,000|5,970|7,900)\s*(?:<[^>]+>\s*)*원/);
+      assert.equal(createHash('sha256').update(result.editable).digest('hex'),result.exportHash);
+    }
+  }
+});
+
+test('published family runtimes and frame identities agree with the reviewed source', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const {catalog,cssHash} = await import('../src/server/r3-ui/catalog.gen.mjs');
+  const hash = value => createHash('sha256').update(value).digest('hex');
+  for (const family of ['business','navigation']) {
+    const source = await readFile(new URL('../scripts/r3/authored/'+family+'.js',import.meta.url),'utf8');
+    assert.ok(runtimes[family].endsWith(source),family+' runtime must include current authored source');
+  }
+  for (const item of catalog.filter(item=>item.runtimeFamily)) {
+    const runtime = runtimes[item.runtimeFamily];
+    assert.equal(typeof runtime,'string');
+    const scriptHash = hash(frameCode.replace(/^function /,'') + runtime);
+    for (const [width,stored] of Object.entries(item.hashes)) {
+      assert.equal(hash([item.id,'current',item.current,cssHash,width,scriptHash].join('|')),stored,item.id);
+    }
+  }
+});

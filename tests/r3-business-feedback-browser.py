@@ -21,8 +21,17 @@ def check(page, origin, width):
 
     frame = screen("business", "empty")
     expect(frame.get_by_role("heading", name="사업자 정보 등록", exact=True)).to_be_visible()
-    field = frame.get_by_role("combobox", name="업태", exact=False)
-    next_input = frame.get_by_role("combobox", name="업종", exact=False)
+    field = frame.locator('[name="business-sector"]')
+    next_input = frame.locator('[name="business-type"]')
+    diagnostics = next_input.evaluate("""el=>({
+        role:el.getAttribute('role'),
+        label:el.ownerDocument.getElementById(el.getAttribute('aria-labelledby'))?.textContent,
+        names:window.ORDER_DESIGN_MODULES?.map(x=>x.id),
+        initialized:!!el.closest('.business-combobox'),
+        date:el.ownerDocument.querySelector('.opening-date output')?.textContent
+    })""")
+    assert diagnostics["role"] == "combobox", diagnostics
+    expect(next_input).to_have_accessible_name("업종 필수")
     before = next_input.evaluate("e=>e.getBoundingClientRect().top + scrollY")
     field.fill("ㅇㅅ")
     option = frame.get_by_role("option", name="음식점업")
@@ -102,7 +111,7 @@ def main():
             for width in (320,390,1440):
                 ctx = browser.new_context(viewport={"width":width,"height":860},has_touch=width<600,
                                           is_mobile=width<600,reduced_motion="reduce")
-                page = ctx.new_page(); errors = []; page.on("pageerror",lambda error:errors.append(str(error)))
+                page = ctx.new_page(); errors = []; page.on("pageerror",lambda error:(errors.append(str(error)),print(str(error),flush=True)))
                 page.goto(fixture["url"]+"/ia?view=qa-lab")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
