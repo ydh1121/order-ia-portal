@@ -37,7 +37,11 @@ form.addEventListener('submit',async event=>{
     password='';form.elements.password.value='';
     const response=await fetch('/api/ia/auth/login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({email,nonce:challenge.nonce,proof}),cache:'no-store',redirect:'error'});
-    if(response.ok){location.assign('/ia/');return;}
+    if(response.ok){
+      const view=new URLSearchParams(location.search).get('returnView');
+      const target=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view)?'/ia?view='+view:'/ia/';
+      location.assign(target);return;
+    }
     let error='';if((response.headers.get('content-type')||'').includes('application/json'))try{error=(await response.json()).error||''}catch{}
     result.textContent=message(response.status,error);
   }catch(err){result.textContent=err.status?message(err.status):'로그인 요청 중 통신 또는 암호화 오류가 발생했습니다. 비밀번호 오류가 아닐 수 있습니다.'}

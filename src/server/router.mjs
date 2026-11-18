@@ -1,4 +1,4 @@
-import {handleOwnerAuthRequest} from './owner-session.mjs';
+import {handleOwnerAuthRequest,readSession,sameOrigin} from './owner-session.mjs';
 import {requireActor,permit} from './auth.mjs';
 import {fetchTab,fetchDashboardTabs} from './google.mjs';
 import {project,privateAssetsContract} from './projection.mjs';
@@ -13,6 +13,36 @@ export async function handleIaRequest(request,env,dependencies={}) {
   try {actor=await requireActor(request,env,dependencies.fetcher||fetch,dependencies.now)}
   catch {return json({error:'IA_ACCESS_DENIED'},403)}
   const url=new URL(request.url);
+  const r3=url.pathname.match(/^\/api\/ia\/r3-(qa|price|role)(\/.*)?$/);
+  if(r3) {
+    if(actor.role!=='OWNER')return json({error:'IA_PERMISSION_DENIED'},403);
+    if(!['GET','HEAD','POST'].includes(request.method))return json({error:'METHOD_NOT_ALLOWED'},405);
+    if(request.method==='POST') {
+      if(!sameOrigin(request))return json({error:'ORIGIN_DENIED'},403);
+      let session;
+      try {session=await readSession(request,env,dependencies.now);}catch{return json({error:'CSRF_DENIED'},403);}
+      if(session.id!==actor.id || request.headers.get('X-IA-CSRF')!==session.csrf)return json({error:'CSRF_DENIED'},403);
+      actor={...actor,csrf:session.csrf};
+    }
+    const ctx={request,env,actor,path:r3[2]||'/'};
+    try {
+      if(r3[1]==='qa' && ctx.path==='/artifact' && request.method==='GET'){
+        const {serveR3Artifact}=await import('./r3-qa-page.mjs');return await serveR3Artifact(request,env);
+      }
+      if(r3[1]==='qa'){
+        const {handleR3Review}=await import('./r3-review-store.mjs');
+        if(request.method==='POST'){
+          const {isR3ReviewTarget}=await import('./r3-qa-page.mjs');
+          ctx.checkTarget=isR3ReviewTarget;
+        }
+        return await handleR3Review(ctx);
+      }
+      if(r3[1]==='role'){
+        const {handleR3Role}=await import('./r3-role.mjs');return await handleR3Role(ctx);
+      }
+      const {handleR3Price}=await import('./r3-price.mjs');return await handleR3Price(ctx);
+    }catch{return json({error:'SERVICE_UNAVAILABLE'},503);}
+  }
   const resource=url.pathname.match(/^\/api\/ia\/(screens|decisions|roadmap|guide|notes|assets|dashboard)$/)?.[1];
   if(!resource) return json({error:'NOT_FOUND'},404);
   if(request.method!=='GET') return json({error:'WRITE_DISABLED_PENDING_ACCESS_CONCURRENCY_AUDIT'},405);

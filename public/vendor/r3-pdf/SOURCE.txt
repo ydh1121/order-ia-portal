@@ -1,0 +1,1 @@
+Mozilla's pdfjs-dist 5.6.205 (Apache-2.0); upstream distribution, build/pdf.min.mjs and build/pdf.worker.min.mjs. Both retain their license banners. https://github.com/mozilla/pdf.js/releases/tag/v5.6.205
