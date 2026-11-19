@@ -59,6 +59,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   Object.assign(localized,{FREIGHT_QUOTE_REQUIRED:'이번 납품에 적용할 확정 운임이 없습니다.',FREIGHT_MANUAL_INELIGIBLE:'직접 지정한 계약의 적용 조건과 사유를 확인해 주세요.',FREIGHT_SURCHARGE_OVERLAP:'같은 지역의 할증을 두 번 적용할 수 없습니다.',FREIGHT_SPLIT_NOT_ALLOWED:'이 정책은 같은 사업장·회차의 분할 출고를 허용하지 않습니다.'});
   function busy(active){
     state.operation=active;
+    $('practice').disabled=active;
     for(const id of ['pricing-editor','staff-desk','price-registration','personal-panel','staffSettings','personalSettings'])$(id).inert=active;
     const saveButton=document.querySelector('[data-action="save"]');saveButton.disabled=active;
     for(const id of ['registerProduct','requestConnection','openPersonalDraft','savePersonalDraft']){

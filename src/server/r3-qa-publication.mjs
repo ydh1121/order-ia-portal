@@ -3,7 +3,7 @@ import {widthIndex} from './r3-ui/approved-widths.gen.mjs';
 import {quoteCommit} from './r3-product-sources.mjs';
 
 // Issue a fresh candidate ID before publishing a different IA commit, even with an identical product catalog.
-const candidateId = 'MSG0585-R3-20261119-QA-TREE-02';
+const candidateId = 'MSG0585-R3-20261119-QA-TREE-03';
 let digest;
 
 export async function publicationIdentity() {
