@@ -1,7 +1,7 @@
 """Exercise copied carrier data through the authenticated screen and the existing D1-shaped transaction."""
 from datetime import datetime,timedelta,timezone
 from pathlib import Path
-import json,os,shutil,subprocess
+import json,os,re,shutil,subprocess
 from playwright.sync_api import sync_playwright,expect
 
 root=Path(__file__).resolve().parents[1]
@@ -123,7 +123,7 @@ try:
         page.route(quote_url,lambda route:pending.append(route))
         page.locator('#quoteIssue').click()
         wait=page.locator('#quotePending')
-        page.wait_for_function("Number(document.querySelector('#quotePending').dataset.emitted)>=4",timeout=12000)
+        expect(wait).to_have_attribute('data-emitted',re.compile(r'^(?:[4-9]|[1-9]\d+)$'),timeout=12000)
         expect(wait.locator('[data-banner-index]')).to_have_count(3)
         assert int(wait.get_attribute('data-visual-ms'))>=4990
         request_id=wait.get_attribute('data-wait-request')

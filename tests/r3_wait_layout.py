@@ -2,7 +2,6 @@
 from urllib.parse import urlencode
 from pathlib import Path
 import json
-import re
 from playwright.sync_api import expect
 
 
@@ -47,8 +46,9 @@ def check_wait_layout(context, origin):
         assert all(475<=b['visual']-a['visual']<800 for a,b in zip(trace[1:],trace[2:])),trace
         initial=root.get_attribute('data-wait-request')
         def response(status,request_id):
-            root.evaluate("(el,d)=>el.dispatchEvent(new CustomEvent('order:quote-response',{detail:d}))",{'status':status,'requestId':request_id,'canView':True})
-        response('error','stale');expect(scene).to_have_attribute('data-phase','entry')
+            return root.evaluate("""(el,d)=>{const host=el.querySelector('[data-wait-scene]'),before=host.dataset.phase;
+              el.dispatchEvent(new CustomEvent('order:quote-response',{detail:d}));return [before,host.dataset.phase];}""",{'status':status,'requestId':request_id,'canView':True})
+        before,after=response('error','stale');assert before==after and after in ['entry','comparing','delayed'],(before,after)
         response('offline',initial);expect(scene).to_have_attribute('data-phase','offline');expect(scene.locator('[data-banner-index]')).to_have_count(0)
         assert scene.locator('.mf-wait-avatar').get_attribute('data-asset')=='r4-static-fallback'
         scene.locator('[data-wait-retry]').evaluate('b=>b.click()');expect(scene).to_have_attribute('data-phase','entry')

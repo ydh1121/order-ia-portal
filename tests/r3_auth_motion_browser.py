@@ -6,6 +6,27 @@ from playwright.sync_api import expect
 from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 
+def capture_password_meter(page, meter, path):
+    # The review canvas scales the iframe. Capture the top-level pixels of the
+    # visible meter using the same verified hit point as physical pointer tests.
+    midpoint = frame_pointer_position(page, meter)
+    area = meter.evaluate("""el=>{
+        const box=el.getBoundingClientRect();
+        return {width:box.width,height:box.height};
+    }""")
+    clip = page.locator("#frame").evaluate("""(frame,{midpoint,area})=>{
+        const box=frame.getBoundingClientRect();
+        const width=area.width*box.width/frame.offsetWidth;
+        const height=area.height*box.height/frame.offsetHeight;
+        const left=Math.max(0,Math.floor(midpoint[0]-width/2));
+        const top=Math.max(0,Math.floor(midpoint[1]-height/2));
+        return {x:left+scrollX,y:top+scrollY,
+                width:Math.min(innerWidth,Math.ceil(midpoint[0]+width/2))-left,
+                height:Math.min(innerHeight,Math.ceil(midpoint[1]+height/2))-top};
+    }""", {"midpoint": midpoint, "area": area})
+    page.screenshot(path=str(path), clip=clip, animations="allow")
+
+
 def check_auth_motion(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
@@ -91,11 +112,11 @@ def check_auth_motion(page, origin, width):
         alpha:Number(getComputedStyle(el.querySelectorAll('em')[1]).opacity),
         time:window.__boundary[0]?.currentTime})""")
     assert active["edges"] == 1 and active["alpha"] > .8, active
-    meter.screenshot(path=str(out / "password-06-liquid-link-133ms.png"), animations="allow")
+    capture_password_meter(page, meter, out / "password-06-liquid-link-133ms.png")
     settled = meter.evaluate("""el=>{for(const a of el.getAnimations({subtree:true}))a.currentTime=202;
         return Number(getComputedStyle(el.querySelectorAll('em')[1]).opacity);}""")
     assert settled < .05, settled
-    meter.screenshot(path=str(out / "password-06-liquid-link-202ms.png"), animations="allow")
+    capture_password_meter(page, meter, out / "password-06-liquid-link-202ms.png")
     evidence["video6Boundary"]={"strengthFrom":1,"strengthTo":2,"activeNecks":active["edges"],
                                 "neckOpacity133ms":active["alpha"],"neckOpacity202ms":settled}
     (out / f"auth-motion-{width}.json").write_text(json.dumps(evidence, ensure_ascii=False, indent=2))

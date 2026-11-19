@@ -40,8 +40,8 @@ export function mountAsyncMotion(root,{source='server'}={}){
  const active=new Map();
  let counter=0,closed=false,manualPause=false;
  const status=doc.createElement('span');
- status.className='r3-motion-sr';status.setAttribute('role','status');status.setAttribute('aria-live','polite');
- (root.nodeType===9?doc.body:root).append(status);
+ status.className='r3-motion-sr';status.setAttribute('aria-live','polite');status.setAttribute('aria-atomic','true');
+ const announcerParent=root.nodeType===9?doc.body:root;
  const setPause=()=>host.toggleAttribute('data-r3-motion-paused',manualPause||doc.hidden);
  doc.addEventListener('visibilitychange',setPause);setPause();
  function reset(record){
@@ -58,7 +58,7 @@ export function mountAsyncMotion(root,{source='server'}={}){
   if(region){delete region.dataset.asyncRegion;delete region.dataset.asyncSource;}
   if(aria.busy===null)key.removeAttribute('aria-busy');else key.setAttribute('aria-busy',aria.busy);
   if(region&&button){if(aria.regionBusy===null)region.removeAttribute('aria-busy');else region.setAttribute('aria-busy',aria.regionBusy);}
-  active.delete(key);
+  active.delete(key);if(!active.size)status.remove();
  }
  function notify(record,phase){
   if(closed||active.get(record.key)!==record)return;
@@ -69,7 +69,8 @@ export function mountAsyncMotion(root,{source='server'}={}){
    record.glyph.textContent=phase==='error'?'!':'';
   }
   if(region){region.dataset.asyncRegion=phase;region.dataset.asyncSource=source;region.setAttribute('aria-busy',String(phase==='pending'));}
-  key.setAttribute('aria-busy',String(phase==='pending'));status.textContent=labels[phase];
+  key.setAttribute('aria-busy',String(phase==='pending'));
+  if(!status.isConnected)announcerParent.append(status);status.textContent=labels[phase];
   key.dispatchEvent(new win.CustomEvent('r3:async-state',{bubbles:true,detail:{phase,source,requestId}}));
  }
  function start(button,region,task,opts={}){

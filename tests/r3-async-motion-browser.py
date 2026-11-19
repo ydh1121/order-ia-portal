@@ -72,7 +72,7 @@ def check(browser, width, reduced):
             save.click()
             expect(save).to_have_attribute('data-async-phase','pending')
             assert save.get_attribute('data-async-source')=='server'
-            page.wait_for_function("document.querySelector('[data-action=save]').disabled")
+            expect(save).to_be_disabled()
             save.evaluate('e=>e.click()')
             page.wait_for_timeout(80)
             assert len(writes)==1

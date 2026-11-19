@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {catalog} from '../src/server/r3-ui/catalog.gen.mjs';
 import {archivedRows,stageRows} from '../src/server/r3-ui/motion-history.gen.mjs';
@@ -30,6 +31,20 @@ test('the preceding direct loading URLs still replay their own reviewed control'
     assert.equal(previous.hash,entry.hashes[390]);assert.match(previous.mount,/mountReviewControls/);
     assert.doesNotMatch(previous.mount,/function mountSelectedLoading/);
     assert.match((await artifact(row)).mount,/function mountSelectedLoading/);
+  }
+});
+test('pins from deployed 0624ca1 replay the original common and quote frames',async()=>{
+  const digest=text=>createHash('sha256').update(text).digest('hex');
+  // Captured from the signed release at 390px and the approved Figma width.
+  const examples=[
+    ['common/default/email',390,'bf63e07135ea9377c6bf94050f27d543b7b0a52ae58fb4806d96c9277d4cdbe7','86a443836f694fb5b37aad1ca705003e00391a4f9c83f9374a75ecba22b91b9a','bcc7580454464867790f85f751e039e667fd5827bdaa42977512cbc2c44bfe24'],
+    ['quote-result/new-detail/email',375,'ba7ce59d573855bdfba22fc95b54b3bd3c32b36c7e39328dac36ca7b0587fa9f','89e3bf2b8fb05f2296e859b2f1031489507e8d9e3313584d7ff953fec523cfe4','c60c88fc2c6201a3d0ae1ede0835baf10615a305bac1daca79f4e91dc2cc9fe4']
+  ];
+  for(const [id,width,hash,html,mount] of examples){
+    const snapshot=await artifact(catalog.find(row=>row.id===id),'recorded',hash,width);
+    assert.equal(snapshot.hash,hash);assert.equal(snapshot.version,'prior-r3');
+    assert.equal(digest(snapshot.html),html);assert.equal(digest(snapshot.mount),mount);
+    assert.equal(digest(snapshot.replayFrame),'5cded9efd5ab80635ae1cd5af677be5c3272a8fe124bd197815bc2903b84aa61');
   }
 });
 test('pre-motion recorded viewport and prior comparison replay its original frame and mount',async()=>{

@@ -102,7 +102,7 @@ def check(page, origin, width):
     expect(frame.locator("[data-action=submit-signature] .spinner")).to_be_visible()
     frame = screen("signature","done")
     expect(frame.locator("h1")).to_have_count(0)
-    expect(frame.get_by_role("status")).to_contain_text("검토를 요청했어요")
+    expect(frame.get_by_role("status").filter(has_text="검토를 요청했어요")).to_be_visible()
     expect(frame.get_by_role("button",name="내 증빙 가리기·제출")).to_be_visible()
     print(json.dumps({"width":width,"business_dropdown_layout_shift_px":after-before,
                       "proof_limit":500,"signed_gallery_mask_pixel":marker}))

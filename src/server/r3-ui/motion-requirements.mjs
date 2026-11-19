@@ -1031,6 +1031,7 @@ export const motionRequirements = [
     "name": "2 Magnetic Pull",
     "screens": [
       "onboarding",
+      "quote-result",
       "common"
     ],
     "trigger": "pointer 접근·hover·클릭, 터치에 맞는 반응",

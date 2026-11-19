@@ -3,13 +3,14 @@ import {gzipSync,gunzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
 import * as data from '../../src/server/r3-ui/catalog.gen.mjs';
 import {runtimes as base,frameCode} from '../../src/server/r3-ui/runtime.gen.mjs';
-import {quoteFiles,quoteCommit,quoteSourceHashes} from '../../src/server/r3-product-sources.mjs';
+import {quoteFiles,quoteSourceHashes} from '../../src/server/r3-product-sources.mjs';
 import {bootQaHost} from '../../src/server/r3-ui/host.mjs';
 import {consultationDate} from './authored/consult-date.mjs';
 import {connectNoticePreferences} from './authored/notice-preferences.mjs';
 const ref=JSON.parse(await readFile(new URL('./authored/consult-date-reference.json',import.meta.url),'utf8'));
 const hash=s=>createHash('sha256').update(s).digest('hex');
-if(quoteCommit!==ref.commit||quoteSourceHashes[ref.source]!==ref.sha256||hash(gunzipSync(Buffer.from(quoteFiles[ref.source],'base64')))!==ref.sha256)throw Error('Consultation calendar source differs from sealed product.');
+// Unrelated product version bumps retain this original, checked holiday file.
+if(quoteSourceHashes[ref.source]!==ref.sha256||hash(gunzipSync(Buffer.from(quoteFiles[ref.source],'base64')))!==ref.sha256)throw Error('Consultation calendar source differs from sealed product.');
 const notice=';('+connectNoticePreferences.toString()+')();';
 const calendar=';('+consultationDate.toString()+')(new AbortController().signal,document.querySelector("#order-single"),'+JSON.stringify({coverage:ref.coverage,records:ref.records})+');';
 const template=(await readFile(new URL('./authored/consult-date.html',import.meta.url),'utf8')).trim();

@@ -4,7 +4,7 @@ export function createEvidenceEditor({container,caseId,kind,csrf,onReceipt,onErr
   const btn=(value,fn)=>{const b=el('button',value);b.type='button';b.onclick=fn;return b;};
   const hint=el('p'),file=el('input'),pages=el('div'),settings=el('fieldset');settings.style.minWidth='0';settings.append(el('legend',kind==='business'?'사업자 정보 등록':'거래내역 증빙'));
   const endpoint='/api/ia/r3-role/evidence?caseId='+encodeURIComponent(caseId),packetType='application/vnd.order.masked-rasters';
-  let signOff=null;let disposed=false,generation=0,working=[],sealed=null,busy=false,docTask=null,renderTask=null,key='';
+  let signOff=null;let disposed=false,generation=0,working=[],sealed=null,uploaded=null,busy=false,docTask=null,renderTask=null,key='';
   const alive=gen=>!disposed&&gen===generation&&container.isConnected;
   function clear(){for(const c of working){c.width=c.height=0;}working=[];pages.replaceChildren();}
   function dispose(){disposed=true;generation++;renderTask?.cancel();docTask?.destroy()?.catch(()=>{});clear();signOff?.reset();sealed=null;file.value='';}
@@ -56,12 +56,20 @@ export function createEvidenceEditor({container,caseId,kind,csrf,onReceipt,onErr
   if(!readOnly){file.type='file';file.accept='application/pdf,image/png,image/jpeg';file.multiple=kind!=='business';const label=el('label',file.multiple?'증빙 파일 선택 (여러 개 가능)':'사업자등록증 파일 선택');label.append(file);hint.textContent='제3자의 개인정보는 가려 주세요. 드래그하거나 숫자로 영역을 선택할 수 있습니다.';
     if(kind==='reprice')signOff=signaturePad();
     const confirmed=el('input');confirmed.type='checkbox';const accept=el('label','가림 처리한 모든 페이지를 확인했습니다.');accept.prepend(confirmed);
-    const save=btn('가림 처리본 제출',async()=>{if(busy||(!working.length&&!sealed)||!confirmed.checked)return;busy=true;save.disabled=true;try{if(!sealed){
+    const save=btn('가림 처리본 제출',async()=>{if(busy||(!working.length&&!sealed&&!uploaded)||!confirmed.checked)return;busy=true;save.disabled=true;file.disabled=true;try{if(!sealed&&!uploaded){
       if(signOff&&working.length>=8)throw Error('서명과 함께 제출할 자료는 최대 7쪽입니다.');
       const signature=signOff?.page();if(signature)working.push(signature);try{sealed=encode();}finally{if(signature)working.pop();}
       signOff?.reset();key=crypto.randomUUID();clear();file.value='';
-    }const r=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':packetType,'X-IA-CSRF':csrf,'Idempotency-Key':key},body:sealed});if(!r.ok)throw Error('제출하지 못했습니다. 가림 처리본으로 다시 시도해 주세요.');const reply=await r.json();if(!disposed){sealed=null;confirmed.checked=false;onReceipt(reply.evidenceId);}}catch(e){onError(e.message);}finally{busy=false;if(!disposed)save.disabled=false;}});
-    file.onchange=async()=>{const gen=++generation;const files=[...file.files];sealed=null;signOff?.reset();clear();confirmed.checked=false;save.disabled=true;if(files.length>8||files.reduce((n,f)=>n+f.size,0)>20*1024*1024){file.value='';return onError('파일 수 또는 전체 크기를 줄여 주세요.');}try{for(const f of files){if(!alive(gen))return;await addFile(f,gen);}if(alive(gen)&&working.length>8)throw Error('최대 8쪽을 선택해 주세요.');}catch(e){if(alive(gen)){clear();onError('파일을 열 수 없습니다. 파일 형식과 크기를 확인해 주세요.');}}finally{if(alive(gen)){save.disabled=false;file.value='';}}};
+    }
+    if(!uploaded){
+      const r=await fetch(endpoint,{method:'POST',credentials:'same-origin',headers:{'Content-Type':packetType,'X-IA-CSRF':csrf,'Idempotency-Key':key},body:sealed});
+      if(!r.ok)throw Error('제출하지 못했습니다. 가림 처리본으로 다시 시도해 주세요.');
+      const reply=await r.json();if(disposed)return;uploaded=reply.evidenceId;sealed=null;
+    }
+    // Retain the upload receipt for a linking retry, without sending any pixels a second time.
+    if(await onReceipt(uploaded,save)){uploaded=null;confirmed.checked=false;}
+    }catch(e){onError(e.message);}finally{busy=false;if(!disposed){save.disabled=false;file.disabled=false;}}});
+    file.onchange=async()=>{const gen=++generation;const files=[...file.files];sealed=null;uploaded=null;signOff?.reset();clear();confirmed.checked=false;save.disabled=true;if(files.length>8||files.reduce((n,f)=>n+f.size,0)>20*1024*1024){file.value='';return onError('파일 수 또는 전체 크기를 줄여 주세요.');}try{for(const f of files){if(!alive(gen))return;await addFile(f,gen);}if(alive(gen)&&working.length>8)throw Error('최대 8쪽을 선택해 주세요.');}catch(e){if(alive(gen)){clear();onError('파일을 열 수 없습니다. 파일 형식과 크기를 확인해 주세요.');}}finally{if(alive(gen)){save.disabled=false;file.value='';}}};
     settings.append(label,hint,accept,save);
   }
   settings.append(pages);container.append(settings);return dispose;

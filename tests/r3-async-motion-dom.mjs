@@ -1,11 +1,22 @@
 // Local integration for promise settlement, retries and retention; no network or real workspace.
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
-import {readFileSync,mkdirSync,writeFileSync} from 'node:fs';
+import {mkdirSync,writeFileSync} from 'node:fs';
+import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
 import {renderR3PricePage} from '../src/server/r3-price-page.mjs';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {signedWorkspace,origin} from './r3-business-identities.fixture.mjs';
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
+// A completed proof/signature owns its existing status. Merely mounting a frame
+// must not introduce a competing empty result or a second receipt landmark.
+const receipt=new JSDOM('<div class="receipt-content" role="status">검토를 요청했어요</div><button>보내기</button>',{pretendToBeVisual:true});
+const receiptDoc=receipt.window.document,announcer=mountAsyncMotion(receiptDoc,{source:'controlled-qa'});
+assert.equal(receiptDoc.querySelectorAll('[role=status]').length,1);
+assert.equal(receiptDoc.querySelector('.r3-motion-sr'),null);
+await announcer.run(receiptDoc.querySelector('button'),()=>Promise.resolve({ok:true}));
+assert.equal(receiptDoc.querySelectorAll('[role=status]').length,1);
+assert.equal(receiptDoc.querySelector('.r3-motion-sr[aria-live=polite]').textContent,'완료');
+announcer.destroy();assert.equal(receiptDoc.querySelector('.r3-motion-sr'),null);receipt.window.close();
 const fixture=signedWorkspace({emptyPriceCatalog:true});
 const dom=new JSDOM(renderR3PricePage('motion-test-only'),{url:origin+'/ia?view=pricing-r3',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:new VirtualConsole()});
 const w=dom.window,doc=w.document,$=selector=>doc.querySelector(selector),events=[];

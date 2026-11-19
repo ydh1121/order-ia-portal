@@ -34,7 +34,7 @@ try:
                 page.locator('#points').click()
                 detail=page.locator('#motion-review')
                 if not detail.evaluate('el=>el.open'):
-                    detail.locator('summary').click()
+                    detail.locator(':scope > summary').click()
                 detail.locator(f'button[data-motion-mode="{mode}"]').click()
                 if not navigates:
                     expect(page.locator('#motion-note')).to_contain_text('검수 입력')

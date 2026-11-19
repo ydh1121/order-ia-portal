@@ -351,8 +351,8 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
     if(loading)return;loading=true;
     const prior=pending||drafts.request;
     const request=prior&&JSON.stringify(prior.data)===JSON.stringify(data)?prior:{data,key:crypto.randomUUID()};pending=request;drafts.request=request;
-    try{await persistDrafts();const result=await asyncMotion.run(submit,({signal})=>api(endpoint,{...data,requestKey:request.key},signal));pending=null;delete drafts.request;if(keyDraft)delete drafts[keyDraft];await persistDrafts();historyChange({case:result.case.id});await load();await showCase(result.case.id);status('저장했습니다.');}
-    catch(e){error(e);if(e.status===409 && data.action!=='create')$('status').append(button('최신 상태와 내 입력 비교',()=>showCase(data.caseId,data)));}
+    try{await persistDrafts();const result=await asyncMotion.run(submit,({signal})=>api(endpoint,{...data,requestKey:request.key},signal));pending=null;delete drafts.request;if(keyDraft)delete drafts[keyDraft];await persistDrafts();historyChange({case:result.case.id});await load();await showCase(result.case.id);status('저장했습니다.');return true;}
+    catch(e){error(e);if(e.status===409 && data.action!=='create')$('status').append(button('최신 상태와 내 입력 비교',()=>showCase(data.caseId,data)));return false;}
     finally{loading=false;}
   }
   async function showCase(caseId,conflicted){
@@ -374,7 +374,7 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
       const history=node('details');history.append(node('summary','처리 이력'));const events=node('ol');
       for(const e of r.events){const note=r.notes?.find(n=>n.revision===e.revision);events.append(node('li',[e.revision+'. '+name(e.action),name(e.next_state),e.reason_code&&name(e.reason_code),note?.memo,titleDate(e.created_at)].filter(Boolean).join(' · ')));}
       history.append(events);detail.append(history);
-      if(c.evidenceId||c.actions.includes('attach')){const holder=node('div');detail.append(holder);dispose=createEvidenceEditor({container:holder,caseId:c.id,kind:c.kind,csrf,evidenceId:c.evidenceId,readOnly:!c.actions.includes('attach'),onError:status,onReceipt:evidenceId=>save({caseId:c.id,action:'attach',expectedRevision:c.revision,evidenceId})});}
+      if(c.evidenceId||c.actions.includes('attach')){const holder=node('div');detail.append(holder);dispose=createEvidenceEditor({container:holder,caseId:c.id,kind:c.kind,csrf,evidenceId:c.evidenceId,readOnly:!c.actions.includes('attach'),onError:status,onReceipt:(evidenceId,submit)=>save({caseId:c.id,action:'attach',expectedRevision:c.revision,evidenceId},null,submit)});}
       const actions=c.actions.filter(a=>a!=='attach');
       if(conflicted){
         const retained=node('section');retained.append(node('h3','저장하지 않은 내 입력'),node('p',name(conflicted.action)));
