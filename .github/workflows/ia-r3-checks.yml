@@ -26,6 +26,7 @@ jobs:
         run: |
           node tests/r3-bundled-clients.mjs
           node tests/r3-price-book-dom.mjs
+          node tests/r3-price-workspace-dom.mjs
           node tests/r3-admin-common-dom.mjs
           node tests/r3-async-motion-dom.mjs
       - name: Compile Pages Functions with the deployment builder
@@ -78,6 +79,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-navigation-browser.py
+      - name: Check persisted MVP menus, component review, pass flip and withdrawal guards
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-qa-mvp-browser.py
       - name: Check detailed quote lists, keyboard and swipe confirmation
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -126,11 +132,23 @@ jobs:
           R3_ROLE_EVIDENCE_DIR: artifacts/role-browser
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-business-menu-browser.py
+      - name: Check the four-menu price workspace at four widths
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-price-workspace-browser.py
+      - name: Check saved business accounts and both real quote forms
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-saved-business-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: r3-private-browser-receipts
           path: |
+            artifacts/price-workspace/
+            artifacts/saved-businesses/
             artifacts/role-browser/
             artifacts/quote-result/
             artifacts/price-matrix/
@@ -139,5 +157,6 @@ jobs:
             artifacts/motion-runtime/
             artifacts/motion-live/
             artifacts/r3-auth-motion/
+            artifacts/qa-mvp/
           if-no-files-found: ignore
           retention-days: 7

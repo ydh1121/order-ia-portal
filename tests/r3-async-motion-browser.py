@@ -33,7 +33,7 @@ def check(browser, width, reduced):
         def route_desk(route):
             reads.append(route)
         page.route('**/api/ia/r3-price/desk', route_desk)
-        page.goto(origin + '/ia?view=pricing-r3', wait_until='domcontentloaded')
+        page.goto(origin + '/ia?view=pricing-r3&mode=contract', wait_until='domcontentloaded')
         shell = page.locator('#price-workspace')
         expect(shell).to_have_attribute('data-async-region', 'pending')
         for _ in range(120):

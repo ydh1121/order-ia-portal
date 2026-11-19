@@ -15,7 +15,7 @@ export async function onRequest({request,env}){
  if(request.method!=='GET'&&request.method!=='HEAD')return new Response(null,{status:405,headers:{...base,Allow:'GET, HEAD'}});
  const url=new URL(request.url),view=url.searchParams.get('view');
  const productAsset=url.pathname.startsWith('/ia/r3-product/');
- const r3View=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view) ? view : null;
+ const r3View=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3'].includes(view) ? view : null;
  let actor;try{actor=await (isBusinessSurface(url)?businessActor:requireActor)(request,env)}catch(error){
    if(error?.message==='SESSION_STORE_UNAVAILABLE')return new Response(null,{status:503,headers:base});
    if(productAsset)return new Response(null,{status:403,headers:base});
@@ -49,8 +49,13 @@ export async function onRequest({request,env}){
      .replace("style-src 'unsafe-inline'","style-src 'unsafe-inline' 'self'");
    const {renderR3ProductPage}=await import('../../src/server/r3-product-page.mjs');
    html=await renderR3ProductPage(nonce,r3View==='simple-r3'?'simple':'detailed',actor.id);
+ }else if(r3View==='businesses-r3'){
+   headers['Content-Security-Policy']=headers['Content-Security-Policy'].replace("script-src 'nonce-"+nonce+"'","script-src 'nonce-"+nonce+"' 'strict-dynamic'");
+   const {renderBusinessDirectory}=await import('../../src/server/r3-business-directory-page.mjs');html=renderBusinessDirectory(nonce);
  }else if(r3View==='pricing-r3'){
-   const {renderR3PricePage}=await import('../../src/server/r3-price-page.mjs');html=renderR3PricePage(nonce);
+   if(url.searchParams.get('practice')==='1'||url.searchParams.has('priceVersion')||url.searchParams.has('quote')||url.searchParams.get('mode')==='contract'){
+     const {renderR3PricePage}=await import('../../src/server/r3-price-page.mjs');html=renderR3PricePage(nonce);
+   }else{const {renderPriceWorkspace}=await import('../../src/server/r3-price-workspace-page.mjs');html=renderPriceWorkspace(nonce);}
  }else if(r3View){
    // Only the document review desk imports the vendored PDF renderer and uses its local worker.
    headers['Content-Security-Policy']=headers['Content-Security-Policy'].replace("script-src 'nonce-"+nonce+"'", "script-src 'nonce-"+nonce+"' 'strict-dynamic'")+"; worker-src 'self'; object-src 'none'";

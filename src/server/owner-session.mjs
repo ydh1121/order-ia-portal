@@ -1,16 +1,15 @@
-/** Existing Pages only: single OWNER password verifier and bounded activity-renewed cookie.
+/** Existing Pages only: single OWNER password verifier and fixed 12-hour cookie.
  * All secrets are injected by Pages as encrypted bindings; none are stored in Git.
  * Per-isolate throttling is defense-in-depth only, NOT a distributed rate limit.
  */
 const enc=new TextEncoder();
 const COOKIE='__Host-ia_session';
 const LEGACY_TTL=600;
-export const OWNER_SESSION_IDLE_SECONDS=30*60;
+const LEGACY_RENEWAL_TTL=30*60;
 export const OWNER_SESSION_MAX_SECONDS=12*60*60;
-const TTL=OWNER_SESSION_IDLE_SECONDS;
 // Existing production/preview D1 records logout revocations across Worker isolates.
 // A deployment without the existing database may issue only a legacy 10-minute
-// bootstrap session. It cannot issue or renew the longer-lived v2 session.
+// bootstrap session. It cannot issue or renew the longer-lived session.
 const MAX_BODY=2048;
 const CHALLENGE_COOKIE='__Host-ia_challenge';
 const CHALLENGE_TTL=90; // bounded proof validity; no persistent store or new infra
@@ -146,7 +145,7 @@ async function isRevoked(env,p,now) {
       return !!row?.revoked;
     }catch{throw Error('SESSION_STORE_UNAVAILABLE');}
   }
-  if(p.v===2)throw Error('SESSION_STORE_UNAVAILABLE');
+  if(p.v>=2)throw Error('SESSION_STORE_UNAVAILABLE');
   return false;
 }
 async function revokeSession(env,p,now) {
@@ -156,19 +155,19 @@ async function revokeSession(env,p,now) {
     catch{throw Error('SESSION_STORE_UNAVAILABLE');}
     // Bounded retention. Failure to prune must not undo the already durable revocation.
     try{await env.ORDER_QA_DB.prepare('DELETE FROM ia_owner_session_revocations WHERE expires_at<=?').bind(now).run();}catch{}
-  }else if(p.v===2)throw Error('SESSION_STORE_UNAVAILABLE');
+  }else if(p.v>=2)throw Error('SESSION_STORE_UNAVAILABLE');
 }
 async function sessionEnvelope(env,p,now) {
   const key=await hmacKey(env),body=b64(bytes(JSON.stringify(p)));
   const token=body+'.'+b64(await sign(key,sessionPrefix(env)+body));
   const csrf=b64(await sign(key,'ia.csrf.v1.'+p.sid)),expiresIn=p.exp-now;
-  return {cookie:`${COOKIE}=${token}; Path=/; Max-Age=${expiresIn}; Secure; HttpOnly; SameSite=Strict`,csrf,expiresIn,expiresAt:p.exp,absoluteExpiresAt:p.iat+OWNER_SESSION_MAX_SECONDS};
+  return {cookie:`${COOKIE}=${token}; Path=/; Max-Age=${expiresIn}; Secure; HttpOnly; SameSite=Strict`,csrf,expiresIn,expiresAt:p.exp,absoluteExpiresAt:p.iat+OWNER_SESSION_MAX_SECONDS,serverNow:now};
 }
 export async function issueSession(env,now=Math.floor(Date.now()/1000)){
   if(!sessionConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
   const sid=b64(rand(24));
   if(!env.ORDER_QA_DB)return sessionEnvelope(env,{v:1,sid,iat:now,exp:now+LEGACY_TTL},now);
-  return sessionEnvelope(env,{v:2,sid,iat:now,renewedAt:now,exp:now+TTL},now);
+  return sessionEnvelope(env,{v:3,sid,iat:now,exp:now+OWNER_SESSION_MAX_SECONDS},now);
 }
 async function readSessionPayload(request,env,now){
   if(!sessionConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
@@ -179,15 +178,16 @@ async function readSessionPayload(request,env,now){
   if(!eq(await sign(key,sessionPrefix(env)+body),unb64(sig)))throw Error('SESSION_DENIED');
   let p;try{p=JSON.parse(new TextDecoder().decode(unb64(body)))}catch{throw Error('SESSION_DENIED')}
   const legacy=p.v===1&&p.exp-p.iat===LEGACY_TTL;
-  const current=p.v===2&&Number.isSafeInteger(p.renewedAt)&&p.renewedAt>=p.iat&&p.renewedAt<=now+30&&p.exp===Math.min(p.renewedAt+TTL,p.iat+OWNER_SESSION_MAX_SECONDS);
-  if((!legacy&&!current)||typeof p.sid!=='string'||unb64(p.sid).length!==24||!Number.isSafeInteger(p.iat)||!Number.isSafeInteger(p.exp)||
+  const renewed=p.v===2&&Number.isSafeInteger(p.renewedAt)&&p.renewedAt>=p.iat&&p.renewedAt<=now+30&&p.exp===Math.min(p.renewedAt+LEGACY_RENEWAL_TTL,p.iat+OWNER_SESSION_MAX_SECONDS);
+  const current=p.v===3&&p.exp===p.iat+OWNER_SESSION_MAX_SECONDS;
+  if((!legacy&&!renewed&&!current)||typeof p.sid!=='string'||unb64(p.sid).length!==24||!Number.isSafeInteger(p.iat)||!Number.isSafeInteger(p.exp)||
     p.iat>now+30||p.exp<=now||p.iat+OWNER_SESSION_MAX_SECONDS<=now)throw Error('SESSION_DENIED');
   if(await isRevoked(env,p,now))throw Error('SESSION_DENIED');
   return p;
 }
 export async function readSession(request,env,now=Math.floor(Date.now()/1000)){
   const p=await readSessionPayload(request,env,now),key=await hmacKey(env);
-  return {id:'owner',role:'OWNER',email:env.IA_OWNER_EMAIL.trim().toLowerCase(),csrf:b64(await sign(key,'ia.csrf.v1.'+p.sid)),expiresAt:p.exp,absoluteExpiresAt:p.iat+OWNER_SESSION_MAX_SECONDS};
+  return {id:'owner',role:'OWNER',email:env.IA_OWNER_EMAIL.trim().toLowerCase(),csrf:b64(await sign(key,'ia.csrf.v1.'+p.sid)),expiresAt:p.exp,absoluteExpiresAt:p.iat+OWNER_SESSION_MAX_SECONDS,serverNow:now};
 }
 export async function ownerActor(request,env,now){const {id,email,role}=await readSession(request,env,now);return{id,email,role};}
 export const clearSessionCookie=()=>`${COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`;
@@ -209,7 +209,16 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
   const pathname=new URL(request.url).pathname;
   if(pathname==='/api/ia/auth/me'){
     if(request.method!=='GET')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'GET'});
-    try{const actor=await readSession(request,env,now);return result({authenticated:true,role:actor.role,email:actor.email,csrf:actor.csrf,expiresAt:actor.expiresAt,absoluteExpiresAt:actor.absoluteExpiresAt})}
+    try{
+      const p=await readSessionPayload(request,env,now);
+      // An already valid cookie can migrate without another password prompt.
+      // The original login time is preserved, so GET never starts a new 12-hour period.
+      if(p.v<3&&env.ORDER_QA_DB){
+        const upgraded=await sessionEnvelope(env,{v:3,sid:p.sid,iat:p.iat,exp:p.iat+OWNER_SESSION_MAX_SECONDS},now);
+        return result({authenticated:true,role:'OWNER',email:env.IA_OWNER_EMAIL.trim().toLowerCase(),csrf:upgraded.csrf,expiresAt:upgraded.expiresAt,absoluteExpiresAt:upgraded.absoluteExpiresAt,serverNow:now},200,{'Set-Cookie':upgraded.cookie});
+      }
+      const actor=await readSession(request,env,now);return result({authenticated:true,role:actor.role,email:actor.email,csrf:actor.csrf,expiresAt:actor.expiresAt,absoluteExpiresAt:actor.absoluteExpiresAt,serverNow:now});
+    }
     catch(error){return sessionFailure(error)}
   }
   if(pathname==='/api/ia/auth/refresh'){
@@ -222,8 +231,8 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
       if(!env.ORDER_QA_DB)return result({error:'SESSION_STORE_UNAVAILABLE'},503);
       // Preserve the signed login time, SID and CSRF across tabs. No expired or
       // logged-out session can be refreshed, including a pre-migration v1 cookie.
-      const session=await sessionEnvelope(env,{v:2,sid:p.sid,iat:p.iat,renewedAt:now,exp:Math.min(now+TTL,p.iat+OWNER_SESSION_MAX_SECONDS)},now);
-      return result({authenticated:true,role:'OWNER',csrf:session.csrf,expiresAt:session.expiresAt,absoluteExpiresAt:session.absoluteExpiresAt},200,{'Set-Cookie':session.cookie});
+      const session=await sessionEnvelope(env,{v:3,sid:p.sid,iat:p.iat,exp:p.iat+OWNER_SESSION_MAX_SECONDS},now);
+      return result({authenticated:true,role:'OWNER',csrf:session.csrf,expiresAt:session.expiresAt,absoluteExpiresAt:session.absoluteExpiresAt,serverNow:now},200,{'Set-Cookie':session.cookie});
     }catch(error){return sessionFailure(error)}
   }
   if(pathname==='/api/ia/auth/challenge'){

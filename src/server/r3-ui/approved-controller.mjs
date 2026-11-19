@@ -17,7 +17,19 @@ export function bootApprovedShell(h) {
   };
   const stage = byId('surface'), preview = byId('preview-list'), focus = byId('focus-unit');
   const query = new URL(location.href).searchParams;
-  let role = 'current', mode = ['board','dual'].includes(query.get('mode')) ? query.get('mode') : 'focus';
+  let role = 'all', mode = ['board','dual'].includes(query.get('mode')) ? query.get('mode') : 'focus';
+  const expandedGroups = {mvp:true,future:false};
+  const mvpSections=[
+    ['첫 화면·견적',['onboarding','q1','q2','q3','q4','quote-review','quote-wait','quote-result','saved-quote']],
+    ['회원·사업장',['signup','login','otp','password','terms','profile','account-settings','session-access','business','store-settings','proof','signature']],
+    ['구매·주문·납품',['store-purchase','delivery-request','passes','application-status','store-home','customer-orders','order-detail','delivery-schedule','trade-documents','consultation','help-center','search']],
+    ['관리자 · 회원·상담·승인',['admin-access','admin-overview','admin-buyers','admin-business-review','admin-support','member-email-templates']],
+    ['관리자 · 주문·출고·증빙',['admin-orders','admin-payments','admin-shipments','supplier-shipments','admin-quotes','admin-documents','admin-billing','receipt']],
+    ['관리자 · 가격·매출·수익',['price-policy','admin-catalog','admin-price-approval','admin-analytics','admin-revenue-rules','admin-settlements','admin-policy','admin-audit']],
+    ['컴포넌트·공통 자산',['component-library','common','drawer']]
+  ];
+  const mvpOrder=new Map(mvpSections.flatMap(([label,ids],section)=>ids.map((id,index)=>[id,{label,rank:section*100+index}])));
+  let draggedScreen = '', renamingGroup = false;
   const mobileChoices = [...byId('mobile-width').options].map(o => Number(o.value));
   const pcChoices = [...byId('desktop-width').options].map(o => Number(o.value));
   const initialWidth = Number(query.get('width'));
@@ -95,28 +107,66 @@ export function bootApprovedShell(h) {
   function nav(s, counts) {
     const term = byId('catalog-search').value.trim().toLocaleLowerCase();
     const catalog = byId('catalog');
+    if(renamingGroup)return;
     const fragment = document.createDocumentFragment();
-    let lastGroup = '';
     const groups = new Map();
     for (const r of s.screens) {
       if (!groups.has(r.screen)) groups.set(r.screen,[]);
       groups.get(r.screen).push(r);
     }
-    for (const family of groups.values()) {
-      const row = family[0];
-      if (role !== 'all' && (role === 'future' ? row.phase !== 'future' : row.phase === 'future' || role !== 'current' && row.role !== role)) continue;
-      const found = term ? family.find(r => [r.id,r.label,r.group,r.stateLabel,r.description,...(r.routeIds||[])].join(' ').toLocaleLowerCase().includes(term)) : row;
-      if (!found) continue;
-      if (row.group !== lastGroup) { fragment.append(make('p','lab-group',row.group)); lastGroup = row.group; }
-      const b = button('', 'lab-nav', () => openRow(found));
-      b.dataset.module = row.screen;
-      if (s.current?.screen === row.screen) { b.classList.add('active'); b.setAttribute('aria-current','page'); }
-      const label = make('span','nav-label',row.label);
-      if (row.phase === 'future') label.append(make('small','','향후'));
-      b.append(label);
-      if (counts.get(row.screen)) b.append(make('span','nav-comment-count',counts.get(row.screen)));
-      b.append(make('span','nav-count',distinct(family,'state').length));
-      fragment.append(b);
+    const layout=s.navigation?.layout||{groups:[{id:'mvp',name:'1차 MVP'},{id:'future',name:'정식 - 향후 검토'}],assignments:{}};
+    const groupFor=id=>layout.assignments[id]||(groups.get(id)?.[0].phase==='future'?'future':'mvp');
+    const move=(screen,group)=>{
+      if(!h.saveNavigation||s.navigationPending||!s.navigationReady||!groups.has(screen)||groupFor(screen)===group)return;
+      expandedGroups[group]=true;
+      h.saveNavigation({...layout,assignments:{...layout.assignments,[screen]:group}});
+    };
+    for(const section of layout.groups){
+      if(role==='current'&&section.id!=='mvp'||role==='future'&&section.id!=='future')continue;
+      const matches=[...groups.values()].filter(f=>groupFor(f[0].screen)===section.id).map(family=>({family,found:term?family.find(r=>[r.id,r.label,r.group,r.stateLabel,r.description,...(r.routeIds||[])].join(' ').toLocaleLowerCase().includes(term)):family[0]})).filter(({family,found})=>found&&(['all','current','future'].includes(role)||family[0].role===role));
+      if(section.id==='mvp')matches.sort((a,b)=>(mvpOrder.get(a.family[0].screen)?.rank??10000)-(mvpOrder.get(b.family[0].screen)?.rank??10000));
+      if(term&&!matches.length)continue;
+      const details=make('details','lab-nav-section');details.dataset.navGroup=section.id;
+      details.open=Boolean(term)||expandedGroups[section.id];
+      details.ontoggle=()=>{if(!term)expandedGroups[section.id]=details.open;};
+      const summary=make('summary','lab-nav-heading');summary.title='두 번 클릭 또는 F2: 이름 변경 · 화면을 끌어 놓아 이동';
+      summary.append(make('span','',section.name),make('span','nav-count',matches.length));
+      const rename=()=>{
+        if(!h.saveNavigation||!s.navigationReady||s.navigationPending||renamingGroup)return;
+        renamingGroup=true;const input=make('input');input.value=section.name;input.maxLength=48;input.setAttribute('aria-label','아코디언 이름');
+        summary.replaceChildren(input);input.focus();input.select();let done=false;
+        const finish=save=>{if(done)return;done=true;renamingGroup=false;const name=input.value.trim();
+          if(save&&name&&name!==section.name)h.saveNavigation({...layout,groups:layout.groups.map(g=>g.id===section.id?{...g,name}:g)});else render();};
+        input.onclick=e=>e.stopPropagation();input.ondblclick=e=>e.stopPropagation();
+        input.onkeydown=e=>{e.stopPropagation();if(e.key==='Enter'){e.preventDefault();finish(true);}if(e.key==='Escape'){e.preventDefault();finish(false);}};
+        input.onblur=()=>finish(true);
+      };
+      summary.ondblclick=e=>{e.preventDefault();rename();};
+      summary.onkeydown=e=>{if(e.key==='F2'){e.preventDefault();rename();}};
+      details.ondragover=e=>{if(draggedScreen){e.preventDefault();details.classList.add('drag-over');}};
+      details.ondragleave=e=>{if(!details.contains(e.relatedTarget))details.classList.remove('drag-over');};
+      details.ondrop=e=>{e.preventDefault();details.classList.remove('drag-over');if(draggedScreen)move(draggedScreen,section.id);draggedScreen='';};
+      details.append(summary);let lastGroup='';
+      for(const {family,found} of matches){
+        const row=family[0];
+        const groupLabel=section.id==='mvp'?mvpOrder.get(row.screen)?.label||row.group:row.group;
+        if(groupLabel!==lastGroup){details.append(make('p','lab-group',groupLabel));lastGroup=groupLabel;}
+        const wrap=make('div','lab-nav-item'), b=button('','lab-nav',()=>openRow(found));
+        b.dataset.module=row.screen;b.draggable=Boolean(s.navigationReady&&!s.navigationPending);
+        b.ondragstart=e=>{draggedScreen=row.screen;e.dataTransfer.setData('text/plain',row.screen);e.dataTransfer.effectAllowed='move';};
+        b.ondragend=()=>{draggedScreen='';for(const d of all('.drag-over',catalog))d.classList.remove('drag-over');};
+        const next=section.id==='mvp'?'future':'mvp',nextName=layout.groups.find(g=>g.id===next).name;
+        b.onkeydown=e=>{if(e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();move(row.screen,e.key==='ArrowLeft'?'mvp':'future');}};
+        b.title='Alt+←: 1차 MVP · Alt+→: 향후 검토';
+        if(s.current?.screen===row.screen){b.classList.add('active');b.setAttribute('aria-current','page');}
+        b.append(make('span','nav-label',row.label));
+        if(counts.get(row.screen))b.append(make('span','nav-comment-count',counts.get(row.screen)));
+        b.append(make('span','nav-count',distinct(family,'state').length));wrap.append(b);
+        const transfer=button('↔','lab-nav-move',()=>move(row.screen,next));transfer.title=nextName+'로 이동';transfer.setAttribute('aria-label',row.label+' · '+nextName+'로 이동');transfer.dataset.moveModule=row.screen;transfer.disabled=!s.navigationReady||s.navigationPending;
+        wrap.append(transfer);details.append(wrap);
+      }
+      if(!matches.length)details.append(make('p','lab-no-results','화면을 여기에 끌어 놓으세요.'));
+      fragment.append(details);
     }
     if (!fragment.childNodes.length) fragment.append(make('p','lab-no-results','맞는 화면이 없어요.'));
     catalog.replaceChildren(fragment);
@@ -208,6 +258,7 @@ export function bootApprovedShell(h) {
     nav(s,rowCounts(s.screens,s.legacy,s.records));
     if (!s.current) return;
     const row=s.current,width=h.width(row);
+    if(byId('business-candidates'))byId('business-candidates').hidden=!['business','store-settings','q3'].includes(row.screen);
     if (mobileChoices.includes(width)) mobileWidth=width;
     if (pcChoices.includes(width)) pcWidth=width;
     byId('mobile-width').value=String(mobileWidth);

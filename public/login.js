@@ -40,7 +40,7 @@ form.addEventListener('submit',async event=>{
     if(response.ok){
       const incoming=new URLSearchParams(location.search), view=incoming.get('returnView');
       const target=new URLSearchParams();
-      if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view))target.set('view',view);
+      if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3'].includes(view))target.set('view',view);
       if(view==='qa-lab'){
         const screen=incoming.get('screen'),width=incoming.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);

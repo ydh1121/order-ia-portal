@@ -33,17 +33,19 @@ test('current Google source exclusively controls decisions and provider status; 
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
 test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'fd5d6a73ac4f1a6fe17c26aab65697412d50e6a461c674e0474dc2d5971db1ee');
- assert.equal(sha256(actualCode),'d13575163140682a4c062ee4cc59c49519a61868cfccf26655690eee1022c951');
+ assert.equal(sha256(html),'f1e2223f2111d51fbc3deca82a76726a07d7730f3a81a499df130fb6fa9272ff');
+ assert.equal(sha256(actualCode),'763980a5a137679f1d0b4b80c8eebc393a2432bfd22c8939efe8d422016c1fff');
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
 });
 
-test('private QA remains reachable in the same tab when a popup is blocked',()=>{
+test('portal exposes direct QA and price links without the removed fallback wording',()=>{
  const fallback='<details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details>';
- assert.ok(html.includes(fallback));
+ assert.ok(!html.includes(fallback));
+ assert.doesNotMatch(html,/열람 전용|새 창이 열리지 않을 때/);
+ assert.match(actualCode,/mountPortalSession/);
+ assert.match(actualCode,/로그인 만료까지/);
  const nav = html.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/)?.[0] || '';
  assert.match(nav, /href="\/ia\?view=qa-lab" target="_blank" rel="noopener noreferrer"/);
  assert.match(nav, /href="\/ia\?view=pricing-r3"/);
  assert.doesNotMatch(nav, /업무 흐름 검토|href="[^"]*view=roles-r3/);
- assert.equal(sha256(html.replace(fallback,'')),'4d9faeae3525a3c01bf1656a6185f9deaa92bd9378fb4853d99b4851f38c84e5');
 });

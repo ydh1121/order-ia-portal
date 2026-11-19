@@ -10,6 +10,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let screens=[],current=null,artifact=null,target=null,csrf='',filter='all',session='',generation=0,cursor=0,editor=null,pending=null,storing=false,missing=new Set(),subset=null;
   let legacyAvailable=false,reviewAvailable=false,displayPins=true,wantsPoint=false,continuousPoints=false;
   let shell, commentFilter='open';
+  let navigation=null,navigationPending=false,navigationReady=false;
   // IDs of the recorded two-tab exercise, confirmed by the physical D1 receipts.
   // Text, account identity and date alone are insufficient to classify a user note.
   const testThread='682bf278-9317-4944-be49-c6bfd906d950';
@@ -85,6 +86,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   document.addEventListener('ia-session-restored',event=>{
     if(typeof event.detail?.csrf!=='string')return;
     csrf=event.detail.csrf;if(sessionNotice)sessionNotice.hidden=true;
+    if(!navigationReady)void loadNavigation();
     refresh().then(()=>status('다시 연결했어요. 작성 중인 의견을 계속 저장할 수 있어요.'));
   });
   const reviewKey=(v,width)=>[v.screen,v.state,v.variant,width].join('/');
@@ -107,6 +109,21 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const e=Error(j.error||'FAILED');Object.assign(e,{status:r.status,current:j.current});throw e;
     }
     return j;
+  }
+  async function loadNavigation(){
+    try{navigation=await api(base+'/navigation');navigationReady=true;list();}
+    catch(e){navigationReady=false;status('메뉴 구성을 불러오지 못했습니다. 화면 검토는 계속할 수 있어요.');}
+  }
+  async function saveNavigation(layout){
+    if(!navigationReady||navigationPending)return;
+    const previous=navigation;navigation={...navigation,layout};navigationPending=true;list();
+    try{
+      navigation=await api(base+'/navigation',{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify({expectedRevision:previous.revision,layout})});
+      status('메뉴 구성을 저장했어요. 다른 기기에서도 이어집니다.');
+    }catch(e){
+      navigation=e.current||previous;
+      status(e.status===409?'다른 창에서 바뀐 메뉴를 불러왔어요. 이동이나 이름 변경을 다시 해 주세요.':'메뉴를 저장하지 못했어요. 변경 전 구성을 유지합니다.');
+    }finally{navigationPending=false;list();}
   }
   function showRecords(){const d=new Map();for(const r of records.values()){const t=r.data?.target;if(!t)continue;const k=reviewKey(t,t.viewport);if(!d.has(k))d.set(k,[]);d.get(k).push(r);}return d;}
   function stateInfo(row,width,index){
@@ -838,7 +855,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   $('audit-demo').onchange=()=>{list();syncPins();};
   for(const b of document.querySelectorAll('[data-comment-filter]')) b.onclick=()=>{commentFilter=b.dataset.commentFilter;notes();};
   shell=bootShell({
-    snapshot:()=>({screens,current,records,legacy}),select,notes,close:hideDrawer,width:widthFor,isTest,
+    snapshot:()=>({screens,current,records,legacy,navigation,navigationPending,navigationReady}),saveNavigation,select,notes,close:hideDrawer,width:widthFor,isTest,
     leaveEditor:()=>{remember();editor=null;},info:(r,w)=>stateInfo(r,w,showRecords()),
     liveFor:(r,w)=>showRecords().get(reviewKey(r,w))||[],
     loadPreview:async(row,width,unit,board)=>{
@@ -852,7 +869,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   });
   for(const b of document.querySelectorAll('[data-review]'))b.onclick=async()=>{if(!target||$('version').value!=='current')return;const val=b.dataset.review,id='verdict/'+reviewKey(target,target.viewport)+'/'+target.artifactHash;const currentReview=records.get(localKey('review',id));if(await write('review',id,{target,decision:val},currentReview?.revision??0))notes();};
   (async()=>{try{
-    const [me,a]=await Promise.all([api('/api/ia/auth/me'),api(base+'/artifact')]);csrf=me.csrf;document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:me}));screens=a.items;publication=a.publication||null;await loadDrafts(me.email);
+    const [me,a]=await Promise.all([api('/api/ia/auth/me'),api(base+'/artifact')]);csrf=me.csrf;document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:me}));screens=a.items;publication=a.publication||null;navigation={revision:0,layout:a.navigationDefaults};await Promise.all([loadDrafts(me.email),loadNavigation()]);
     const u=new URL(location.href);if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(u.searchParams.get('width')))$('width').value=u.searchParams.get('width');
     const requested=u.searchParams.get('version');
     if(['previous','prior-r3'].includes(requested))$('version').value=requested;

@@ -14,7 +14,7 @@ try:
         browser=pw.chromium.launch(executable_path=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium'))
         page=browser.new_page(viewport={'width':390,'height':844})
         page.set_default_timeout(9000)
-        page.goto(cfg['url']+'/ia?view=pricing-r3')
+        page.goto(cfg['url']+'/ia?view=pricing-r3&mode=contract')
         page.locator('input[name=email]').fill(cfg['email'])
         page.locator('input[name=password]').fill(cfg['pass'])
         page.locator('button[type=submit]').click()

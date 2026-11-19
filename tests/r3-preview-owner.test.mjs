@@ -34,7 +34,7 @@ function visit(request,config=env){
 const entry=(email)=>new Request(origin+'/ia/',{headers:email?{'Cf-Access-Jwt-Assertion':token(email)}:{}});
 test('preview document verifies assigned owner, creates host session, serves the original IA menu and an independent QA desk',async()=>{
   const page=await visit(entry(owner));assert.equal(page.status,200);
-  assert.match(page.headers.get('Set-Cookie'),/^__Host-ia_session=.*; Path=\/; Max-Age=1800; Secure; HttpOnly; SameSite=Strict$/);
+  assert.match(page.headers.get('Set-Cookie'),/^__Host-ia_session=.*; Path=\/; Max-Age=43200; Secure; HttpOnly; SameSite=Strict$/);
   assert.match(page.headers.get('X-Robots-Tag'),/noindex/);
   const html=await page.text();
   assert.match(html,/<nav id="nav">[\s\S]*?class="ia-tool-link" href="\/ia\?view=qa-lab" target="_blank" rel="noopener noreferrer"[\s\S]*?<\/nav>/);

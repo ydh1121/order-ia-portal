@@ -8,8 +8,10 @@ const url='https://private.invalid/api/ia/r3-qa/artifact';
 const read=async(q='')=>await(await serveR3Artifact(new Request(url+q))).json();
 const row=(id,width=390,version='current')=>read('?'+new URLSearchParams({id,width:String(width),version}));
 test('the QA menu covers the complete pinned state inventory without copying review decisions',async()=>{
-  const list=await read();assert.equal(list.items.length,498);assert.equal(new Set(list.items.map(r=>r.screen+'/'+r.state)).size,496);
-  assert.equal(new Set(list.items.map(r=>r.screen)).size,97);
+  const list=await read(),original=list.items.filter(row=>!row.supplemental);
+  assert.equal(original.length,498);assert.equal(new Set(original.map(r=>r.screen+'/'+r.state)).size,496);
+  assert.equal(new Set(original.map(r=>r.screen)).size,97);
+  assert.equal(list.items.filter(row=>row.supplemental).length,37);
   for(const entry of list.items){assert.equal('approved' in entry,false);assert.equal(typeof entry.hashes['390'],'string');}
 });
 test('stable target is bound to width, variant, release and generated artifact',async()=>{

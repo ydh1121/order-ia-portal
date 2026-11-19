@@ -38,7 +38,7 @@ test('signed challenge and synthetic 310000-round proof issue secure session',as
  const proof=await clientProof(pass,env.IA_OWNER_EMAIL,item);
  const r=await handleOwnerAuthRequest(proofReq(cookie,{email:env.IA_OWNER_EMAIL,nonce:item.nonce,proof}),env);
  assert.equal(r.status,200);
- for(const part of ['Secure','HttpOnly','SameSite=Strict','Max-Age=1800'])assert.ok(r.headers.get('Set-Cookie').includes(part));
+ for(const part of ['Secure','HttpOnly','SameSite=Strict','Max-Age=43200'])assert.ok(r.headers.get('Set-Cookie').includes(part));
  assert.match(r.headers.get('Set-Cookie'),/__Host-ia_session=/);
 });
 test('anonymous and forged-cookie API denied',async()=>{assert.equal((await handleIaRequest(req('/api/ia/screens'),env)).status,403);assert.equal((await handleIaRequest(req('/api/ia/screens',{cookie:'__Host-ia_session=forged'}),env)).status,403)});

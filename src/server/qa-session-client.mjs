@@ -1,5 +1,5 @@
 /** Review-session maintenance. This is serialized into the trusted QA shell only.
- * Activity extends an existing valid session; it never creates an authenticated
+ * Activity checks an existing fixed-deadline session; it never creates an authenticated
  * session or redirects away from a comment draft. The server enforces all limits.
  */
 export function installQaSession() {
@@ -10,8 +10,9 @@ export function installQaSession() {
   const valid=value=>value&&typeof value.csrf==='string'&&value.csrf.length>=20&&Number.isFinite(value.expiresAt);
   function use(value,restored=false){
     if(!valid(value))return false;
-    session={csrf:value.csrf,expiresAt:value.expiresAt,absoluteExpiresAt:value.absoluteExpiresAt};
+    session={csrf:value.csrf,expiresAt:value.expiresAt,absoluteExpiresAt:value.absoluteExpiresAt,serverNow:value.serverNow};
     const wasExpired=expired;expired=false;
+    emit('ia-session-updated',{...session});
     if(restored||wasExpired)emit('ia-session-restored',{...session});
     return true;
   }
