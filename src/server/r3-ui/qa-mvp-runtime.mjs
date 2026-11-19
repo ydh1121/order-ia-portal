@@ -95,6 +95,45 @@ export function registerQaMvp(montages={}) {
       $('[data-bloub-reset]').onclick=()=>{stop();status.textContent='재생할 상태를 선택해 주세요.';};
       cleanups.push(stop);
     }
+    if($('[data-qa-sales]')){
+      const section=$('[data-qa-sales]'),source=JSON.parse(section.dataset.salesFixture),channel=section.dataset.salesChannel;
+      const period=$('[data-sales-period]'),from=$('[data-sales-from]'),to=$('[data-sales-to]'),query=$('[data-sales-search]');
+      const keys=['orders','trays','ordered','paid','cancelled','refunded','net','unpaid'];
+      const blank=()=>Object.fromEntries(keys.map(key=>[key,0]));
+      const format=(value,key)=>value.toLocaleString('ko-KR')+(key==='orders'?'건':key==='trays'?'판':'원');
+      const calculate=order=>{
+        const ordered=order.trays*order.unitPrice,cancelled=order.cancelledTrays*order.unitPrice,net=order.paid-order.refunded;
+        return {orders:1,trays:order.trays,ordered,paid:order.paid,cancelled,refunded:order.refunded,net,unpaid:Math.max(0,ordered-cancelled-net)};
+      };
+      const cell=(row,value,tag='td')=>{const el=document.createElement(tag);el.textContent=value;row.append(el);return el;};
+      const render=()=>{
+        const invalid=Boolean(from.value&&to.value&&from.value>to.value),term=query.value.trim().toLocaleLowerCase('ko-KR');
+        $('[data-sales-error]').hidden=!invalid;
+        const selected=invalid?[]:source.filter(order=>order.channel===channel&&(!from.value||order.date>=from.value)&&(!to.value||order.date<=to.value)&&(!term||[order.id,order.targetId,order.target].join(' ').toLocaleLowerCase('ko-KR').includes(term)));
+        const total=blank(),groups=new Map();
+        for(const order of selected){
+          if(!groups.has(order.targetId))groups.set(order.targetId,{id:order.targetId,name:order.target,...blank()});
+          const amounts=calculate(order),group=groups.get(order.targetId);
+          for(const key of keys){total[key]+=amounts[key];group[key]+=amounts[key];}
+        }
+        const rows=$('[data-sales-rows]');rows.replaceChildren();
+        for(const group of [...groups.values()].sort((a,b)=>a.id.localeCompare(b.id))){
+          const tr=document.createElement('tr');tr.dataset.salesTarget=group.id;
+          const target=cell(tr,group.name,'th');target.scope='row';const id=document.createElement('small');id.textContent=group.id;target.append(id);
+          for(const key of keys){const td=cell(tr,format(group[key],key));td.dataset.salesValue=key;}rows.append(tr);
+        }
+        for(const key of keys){$('[data-sales-total='+key+']').textContent=format(total[key],key);const metric=$('[data-sales-metric='+key+']');if(metric)metric.textContent=format(total[key],key);}
+        $('[data-sales-count]').textContent=invalid?'집계 기간을 확인해 주세요.':groups.size+'개 '+(channel==='campaign'?'공동구매 회차':'사업장')+' · '+format(total.orders,'orders')+' · '+format(total.trays,'trays');
+        $('[data-sales-empty]').hidden=invalid||selected.length>0;
+        const detail=$('[data-sales-source-rows]');detail.replaceChildren();
+        for(const order of selected.slice().sort((a,b)=>b.date.localeCompare(a.date)||a.id.localeCompare(b.id))){
+          const tr=document.createElement('tr');for(const value of [order.id,order.date,order.target,format(order.trays,'trays'),format(order.unitPrice,'unitPrice'),format(order.paid,'paid'),format(order.cancelledTrays,'trays'),format(order.refunded,'refunded')])cell(tr,value);detail.append(tr);
+        }
+      };
+      period.onchange=()=>{if(period.value==='all'){from.value='';to.value='';}else if(period.value!=='custom'){from.value=period.value+'-01';to.value=period.value+(period.value==='2026-11'?'-30':'-31');}render();};
+      for(const input of [from,to]){input.oninput=()=>{period.value='custom';render();};input.onchange=input.oninput;}
+      query.oninput=render;render();
+    }
     if($('[data-revenue-form]')){
       const rows=$('[data-contributors]'),form=$('[data-revenue-form]'),sum=$('[data-rate-sum]');let serial=0;
       const recalc=()=>{
@@ -142,7 +181,7 @@ export function registerQaMvp(montages={}) {
     }
     return ()=>cleanups.forEach(f=>f());
   }
-  const ids=['component-library','admin-revenue-rules','member-email-templates','store-purchase','delivery-request','account-settings','admin-shipments','supplier-shipments'];
+  const ids=['component-library','admin-revenue-rules','member-email-templates','store-purchase','delivery-request','account-settings','admin-shipments','supplier-shipments','admin-analytics'];
   const prior=new Map((window.ORDER_DESIGN_MODULES||[]).map(module=>[module.id,module]));
   window.ORDER_DESIGN_MODULES=[...(window.ORDER_DESIGN_MODULES||[]).filter(m=>!ids.includes(m.id)),...ids.map(id=>({id,mount(root,state,api){
     const old=['admin-shipments','supplier-shipments'].includes(id)?prior.get(id)?.mount?.(root,state,api):null;

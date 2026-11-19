@@ -54,6 +54,7 @@ form.addEventListener('submit',async event=>{
           if(value&&/^[A-Za-z0-9_.:-]{1,160}$/.test(value))target.set(key,value);
         }
       }
+      if(view==='roles-r3'&&incoming.get('menu')==='consult')target.set('menu','consult');
       location.assign(target.size?'/ia?'+target:'/ia/');return;
     }
     let error='';if((response.headers.get('content-type')||'').includes('application/json'))try{error=(await response.json()).error||''}catch{}

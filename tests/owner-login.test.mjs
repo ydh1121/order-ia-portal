@@ -51,6 +51,12 @@ test('price links retain approved editor and version parameters across sign-in w
  const rejected=await onRequest({request:req('/ia?view=pricing-r3&mode=other&practice=2&priceVersion=https://evil.invalid&quote=%2F%2Fevil.invalid'),env});
  assert.equal(rejected.headers.get('location'),'/login?returnView=pricing-r3');
 });
+test('consultation links return to the existing workspace menu after sign-in',async()=>{
+ const r=await onRequest({request:req('/ia?view=roles-r3&menu=consult'),env});
+ assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login?returnView=roles-r3&menu=consult');
+ const bad=await onRequest({request:req('/ia?view=roles-r3&menu=https://evil.invalid'),env});
+ assert.equal(bad.headers.get('location'),'/login?returnView=roles-r3');
+});
 test('notes still deny writes',async()=>{const s=await issueSession(env);assert.equal((await handleIaRequest(req('/api/ia/notes',{method:'POST',cookie:s.cookie.split(';')[0]}),env)).status,405)});
 
 test('synthetic incorrect proof is JSON 401 not platform HTML',async()=>{

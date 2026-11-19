@@ -62,11 +62,17 @@ export async function serveR3Artifact(request,env){
     if(q.size)return json({error:'INVALID_CATALOG_REQUEST'},400);
     // Reference metadata belongs to the outer review tool. Rendered product documents keep their release identities.
     const additions=await getQaSupplemental(),byId=new Map(additions.rows.map(row=>[row.id,row]));
-    const inventory=[...catalog.map(row=>byId.get(row.id)||row),...additions.rows.filter(row=>row.supplemental)];
+    const supplemental=additions.rows.filter(row=>row.supplemental),sales=supplemental.filter(row=>row.screen==='admin-analytics');
+    let salesInserted=false;
+    const inventory=[...catalog.flatMap(row=>{
+      const selected=byId.get(row.id)||row;
+      if(row.screen==='admin-analytics'&&!salesInserted){salesInserted=true;return [...sales,selected];}
+      return [selected];
+    }),...supplemental.filter(row=>row.screen!=='admin-analytics')];
     const items=await Promise.all(inventory.map(async row=>{
       const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
-      return {hashes:await reviewHashes(row),id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,
+      return {hashes:await reviewHashes(row),id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':label,stateLabel,defaultWidth,phase,role,
         description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
         authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
     }));

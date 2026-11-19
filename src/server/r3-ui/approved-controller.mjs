@@ -23,9 +23,9 @@ export function bootApprovedShell(h) {
     ['첫 화면·견적',['onboarding','q1','q2','q3','q4','quote-review','quote-wait','quote-result','saved-quote']],
     ['회원·사업장',['signup','login','otp','password','terms','profile','account-settings','session-access','business','store-settings','proof','signature']],
     ['구매·주문·납품',['store-purchase','delivery-request','passes','application-status','store-home','customer-orders','order-detail','delivery-schedule','trade-documents','consultation','help-center','search']],
-    ['관리자 · 회원·상담·승인',['admin-access','admin-overview','admin-buyers','admin-business-review','admin-support','member-email-templates']],
+    ['관리자 · 회원·상담·승인',['admin-access','admin-overview','admin-buyers','admin-business-review','admin-negotiations','admin-support','member-email-templates']],
     ['관리자 · 주문·출고·증빙',['admin-orders','admin-payments','admin-shipments','supplier-shipments','admin-quotes','admin-documents','admin-billing','receipt']],
-    ['관리자 · 가격·매출·수익',['price-policy','admin-catalog','admin-price-approval','admin-analytics','admin-revenue-rules','admin-settlements','admin-policy','admin-audit']],
+    ['관리자 · 가격·매출·수익',['price-policy','admin-catalog','admin-price-approval','admin-analytics','admin-campaigns','admin-revenue-rules','admin-settlements','admin-policy','admin-audit']],
     ['컴포넌트·공통 자산',['component-library','common','drawer']]
   ];
   const mvpOrder=new Map(mvpSections.flatMap(([label,ids],section)=>ids.map((id,index)=>[id,{label,rank:section*100+index}])));
@@ -257,16 +257,17 @@ export function bootApprovedShell(h) {
     const s=h.snapshot();
     nav(s,rowCounts(s.screens,s.legacy,s.records));
     if (!s.current) return;
-    const row=s.current,width=h.width(row);
+    const row=s.current,width=h.width(row),future=(s.navigation?.layout?.assignments[row.screen]||(row.phase==='future'?'future':'mvp'))==='future';
     if(byId('business-candidates'))byId('business-candidates').hidden=!['business','store-settings','q3'].includes(row.screen);
+    if(byId('consult-candidates'))byId('consult-candidates').hidden=!['consultation','drawer','admin-support'].includes(row.screen);
     if (mobileChoices.includes(width)) mobileWidth=width;
     if (pcChoices.includes(width)) pcWidth=width;
     byId('mobile-width').value=String(mobileWidth);
     byId('desktop-width').value=String(pcWidth);
     byId('caption').textContent=row.label;
-    byId('current-description').textContent = (row.routeIds?.length?row.routeIds.join(' / ')+' · ':'')+(row.phase==='future'?'향후 서비스 검토':row.description||row.group);
+    byId('current-description').textContent = (row.routeIds?.length?row.routeIds.join(' / ')+' · ':'')+(future?'향후 서비스 검토 · ':'')+(row.description||row.group);
     byId('current-case').textContent=row.stateLabel;
-    byId('prototype-badge').textContent=row.phase==='future'?'향후 검토 · 운영 미확정':'디자인 예시';
+    byId('prototype-badge').textContent=future?'향후 검토 · 운영 미확정':'디자인 예시';
     chips(s,width);views(row,s.screens,width);
   }
   function historyLinks() {

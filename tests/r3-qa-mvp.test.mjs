@@ -22,7 +22,7 @@ test('MVP classification reuses every original screen exactly once and leaves fu
   const ids=[...new Set(catalog.map(r=>r.screen))],layout=defaultQaNavigation(ids);
   assert.deepEqual(layout.groups.map(g=>g.name),['1차 MVP','정식 - 향후 검토']);
   assert.equal(Object.keys(layout.assignments).length,97);
-  for(const id of ['onboarding','q3','admin-orders','admin-payments','admin-shipments','receipt','account-settings','common'])assert.equal(layout.assignments[id],'mvp',id);
+  for(const id of ['onboarding','q3','admin-orders','admin-payments','admin-shipments','admin-negotiations','admin-campaigns','receipt','account-settings','common'])assert.equal(layout.assignments[id],'mvp',id);
   for(const id of ['consumer-subscription','partner-storefront','admin-rights'])assert.equal(layout.assignments[id],'future',id);
   assert.throws(()=>normalizeQaNavigation({...layout,assignments:{...layout.assignments,invented:'mvp'}},ids));
   assert.throws(()=>normalizeQaNavigation({...layout,groups:[{id:'mvp',name:' '},{id:'future',name:'나중'}]},ids));
@@ -105,6 +105,42 @@ test('purchase preserves equal cash/card totals and revenue preview validates th
   b.root.querySelector('[data-revenue-note]').textContent='';b.root.querySelector('[data-name]').dispatchEvent(new b.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.match(b.root.querySelector('[data-revenue-note]').textContent,/이 검토 화면에 설정을 반영/);
   b.root.querySelector('[data-contributor-add]').click();assert.equal(b.root.querySelector('[data-contributors]').children.length,2);
   b.root.querySelectorAll('[data-rate]')[1].value='10';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(apply.disabled,true);b.w.close();
+});
+
+test('sales review calculates business and campaign totals, filters dates and targets, and never double subtracts refunds',async()=>{
+  for(const [state,expected] of [
+    ['business-sales',{orders:'5건',trays:'80판',ordered:'489,000원',paid:'366,000원',cancelled:'42,400원',refunded:'42,400원',net:'323,600원',unpaid:'123,000원'}],
+    ['campaign-sales',{orders:'4건',trays:'250판',ordered:'1,460,000원',paid:'1,252,000원',cancelled:'200,200원',refunded:'82,200원',net:'1,169,800원',unpaid:'90,000원'}]
+  ]){
+    const {w,root,calls}=await mount('admin-analytics/'+state+'/email');
+    const $=selector=>root.querySelector(selector),total=key=>$('[data-sales-total='+key+']').textContent;
+    for(const [key,value] of Object.entries(expected))assert.equal(total(key),value,state+' '+key);
+    assert.equal($('[data-sales-rows]').children.length,2);assert.match($('[data-sales-provenance]').textContent,/검토용.*실제.*연결되지/);
+    const search=$('[data-sales-search]'),period=$('[data-sales-period]');
+    search.value=state==='business-sales'?'첫 번째':'동네장터';search.dispatchEvent(new w.Event('input'));
+    assert.equal(total('net'),state==='business-sales'?'150,000원':'756,800원');assert.equal(total('unpaid'),state==='business-sales'?'30,000원':'90,000원');
+    search.value='';search.dispatchEvent(new w.Event('input'));period.value='2026-10';period.dispatchEvent(new w.Event('change'));
+    assert.equal(total('orders'),'1건');assert.equal(total('net'),state==='business-sales'?'49,600원':'348,000원');
+    period.value='2026-11';period.dispatchEvent(new w.Event('change'));
+    search.value=state==='business-sales'?'QA-B-1103':'QA-C-1104';search.dispatchEvent(new w.Event('input'));
+    assert.equal(total('orders'),'1건');assert.equal(total('net'),'0원');assert.equal(total('unpaid'),'0원','cancelled orders do not become unpaid after refund');
+    search.value='no-such-target';search.dispatchEvent(new w.Event('input'));assert.equal($('[data-sales-empty]').hidden,false);assert.equal(total('orders'),'0건');
+    search.value='';$('[data-sales-from]').value='2026-11-20';$('[data-sales-to]').value='2026-11-01';$('[data-sales-from]').dispatchEvent(new w.Event('input'));assert.equal($('[data-sales-error]').hidden,false);assert.equal(total('net'),'0원','invalid period must not retain stale totals');
+    period.value='all';period.dispatchEvent(new w.Event('change'));assert.equal($('[data-sales-error]').hidden,true);assert.equal(total('orders'),state==='business-sales'?'6건':'5건');
+    $('[data-qa-go=admin-analytics][data-qa-state='+(state==='business-sales'?'campaign-sales':'business-sales')+']').click();assert.deepEqual(calls.at(-1),['admin-analytics',state==='business-sales'?'campaign-sales':'business-sales']);
+    $('[data-qa-go='+(state==='business-sales'?'admin-negotiations':'admin-campaigns')+']').click();assert.deepEqual(calls.at(-1),state==='business-sales'?['admin-negotiations','list']:['admin-campaigns','normal']);w.close();
+  }
+});
+
+test('sales is the discoverable first analytics state while original analytics and consult workflow stay available',async()=>{
+  const list=await(await serveR3Artifact(new Request('https://x/api/ia/r3-qa/artifact'))).json(),analytics=list.items.filter(row=>row.screen==='admin-analytics');
+  assert.deepEqual(analytics.slice(0,2).map(row=>row.state),['business-sales','campaign-sales']);assert.equal(analytics[0].label,'매출 현황');
+  assert.deepEqual(analytics.filter(row=>!row.supplemental).map(row=>row.state),['normal','loading','partial','empty','denied']);
+  for(const row of catalog.filter(row=>row.screen==='admin-analytics')){
+    const doc=await(await artifact(row.id)).json();assert.equal(doc.hash,row.hashes[390]);assert.equal(doc.html.includes(gunzipSync(Buffer.from(frames[row.current],'base64')).toString()),true);
+  }
+  const shell=setup(approvedShellBody()),link=shell.window.document.querySelector('#consult-candidates a');
+  assert.equal(link.getAttribute('href'),'/ia?view=roles-r3&menu=consult');assert.equal(link.closest('iframe'),null);assert.equal(shell.window.document.querySelector('#frame').getAttribute('sandbox'),'allow-scripts');shell.window.close();
 });
 
 test('BLOUB composes original upper-to-result blocks and reduced-motion shows the selected result in one view',async()=>{

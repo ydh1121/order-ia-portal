@@ -7,7 +7,7 @@ export const mvpScreens = new Set([
   'delivery-schedule','trade-documents','price-policy','consultation','help-center',
   'admin-access','admin-overview','admin-buyers','admin-business-review','admin-quotes',
   'admin-billing','receipt','admin-orders','admin-payments','admin-shipments','admin-documents',
-  'admin-support','admin-settlements','admin-analytics','admin-price-approval','admin-catalog',
+  'admin-support','admin-settlements','admin-analytics','admin-price-approval','admin-catalog','admin-negotiations','admin-campaigns',
   'admin-policy','admin-audit','supplier-shipments','common','drawer',
   'component-library','admin-revenue-rules','member-email-templates','store-purchase'
 ]);

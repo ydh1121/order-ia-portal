@@ -34,6 +34,7 @@ export async function onRequest({request,env}){
        if(value&&/^[A-Za-z0-9_.:-]{1,160}$/.test(value))next.set(key,value);
      }
    }
+   if(r3View==='roles-r3'&&url.searchParams.get('menu')==='consult')next.set('menu','consult');
    return new Response(null,{status:302,headers:{...base,Location:next.size?'/login?'+next:'/login'}});
  }
  if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && isBusinessSurface(url)))return new Response(null,{status:403,headers:base});

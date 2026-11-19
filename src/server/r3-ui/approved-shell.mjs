@@ -86,6 +86,7 @@ export function approvedShellBody(){
       <div class="lab-stage-heading"><span id="stage-hint">화면에서 직접 조작하거나 위치 코멘트를 남겨 주세요.</span><span class="prototype-pill" id="prototype-badge">디자인 예시</span></div>
       <nav id="quote-candidates" hidden aria-label="실제 견적 입력"><a href="/ia?view=simple-r3#/form" target="_blank" rel="noopener">간편 견적 입력 열기</a> · <a href="/ia?view=detailed-r3#/form" target="_blank" rel="noopener">상세 견적 입력 열기</a></nav>
       <nav id="business-candidates" hidden aria-label="내 사업장"><a href="/ia?view=businesses-r3" target="_blank" rel="noopener">내 사업장 관리</a></nav>
+      <nav id="consult-candidates" hidden aria-label="상담 업무"><a href="/ia?view=roles-r3&amp;menu=consult" target="_blank" rel="noopener">상담 예약·내역 관리</a><p>기존 업무 화면에서 희망일·상담 대상·답변·처리 이력을 확인합니다. 연결된 사업장과 업무 권한에 따라 표시됩니다.</p></nav>
       <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><section id="snapshot" aria-label="선택한 견적"></section></section>
       <div class="preview-list" id="preview-list">
         <section class="preview-unit mobile" id="focus-unit" data-width="390" data-height="844">

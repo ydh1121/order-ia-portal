@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from urllib.parse import parse_qs, urlparse
 from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
 
@@ -53,6 +54,44 @@ def check(page, origin, width):
     open_sidebar(page)
     page.locator('#catalog-search').fill('admin-rights')
     expect(page.locator('[data-nav-group=future] [data-module="admin-rights"]')).to_have_count(1)
+
+    for module in ('admin-negotiations','admin-campaigns'):
+        page.locator('#catalog-search').fill(module)
+        expect(page.locator(f'[data-nav-group=mvp] [data-module="{module}"]')).to_have_count(1)
+        expect(page.locator(f'[data-nav-group=future] [data-module="{module}"]')).to_have_count(0)
+    frame = screens.screen('admin-analytics', 'business-sales')
+    expect(page.locator('#caption')).to_have_text('매출 현황')
+    expect(frame.locator('[data-sales-provenance]')).to_contain_text('실제 주문·결제·운영 매출에 연결되지 않았습니다.')
+    expect(frame.locator('[data-sales-total=net]')).to_have_text('323,600원')
+    expect(frame.locator('[data-sales-total=unpaid]')).to_have_text('123,000원')
+    frame.locator('[data-sales-search]').fill('첫 번째')
+    expect(frame.locator('[data-sales-total=orders]')).to_have_text('3건')
+    expect(frame.locator('[data-sales-total=net]')).to_have_text('150,000원')
+    frame.locator('[data-sales-search]').fill('')
+    frame.locator('[data-sales-period]').select_option('2026-10')
+    expect(frame.locator('[data-sales-total=net]')).to_have_text('49,600원')
+    frame.locator('[data-sales-period]').select_option('2026-11')
+    frame_click(page,frame.locator('[data-qa-state=campaign-sales]'))
+    expect(page.locator('#current-case')).to_have_text('공동구매 매출')
+    expect(frame.locator('[data-sales-total=net]')).to_have_text('1,169,800원')
+    expect(frame.locator('[data-sales-total=unpaid]')).to_have_text('90,000원')
+    frame.locator('[data-sales-search]').fill('동네장터')
+    expect(frame.locator('[data-sales-total=net]')).to_have_text('756,800원')
+    frame.locator('[data-sales-search]').fill('QA-C-1104')
+    expect(frame.locator('[data-sales-total=cancelled]')).to_have_text('118,000원')
+    expect(frame.locator('[data-sales-total=unpaid]')).to_have_text('0원')
+    frame_click(page,frame.locator('[data-qa-go=admin-campaigns]'))
+    expect(page.locator('#caption')).to_have_text('공동구매 실적심사')
+    expect(page.locator('#prototype-badge')).to_have_text('디자인 예시')
+    screens.current_module = None
+    frame = screens.screen('admin-analytics', 'business-sales')
+    frame_click(page,frame.locator('[data-qa-go=admin-negotiations]'))
+    expect(page.locator('#caption')).to_have_text('네고·구매증빙 심사')
+    expect(page.locator('#prototype-badge')).to_have_text('디자인 예시')
+    screens.current_module = None
+    frame = screens.screen('consultation', 'choose')
+    expect(page.locator('#consult-candidates')).to_be_visible()
+    expect(page.locator('#consult-candidates a')).to_have_attribute('href','/ia?view=roles-r3&menu=consult')
 
     frame = screens.screen('component-library', 'asset-email')
     expect(frame.get_by_role('heading', name='이메일 입력', exact=True)).to_be_visible()
@@ -167,7 +206,7 @@ def check(page, origin, width):
     frame_click(page,frame.locator('[data-revenue-apply]'))
     expect(frame.locator('[data-revenue-note]')).to_contain_text('이 검토 화면에 설정을 반영했어요.')
     expect(page.locator('#frame')).to_have_attribute('sandbox','allow-scripts')
-    print(json.dumps({'width':width,'navigationPersisted':True,'assetReviewResolved':True,'artMotionControls':True,'artReducedMotion':True,'passFlippedInPlace':True,'withdrawalGuarded':True,'trackingPreview':True,'trackingEnter':True,'purchasePreview':True,'revenuePreview':True,'sandboxFormsDisabled':True}))
+    print(json.dumps({'width':width,'navigationPersisted':True,'purchaseProofMvp':True,'salesTabs':True,'salesFiltersAndTotals':True,'salesDrilldown':True,'consultWorkflowLink':True,'assetReviewResolved':True,'artMotionControls':True,'artReducedMotion':True,'passFlippedInPlace':True,'withdrawalGuarded':True,'trackingPreview':True,'trackingEnter':True,'purchasePreview':True,'revenuePreview':True,'sandboxFormsDisabled':True}))
 
 
 def main():
@@ -189,6 +228,22 @@ def main():
                 check(page,fixture['url'],width)
                 assert not errors,errors
                 context.close()
+            # Verify the real public login client preserves the consult destination.
+            # This owner has no business membership; the existing access boundary stays in force.
+            context=browser.new_context(viewport={'width':390,'height':900},reduced_motion='reduce')
+            page=context.new_page()
+            page.goto(fixture['url']+'/ia?view=roles-r3&menu=consult')
+            expect(page.locator('input[name=email]')).to_be_visible()
+            assert parse_qs(urlparse(page.url).query).get('menu')==['consult']
+            page.locator('input[name=email]').fill(fixture['email'])
+            page.locator('input[name=password]').fill(fixture['pass'])
+            page.locator('button[type=submit]').click()
+            page.wait_for_url('**/ia?view=roles-r3&menu=consult')
+            assert parse_qs(urlparse(page.url).query).get('menu')==['consult']
+            expect(page.get_by_role('heading',name='내 업무',exact=True)).to_be_visible()
+            expect(page.locator('#status')).to_have_text('이 계정에 연결된 업무 권한이 없습니다.')
+            print(json.dumps({'consultLoginReturnPreserved':True,'membershipBoundaryPreserved':True}))
+            context.close()
             browser.close()
     finally:
         host.terminate();host.wait(timeout=5)
