@@ -4,7 +4,7 @@ import {quoteCommit} from './r3-product-sources.mjs';
 import {getQaSupplemental} from './r3-qa-assets.mjs';
 
 // Issue a fresh candidate ID before publishing a different IA commit, even with an identical product catalog.
-const candidateId = 'MSG0585-R3-20261120-MVP-PRICE-03';
+const candidateId = 'MSG0585-R3-20261120-MVP-PRICE-04';
 let digest;
 
 export async function publicationIdentity() {

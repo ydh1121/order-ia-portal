@@ -17,6 +17,28 @@ def open_sidebar(page):
         page.locator('#open').click()
 
 
+def check_sales_layout(frame, width):
+    geometry=frame.locator('.qa-sales-summary').evaluate("""el=>{
+        const cards=[...el.children].map(card=>({
+            width:card.getBoundingClientRect().width,
+            top:card.getBoundingClientRect().top,
+            amountFits:card.querySelector('dd').scrollWidth<=card.querySelector('dd').clientWidth+1,
+            amountSpace:getComputedStyle(card.querySelector('dd')).whiteSpace
+        }));
+        const grid=el.getBoundingClientRect(),page=el.closest('.qa-mvp-page').getBoundingClientRect();
+        return {cards,columns:getComputedStyle(el).gridTemplateColumns.split(/\\s+/).length,
+            withinPage:grid.left>=page.left-.5&&grid.right<=page.right+.5,
+            documentFits:document.documentElement.scrollWidth<=innerWidth+1};
+    }""")
+    expected_columns=6 if width>=1100 else 3 if width>=640 else 2
+    assert geometry['columns']==expected_columns,geometry
+    assert len(geometry['cards'])==6,geometry
+    widths=[card['width'] for card in geometry['cards']]
+    assert max(widths)-min(widths)<1,geometry
+    assert geometry['withinPage'] and geometry['documentFits'],geometry
+    assert all(card['amountFits'] and card['amountSpace']=='nowrap' for card in geometry['cards']),geometry
+
+
 def check(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     expect(page.locator('#frame')).to_have_attribute('sandbox','allow-scripts')
@@ -64,6 +86,7 @@ def check(page, origin, width):
     expect(frame.locator('[data-sales-provenance]')).to_contain_text('실제 주문·결제·운영 매출에 연결되지 않았습니다.')
     expect(frame.locator('[data-sales-total=net]')).to_have_text('323,600원')
     expect(frame.locator('[data-sales-total=unpaid]')).to_have_text('123,000원')
+    check_sales_layout(frame,width)
     frame.locator('[data-sales-search]').fill('첫 번째')
     expect(frame.locator('[data-sales-total=orders]')).to_have_text('3건')
     expect(frame.locator('[data-sales-total=net]')).to_have_text('150,000원')
@@ -75,6 +98,7 @@ def check(page, origin, width):
     expect(page.locator('#current-case')).to_have_text('공동구매 매출')
     expect(frame.locator('[data-sales-total=net]')).to_have_text('1,169,800원')
     expect(frame.locator('[data-sales-total=unpaid]')).to_have_text('90,000원')
+    check_sales_layout(frame,width)
     frame.locator('[data-sales-search]').fill('동네장터')
     expect(frame.locator('[data-sales-total=net]')).to_have_text('756,800원')
     frame.locator('[data-sales-search]').fill('QA-C-1104')
@@ -206,7 +230,7 @@ def check(page, origin, width):
     frame_click(page,frame.locator('[data-revenue-apply]'))
     expect(frame.locator('[data-revenue-note]')).to_contain_text('이 검토 화면에 설정을 반영했어요.')
     expect(page.locator('#frame')).to_have_attribute('sandbox','allow-scripts')
-    print(json.dumps({'width':width,'navigationPersisted':True,'purchaseProofMvp':True,'salesTabs':True,'salesFiltersAndTotals':True,'salesDrilldown':True,'consultWorkflowLink':True,'assetReviewResolved':True,'artMotionControls':True,'artReducedMotion':True,'passFlippedInPlace':True,'withdrawalGuarded':True,'trackingPreview':True,'trackingEnter':True,'purchasePreview':True,'revenuePreview':True,'sandboxFormsDisabled':True}))
+    print(json.dumps({'width':width,'navigationPersisted':True,'purchaseProofMvp':True,'salesTabs':True,'salesFiltersAndTotals':True,'salesEqualCardWidthsAndNoWrap':True,'salesDrilldown':True,'consultWorkflowLink':True,'assetReviewResolved':True,'artMotionControls':True,'artReducedMotion':True,'passFlippedInPlace':True,'withdrawalGuarded':True,'trackingPreview':True,'trackingEnter':True,'purchasePreview':True,'revenuePreview':True,'sandboxFormsDisabled':True}))
 
 
 def main():
