@@ -126,10 +126,12 @@ export function mountAsyncMotion(root,{source='server'}={}){
 // Text inputs retain their native selection and IME implementation. Native customizable
 // selects supply top-layer layout, focus, type-ahead and platform fallback.
 export const editorMotionCss = `
-#price-workspace .r3-floating{position:relative;display:grid;min-width:0}
-#price-workspace .r3-floating>input{min-height:3.1rem;padding:.98rem .6rem .18rem}
-#price-workspace .r3-floating-title{position:absolute;z-index:1;left:.62rem;top:50%;transform:translateY(-50%);transform-origin:left center;pointer-events:none;color:#465162;line-height:1.1;transition:transform var(--duration-quick,150ms) var(--ease-smooth-out,ease-out),top var(--duration-quick,150ms) ease-out}
-#price-workspace .r3-floating:has(>input:focus,>input:not(:placeholder-shown))>.r3-floating-title{top:.35rem;transform:translateY(0) scale(.77)}
+#price-workspace .r3-floating{display:grid;grid-template-rows:auto auto;align-content:center;gap:.1rem;min-width:0;min-height:3.1rem;padding:.25rem .6rem;border:1px solid #cdd5e1;border-radius:.4rem;background:white;cursor:text}
+#price-workspace .r3-floating>input{grid-row:2;min-height:0;height:1.5em;line-height:1.5;padding:0;border:0;background:transparent}
+#price-workspace .r3-floating-title{grid-row:1;min-width:0;overflow-wrap:anywhere;pointer-events:none;color:#465162;font-size:.85em;line-height:1.15;transform:translateY(.8rem);transition:transform var(--duration-quick,150ms) var(--ease-smooth-out,ease-out)}
+#price-workspace .r3-floating:has(>input:focus,>input:not(:placeholder-shown))>.r3-floating-title{transform:none}
+#price-workspace .r3-floating:has(>input:focus-visible){outline:2px solid currentColor;outline-offset:2px}
+#price-workspace .r3-floating>input:focus-visible{outline:0}
 #price-workspace .r3-floating>input:not(:focus):placeholder-shown::placeholder{opacity:0}
 #price-workspace .price-matrix input.mx-error{animation:r3-field-error 280ms linear}
 @keyframes r3-field-error{0%,100%{transform:translateX(0)}28.57%{transform:translateX(var(--shake-distance,6px));animation-timing-function:ease-out}57.14%{transform:translateX(calc(-1 * var(--shake-distance,6px)));animation-timing-function:ease-out}78.57%{transform:translateX(var(--shake-overshoot,2px))}}

@@ -79,6 +79,21 @@ def exercise_personal(page, reopen, origin, label, width):
     entry=origin+'/ia?view=pricing-r3'
     grid=page.locator('#matrix')
     expect(page.locator('#personalProduct')).to_be_visible()
+    original_viewport = page.viewport_size
+    minimum = page.locator('#personalMinimum')
+    expect(minimum).to_have_value('10')
+    for field_width in (390, 1363):
+        page.set_viewport_size({'width': field_width, 'height': original_viewport['height']})
+        geometry = minimum.evaluate('''input => {
+            const label = input.closest('label');
+            const caption = label.querySelector('.r3-floating-title').getBoundingClientRect();
+            const field = label.getBoundingClientRect();
+            return {captionBottom: caption.bottom, valueTop: input.getBoundingClientRect().top,
+                    captionRight: caption.right, fieldRight: field.right, hitHeight: field.height};
+        }''')
+        assert geometry['captionBottom'] < geometry['valueTop'], (field_width, geometry)
+        assert geometry['captionRight'] <= geometry['fieldRight'] and geometry['hitHeight'] >= 44
+    page.set_viewport_size(original_viewport)
     expect(grid.locator('tbody tr')).to_have_count(19)
     assert all(row[2:]==['']*8 for row in matrix_values(page))
     page.locator('#personalSupplier').fill('입력 검토 공급처')
