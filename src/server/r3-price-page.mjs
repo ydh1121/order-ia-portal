@@ -35,7 +35,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   const actionNames={create:'초안 생성',edit:'수정',submit:'검토 요청',approve:'승인',return:'보완 요청',withdraw:'철회'};
   const scope=()=>state.scope[Number($('scope').value)];
   const dirty=()=>{state.dirty=true;};
-  for(const id of ['pricing-fields','staff-settings-fields'])$(id).addEventListener('input',e=>{if(!['egg-shell','pack-size'].includes(e.target.id))dirty();});
+  for(const id of ['pricing-fields','staff-settings-fields','price-content'])$(id).addEventListener('input',e=>{if(!['egg-shell','pack-size'].includes(e.target.id))dirty();});
   $('pricing-editor').addEventListener('click',e=>{if(e.target.closest('[data-mx=apply],[data-mx=copy],[data-mx=remove],[data-mx=add],#addRegion'))dirty();});
   window.addEventListener('beforeunload',e=>{if(state.dirty){e.preventDefault();e.returnValue='';}});
   const changeAllowed=()=>!state.dirty||window.confirm('저장하지 않은 수정 내용을 닫을까요?');
