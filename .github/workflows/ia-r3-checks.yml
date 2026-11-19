@@ -19,10 +19,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install DOM and bundler test dependencies
+        run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |
-          npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
           node tests/r3-bundled-clients.mjs
           node tests/r3-admin-common-dom.mjs
           node tests/r3-async-motion-dom.mjs
