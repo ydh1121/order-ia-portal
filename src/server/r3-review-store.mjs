@@ -128,8 +128,14 @@ async function write(db,actor,b) {
         AND p.action NOT IN (${b.kind==='feedback'?"'delete'":"'delete','resolve'"})
         AND json_extract(p.data,'$.target.screen')=? AND json_extract(p.data,'$.target.state')=?
         AND json_extract(p.data,'$.target.variant')=? AND json_extract(p.data,'$.target.viewport')=?
-        ${b.kind==='feedback'?'':"AND json_extract(p.data,'$.target.artifactHash')=?"})`;
-      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,...(b.kind==='feedback'?[]:[target.artifactHash])];
+        ${b.kind==='feedback'?`AND (json_extract(p.data,'$.target.artifactHash')<>? OR
+          (?='resolved' AND p.action='resolve') OR (?<>'resolved' AND p.action<>'resolve'))`
+          :"AND json_extract(p.data,'$.target.artifactHash')=?"})`;
+      // The same-artifact status follows the latest source action atomically.
+      // A late second request must not conceal a concurrent resolve or reopen.
+      // Comments from older artifacts keep their independent review status.
+      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,target.artifactHash,
+        ...(b.kind==='feedback'?[b.data.status,b.data.status]:[])];
     }
   }
   const insertion=await db.prepare(`INSERT OR IGNORE INTO qa_review_events

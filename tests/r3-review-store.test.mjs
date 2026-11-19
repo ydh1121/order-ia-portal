@@ -198,3 +198,28 @@ test('a prior artifact comment can be reviewed against the current screen withou
   const changedParent=await send({...row,expectedRevision:1,idempotencyKey:'immutable-parent',data:{...row.data,parent:{origin:'current',id:'fixture'}}});
   assert.equal(changedParent.status,400);
 });
+
+test('late feedback cannot conceal a concurrent source reopen or resolve on the same artifact',async()=>{
+  const source={...event('status-race-create','두 탭에서 검토한 의견'),id:'status-race-comment'};
+  const change=(action,revision,key)=>send({...source,action,reason:'다른 탭에서 확인',expectedRevision:revision,idempotencyKey:key});
+  const feedback=(status,revision,key)=>send({release:'MSG0585-R3',kind:'feedback',id:'status-race-feedback',
+    expectedRevision:revision,idempotencyKey:key,data:{target,parent:{origin:'current',id:source.id},status}});
+  assert.equal((await send(source)).status,200);
+  assert.equal((await change('resolve',1,'status-race-a-resolve')).status,200);
+  assert.equal((await change('reopen',2,'status-race-b-reopen')).status,200);
+  assert.equal((await feedback('resolved',0,'status-race-a-late-feedback')).status,409);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM qa_review_events WHERE kind='feedback' AND id='status-race-feedback'").get().n,0);
+  let current=db.prepare("SELECT action,revision FROM qa_review_events WHERE kind='comment' AND id=? ORDER BY revision DESC LIMIT 1").get(source.id);
+  assert.equal(current.action,'reopen');assert.equal(current.revision,3);
+  assert((await (await read('/records?release=MSG0585-R3&unresolved=1')).json()).items.some(r=>r.id===source.id));
+
+  assert.equal((await feedback('unresolved',0,'status-race-current-feedback')).status,200);
+  assert.equal((await change('resolve',3,'status-race-c-resolve')).status,200);
+  assert.equal((await feedback('recheck',1,'status-race-b-late-feedback')).status,409);
+  const retained=db.prepare("SELECT revision,data FROM qa_review_events WHERE kind='feedback' AND id='status-race-feedback' ORDER BY revision DESC LIMIT 1").get();
+  assert.equal(retained.revision,1);assert.equal(JSON.parse(retained.data).status,'unresolved');
+  assert(!(await (await read('/records?release=MSG0585-R3&unresolved=1')).json()).items.some(r=>r.id===source.id));
+  assert.equal((await feedback('resolved',1,'status-race-final-feedback')).status,200);
+  current=db.prepare("SELECT action,revision FROM qa_review_events WHERE kind='comment' AND id=? ORDER BY revision DESC LIMIT 1").get(source.id);
+  assert.equal(current.action,'resolve');assert.equal(current.revision,4);
+});

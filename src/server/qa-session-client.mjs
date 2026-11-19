@@ -3,7 +3,8 @@
  * session or redirects away from a comment draft. The server enforces all limits.
  */
 export function installQaSession() {
-  let session=null,expired=false,inFlight=false,lastActivity=Date.now(),lastAttempt=0,lastProbe=0;
+  const clock=()=>performance.now();
+  let session=null,expired=false,inFlight=false,lastActivity=clock(),lastAttempt=0,lastProbe=-Infinity;
   const ACTIVITY_WINDOW=5*60*1000,REFRESH_INTERVAL=4*60*1000;
   const emit=(name,detail)=>document.dispatchEvent(new CustomEvent(name,{detail}));
   const valid=value=>value&&typeof value.csrf==='string'&&value.csrf.length>=20&&Number.isFinite(value.expiresAt);
@@ -29,8 +30,8 @@ export function installQaSession() {
     return value;
   }
   async function probe(){
-    if(inFlight||document.visibilityState==='hidden'||Date.now()-lastProbe<1500)return;
-    lastProbe=Date.now();inFlight=true;
+    if(inFlight||document.visibilityState==='hidden'||clock()-lastProbe<1500)return;
+    lastProbe=clock();inFlight=true;
     try{
       const response=await fetch('/api/ia/auth/me',{method:'GET',credentials:'same-origin',cache:'no-store',redirect:'manual'});
       const value=await read(response);if(value?.authenticated)use(value,true);
@@ -38,10 +39,12 @@ export function installQaSession() {
     finally{inFlight=false;}
   }
   async function maintain(){
-    const now=Date.now();
+    const now=clock();
     if(!session||inFlight||document.visibilityState==='hidden')return;
     if(expired)return;
-    if(session.expiresAt*1000<=now){expire('SESSION_EXPIRED');return;}
+    // The device clock can differ from the server or change during review.
+    // expiresAt is only a renewal hint: only an authenticated server response
+    // may declare expiry. Monotonic intervals also keep retries bounded offline.
     if(now-lastActivity>ACTIVITY_WINDOW||now-lastAttempt<REFRESH_INTERVAL)return;
     lastAttempt=now;inFlight=true;let staleCsrf=false;
     try{
@@ -53,14 +56,14 @@ export function installQaSession() {
     finally{inFlight=false;}
     if(staleCsrf)await probe();
   }
-  function activity(){lastActivity=Date.now();if(expired)void probe();else if(session&&session.expiresAt*1000-lastActivity<5*60*1000)void maintain();}
+  function activity(){lastActivity=clock();if(expired)void probe();else if(session&&session.expiresAt*1000-Date.now()<5*60*1000)void maintain();}
   const activityEvents=['pointerdown','keydown','input','wheel','touchstart','ia-session-activity'];
   for(const name of activityEvents)document.addEventListener(name,activity,{capture:true,passive:true});
   const ready=event=>{if(use(event.detail)){
-    const now=Date.now();lastActivity=now;
+    const now=clock();lastActivity=now;
     // Reading /auth/me is not a renewal. An already old cookie must be
     // eligible before the four-minute cooldown and next timer tick expire it.
-    lastAttempt=now-(session.expiresAt*1000-now<=REFRESH_INTERVAL+60000?REFRESH_INTERVAL:0);
+    lastAttempt=now-(session.expiresAt*1000-Date.now()<=REFRESH_INTERVAL+60000?REFRESH_INTERVAL:0);
     void maintain();
   }};
   const externalExpiry=event=>expire(event.detail?.reason||'AUTHENTICATION_REQUIRED');

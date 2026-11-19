@@ -137,6 +137,7 @@ test('position comment mode stays active for consecutive saved pins and Escape e
     emit('point',{...point,x:.4+index*.1});$('body-text').value=text;$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));$('save').click();
     await until(()=>writes.length===index+1&&$('drawer').hidden);
     assert.equal($('new').getAttribute('aria-pressed'),'true');assert.equal(messages.filter(m=>m.type==='mode').at(-1).payload,true);
+    assert.equal($('live').textContent,'저장됨 · 다음 위치를 선택하세요.');
   }
   assert.notEqual(writes[0].body.id,writes[1].body.id);assert.deepEqual(writes.map(r=>r.body.data.body),['첫 번째 위치','두 번째 위치']);
   w.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal($('new').getAttribute('aria-pressed'),'false');

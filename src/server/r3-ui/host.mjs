@@ -234,7 +234,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([view,parent])));
       const id=prior?.id||'feedback:'+Array.from(new Uint8Array(hash),n=>n.toString(16).padStart(2,'0')).join('');
       if(action&&!await write('comment',source.id,source.data,source.revision,action,reason))return;
-      await write('feedback',id,{target:view,parent,status:value},prior?.revision??0);
+      if(!await write('feedback',id,{target:view,parent,status:value},prior?.revision??0))await refresh();
       // A failed status write can follow a confirmed source event. Render that
       // event so the reviewer sees the actual state and can safely retry.
       if(target&&match(target,view,view.viewport)&&target.artifactHash===view.artifactHash)notes(subset);
@@ -434,7 +434,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       editor.dirty=false;edits.delete(draftKey(editor.id));persistDrafts();
       if(draft){editor.draftRevision=rev+1;return;}
       const again=continuousPoints&&Boolean(editor.anchor)&&!editor.parent&&editor.action!=='relocate';
-      editor=null;if(again)edit(null,null,true);else notes();
+      editor=null;
+      if(again){edit(null,null,true);status('저장됨 · 다음 위치를 선택하세요.');}
+      else notes();
     }
   }
   // Actual snapshot values stay in the trusted host and never enter comments, HTML exports or the frame.
