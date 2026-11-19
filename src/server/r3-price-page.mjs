@@ -1,3 +1,4 @@
+import {mountPriceShell,priceShellCss} from './r3-price-shell.mjs';
 import {mountMagneticAction} from './order-engine/browser/magnetic-action.mjs';
 import {quoteJellyRuntime} from './r3-product-sources.mjs';
 import {browserFunction} from './browser-source.mjs';
@@ -10,12 +11,13 @@ import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mj
 import {mountPriceMatrix,matrixMarkup,matrixCss} from './r3-matrix-editor.mjs';
 import {mountCarrierEditor,carrierMarkup,carrierCss} from './r3-carrier-page.mjs';
 
-function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeModel,mountMatrix,mountCarrier,mountMotion,bindEditors) {
+function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeModel,mountMatrix,mountCarrier,mountMotion,bindEditors,makeShell) {
   const $=id=>document.getElementById(id);
   const state={csrf:'',scope:[],versions:[],country:[],regionVersion:'',current:null,pending:null,operation:false,dirty:false,practice:new URLSearchParams(location.search).get('practice')==='1'};
   const motion=mountMotion(document,{source:state.practice?'server-practice':'server'});
   const editorMotion=bindEditors($('price-workspace'));
-  window.addEventListener('pagehide',()=>{editorMotion.destroy();motion.destroy();},{once:true});
+  const priceShell=makeShell(document);
+  window.addEventListener('pagehide',()=>{priceShell.destroy();editorMotion.destroy();motion.destroy();},{once:true});
   const number=v=>v===''?null:Number(v), say=t=>{$('notice').textContent=t;};
   const opts=(...v)=>[['','선택'],...v];
   const field=(group,key,label,value='',type='text',options=null)=>{
@@ -33,7 +35,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   const actionNames={create:'초안 생성',edit:'수정',submit:'검토 요청',approve:'승인',return:'보완 요청',withdraw:'철회'};
   const scope=()=>state.scope[Number($('scope').value)];
   const dirty=()=>{state.dirty=true;};
-  $('pricing-fields').addEventListener('input',e=>{if(!['egg-shell','pack-size'].includes(e.target.id))dirty();});
+  for(const id of ['pricing-fields','staff-settings-fields'])$(id).addEventListener('input',e=>{if(!['egg-shell','pack-size'].includes(e.target.id))dirty();});
   $('pricing-editor').addEventListener('click',e=>{if(e.target.closest('[data-mx=apply],[data-mx=copy],[data-mx=remove],[data-mx=add],#addRegion'))dirty();});
   window.addEventListener('beforeunload',e=>{if(state.dirty){e.preventDefault();e.returnValue='';}});
   const changeAllowed=()=>!state.dirty||window.confirm('저장하지 않은 수정 내용을 닫을까요?');
@@ -52,7 +54,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   Object.assign(localized,{FREIGHT_QUOTE_REQUIRED:'이번 납품에 적용할 확정 운임이 없습니다.',FREIGHT_MANUAL_INELIGIBLE:'직접 지정한 계약의 적용 조건과 사유를 확인해 주세요.',FREIGHT_SURCHARGE_OVERLAP:'같은 지역의 할증을 두 번 적용할 수 없습니다.',FREIGHT_SPLIT_NOT_ALLOWED:'이 정책은 같은 사업장·회차의 분할 출고를 허용하지 않습니다.'});
   function busy(active){
     state.operation=active;
-    for(const id of ['pricing-editor','staff-desk','price-registration','personal-panel'])$(id).inert=active;
+    for(const id of ['pricing-editor','staff-desk','price-registration','personal-panel','staffSettings','personalSettings'])$(id).inert=active;
     const saveButton=document.querySelector('[data-action="save"]');saveButton.disabled=active;
     for(const id of ['registerProduct','requestConnection','openPersonalDraft','savePersonalDraft']){
       $(id).disabled=active;
@@ -108,8 +110,8 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
     selectOptions($('setupOrg'),orgs.map(org=>[org.supplierId,org.supplierName||((org.role==='OPERATOR'?'운영':'공급처')+' 소속'+(orgs.length>1?' · '+org.supplierId:''))]),selected);
     setupOrganization();$('productSetup').hidden=!orgs.length;
     $('price-registration').hidden=false;
-    $('price-registration').open=(!state.scope.length||Boolean(query.get('priceRequest'))||Boolean(query.get('join')));
-    $('registrationTitle').textContent=orgs.length?'공급처·출고장·상품 등록':'담당 가격표 연결';
+    $('price-registration').open=Boolean(query.get('priceRequest'))||Boolean(query.get('join'));
+    $('registrationTitle').textContent=orgs.length?'공급처·상품 등록':'공급처 연결';
     $('connectionForm').hidden=orgs.length>0&&!query.has('join');
     $('connectionStatus').replaceChildren();
     for(const row of registration.own){
@@ -233,7 +235,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
       const saved=await commit($('savePersonalDraft'),'/personal-draft',{...body,requestKey:personal.pending.key});
       // If the previous response was lost and a different tab already advanced, reopen the latest server revision.
       const latest=await api('/personal-draft');paintPersonal(latest.revision>=saved.revision?latest:saved,true);
-      say('본인 입력 초안을 저장했습니다.');
+      say('저장했습니다.');
     }catch(e){
       if(e.message==='REVISION_CONFLICT'){const latest=await api('/personal-draft');renderConflict(latest);return;}
       throw e;
@@ -339,7 +341,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
       const b=document.querySelector('[data-action="'+a+'"]');b.hidden=!enabled;
     }
     $('next').disabled=!v;
-    $('pricing-fields').disabled=locked;
+    $('pricing-fields').disabled=locked;$('staff-settings-fields').disabled=locked;
     $('scope').disabled=Boolean(v);
     $('egg-shell').disabled=Boolean(v);$('pack-size').disabled=Boolean(v);
     state.dirty=false;
@@ -526,7 +528,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   document.addEventListener('visibilitychange',()=>{if(document.hidden){clearQuote();$('buyerSite').value='';}});
   $('practice').hidden=!state.practice;
   $('switchPractice').href=state.practice?'/ia?view=pricing-r3':'/ia?view=pricing-r3&practice=1';
-  $('switchPractice').textContent=state.practice?'업무 화면으로':'합성 역할 체험';
+  $('switchPractice').textContent=state.practice?'가격표로 돌아가기':'연습 화면';
   $('startPractice').onclick=run(async()=>{await api('/start',{});await desk();paint(null);await buyerSites();say('연습 공간을 열었습니다.');});
   $('practiceSample').onclick=()=>{
     if(!state.practice||!scope()?.definition||state.current)return;
@@ -561,15 +563,14 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
 export function renderR3PricePage(nonce) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>계란 가격표 | Order</title>
 <style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}#price-workspace{--r3-skeleton-size:min(19rem,46vh)}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}html{scrollbar-width:none}body{font-family:system-ui,sans-serif}button{background:#edf1f6;border:0;font-weight:600}button.primary{background:#2455ce;color:white}input,select{border:1px solid #cdd5e1;background:white}section{border-top:1px solid #e0e6ef}.desk-heading,.bar,.weekdays{display:flex;flex-wrap:wrap;gap:.625rem}.desk-heading a{line-height:44px;color:#354965}.editor-fields{display:block;min-width:0;border:0;margin:0;padding:0}.weekdays label{display:inline-flex;align-items:center;flex:none;gap:.25rem}.weekdays input{width:1rem;min-height:1rem}.fields label,.bar label{flex-basis:9rem}pre{overflow:auto;white-space:pre-wrap}.matrix-scroll,body,main{scrollbar-width:none}.price-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;position:sticky;top:0;background:white;z-index:4;border-bottom:1px solid #d4dce5;padding:.45rem 0}.price-tabs{display:flex;gap:.25rem}.price-tabs button{background:transparent;color:#526074}.price-tabs button[aria-pressed=true]{color:#172b4a;background:#e8edf5}.desk-heading>span{font-weight:bold}#notice:empty{margin:0}#price-registration>summary{font-weight:650}#price-registration input:read-only{background:#f2f4f7}.subtle{color:#526074;font-size:.9rem}.price-title{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.price-title p{margin:0;color:#526074}.price-title h1{margin:.5rem 0}.product-setup{display:grid;gap:.75rem;margin-top:.5rem;padding-bottom:.5rem}.product-setup button{justify-self:start}.price-meta{margin:.5rem 0}.price-meta label{flex-basis:8rem}.desk-heading a{line-height:1.4}details:has(>summary){padding:.65rem 0}.desk-heading{align-items:center}.connection-list:empty{display:none}#practice-entry{font-size:.85rem}#practice-entry a{color:#657184}@media(max-width:680px){body{padding:.75rem}.price-title h1{font-size:1.5rem}.product-setup .fields{display:grid;grid-template-columns:1fr 1fr}.price-meta{display:grid;grid-template-columns:1fr 1fr}}
-${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${waitSceneCss}</style></head><body>
-<header class="desk-heading"><a href="/ia/">IA 포털</a></header>
-<div class="price-title"><h1>계란 가격표</h1><span id="practice-entry" hidden><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></span></div>
+${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${waitSceneCss}${priceShellCss}</style></head><body>
+<header class="price-app-header"><div class="price-app-heading"><a href="/ia/">IA 포털</a><span aria-hidden="true">/</span><h1>계란 가격표</h1></div><nav class="price-app-nav" aria-label="가격표 도구"><a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA랩</a><details class="price-utilities"><summary>더 보기</summary><div><span id="practice-entry" hidden><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">연습 화면</a></span></div></details></nav></header><main class="price-desk">
 <fieldset id="practice" hidden><legend>연습 공간</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset>
 <output aria-live="polite" id="notice"></output>
 <div id="price-workspace"><button type="button" id="openPersonalDraft" hidden>본인 입력 초안 열기</button>
-<section id="personal-panel" hidden><div class="price-toolbar"><strong>본인 입력 초안</strong><button type="button" id="savePersonalDraft" class="primary">본인 초안 저장</button></div>
-<p class="subtle">작성한 계정에서만 볼 수 있습니다. 공급처 상품에 연결하기 전까지 구매자 견적에 적용되지 않습니다.</p>
-<div class="fields price-meta"><label>초안 이름<input id="personalName" maxlength="80" placeholder="예: 11월 9일 참고 단가"></label><label>공급처<input id="personalSupplier" maxlength="80" placeholder="미지정"></label><label>출고장<input id="personalOrigin" maxlength="80" placeholder="미지정"></label><label>상품명<input id="personalProduct" maxlength="80" placeholder="미지정"></label><label>난각번호<select id="personalShell"><option value="">미지정</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="personalPack" type="number" min="1" max="360" placeholder="미지정"></label><label>배송 최소 주문량 (판)<input id="personalMinimum" type="number" min="1" value="10"></label></div>
+<section id="personal-panel" hidden><div class="price-toolbar"><div class="price-book-title"><div class="price-book-name"><h2 id="personalTitle">새 가격표</h2><span class="price-scope-label" title="내 계정에 저장한 초안">내 초안</span></div><div id="personalSummary" class="price-summary"></div></div><div class="price-main-actions"><span id="priceSaveState" class="price-save-state" aria-live="polite"></span><button type="button" id="personalSettingsOpen" data-price-open="personalSettings">설정</button><button type="button" id="savePersonalDraft" class="primary">저장</button></div></div>
+<dialog id="personalSettings" class="price-settings" aria-labelledby="personalSettingsTitle"><div class="t-panel-slide" data-open="false"><header class="price-settings-header"><h2 id="personalSettingsTitle">가격표 설정</h2><button type="button" data-price-close>닫기</button></header><div class="price-settings-body"><p class="subtle">내 계정에 저장한 초안이에요. 공급처에 연결한 뒤 납품 가격으로 사용할 수 있어요.</p>
+<div class="fields price-meta"><label>초안 이름<input id="personalName" maxlength="80" placeholder="예: 11월 9일 참고 단가"></label><label>공급처<input id="personalSupplier" maxlength="80" placeholder="미지정"></label><label>출고장<input id="personalOrigin" maxlength="80" placeholder="미지정"></label><label>상품명<input id="personalProduct" maxlength="80" placeholder="미지정"></label><label>난각번호<select id="personalShell"><option value="">미지정</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="personalPack" type="number" min="1" max="360" placeholder="미지정"></label><label>배송 최소 주문량 (판)<input id="personalMinimum" type="number" min="1" value="10"></label></div></div></div></dialog>
 <output id="personalStatus" aria-live="polite"></output><div id="personalGrid"></div>
 <div id="personalConflict" hidden><div id="personalComparison"></div><button type="button" id="readPersonalRemote">서버 초안 열기</button><button type="button" id="keepPersonalLocal">서버 내용 확인 후 내 입력 유지</button></div>
 <details id="personalImport" hidden><summary>등록 상품 가격표로 가져오기</summary><div class="fields"><label>연결된 상품<select id="personalDest"></select></label><label>상품 난각번호<select id="personalImportShell"></select></label><label>상품 포장 단위<select id="personalImportPack"></select></label></div><button type="button" id="importPersonalDraft">등록 상품에 단가 가져오기</button></details>
@@ -577,24 +578,24 @@ ${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${w
 <details id="price-registration" hidden><summary id="registrationTitle">공급처·출고장·상품 등록</summary>
 <div class="product-setup" id="productSetup" hidden><div class="fields"><label>등록할 소속<select id="setupOrg"></select></label><label>공급처명<input id="setupSupplier" maxlength="60"></label><label>출고장명<input id="setupOrigin" maxlength="60"></label><label>상품명<input id="setupProduct" maxlength="60"></label><label>판매 난각번호<select id="setupShell"><option value="">선택</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="setupPack" inputmode="numeric" type="number" min="1" max="360"></label></div><button id="registerProduct" class="primary">상품 등록하고 가격 입력</button><a id="supplierInvite" hidden>공급처 담당자용 연결 주소</a></div>
 <div id="connectionForm" hidden><p>담당 공급처에 상품 연결을 요청하면 이곳에서 진행 상태를 확인할 수 있습니다.</p><label>연결할 공급처 이름<input id="requestCompany" maxlength="60"></label><button id="requestConnection">담당 가격표 연결 요청</button></div><ul class="connection-list" id="connectionStatus" aria-live="polite"></ul><div id="connectionReview"></div></details>
-<div id="staff-desk" class="price-toolbar" hidden><nav class="price-tabs" aria-label="가격표와 배송"><button type="button" id="priceTab" aria-pressed="true">계란 가격표</button><button type="button" id="shippingTab" aria-pressed="false">배송 정책</button></nav><button class="primary" data-action="save">초안 저장</button></div>
+<div id="staff-desk" class="price-toolbar" hidden><nav class="price-tabs" aria-label="가격표와 배송"><button type="button" id="priceTab" aria-pressed="true">계란 가격표</button><button type="button" id="shippingTab" aria-pressed="false">배송 정책</button></nav><div class="price-main-actions"><button type="button" data-price-open="staffSettings">설정</button><button class="primary" data-action="save">저장</button></div></div>
 <div id="pricing-editor" hidden><p id="current"></p>
 <details id="versions-panel"><summary>저장한 가격표 · 새 가격표</summary><div class="bar"><label>저장된 가격표<select id="versions"></select></label><button id="open">열기</button><button id="new">새 계란 가격표</button><button id="next">후속 버전</button></div></details>
 <section id="prices"><div class="bar"><label>공급처 · 출고장 · 상품<select id="scope"></select></label></div>
 <details id="catalogSettings" hidden><summary>상품 표시 정보 관리</summary><p>배정된 상품의 공급처명·거점명과 판매 규격을 등록합니다.</p><details><summary>배정 정보</summary><code id="catalogCode"></code></details><div class="fields"><label>공급처명<input id="supplierName" maxlength="60"></label><label>거점명<input id="originName" maxlength="60"></label><label>상품명<input id="productName" maxlength="60"></label><label>규격명 (쉼표로 구분)<input id="catalogGrades"></label><label>포장당 구수 (쉼표로 구분)<input id="catalogPacks"></label></div><fieldset class="weekdays" id="catalogShells"><legend>판매 난각번호</legend><label><input type="checkbox" value="1">1번</label><label><input type="checkbox" value="2">2번</label><label><input type="checkbox" value="3">3번</label><label><input type="checkbox" value="4">4번</label><label><input type="checkbox" value="unspecified">구분 없음</label></fieldset><button id="saveCatalog">상품 표시 정보 저장</button></details>
 <p id="requires-catalog" hidden>이 상품에 등록된 규격이 없습니다. 운영자가 상품 표시 정보를 등록하면 가격표를 작성할 수 있습니다.</p></section>
 <div id="legacyTerms" hidden><h3>기존 단가표</h3><p id="legacyTiers"></p><div class="fields"><label>옮길 규격<select id="legacy-grade"></select></label><label>기존 확정 단가의 종류<select id="legacy-packing"><option value="">선택</option><option value="raw">원란</option><option value="packed">포장</option></select></label></div><button type="button" id="convertLegacy">상품 규격표로 옮기기</button></div>
-<fieldset class="editor-fields" id="pricing-fields"><legend class="sr-only">가격과 배송 조건 편집</legend>
-<div id="price-content"><div class="fields price-meta"><label>난각번호<select id="egg-shell"></select></label><label>포장 단위<select id="pack-size"></select></label><label>최소 주문량 (판)<input id="minimum" type="number" min="1"></label><label>유효 시작일<input id="start-date" type="date"></label><label>종료일 (이날부터 미적용)<input id="end-date" type="date"></label></div>
-<div id="matrix">${matrixMarkup}</div>
-<details><summary>고급 단가 정책</summary><div class="fields" id="basis"></div><p id="performanceNote">전월 실적은 확정된 취소·반품 집계 기준이 있는 경우에 적용됩니다.</p><div class="fields" id="cost"></div></details></div>
+<dialog id="staffSettings" class="price-settings" aria-labelledby="staffSettingsTitle"><div class="t-panel-slide" data-open="false"><header class="price-settings-header"><h2 id="staffSettingsTitle">가격표 설정</h2><button type="button" data-price-close>닫기</button></header><div class="price-settings-body"><fieldset class="editor-fields" id="staff-settings-fields"><legend class="sr-only">가격표 설정 편집</legend><div class="fields price-meta"><label>난각번호<select id="egg-shell"></select></label><label>포장 단위<select id="pack-size"></select></label><label>최소 주문량 (판)<input id="minimum" type="number" min="1"></label><label>유효 시작일<input id="start-date" type="date"></label><label>종료일 (이날부터 미적용)<input id="end-date" type="date"></label></div>
+<details><summary>고급 단가 정책</summary><div class="fields" id="basis"></div><p id="performanceNote">전월 실적은 확정된 취소·반품 집계 기준이 있는 경우에 적용됩니다.</p><div class="fields" id="cost"></div></details></fieldset></div></div></dialog>
+<div id="price-content"><div id="matrix">${matrixMarkup}</div></div>
+<fieldset class="editor-fields" id="pricing-fields"><legend class="sr-only">배송 조건 편집</legend>
 <section id="shipping"><h2>배송 조건</h2>${carrierMarkup}<details><summary>지역별 직접 배송</summary><label>배송비 적용 기준<select id="groupBasis"><option value="SHIPMENT">출고 회차별</option><option value="SITE">납품일·사업장별</option><option value="PACK">포장 수량별</option></select></label><div id="regions"></div><button id="addRegion">지역 추가</button></details></section>
 </fieldset>
 <details id="review-actions"><summary>검토 요청·승인</summary><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button><button id="replaceApproved" hidden>기존 가격표 종료 후 승인</button></div></details><div id="conflict" hidden><p>다른 사용자가 저장한 가격표가 있습니다. 현재 입력과 서버 버전을 비교해 주세요.</p><details><summary>서버 버전 보기</summary><div id="remoteVersion" class="matrix-scroll"></div></details><button id="keepInput">서버 변경 확인 후 내 입력 유지</button><button id="remoteInput">서버 버전 열기</button></div>
 <details id="simulation-panel"><summary>미리 계산</summary><div id="simulation"><label>단가 규격<select id="simGrade"></select></label><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output><output id="freightResult" aria-live="polite"></output></div></details><details><summary>변경 이력</summary><ol id="history"></ol></details></div>
 </div><section id="quote" hidden><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label id="buyerGradeGroup" hidden>단가 규격<select id="buyerGrade"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" data-wait-scene hidden><div id="quoteBanners" data-banner-stack aria-hidden="true"></div><div id="quoteAvatar" data-wait-avatar aria-hidden="true"></div><p id="quoteWaitTitle" data-wait-copy aria-live="polite"></p><button type="button" id="retryQuote" hidden>다시 비교하기</button></div><div aria-live="polite" id="buyerResult"></div></section>
-<script nonce="${nonce}">${bloubScript}
+</main><script nonce="${nonce}">${bloubScript}
 ${quoteJellyRuntime}
 window.OrderMagneticAction=(${browserFunction(mountMagneticAction)});
-;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${browserFunction(mountWaitScene)},${JSON.stringify({...bloubMontages,...waitMontages})},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)},${browserFunction(mountAsyncMotion)},${browserFunction(bindEditorMotion)});</script></body></html>`;
+;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${browserFunction(mountWaitScene)},${JSON.stringify({...bloubMontages,...waitMontages})},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)},${browserFunction(mountAsyncMotion)},${browserFunction(bindEditorMotion)},${browserFunction(mountPriceShell)});</script></body></html>`;
 }

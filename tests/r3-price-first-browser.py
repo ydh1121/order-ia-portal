@@ -20,6 +20,24 @@ with REFERENCE.open() as file:
 def cell(page, row, col):
     return page.locator(f'#matrix input[data-r="{row}"][data-c="{col}"]')
 
+def open_personal_settings(page):
+    page.locator('#personalSettingsOpen').click()
+    expect(page.locator('#personalSettings')).to_be_visible()
+
+def close_personal_settings(page):
+    page.locator('#personalSettings [data-price-close]').click()
+    expect(page.locator('#personalSettings')).not_to_be_visible()
+
+def set_matrix_bounds(page, editing):
+    tools = page.locator('#matrix details[data-mx=tools]')
+    if not tools.evaluate('el => el.open'):
+        tools.locator(':scope > summary').click()
+    toggle = tools.locator('[data-mx=bounds]')
+    if toggle.get_attribute('aria-pressed') != str(editing).lower():
+        toggle.click()
+    if tools.evaluate('el => el.open'):
+        tools.locator(':scope > summary').click()
+
 def paste(target, rows):
     target.focus()
     target.evaluate("""(el, text) => {
@@ -78,6 +96,7 @@ def exercise_personal(page, reopen, origin, label, width):
     route='/api/ia/r3-price/personal-draft'
     entry=origin+'/ia?view=pricing-r3'
     grid=page.locator('#matrix')
+    open_personal_settings(page)
     expect(page.locator('#personalProduct')).to_be_visible()
     original_viewport = page.viewport_size
     minimum = page.locator('#personalMinimum')
@@ -101,6 +120,7 @@ def exercise_personal(page, reopen, origin, label, width):
     page.locator('#personalProduct').fill('개인 초안 계란')
     # A pack specification was not supplied in the historical reference.
     assert page.locator('#personalPack').input_value()==''
+    close_personal_settings(page)
     paste_native(page,cell(page,0,2),[row[2:] for row in reference])
     check_reference_ui(page)
     first=save_personal(page,200)
@@ -124,7 +144,9 @@ def exercise_personal(page, reopen, origin, label, width):
     second.close()
     page.context.close()
     renewed=reopen()
+    open_personal_settings(renewed)
     expect(renewed.locator('#personalProduct')).to_have_value('개인 초안 계란')
+    close_personal_settings(renewed)
     expect(cell(renewed,0,2)).to_have_value('6,002')
     assert matrix_values(renewed)[1:]==reference[1:]
     # Use the signed page's own cookie jar. Chromium allows its secure __Host cookie
@@ -176,6 +198,10 @@ def check(browser, subject, width):
         requests = []
         page.on("request", lambda request: requests.append(request.url))
         page.goto(entry)
+        registration = page.locator('#price-registration')
+        expect(registration).to_be_visible()
+        if not registration.evaluate('el => el.open'):
+            registration.locator(':scope > summary').click()
         expect(page.locator("#setupOrg")).to_be_visible()
         before = page.request.get(origin + "/api/ia/r3-price/desk").json()
         assert before["scopes"] == [] and before["versions"] == []
@@ -206,12 +232,14 @@ def check(browser, subject, width):
         check_reference_ui(page)
         # Review mapping before applying the 10-column spreadsheet (two bounds + eight prices).
         cell(page, 0, 2).fill("7,777원")
+        set_matrix_bounds(page, True)
         page.once("dialog", lambda dialog: dialog.dismiss())
         paste(cell(page, 0, 0), [columns, *reference])
         assert matrix_values(page)[0][2] == "7777"
         page.once("dialog", lambda dialog: dialog.accept())
         paste(cell(page, 0, 0), [columns, *reference])
         check_reference_ui(page)
+        set_matrix_bounds(page, False)
         grid.scroll_into_view_if_needed()
         shoot(page, "entered", width)
         save(page, 1)
@@ -245,13 +273,13 @@ def check(browser, subject, width):
         expect(start).to_have_value('501')
         grade_names=['왕란','특란','대란','중란']
         for index,name in enumerate(grade_names if width<680 else ['왕란']):
-            grid.locator('[data-mx=grade]').select_option(label=name)
+            grid.locator('[data-mx=grade-chips]').get_by_role('button', name=name, exact=True).click()
             last=cell(page,18,3+index*2)
             last.scroll_into_view_if_needed()
             expect(last).to_have_value(f'{int(reference[-1][3+index*2]):,}')
             expect(last).to_be_in_viewport()
             shoot(page,f'reopened-501-grade-{index+1}',width)
-        grid.locator('[data-mx=grade]').select_option(label='왕란')
+        grid.locator('[data-mx=grade-chips]').get_by_role('button', name='왕란', exact=True).click()
 
         # Persist distinct blank, zero, negotiated, unavailable cells on a second revision.
         paste(cell(page, 0, 2), [["", "0", "협의", "미판매"]])
