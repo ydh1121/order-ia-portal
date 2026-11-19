@@ -48,6 +48,10 @@ def check(browser, width, reduced):
         capture('list-error',shell)
         page.unroute('**/api/ia/r3-price/desk',route_desk)
         page.reload(wait_until='domcontentloaded')
+        registration = page.locator('#price-registration')
+        expect(registration).to_be_visible()
+        if not registration.evaluate('el => el.open'):
+            registration.locator(':scope > summary').click()
         expect(page.locator('#setupOrg')).to_be_visible()
         page.locator('#setupSupplier').fill('검수 공급처')
         page.locator('#setupOrigin').fill('검수 출고장')
