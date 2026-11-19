@@ -30,14 +30,15 @@ try:
             doc=frame.locator('#order-single')
             expect(doc).to_have_attribute('data-motion-runtime','admin-common')
             doc.evaluate("""el=>{window.__steps=[];el.addEventListener('r3:async-state',e=>window.__steps.push({...e.detail,t:performance.now()}));}""")
-            def scenario(mode):
+            def scenario(mode,navigates=False):
                 page.locator('#points').click()
                 detail=page.locator('#motion-review')
                 if not detail.evaluate('el=>el.open'):
                     detail.locator('summary').click()
                 detail.locator(f'button[data-motion-mode="{mode}"]').click()
-                expect(page.locator('#motion-note')).to_contain_text('검수 입력')
-                page.locator('#close-drawer').click()
+                if not navigates:
+                    expect(page.locator('#motion-note')).to_contain_text('검수 입력')
+                    page.locator('#close-drawer').click()
             save=frame.locator('[data-action=save-demo]')
             scenario('delay')
             frame_click(page,save)
@@ -104,6 +105,16 @@ try:
                 expect(grid.locator(':scope > section').nth(1).locator('h2')).to_have_text(first)
                 expect(grid.locator('.qa-widget-expanded')).to_have_count(1)
                 panel.screenshot(path=out/'admin-overview-1440.png',animations='disabled')
+                loading=screens.screen('admin-overview','loading')
+                expect(loading.locator('[data-async-region=pending]')).to_be_visible()
+                scenario('complete',navigates=True)
+                expect(page).to_have_url(re.compile('admin-overview(?:%2F|/)normal'))
+                expect(loading.locator('.qa-widget-grid')).to_be_visible()
+                loading=screens.screen('admin-overview','loading')
+                expect(loading.locator('[data-async-region=pending]')).to_be_visible()
+                scenario('offline',navigates=True)
+                expect(page).to_have_url(re.compile('admin-overview(?:%2F|/)error'))
+                expect(loading.locator('[data-qa-action=retry-overview]')).to_be_visible()
                 f=screens.screen('admin-buyers','list')
                 q=f.locator('[name=operationsSearch]')
                 q.fill('두 번째')
@@ -124,6 +135,7 @@ try:
                 assert not re.search(r'<script(?! type="application/json")',content)
                 record['admin']=['sidebar','submenu','shared hover background','ring keyboard','masked chart','widget layout reapplied on same-tab reload','filtered list','metric index']
                 record['receiptDownload']={'type':'projected review HTML','name':download.value.suggested_filename,'commercialDocumentIssued':False}
+                record['selectedLoading']=['held until controlled response','complete → normal','offline → retry state']
             evidence.append(record)
             ctx.close()
         browser.close()

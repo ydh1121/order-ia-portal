@@ -10,6 +10,7 @@ def check_auth_motion(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
     header = frame.locator(".ob-stage > header")
+    expect(frame.locator(".ob-pages .ob-active-pill")).to_be_visible()
     header.evaluate("""el=>{window.__savedBrand=el.querySelector('svg');window.__jellyMotion=[];
         window.__savedBrand.addEventListener('code1:motionstart',e=>window.__jellyMotion.push(e.detail.kind));}""")
     frame_click(page, frame.locator("[data-action=animate-brand]"))
@@ -21,6 +22,14 @@ def check_auth_motion(page, origin, width):
     })""")
     frame_click(page, frame.locator("[data-mf-intro='3']"))
     expect(frame.locator(".ob")).to_have_attribute("data-intro-step", "3")
+    assert header.evaluate("el=>el.querySelector('svg')===window.__savedBrand")
+    x3, y3 = frame_pointer_position(page, frame.locator("[data-mf-intro='3']"))
+    x1, y1 = frame_pointer_position(page, frame.locator("[data-mf-intro='1']"))
+    page.mouse.move(x3, y3)
+    page.mouse.down()
+    page.mouse.move(x1, y1, steps=7)
+    page.mouse.up()
+    expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step", "1")
     assert header.evaluate("el=>el.querySelector('svg')===window.__savedBrand")
     frame_click(page, frame.locator("[data-company-open]"))
     expect(frame.locator(".ob-stage")).to_have_js_property("inert", True)
@@ -63,7 +72,7 @@ def check_auth_motion(page, origin, width):
     out = Path(os.getenv("R3_AUTH_MOTION_ARTIFACT_DIR", "artifacts/r3-auth-motion"))
     out.mkdir(parents=True, exist_ok=True)
     evidence = {"width": width, "source": "private signed QA browser fixture",
-                "guestClick": "CODE1 gather", "headerNodeSurvived": True,
+                "guestClick": "CODE1 gather", "headerNodeSurvived": True, "pagination": "click 2→3, physical drag 3→1",
                 "rubberBandUp30": resistance, "peekAndDragClose": True,
                 "otpHeightBeforeAndAfter": [before, otp.bounding_box()["height"]]}
     frame = screens.screen("signup", "empty")

@@ -101,3 +101,4 @@
 .ob .ob-pages{position:relative}
 .ob .ob-pages.has-active-pill [aria-current] i{width:7px;background:#d4d9de}
 .ob .ob-active-pill{pointer-events:none;position:absolute;height:7px;top:18.5px;left:0;border-radius:8px;background:var(--ob-blue)}
+.ob .ob-mode.card [data-magnetic-label]{flex-direction:column;justify-content:center}

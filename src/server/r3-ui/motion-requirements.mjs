@@ -16,7 +16,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-file-drop",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "proof/empty",
+      "behavior": "파일 입력 다중선택, 초과·형식·차단 오류 상태, 마스킹 제출 링크",
+      "remaining": "각 원본 파일의 실 사업자 업로드·취소 복원"
+    }
   },
   {
     "id": "D02",
@@ -37,7 +42,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-springy-input",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/default",
+      "behavior": "금액표 키보드 입력·오류 상태와 공통 입력 높이",
+      "remaining": "모든 인증 필드의 한글 IME·커서 시각 비교"
+    }
   },
   {
     "id": "D03",
@@ -53,7 +63,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-swipe-deck",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "passes/grid",
+      "behavior": "동일 패스 4장을 격자→덱으로 전환, 다음 카드·상세 식별자",
+      "remaining": "날짜 정렬 방향 사용자 결정, 원본 속도 대조"
+    }
   },
   {
     "id": "D04",
@@ -73,7 +88,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-spring-dropdown",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/default",
+      "behavior": "선택창 열기·옵션 클릭·라벨 갱신, Q3/Q4 및 가격표 선택",
+      "remaining": "각 운영체제 기본 선택창의 동일 모션"
+    }
   },
   {
     "id": "D05",
@@ -90,7 +110,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-stat-card",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-overview/normal",
+      "behavior": "관리 통계·그래프 선택이 검수 데이터와 마스킹 값에 반영",
+      "remaining": "승인된 실제 운영 지표·연속 갱신 지터 실측"
+    }
   },
   {
     "id": "D06",
@@ -110,7 +135,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-loading-success",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/default",
+      "behavior": "공통 요청 지연·성공·실패, 중복 차단 및 편집 화면 응답 연동",
+      "remaining": "실계정의 계약 테이블 승인"
+    }
   },
   {
     "id": "D07",
@@ -126,7 +156,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-sidebar-collapse",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-overview/normal",
+      "behavior": "메뉴 접기/펼치기와 하위 뎁스 확장, aria-expanded 전환",
+      "remaining": "각 관리자 메뉴 세부 미세지터 시각 판정"
+    }
   },
   {
     "id": "D08",
@@ -142,7 +177,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-morph-tooltip",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-overview/normal",
+      "behavior": "한 배경이 타 메뉴에 포커스할 때 보이고 글자 위치 유지",
+      "remaining": "전체 메뉴에서 포인터 이동 궤적 정량 대조"
+    }
   },
   {
     "id": "D09",
@@ -158,7 +198,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-otp-code",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "otp/error",
+      "behavior": "6칸의 오류·sr-only 설명·첫 입력에서 aria-invalid 해제와 높이 유지",
+      "remaining": "실제 이메일 발송·재전송, 전체 붙여넣기 모션"
+    }
   },
   {
     "id": "D10",
@@ -174,7 +219,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-tag-input",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "search/suggestions",
+      "behavior": "검색결과·상세 진입·태그 제거와 원래 결과 복원",
+      "remaining": "중복 긴 한글 IME·전체 추천 분기"
+    }
   },
   {
     "id": "D11",
@@ -192,7 +242,12 @@ export const motionRequirements = [
       "https://drive.google.com/file/d/19UvOWFPC34yazuZ3qBK037odyWYchx0K/view",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "signup/empty",
+      "behavior": "지정 영상 6번을 관찰해 구현한 300ms 강도 경계 연결. 단계 1→2, 133ms·202ms 프레임과 삭제/붙여넣기 방향 검증",
+      "remaining": "원저작자 JS/CSS 미확보, 실제 가입자·모든 IME 엔진별 비교"
+    }
   },
   {
     "id": "D12",
@@ -208,7 +263,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/navigation/stack-panel",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "profile/menu",
+      "behavior": "같은 URL에서 프로필 상세·내부 계정 패널 열고 닫기",
+      "remaining": "패널 간 스와이프 취소의 모든 경계"
+    }
   },
   {
     "id": "D13",
@@ -226,7 +286,12 @@ export const motionRequirements = [
       "https://designbookmark.com/motion#db-toggle-switch",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "profile/notification",
+      "behavior": "알림 스위치 켜기·끄기, 계정 설정 재진입",
+      "remaining": "각 저장 실패의 thumb 위치 복원"
+    }
   },
   {
     "id": "K01",
@@ -245,7 +310,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/navigation/smooth-drawer",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "login/empty",
+      "behavior": "가입·로그인 시트 열기·원래 온보딩 단계로 닫기",
+      "remaining": "기기별 drag 시작 축·스냅/저항 전체 대조"
+    }
   },
   {
     "id": "K02",
@@ -261,7 +331,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/navigation/scroll-index",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "terms/required",
+      "behavior": "가입 약관·동의 값을 보존하는 화면 훅",
+      "remaining": "절 인덱스 클릭과 끝까지 읽기·동의 분리 실측"
+    }
   },
   {
     "id": "K03",
@@ -278,7 +353,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/inputs/wheel-picker",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "drawer/wheel",
+      "behavior": "상담 일정에서 날짜·시각·분 선택과 취소",
+      "remaining": "관성 플릭과 모든 휠 키보드 값의 정착 시간"
+    }
   },
   {
     "id": "K04",
@@ -296,7 +376,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/cards/bento-grid",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-overview/normal",
+      "behavior": "위젯 위치 변경·너비 변경·적용",
+      "remaining": "사업장별 서버 영속 배치 및 타 기기 재조회"
+    }
   },
   {
     "id": "K05",
@@ -313,7 +398,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/cards/receipt-printer",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "receipt/before",
+      "behavior": "영수증 요청→상태 전환의 제어된 관리자 검수 훅",
+      "remaining": "실제 문서 발급·다운로드 권한 및 파일 검증"
+    }
   },
   {
     "id": "K06",
@@ -331,7 +421,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/cards/metric-card",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-analytics/normal",
+      "behavior": "그래프 인덱스를 선택해 대응하는 값과 툴팁 확인",
+      "remaining": "승인 운영지표의 실제 금액·포인터 곡선"
+    }
   },
   {
     "id": "K07",
@@ -349,7 +444,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/cards/spending-ring",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-overview/normal",
+      "behavior": "원형 차트 범례 포커스와 중앙 값의 대응",
+      "remaining": "실 운영 합계와 원형 진입 시각 비교"
+    }
   },
   {
     "id": "K08",
@@ -365,7 +465,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/navigation/profile-dropdown",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "profile/menu",
+      "behavior": "계정 패널에서 구성원·권한 값을 보고 같은 화면에서 돌아오기",
+      "remaining": "실사업자 권한 부여 상태에서 사용성 검수"
+    }
   },
   {
     "id": "K09",
@@ -381,7 +486,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/inputs/signature-pad",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "signature/empty",
+      "behavior": "서명 이미지 미리보기·초점·빈 서명 거부·제출중/검토 상태",
+      "remaining": "실제 전자계약 체결·서명 리사이즈 전 획 보존"
+    }
   },
   {
     "id": "K10",
@@ -398,7 +508,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/inputs/amount-pad",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-billing/draft",
+      "behavior": "청구 입력 패드 숫자 누적·삭제·빈 금액 처리 훅",
+      "remaining": "실 청구 계정 선택과 실제 청구서 발행"
+    }
   },
   {
     "id": "K11",
@@ -414,7 +529,12 @@ export const motionRequirements = [
       "https://kokonutui.com/docs/inputs/card-field",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "business/empty",
+      "behavior": "업태·업종 입력과 검증중/확인·오류·증빙 제출 경로",
+      "remaining": "외부 기관의 실제 사업자 인증 성공"
+    }
   },
   {
     "id": "T01",
@@ -433,7 +553,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=skeleton-loader-and-reveal",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/loading",
+      "behavior": "세션/목록 비동기 요청과 스켈레톤 전환 및 실패 해제",
+      "remaining": "모든 역할의 오프라인 그래프 원본 비교"
+    }
   },
   {
     "id": "T02",
@@ -453,7 +578,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=card-resize",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/default",
+      "behavior": "카드 접기·확장, 통합 상세 견적의 Q3/Q4 구조 전환",
+      "remaining": "모든 카드 높이에서 중간 프레임 지터"
+    }
   },
   {
     "id": "T03",
@@ -475,7 +605,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=error-state-shake",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/error",
+      "behavior": "입력 오류 때 접근성 상태, 시각 설명 숨김과 셀 위치 유지",
+      "remaining": "모든 OTP·가입 폼의 한 오류당 진동 횟수"
+    }
   },
   {
     "id": "T04",
@@ -495,7 +630,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=menu-dropdown",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "common/default",
+      "behavior": "선택창 열기·닫기·선택 후 원래 레이아웃",
+      "remaining": "연속 클릭 중 포커스 누수 및 구형 브라우저"
+    }
   },
   {
     "id": "T05",
@@ -511,7 +651,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=learn-more-hover",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "admin-overview/normal",
+      "behavior": "하위 메뉴 확장 시 뎁스 아이콘 회전과 메뉴 배경",
+      "remaining": "아이콘 hover만의 원본 정량 대조"
+    }
   },
   {
     "id": "T06",
@@ -527,7 +672,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=page-side-by-side",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "profile/menu",
+      "behavior": "계정 패널 내 상세 이동과 닫기",
+      "remaining": "내부 panel별 원본 동선·시간 곡선"
+    }
   },
   {
     "id": "T07",
@@ -545,7 +695,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=toggle",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "profile/notification",
+      "behavior": "스위치 클릭 후 값·aria-checked 상호 일치",
+      "remaining": "연타·저장 실패 시 thumb 타이밍"
+    }
   },
   {
     "id": "T08",
@@ -564,7 +719,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=panel-reveal",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "login/empty",
+      "behavior": "하단 시트 열기, 닫기 후 원래 소개 화면 복원",
+      "remaining": "기기별 동작 곡선 원본 대조"
+    }
   },
   {
     "id": "T09",
@@ -582,7 +742,12 @@ export const motionRequirements = [
       "https://transitions.dev/detail.html?t=notification-badge",
       "https://drive.google.com/file/d/1-5PJriM6xr_xTk4iZp-tiOdCPBZaS-Bk/view"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "onboarding/member-1",
+      "behavior": "검수 알림을 읽으면 1→0, 역할 화면은 접근 가능한 활동 ID·이력 버전과 세션 내 암호화 읽음 처리",
+      "remaining": "외부 푸시 발송·여러 기기 간 읽음 동기화"
+    }
   },
   {
     "id": "G01",
@@ -602,7 +767,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2008961392"
-    ]
+    ],
+    "application": {
+      "example": "common/default",
+      "behavior": "화면별 지정 레시피 원문과 적용 경로·조건 연결",
+      "remaining": "일괄 적용 판정 없이 개별 행과 원본 비교"
+    }
   },
   {
     "id": "H01",
@@ -620,7 +790,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2008961392"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/guest-1",
+      "behavior": "후속 Figma 요청이 전체 장면 좌측 퇴장을 대체",
+      "remaining": "과거 전체 좌측 퇴장 요구는 후속 지시로 종료"
+    }
   },
   {
     "id": "H02",
@@ -639,7 +814,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2008961392"
-    ]
+    ],
+    "application": {
+      "example": "quote-wait/comparing",
+      "behavior": "서버 대기 장면의 카피 교체와 결과 화면 진입 경계",
+      "remaining": "대기/결과 원본 영상 프레임별 완전 일치"
+    }
   },
   {
     "id": "W01",
@@ -654,7 +834,12 @@ export const motionRequirements = [
     "links": [
       "https://transitions.dev/detail.html?t=banner-stacking"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "quote-wait/entry",
+      "behavior": "등장 장면·비교 시작 경계 및 빠른 응답 게이트",
+      "remaining": "보관 영상과 네트워크별 시간 편차 실측"
+    }
   },
   {
     "id": "W02",
@@ -667,7 +852,12 @@ export const motionRequirements = [
     "status": "ACTIVE",
     "sourceState": "USER_ASSET_ARCHIVE_PRESENT",
     "links": [],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "quote-wait/comparing",
+      "behavior": "JSON 장면과 응답/실패 상태에 따른 타임라인",
+      "remaining": "원본 전용 오류 몽타주 미확보, 오류 장면은 기존 정적 자산 사용"
+    }
   },
   {
     "id": "W03",
@@ -689,7 +879,12 @@ export const motionRequirements = [
     "feedback": [
       "2008655044",
       "2008654907"
-    ]
+    ],
+    "application": {
+      "example": "quote-wait/delayed",
+      "behavior": "대기·완료·오류 메시지 교체와 완료 텍스트 처리",
+      "remaining": "모든 2줄 카피 중심과 원본 속도"
+    }
   },
   {
     "id": "W04",
@@ -704,7 +899,12 @@ export const motionRequirements = [
     "links": [
       "https://transitions.dev/detail.html?t=thinking-states"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "quote-wait/delayed",
+      "behavior": "비동기 지연·오류·완료의 반복상태 중단",
+      "remaining": "모바일 장시간 pending/오프라인 재진입 프레임"
+    }
   },
   {
     "id": "R01",
@@ -728,7 +928,12 @@ export const motionRequirements = [
       "2008639459",
       "2008639267",
       "2008941148"
-    ]
+    ],
+    "application": {
+      "example": "quote-result/saving",
+      "behavior": "신규 가격만 영→최종 자리로 회전하며 막대와 동기화, 현재가는 정적",
+      "remaining": "모든 기기에서 원본과 시각 타이밍 검수"
+    }
   },
   {
     "id": "R02",
@@ -743,7 +948,12 @@ export const motionRequirements = [
     "links": [
       "https://transitions.dev/detail.html?t=avatar-group-hover"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "quote-result/saving",
+      "behavior": "클릭한 그래프만 상세로 확대하고 후면 카드 선택",
+      "remaining": "후속 지시에 따른 클릭 확대·잔여 요소 오프셋"
+    }
   },
   {
     "id": "B01",
@@ -765,7 +975,12 @@ export const motionRequirements = [
     "feedback": [
       "2009173058",
       "2009012434"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/guest-1",
+      "behavior": "원본 CODE1을 누르거나 키보드로 작동, 10–15초 휴지",
+      "remaining": "전체 화면의 로고 간격·세로 위치 원본 대조"
+    }
   },
   {
     "id": "O01",
@@ -778,7 +993,12 @@ export const motionRequirements = [
     "status": "ACTIVE_STRUCTURE_REVISED_CONTENT",
     "sourceState": "SELECTED_MEDIA_OBSERVATIONS_ARCHIVED",
     "links": [],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "onboarding/guest-2",
+      "behavior": "비회원 4단계와 회원 분기, 닷·다음·상세 견적 열기",
+      "remaining": "보관 영상과 모든 드래그 정량 비교"
+    }
   },
   {
     "id": "F01",
@@ -799,7 +1019,12 @@ export const motionRequirements = [
     "feedback": [
       "2008946365",
       "2009049901"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/guest-2",
+      "behavior": "4단계 선택·드래그에 앞/뒤 spring 520/34·140/18, 회원4 닷 숨김·비회원4 닷 유지",
+      "remaining": "원본 영상과 각 손가락 드래그 속도별 오차"
+    }
   },
   {
     "id": "F02",
@@ -819,7 +1044,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2009019251"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/member-4",
+      "behavior": "견적 모드의 주 버튼과 결과 화면의 행동 버튼에서 클릭 영역은 고정하고 포인터를 따라 안쪽 면과 라벨을 이동",
+      "remaining": "영상과 실제 손가락·마우스에서 이동량과 복귀 속도 비교"
+    }
   },
   {
     "id": "F03",
@@ -843,7 +1073,12 @@ export const motionRequirements = [
     "feedback": [
       "2009170365",
       "2009065105"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/company",
+      "behavior": "역시트 짧은 위쪽 드래그 뒤 원위치, 78px 아래 드래그 뒤 중간 위치에 정착",
+      "remaining": "다른 화면·iOS에서 콘텐츠별 멈춤 높이와 속도"
+    }
   },
   {
     "id": "F04",
@@ -867,7 +1102,12 @@ export const motionRequirements = [
     "feedback": [
       "2009170365",
       "2009065105"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/company",
+      "behavior": "중간 위치에서 약 98px 아래로 당겨 닫힌 뒤 원 CTA 포커스 복원",
+      "remaining": "내부 긴 콘텐츠의 손가락 스크롤·취소"
+    }
   },
   {
     "id": "F05",
@@ -891,7 +1131,12 @@ export const motionRequirements = [
     "feedback": [
       "2009170365",
       "2009065105"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/company",
+      "behavior": "30px 위쪽 드래그에서 실제 저항 변위가 0~-30px 사이, 놓으면 복구",
+      "remaining": "물리터치 원본 저항 곡선 대조"
+    }
   },
   {
     "id": "F06",
@@ -912,7 +1157,12 @@ export const motionRequirements = [
     "feedback": [
       "2009150880",
       "2009026810"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/member-4",
+      "behavior": "견적 버튼의 메인 영역 확대와 같은 세션 작성 화면 이동, 복귀 역모핑·초점 훅",
+      "remaining": "iPhone 실제 기기 우측 스와이프 역모핑"
+    }
   },
   {
     "id": "F07",
@@ -935,7 +1185,12 @@ export const motionRequirements = [
       "2009050282",
       "2009072394",
       "2009073698"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/member-3",
+      "behavior": "회원 3→4 닷 fade와 하단 버튼을 실제 모드 카드 위치·크기로 변형, 비회원4 닷 유지",
+      "remaining": "3→4 도중 로그인·중간 프레임 궤적"
+    }
   },
   {
     "id": "F08",
@@ -957,7 +1212,12 @@ export const motionRequirements = [
     "feedback": [
       "2009012434",
       "2009013511"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/guest-2",
+      "behavior": "게스트 2→3 단계 이동에서 동일 헤더 SVG 노드 유지, 원본 CODE1 이벤트 관찰",
+      "remaining": "인증 직후의 우측 이동·점 fade 동작 원본 대조"
+    }
   },
   {
     "id": "F09",
@@ -978,7 +1238,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2009013511"
-    ]
+    ],
+    "application": {
+      "example": "login/success",
+      "behavior": "공개 미리보기·원문 접근 제한을 기록",
+      "remaining": "Pro 원문 미확보, 패리티 판정 대기"
+    }
   },
   {
     "id": "F10",
@@ -998,7 +1263,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2009134053"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/member-4",
+      "behavior": "지정 SVG와 키프레임을 두 버튼에 적용, 각 버튼의 독립 idle 2–3초·reduced·터치·중단 연결",
+      "remaining": "실기기에서 지정 원본과 클릭 전후 움직임 대조"
+    }
   },
   {
     "id": "F11",
@@ -1019,7 +1289,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2009041300"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/member-1",
+      "behavior": "빠른 메뉴 두 항목 표시·Escape로 닫기",
+      "remaining": "공개 카드와 Copy 버튼 확인, 실제 복사 코드 미확보"
+    }
   },
   {
     "id": "F12",
@@ -1039,7 +1314,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2009041300"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/member-1",
+      "behavior": "빠른 메뉴 항목의 펼침/복귀와 터치·키보드 접근",
+      "remaining": "원본 speed dial의 궤적·속도 검수"
+    }
   },
   {
     "id": "F13",
@@ -1058,7 +1338,12 @@ export const motionRequirements = [
     ],
     "feedback": [
       "2009041300"
-    ]
+    ],
+    "application": {
+      "example": "passes/grid",
+      "behavior": "패스 상태·티켓 상세/만료·진행 및 보기 유지 확인",
+      "remaining": "실운영 바코드 조회·Figma 시안 최종 판정"
+    }
   },
   {
     "id": "F14",
@@ -1079,7 +1364,12 @@ export const motionRequirements = [
     "feedback": [
       "2009065105",
       "2013415701"
-    ]
+    ],
+    "application": {
+      "example": "onboarding/company",
+      "behavior": "사업자 정보 열기·배경 비활성·핸들 드래그 복귀·기존 포커스 복원",
+      "remaining": "본문 전체 드래그와 1/3 높이 실기기 비율"
+    }
   },
   {
     "id": "F15",
@@ -1102,7 +1392,12 @@ export const motionRequirements = [
       "2008653916",
       "2008654010",
       "2008654431"
-    ]
+    ],
+    "application": {
+      "example": "quote-result/new-detail",
+      "behavior": "같은 카드 요소 클릭→상세/후면 선택, 현재/신규 카피·단가 비교",
+      "remaining": "원본과 배경 노출/카운트에 미세 잔차"
+    }
   },
   {
     "id": "F16",
@@ -1124,7 +1419,12 @@ export const motionRequirements = [
       "2008654034",
       "2008941148",
       "2008944126"
-    ]
+    ],
+    "application": {
+      "example": "quote-result/expired",
+      "behavior": "초 카운트가 실제로 바뀌며 만료 고정·재비교 분기 확인",
+      "remaining": "실 사업자 발행 7일 경계의 장기 실사용 기록"
+    }
   },
   {
     "id": "S01",
@@ -1140,7 +1440,12 @@ export const motionRequirements = [
     "links": [
       "https://transitions.dev/detail.html?t=modal-open-close"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "login/empty",
+      "behavior": "로그인 모달 열고 닫기·초점 복귀 동작의 지원 출처",
+      "remaining": "독립 신규 구현 수에서 제외"
+    }
   },
   {
     "id": "S02",
@@ -1156,6 +1461,11 @@ export const motionRequirements = [
     "links": [
       "https://transitions.dev/detail.html?t=accordion"
     ],
-    "feedback": []
+    "feedback": [],
+    "application": {
+      "example": "q3/open",
+      "behavior": "Q3·Q4 열기·선택·삭제·확인/취소의 기존 지원 출처",
+      "remaining": "독립 신규 구현 수에서 제외"
+    }
   }
 ];

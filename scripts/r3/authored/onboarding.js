@@ -56,7 +56,7 @@
     const modal=shell.querySelector('.ob-drawer'), shade=shell.querySelector('.ob-shade'), grip=shell.querySelector('.ob-grip');
     const opener=shell.querySelector('[data-company-open]'), quick=shell.querySelector('[data-action=quick]');
     const prefix=shell.classList.contains('member')?'member':'guest';
-    let drag=null,suppressClick=false,exiting=false,modeFlight=null,ghost=null,fromTray=[];
+    let drag=null,suppressClick=false,exiting=false,modeFlight=null,ghost=null,fromTray=[],stepRequest=0;
     function cancelMode(){modeFlight?.cancel();modeFlight=null;ghost?.remove();ghost=null;}
     function modeMorph(button,reverse,done){
       cancelMode();
@@ -66,7 +66,7 @@
       ghost=document.createElement('div');
       ghost.className='ob-mode-flight';ghost.setAttribute('aria-hidden','true');
       const color=getComputedStyle(button),radius=color.borderRadius;
-      Object.assign(ghost.style,{position:'fixed',left:to.x+'px',top:to.y+'px',width:to.width+'px',height:to.height+'px',background:color.backgroundColor,pointerEvents:'none',zIndex:'6',transformOrigin:'top left'});
+      Object.assign(ghost.style,{position:'fixed',left:to.x+'px',top:to.y+'px',width:to.width+'px',height:to.height+'px',background:getComputedStyle(button.querySelector('[data-magnetic-material]')||button).backgroundColor,pointerEvents:'none',zIndex:'6',transformOrigin:'top left'});
       shell.append(ghost);
       const small={transform:'translate('+(from.x-to.x)+'px,'+(from.y-to.y)+'px) scale('+(from.width/to.width)+','+(from.height/to.height)+')',borderRadius:radius,opacity:.92};
       const large={transform:'translate(0,0) scale(1)',borderRadius:'16px',opacity:.22};
@@ -81,7 +81,8 @@
     });
     const go=n=>{
       if(exiting || n===step || n<1 || n>4)return;
-      const arrive=()=>{if(!ctl.signal.aborted)api.select('onboarding',prefix+'-'+n);};
+      const request=++stepRequest;
+      const arrive=()=>{if(!ctl.signal.aborted&&request===stepRequest)api.select('onboarding',prefix+'-'+n);};
       if(prefix!=='member' || step!==3 || n!==4 || api.reduced?.() || !main.animate){arrive();return;}
       exiting=true;
       const dots=main.querySelector('.ob-pages'), tray=stage.querySelector('.ob-tasks');
@@ -121,7 +122,11 @@
     const jelly=svg?.querySelectorAll('[data-jelly]').length===3 && w.Code1Jelly
       ? w.Code1Jelly.mount(svg,{auto:!api.reduced?.(),interactive:false,minDelay:10000,maxDelay:15000}) : null;
     let paused=[];
-    let modeIcons=w.ORDER_INTRO_ICONS?.(main,api.reduced);
+    function connectPrimary(){
+      const primary=stage.querySelector(prefix==='member'?'.ob-mode.detail':'.ob-mode.simple');
+      return primary&&w.OrderMagneticAction?.(primary,{reducedMotion:api.reduced,fill:'var(--ob-blue)'});
+    }
+    let magnetic=connectPrimary(),modeIcons=w.ORDER_INTRO_ICONS?.(main,api.reduced);
     let nav=main.querySelector('.ob-pages'),pill=w.ORDER_INTRO_PAGINATION?.(nav,api.reduced);
     on(root,'r3-onboarding-state',event=>{
       const {state,markup}=event.detail || {};
@@ -131,9 +136,10 @@
       const next=temp.content.querySelector('.ob.'+prefix);
       const nextMain=next?.querySelector('.ob-main'),nextTray=next?.querySelector('.ob-tasks');
       if(!nextMain || !nextTray || next.dataset.introStep!==state.slice(-1))return;
+      ++stepRequest;
       const restore=main.contains(document.activeElement);
       if(!shade.hidden)show(false);
-      menu(false);modeIcons?.destroy();
+      menu(false);magnetic?.destroy();modeIcons?.destroy();
       const nextNav=nextMain.querySelector('.ob-pages'),nextStep=Number(next.dataset.introStep);
       if(nav && nextNav){nextNav.replaceWith(nav);}
       else {pill?.destroy();pill=null;nav=nextNav;}
@@ -142,7 +148,7 @@
       main=nextMain;step=nextStep;shell.dataset.introStep=String(step);
       if(pill)pill.select(step);else if(nav)pill=w.ORDER_INTRO_PAGINATION?.(nav,api.reduced);
       exiting=false;drag=null;suppressClick=false;
-      modeIcons=w.ORDER_INTRO_ICONS?.(main,api.reduced);
+      magnetic=connectPrimary();modeIcons=w.ORDER_INTRO_ICONS?.(main,api.reduced);
       if(fromTray.length && step===4 && !api.reduced?.()){
         const cards=main.querySelectorAll('.ob-mode.card');
         main.querySelector('.ob-mode-grid').style.animation='none';
@@ -161,7 +167,7 @@
 
     function show(open){
       if(open){
-        controller?.activate();modeIcons?.pause();jelly?.stopRandom(); jelly?.stop();
+        controller?.activate();magnetic?.reset();modeIcons?.pause();jelly?.stopRandom(); jelly?.stop();
         paused=stage.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
         for(const a of paused)a.pause();
         for(const svg of stage.querySelectorAll('svg'))svg.pauseAnimations?.();
@@ -210,7 +216,7 @@
       }});
     on(shell,'pointercancel',()=>{drag=null;});
     if(state==='company')show(true);
-    return ()=>{cancelMode();pill?.destroy();modeIcons?.destroy();jelly?.destroy();ctl.abort();};
+    return ()=>{cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();jelly?.destroy();ctl.abort();};
   }
   const positions=['guest','member'].flatMap(type=>[1,2,3,4].map(n=>[type+'-'+n,(type==='guest'?'비회원 ':'회원 ')+n]));
   w.ORDER_DESIGN_MODULES.push({id:'onboarding',label:'소개·견적 모드',group:'매장 고객',role:'customer',width:'mobile',

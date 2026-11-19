@@ -5,6 +5,7 @@ import * as original from '../../src/server/r3-ui/catalog.gen.mjs';
 import {frameCode,runtimes} from '../../src/server/r3-ui/runtime.gen.mjs';
 import {quoteJellyRuntime} from '../../src/server/r3-product-sources.mjs';
 import {mountSheetGesture} from './authored/sheet-motion.mjs';
+import {mountMagneticAction} from '../../src/server/order-engine/browser/magnetic-action.mjs';
 import {mountIntroPagination} from './authored/intro-pagination.mjs';
 import {introSearchIcon,mountIntroIcons} from './authored/intro-icons.mjs';
 import {createCustomerControls} from '../../src/server/r3-customer-controls.mjs';
@@ -15,6 +16,7 @@ const sha=s=>createHash('sha256').update(s).digest('hex');
 const unpack=b64=>gunzipSync(Buffer.from(b64,'base64')).toString();
 const sheet='\nwindow.ORDER_QA_SHEET=('+mountSheetGesture.toString()+');\n';
 const controls='window.ORDER_CUSTOMER_CONTROLS=('+createCustomerControls.toString()+')();\n';
+const magnetic='window.OrderMagneticAction=('+mountMagneticAction.toString()+');\n';
 const pagination='window.ORDER_INTRO_PAGINATION=('+mountIntroPagination.toString()+');\n';
 const iconRuntime='window.ORDER_INTRO_ICON=('+introSearchIcon.toString()+');\nwindow.ORDER_INTRO_ICONS=('+mountIntroIcons.toString()+');\n';
 const [account,board,accountCss,boardCss]=await Promise.all(['account.js','onboarding.js','account.css','onboarding.css'].map(f=>read('./authored/'+f)));
@@ -23,7 +25,7 @@ if(coreEnd<0)throw Error('Missing shared QA helpers');
 const core=runtimes.accountFeedback.slice(0,coreEnd+'})(window);'.length);
 const updated={
   accountFeedback:core+sheet+account,
-  onboarding:core+sheet+controls+pagination+iconRuntime+quoteJellyRuntime+'\n'+board
+  onboarding:core+sheet+controls+magnetic+pagination+iconRuntime+quoteJellyRuntime+'\n'+board
 };
 for(const [key,script] of Object.entries(runtimes))
   if(script.startsWith(runtimes.accountFeedback+';'))updated[key]=updated.accountFeedback+script.slice(runtimes.accountFeedback.length);

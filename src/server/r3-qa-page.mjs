@@ -67,7 +67,7 @@ export async function serveR3Artifact(request,env){
   const r=catalog.find(f=>f.id===q.get('id')); const width=Number(q.get('width'));let version=q.get('version');
   if(!r||!approvedWidths.includes(width)||!['current','previous','prior-r3','recorded'].includes(version)||[...q.keys()].some(k=>!['id','width','version','artifactHash'].includes(k)))return json({error:'UNKNOWN_REVIEW_TARGET'},404);
   const pinned=q.get('artifactHash');
-  const history=[archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id]].filter(Boolean);
+  const history=[archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id],beforeMotion.stageRows[r.id]].filter(Boolean);
   let archived=null;
   if(version==='prior-r3'&&!pinned)archived=archivedRows[r.id]||null;
   if(pinned){
@@ -104,7 +104,8 @@ export async function serveR3Artifact(request,env){
       mount=await cached.get(archived.script);
     }
   }
-  return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame:beforeMotion.replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
+  const replayFrame=archived&&archived===beforeMotion.stageRows[r.id]?beforeMotion.stageFrame:beforeMotion.replayFrame;
+  return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
 }
 export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}

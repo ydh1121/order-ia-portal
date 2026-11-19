@@ -53,6 +53,8 @@ test('authored updates preserve header and CODE1 instance and mount official sea
   w.eval(runtimes.onboarding);
   const root=w.document.querySelector('#order-single'),header=root.querySelector('header'),jelly=header.querySelector('svg');
   const dispose=w.ORDER_DESIGN_MODULES.find(m=>m.id==='onboarding').mount(root,'member-2',{select(){},reduced:()=>true});
+  const nav=root.querySelector('.ob-pages');
+  assert.equal(root.querySelector('.ob-mode.detail').dataset.magneticAction,'rest');
   assert.equal(jelly.querySelectorAll('[data-jelly]').length,3);
   let event=new w.CustomEvent('r3-onboarding-state',{cancelable:true,detail:{state:'guest-4',markup:markup('onboarding','guest-4')}});
   assert.equal(root.dispatchEvent(event),true);
@@ -61,7 +63,9 @@ test('authored updates preserve header and CODE1 instance and mount official sea
     event=new w.CustomEvent('r3-onboarding-state',{cancelable:true,detail:{state,markup:markup('onboarding',state)}});
     assert.equal(root.dispatchEvent(event),false);assert.equal(root.querySelector('header'),header);
     assert.equal(root.querySelector('header svg'),jelly);assert.equal(root.querySelector('.ob').dataset.introStep,String(step));
+    if(step===3)assert.equal(root.querySelector('.ob-pages'),nav);
     if(step===4){
+      assert.equal(root.querySelector('.ob-mode.detail [data-magnetic-label] [data-intro-icon]').dataset.introIcon,'file-search');
       assert.equal(root.querySelectorAll('[data-intro-icon]').length,2);
       assert.equal(root.querySelector('[data-intro-icon=search] circle').getAttribute('r'),'8');
       assert.equal(root.querySelector('[data-intro-icon=file-search] circle').getAttribute('cx'),'11.5');

@@ -32,6 +32,15 @@ for(const row of catalog.filter(r=>r.role==='admin'||['common','receipt'].includ
       assert.equal(save.dataset.asyncPhase,'error');
       assert.deepEqual(phases.map(r=>r.phase),['pending','success','pending','error']);
     }
+    if(row.runtimeFamily==='adminLoading'){
+      await new Promise(r=>setTimeout(r,2));
+      assert.ok(doc.querySelector('[data-async-region=pending]'),row.id);
+      const mode=row.screen==='admin-analytics'?'offline':'complete';
+      doc.dispatchEvent(new w.CustomEvent('r3-motion-scenario',{detail:{mode}}));
+      await new Promise(r=>setTimeout(r,2));
+      const next=row.screen==='common'?'revealed':mode==='offline'?'partial':'normal';
+      assert.ok(events.some(event=>event.type==='navigate'&&event.payload.screen===row.screen&&event.payload.state===next),row.id+' → '+next);
+    }
     mounted++;
   }finally{w.dispatchEvent(new w.Event('pagehide'));w.close();}
 }

@@ -56,7 +56,12 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const d=node('details'),summary=node('summary',r.id+' · '+r.name);d.append(summary,node('p',r.trigger),node('p',r.scope));
       if(r.status==='SUPERSEDED')d.append(node('p','후속 요청으로 제외'));
       const sourceLabel=r.sourceState==='PUBLIC_PREVIEW_ONLY_SOURCE_ACCESS_LIMITED'?'공개 예시 확인 · 코드 접근 제한':r.sourceState==='REFERENCE_IDENTIFIED'?'원문 참조 확인':r.sourceState==='SELECTED_MEDIA_OBSERVATIONS_ARCHIVED'?'지정 영상 관찰 기록 보존':'원문 보관';
-      d.append(node('small',sourceLabel+' · '+(artifact.mount?'이 화면에 실행 모듈 연결':'정적 화면')));
+      d.append(node('small',sourceLabel));
+      if(r.application){
+        const sample=screens.find(row=>row.id.startsWith(r.application.example+'/'));
+        if(sample)d.append(node('p','대표 화면 · '+sample.label+' / '+sample.stateLabel));
+        d.append(node('p',r.application.behavior),node('p','남은 확인 · '+r.application.remaining));
+      }
       for(const [i,url] of r.links.entries()){
         const link=node('a','참조 '+(i+1));link.href=url;link.target='_blank';link.rel='noopener noreferrer';d.append(link,document.createTextNode(' '));
       }

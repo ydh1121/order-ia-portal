@@ -7,7 +7,7 @@ import shutil
 import subprocess
 from urllib.parse import urlencode
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import ReviewScreens, frame_click
+from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
 def capture_reference_viewports(qa_page, folder):
@@ -115,6 +115,26 @@ def check_motion(page, origin):
     assert all(item['currentReels']==0 for item in graph),graph
     assert any(item['proposedReels']>0 and item['turn'] for item in animated),animated
     expect(proposed.locator('.oq-price-reel')).to_have_count(0)
+    action=view.locator('button[data-action=recompare]')
+    x,y=frame_pointer_position(page,action,{'x':105,'y':25})
+    fixed=action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')
+    page.mouse.move(x,y);expect(action).to_have_attribute('data-magnetic-action','hover')
+    assert action.locator('[data-magnetic-material]').evaluate("s=>s.style.transform!==''")
+    page.mouse.down();expect(action).to_have_attribute('data-magnetic-action','pressed')
+    assert action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')==fixed
+    page.mouse.up();expect(view.locator('dialog[open]')).to_have_count(1)
+    frame_click(page,view.get_by_role('button',name='닫기'));expect(view.locator('dialog[open]')).to_have_count(0)
+    x,y=frame_pointer_position(page,action,{'x':100,'y':28})
+    touch=page.context.new_cdp_session(page)
+    try:
+        touch.send('Emulation.setTouchEmulationEnabled',{'enabled':True})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+        expect(action).to_have_attribute('data-magnetic-action','pressed')
+        touch.send('Input.dispatchTouchEvent',{'type':'touchCancel','touchPoints':[]})
+        expect(action).to_have_attribute('data-magnetic-action','rest')
+        expect(view.locator('dialog[open]')).to_have_count(0)
+    finally:
+        touch.send('Emulation.setTouchEmulationEnabled',{'enabled':False});touch.detach()
     # The identical graph button grows into the card while the fresh-detail data loads.
     token=proposed.evaluate("el=>{window.__originalGraph=el;return el.getBoundingClientRect().width}")
     frame_click(page,proposed)

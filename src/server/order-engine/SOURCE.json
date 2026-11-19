@@ -1,6 +1,6 @@
 {
   "repository": "ydh1121/order",
-  "commit": "6758fad608fd0ed624d1b1bfe69abddf7f5627a4",
+  "commit": "fe78efdcfdd110e4c772dbf51bfeb38910228a9e",
   "scope": "Existing exact quote, projections and policy source copied byte-for-byte for private IA server bundling. No public assets.",
   "files": [
     {
@@ -34,7 +34,12 @@
     {
       "path": "browser/quote-result-screen.mjs",
       "source": "web/quote-result-screen.mjs",
-      "sha256": "d451ac77034f94624923b03efb39033a85aff380d3e363b4ecea1cc077ede549"
+      "sha256": "bb6a406733fd81a9e4ad4b336c26920dcfc532754270a7a9863ddb2c6e49eeab"
+    },
+    {
+      "path": "browser/magnetic-action.mjs",
+      "source": "web/magnetic-action.mjs",
+      "sha256": "e42db57c16e32db5ddcba68362d1f738634b371f46623d68affbd0afe3e3db77"
     }
   ]
 }

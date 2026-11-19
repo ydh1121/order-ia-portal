@@ -64,11 +64,13 @@ const value='// Generated only by scripts/seal-r3-product.mjs from verified prod
  'export const quoteSourceHashes='+JSON.stringify(sourceHashes)+';\nexport const quoteFiles='+JSON.stringify(files)+';\n';
 await writeFile(output,value);
 // The Worker and offline QA generator execute the very same reviewed presentation module.
-const sharedPath='web/quote-result-screen.mjs';
-if(!sourceHashes[sharedPath])throw Error('Missing shared quote result in product build');
+const sharedBrowserFiles=['quote-result-screen.mjs','magnetic-action.mjs'];
 const copyDir=new URL('../src/server/order-engine/browser/',import.meta.url);
 await mkdir(copyDir,{recursive:true});
-await writeFile(new URL('quote-result-screen.mjs',copyDir),git('show',commit+':'+sharedPath));
+for(const name of sharedBrowserFiles){
+ if(!sourceHashes['web/'+name])throw Error('Missing verified product module '+name);
+ await writeFile(new URL(name,copyDir),git('show',commit+':web/'+name));
+}
 const manifestPath=new URL('../src/server/order-engine/SOURCE.json',import.meta.url);
 const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
 for(const file of manifest.files.filter(file=>!file.path.startsWith('browser/'))){
@@ -78,6 +80,6 @@ for(const file of manifest.files.filter(file=>!file.path.startsWith('browser/'))
 }
 manifest.commit=commit;
 manifest.files=manifest.files.filter(file=>!file.path.startsWith('browser/'));
-manifest.files.push({path:'browser/quote-result-screen.mjs',source:sharedPath,sha256:sourceHashes[sharedPath]});
+for(const name of sharedBrowserFiles)manifest.files.push({path:'browser/'+name,source:'web/'+name,sha256:sourceHashes['web/'+name]});
 await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({commit,files:Object.keys(files).length,bytes:Buffer.byteLength(value),sha256:hash(value)}));

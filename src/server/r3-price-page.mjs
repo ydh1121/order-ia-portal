@@ -1,3 +1,4 @@
+import {mountMagneticAction} from './order-engine/browser/magnetic-action.mjs';
 import {quoteJellyRuntime} from './r3-product-sources.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {mountAsyncMotion,asyncMotionCss,bindEditorMotion,editorMotionCss} from './r3-async-motion.mjs';
@@ -594,5 +595,6 @@ ${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${w
 </div><section id="quote" hidden><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label id="buyerGradeGroup" hidden>단가 규격<select id="buyerGrade"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" data-wait-scene hidden><div id="quoteBanners" data-banner-stack aria-hidden="true"></div><div id="quoteAvatar" data-wait-avatar aria-hidden="true"></div><p id="quoteWaitTitle" data-wait-copy aria-live="polite"></p><button type="button" id="retryQuote" hidden>다시 비교하기</button></div><div aria-live="polite" id="buyerResult"></div></section>
 <script nonce="${nonce}">${bloubScript}
 ${quoteJellyRuntime}
+window.OrderMagneticAction=(${browserFunction(mountMagneticAction)});
 ;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${browserFunction(mountWaitScene)},${JSON.stringify({...bloubMontages,...waitMontages})},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)},${browserFunction(mountAsyncMotion)},${browserFunction(bindEditorMotion)});</script></body></html>`;
 }
