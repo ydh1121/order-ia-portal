@@ -55,11 +55,14 @@
 .ob .ob-drawer .ob-dots-logo i+i{background:#939a9d}
 .ob .ob-drawer .ob-dots-logo i:last-child{background:#7e8589}
 .ob .ob-drawer nav{display:flex;flex-wrap:wrap;gap:0 14px;margin:14px 0}
-.ob .ob-drawer nav button,.ob .ob-policy button{padding:5px 0;background:transparent;border:0;color:#f1f2f3;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.ob .ob-drawer nav button,.ob .ob-policy button{padding:5px 0;background:transparent;border:0;color:#f1f2f3;font:inherit;cursor:pointer;text-decoration:none}
 .ob .ob-drawer h2{margin:10px 0 6px;color:#f5f6f6;font-size:15px}
-.ob .ob-drawer dl{display:grid;grid-template-columns:max-content 1fr;gap:5px 10px;margin:0}
+.ob .ob-drawer dl{display:block;margin:0}
+.ob .ob-company-line{display:flex;align-items:baseline;gap:5px;margin:6px 0}
 .ob .ob-drawer dt,.ob .ob-drawer dd{padding:0;margin:0;font-size:12px;font-weight:400}
-.ob .ob-drawer dt{color:#abafb1}
+.ob .ob-drawer dt{flex:none;color:#abafb1}
+.ob .ob-drawer dt::after{content:' :'}
+.ob .ob-drawer dd{min-width:0;text-align:left;overflow-wrap:anywhere}
 .ob .ob-copyright{margin:15px 0 0;color:#aeb3b5;font-size:11px}
 .ob .ob-policy{border-top:1px solid #505659;border-bottom:1px solid #505659;padding:4px 0}
 .ob .ob-policy p{margin:4px 0}

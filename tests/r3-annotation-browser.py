@@ -174,6 +174,8 @@ def check_zoomed_pin(page, context, origin, width):
             r.url.endswith("/r3-qa/records") and r.request.post_data_json.get("kind")=="comment") as receipt:
         page.locator("#save").click()
     assert receipt.value.ok
+    expect(page.locator('#new')).to_have_attribute('aria-pressed','true')
+    page.locator('#points').click()
     anchor = receipt.value.request.post_data_json["data"]["anchor"]
     saved_x = next(s["x"] for s in anchor["scroll"] if s["id"]=="host-surface")
     assert saved_x > 0, anchor["scroll"]
@@ -236,7 +238,6 @@ def run():
     # Same viewport point can hold independent comments; typing alone never submits.
     anchors=[]
     for i in range(2):
-     if i:page.locator('#close-drawer').click();page.locator('#new').click()
      veil=frame.locator('#r3-veil');frame_click(page,veil,position={'x':100,'y':120})
      page.locator('#body-text').fill('위치 '+str(i))
      with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json.get('kind')=='comment') as saved:
@@ -244,7 +245,10 @@ def run():
      assert saved.value.ok
      anchors.append(saved.value.request.post_data_json['data']['anchor'])
      page.locator('#live').filter(has_text='저장됨').wait_for()
-     page.locator('#blocks:not([hidden])').wait_for()
+     expect(page.locator('#new')).to_have_attribute('aria-pressed','true')
+     expect(veil).to_be_visible()
+    page.locator('#pick-cancel').click()
+    expect(page.locator('#new')).to_have_attribute('aria-pressed','false')
     page.locator('#close-drawer').click();pin=frame.locator('.r3-pin');pin.first.wait_for()
     expect(pin).to_have_count(1)
     expect(pin.first).to_have_text('1')

@@ -1,10 +1,12 @@
 import {browserFunction} from './browser-source.mjs';
+import {installQaSession} from './qa-session-client.mjs';
 import {catalog, cssHash, cssGzip, previousCssGzip, previousCssHash, frames, release} from './r3-ui/catalog.gen.mjs';
 import {hostCode,frameCode,runtimes} from './r3-ui/runtime.gen.mjs';
 
 import {archivedRows,archivedBodies,archivedScripts} from './r3-ui/reviewed-r3.gen.mjs';
 import * as beforeRework from './r3-ui/pre-rework.gen.mjs';
 import * as beforeMotion from './r3-ui/motion-history.gen.mjs';
+import * as beforeInteraction from './r3-ui/interaction-history.gen.mjs';
 import {approvedShellBody,shellStyles} from './r3-ui/approved-shell.mjs';
 import {approvedHash,reviewHashes,approvedWidths} from './r3-ui/approved-width.mjs';
 import {installReviewShortcut, mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
@@ -26,7 +28,7 @@ const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&q
 const cached=new Map();
 async function sha(s){const b=await crypto.subtle.digest('SHA-256',utf8.encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function inflate(data){const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();}
-let historicalBodyIndex,publishedBootstrap;
+let historicalBodyIndex,publishedBootstrap,interactionBootstrap;
 async function historicalBody(digest){
   historicalBodyIndex??=inflate(beforeMotion.archivedBodyPack).then(JSON.parse);
   const {fragments,paths}=await historicalBodyIndex;
@@ -67,7 +69,7 @@ export async function serveR3Artifact(request,env){
   const r=catalog.find(f=>f.id===q.get('id')); const width=Number(q.get('width'));let version=q.get('version');
   if(!r||!approvedWidths.includes(width)||!['current','previous','prior-r3','recorded'].includes(version)||[...q.keys()].some(k=>!['id','width','version','artifactHash'].includes(k)))return json({error:'UNKNOWN_REVIEW_TARGET'},404);
   const pinned=q.get('artifactHash');
-  const history=[beforeMotion.publishedRows[r.id],archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id],beforeMotion.stageRows[r.id]].filter(Boolean);
+  const history=[beforeInteraction.archivedRows[r.id],beforeMotion.publishedRows[r.id],archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id],beforeMotion.stageRows[r.id]].filter(Boolean);
   let archived=null;
   if(version==='prior-r3'&&!pinned)archived=archivedRows[r.id]||null;
   if(pinned){
@@ -86,12 +88,14 @@ export async function serveR3Artifact(request,env){
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
   if(q.has('artifactHash')&&q.get('artifactHash')!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  const packed=frames[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
+  const packed=frames[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
   const body=packed?await inflate(packed):await historicalBody(bodyDigest);
-  const css=archived&&cssHash!==beforeMotion.cssHash?await inflate(beforeMotion.cssGzip):await styles(sourceVersion);
+  const interactionArchive=archived&&archived===beforeInteraction.archivedRows[r.id];
+  const archivedCssHash=interactionArchive?beforeInteraction.cssHash:beforeMotion.cssHash;
+  const css=archived&&cssHash!==archivedCssHash?await inflate(interactionArchive?beforeInteraction.cssGzip:beforeMotion.cssGzip):await styles(sourceVersion);
   const title=esc(r.label+' · '+r.stateLabel);
   const common='<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+title+'</title>';
-  const meta=js({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:bodyDigest,cssSha256:version==='previous'?previousCssHash:archived?beforeMotion.cssHash:cssHash});
+  const meta=js({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:bodyDigest,cssSha256:version==='previous'?previousCssHash:archived?archivedCssHash:cssHash});
   const page=common+'<!--R3-POLICY--><style>'+css+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
   const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
   const candidates={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member', 'quote-wait':'member'};
@@ -100,18 +104,19 @@ export async function serveR3Artifact(request,env){
   if(archived){
     mount=null;
     if(archived.script){
-      if(!cached.has(archived.script))cached.set(archived.script,inflate(archivedScripts[archived.script]||beforeRework.archivedScripts[archived.script]||beforeMotion.archivedScripts[archived.script]));
+      if(!cached.has(archived.script))cached.set(archived.script,inflate(beforeInteraction.archivedScripts[archived.script]||archivedScripts[archived.script]||beforeRework.archivedScripts[archived.script]||beforeMotion.archivedScripts[archived.script]));
       mount=await cached.get(archived.script);
     }
   }
   let replayFrame=beforeMotion.replayFrame;
   if(archived&&archived===beforeMotion.stageRows[r.id])replayFrame=beforeMotion.stageFrame;
   if(archived&&archived===beforeMotion.publishedRows[r.id])replayFrame=await (publishedBootstrap??=inflate(beforeMotion.publishedFrameGzip));
+  if(interactionArchive)replayFrame=await (interactionBootstrap??=inflate(beforeInteraction.replayFrameGzip));
   return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
 }
 export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}
 ${buyerResultCss.replaceAll('#buyerResult','#snapshot')}</style></head><body>
 ${approvedShellBody()}
-<script nonce="${esc(nonce)}">(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})})</script></body></html>`;
+<script nonce="${esc(nonce)}">(${browserFunction(installQaSession)})();(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})})</script></body></html>`;
 }

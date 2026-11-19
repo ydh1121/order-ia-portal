@@ -27,13 +27,13 @@
   }
   function footer(open) {
     const info=['상호','대표자','사업자등록번호','통신판매업 신고','사업장 소재지','고객센터','이메일'].map(label=>
-      '<dt>'+label+'</dt><dd>등록 필요</dd>').join('');
+      '<div class="ob-company-line"><dt>'+label+'</dt><dd>등록 필요</dd></div>').join('');
     return '<section class="ob-shade" '+(open?'':'hidden')+'><section class="ob-drawer" role="dialog" aria-modal="true" aria-label="사업자 정보" tabindex="-1">'+
       '<button type="button" class="ob-grip" data-company-close aria-label="사업자 정보 닫기"><i></i></button>'+brandMark+
       '<nav aria-label="정책과 고객지원">'+link('이용약관','terms/required')+link('개인정보 처리방침','terms/privacy')+
       '<button data-action="delivery-policy" type="button" aria-expanded="false">배송·취소·환불</button>'+link('고객지원','help-center/home')+'</nav>'+
       '<section class="ob-policy" hidden><p>배송·취소·환불 안내를 준비하고 있어요.</p>'+link('문의하기','help-center/contact')+'</section>'+
-      '<h2>사업자 정보</h2><dl>'+info+'<dt>호스팅 제공자</dt><dd>Cloudflare</dd></dl><p class="ob-copyright">© Order.ooo</p></section></section>';
+      '<h2>사업자 정보</h2><dl>'+info+'<div class="ob-company-line"><dt>호스팅 제공자</dt><dd>Cloudflare</dd></div></dl><p class="ob-copyright">© Order.ooo</p></section></section>';
   }
   function render(state) {
     const member=state.startsWith('member-'), opened=state==='company', step=opened?1:Number(state.slice(-1));

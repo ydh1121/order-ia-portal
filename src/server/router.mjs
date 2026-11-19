@@ -12,7 +12,7 @@ export async function handleIaRequest(request,env,dependencies={}) {
   // IMPORTANT: Neither a missing config nor a fabricated header bypasses the server gate.
   let actor;
   try {actor=await (isBusinessSurface(new URL(request.url))?businessActor:requireActor)(request,env,dependencies.fetcher||fetch,dependencies.now)}
-  catch {return json({error:'IA_ACCESS_DENIED'},403)}
+  catch(error) {return error?.message==='SESSION_STORE_UNAVAILABLE'?json({error:'SESSION_STORE_UNAVAILABLE'},503):json({error:'IA_ACCESS_DENIED'},403)}
   const url=new URL(request.url);
   const r3=url.pathname.match(/^\/api\/ia\/r3-(qa|price|role)(\/.*)?$/);
   if(r3) {
@@ -21,13 +21,13 @@ export async function handleIaRequest(request,env,dependencies={}) {
     if(request.method==='POST') {
       if(!sameOrigin(request,env))return json({error:'ORIGIN_DENIED'},403);
       let session;
-      try {session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);}catch{return json({error:'CSRF_DENIED'},403);}
+      try {session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);}catch(error){return error?.message==='SESSION_STORE_UNAVAILABLE'?json({error:'SESSION_STORE_UNAVAILABLE'},503):json({error:'CSRF_DENIED'},403);}
       if(session.id!==actor.id || request.headers.get('X-IA-CSRF')!==session.csrf)return json({error:'CSRF_DENIED'},403);
       actor={...actor,csrf:session.csrf};
     }
     if((r3[1]==='role'||r3[1]==='price') && r3[2]==='/session' && request.method==='GET'){
       try{const session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);return json({csrf:session.csrf,expiresAt:session.expiresAt,practiceAllowed:actor.role==='OWNER'});}
-      catch{return json({error:'SESSION_DENIED'},403);}
+      catch(error){return error?.message==='SESSION_STORE_UNAVAILABLE'?json({error:'SESSION_STORE_UNAVAILABLE'},503):json({error:'SESSION_DENIED'},403);}
     }
     const ctx={request,env,actor,path:r3[2]||'/'};
     try {

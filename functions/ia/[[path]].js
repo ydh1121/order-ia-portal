@@ -16,7 +16,8 @@ export async function onRequest({request,env}){
  const url=new URL(request.url),view=url.searchParams.get('view');
  const productAsset=url.pathname.startsWith('/ia/r3-product/');
  const r3View=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view) ? view : null;
- let actor;try{actor=await (isBusinessSurface(url)?businessActor:requireActor)(request,env)}catch{
+ let actor;try{actor=await (isBusinessSurface(url)?businessActor:requireActor)(request,env)}catch(error){
+   if(error?.message==='SESSION_STORE_UNAVAILABLE')return new Response(null,{status:503,headers:base});
    if(productAsset)return new Response(null,{status:403,headers:base});
    const next=new URLSearchParams();
    if(r3View)next.set('returnView',r3View);

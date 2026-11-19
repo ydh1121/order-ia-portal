@@ -25,6 +25,7 @@ jobs:
       - name: Check serialized clients after Worker bundling
         run: |
           node tests/r3-bundled-clients.mjs
+          node tests/r3-price-book-dom.mjs
           node tests/r3-admin-common-dom.mjs
           node tests/r3-async-motion-dom.mjs
       - name: Compile Pages Functions with the deployment builder

@@ -7,7 +7,7 @@ import {renderR3RolePage} from '../src/server/r3-role-page.mjs';
 
 function workspace(){
   const sql=new DatabaseSync(':memory:');
-  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
+  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests','0013_owner_session_revocations'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
   const prepare=(query,params=[])=>({query,params,bind:(...v)=>prepare(query,v),first:async()=>sql.prepare(query).get(...params),all:async()=>({results:sql.prepare(query).all(...params)})});
   const db={prepare,batch:async rows=>{sql.exec('BEGIN');try{for(const {query,params} of rows)sql.prepare(query).run(...params);sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}};
   const grant=(actor,role,org,site='')=>sql.prepare('INSERT INTO r3_membership VALUES(?,?,?,?,1)').run(actor,role,org,site);

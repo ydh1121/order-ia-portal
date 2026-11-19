@@ -31,6 +31,17 @@ test('authenticated QA catalog reads only its immutable publication', async () =
       const response = await serveR3Artifact(new Request(url),env);
       assert.deepEqual((await response.json()).publication, expected);
     }
+    const mainCommit = 'd'.repeat(40), mainDeploymentId = '87654321-1234-1234-1234-123456789000';
+    insert.run(candidateId+':main',catalogDigest,productCommit,mainCommit,mainDeploymentId);
+    for (const [hostname,expected] of [
+      ['order-ia-portal.pages.dev',{iaCommit:mainCommit,productCommit,deploymentId:mainDeploymentId}],
+      ['87654321.order-ia-portal.pages.dev',{iaCommit:mainCommit,productCommit,deploymentId:mainDeploymentId}],
+      ['feat-ia-r3-private-0585.order-ia-portal.pages.dev',{iaCommit,productCommit,deploymentId}],
+      ['another-branch.order-ia-portal.pages.dev',null]
+    ]) {
+      const url = new URL(request.url);url.hostname=hostname;
+      assert.deepEqual((await (await serveR3Artifact(new Request(url),env)).json()).publication,expected);
+    }
     assert.throws(() => insert.run(candidateId,catalogDigest,productCommit,'c'.repeat(40),deploymentId), /already recorded/);
     assert.throws(() => database.exec("UPDATE qa_publications SET ia_commit='" + 'c'.repeat(40) + "'"), /immutable/);
     assert.throws(() => database.exec('DELETE FROM qa_publications'), /immutable/);

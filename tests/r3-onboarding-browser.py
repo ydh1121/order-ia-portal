@@ -51,7 +51,8 @@ def check(page, origin, width):
     expect(page.locator('#state-buttons [data-variant="compact"]')).to_have_class("active")
     for name in ("카카오 로그인", "네이버 로그인", "Google 로그인"):
         expect(frame.get_by_role("button",name=name).locator("img")).to_be_visible()
-    frame_click(page, frame.locator('[data-action="close-sheet"]'))
+    expect(frame.locator('[data-action="close-sheet"]')).to_have_count(0)
+    frame.locator('[name=email]').press('Escape')
     expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step","2")
     frame_click(page, frame.get_by_role("button",name="소개 3페이지"))
     expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step","3")

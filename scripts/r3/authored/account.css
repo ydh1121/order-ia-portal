@@ -55,3 +55,21 @@
 .ds .password-meter .liquid-segments i b{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;background:var(--strength);opacity:1;transform:scaleX(0);transform-origin:left center}
 .ds .password-meter .liquid-segments i.filled b{transform:scaleX(1)}
 .ds .password-meter .liquid-segments i em{display:block;position:absolute;top:0;bottom:0;left:-8px;width:10px;background:var(--strength);opacity:0;transform:scale(0);transform-origin:center;clip-path:polygon(0 0,28% 17%,50% 25%,72% 17%,100% 0,100% 100%,72% 83%,50% 75%,28% 83%,0 100%)}
+
+/* The sheet closes over its own scene; provider artwork retains its official colors. */
+.ds .auth-sheet[hidden],.ds .sheet-dim[hidden],.ds .auth-return-action[hidden]{display:none!important}
+.ds .auth-scene.is-closed .auth-background{filter:none;opacity:1}
+.ds .auth-background{transition:filter 350ms,opacity 350ms}
+.ds .auth-return-action{position:absolute;bottom:28px;left:24px;right:24px;display:flex;justify-content:center}
+.ds .auth-return-action .btn{width:100%;max-width:412px}
+.ds .auth-sheet .sheet-title{padding-right:0}
+.ds .auth-sheet .sheet-handle{touch-action:none}
+.ds .auth-sheet .password-eye svg g{transform-origin:center;transition:opacity 160ms,transform 180ms cubic-bezier(.22,1,.36,1)}
+.ds .auth-sheet .password-eye .eye-closed{opacity:0;transform:scaleY(.4)}
+.ds .auth-sheet .password-eye.is-visible .eye-open{opacity:0;transform:scaleY(.1)}
+.ds .auth-sheet .password-eye.is-visible .eye-closed{opacity:1;transform:scaleY(1)}
+.ds .auth-layout .integrated-providers,.ds .auth-sheet .integrated-providers{display:flex;align-items:center;justify-content:center;gap:12px}
+.ds .auth-sheet .integrated-provider{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;overflow:hidden;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
+.ds .auth-sheet .integrated-provider[data-action=social-google]{border:1px solid #dadce0;background:white}
+.ds .auth-sheet .integrated-provider img{display:block;width:48px;height:48px;max-width:none;object-fit:contain}
+@media(prefers-reduced-motion:reduce){.ds .auth-background,.ds .auth-sheet .password-eye svg g{transition:none}}

@@ -1,3 +1,6 @@
+import {installQaSession} from './qa-session-client.mjs';
+import {createPriceBookModel} from './r3-price-book-model.mjs';
+import {mountPriceBook,priceBookMarkup,priceBookCss} from './r3-price-book-ui.mjs';
 import {mountPriceShell,priceShellCss} from './r3-price-shell.mjs';
 import {mountMagneticAction} from './order-engine/browser/magnetic-action.mjs';
 import {quoteJellyRuntime} from './r3-product-sources.mjs';
@@ -11,8 +14,9 @@ import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mj
 import {mountPriceMatrix,matrixMarkup,matrixCss} from './r3-matrix-editor.mjs';
 import {mountCarrierEditor,carrierMarkup,carrierCss} from './r3-carrier-page.mjs';
 
-function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeModel,mountMatrix,mountCarrier,mountMotion,bindEditors,makeShell) {
+function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeModel,mountMatrix,mountCarrier,mountMotion,bindEditors,makeShell,makeBook, mountBook,installSession) {
   const $=id=>document.getElementById(id);
+  installSession();
   const state={csrf:'',scope:[],versions:[],country:[],regionVersion:'',current:null,pending:null,operation:false,dirty:false,practice:new URLSearchParams(location.search).get('practice')==='1'};
   const motion=mountMotion(document,{source:state.practice?'server-practice':'server'});
   const editorMotion=bindEditors($('price-workspace'));
@@ -42,7 +46,8 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   const localized={GRANT_REQUIRED:'이 상품을 변경할 권한이 없습니다.',ACCESS_REQUIRED:'대상 공급처 또는 사업장의 권한을 확인해 주세요.',CONFLICT:'검토 상태가 바뀌었거나 승인 기간이 겹칩니다.',REVISION_CONFLICT:'다른 사용자가 먼저 수정했습니다. 내 입력은 그대로 유지됩니다.',IDEMPOTENCY_CONFLICT:'다른 내용으로 처리된 요청입니다.',SERVICE_UNAVAILABLE:'저장소에 연결할 수 없습니다. 입력을 유지했습니다.',PERFORMANCE_UNCONFIRMED:'전월 확정 실적이 필요합니다.',PERFORMANCE_LOOKUP_FAILED:'전월 실적을 조회할 수 없습니다.',SEVEN_DAY_GUARANTEE_UNRESOLVED:'공급 조건이 견적 유효기간 전에 끝납니다.',REGION_PRIORITY_CONFLICT:'겹치는 지역 규칙의 우선순위를 구분해 주세요.',CATALOG_REQUIRED:'운영자가 이 상품의 규격을 먼저 등록해야 합니다.',CATALOG_CHANGED:'상품 규격이 변경되었습니다. 최신 목록을 확인해 주세요.',PRICE_NOT_OFFERED:'선택한 구간과 규격을 판매하지 않습니다.',PRICE_NOT_SET:'선택한 구간과 규격의 단가가 미입력입니다.',PRICE_CONSULT:'선택한 조건의 단가는 별도 협의가 필요합니다.',PRICE_MATRIX_INVALID:'표에서 표시된 입력값을 확인해 주세요.',PERFORMANCE_POLICY_REQUIRED:'취소·반품 실적 처리 기준이 확정되어야 전월 실적 가격을 적용할 수 있습니다.',SUCCESSOR_NOT_EFFECTIVE:'예약된 가격표는 적용 시작일이 되거나 전판과 유효 기간이 겹치지 않을 때 승인해 주세요.',VERSION_REQUIRED:'먼저 가격표 초안을 저장해 주세요.'};
   async function api(path,body,signal){
     const res=await fetch('/api/ia/r3-price'+(state.practice?'/practice/'+$('persona').value:'')+path,{signal,method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
-    const data=await res.json();if(!res.ok){const error=new Error(data.error||'SERVICE_UNAVAILABLE');error.candidates=data.candidates;throw error;}return data;
+    const data=await res.json();if(state.ownerSession&&(res.status===401||res.status===403&&['IA_ACCESS_DENIED','CSRF_DENIED','SESSION_DENIED','SESSION_EXPIRED','AUTHENTICATION_REQUIRED'].includes(data.error)))document.dispatchEvent(new CustomEvent('ia-session-invalid',{detail:{reason:'AUTHENTICATION_REQUIRED'}}));
+    if(!res.ok){const error=new Error(data.error||'SERVICE_UNAVAILABLE');error.candidates=data.candidates;throw error;}return data;
   }
   const commit=(button,path,body)=>motion.run(button,({signal})=>api(path,body,signal),{
     requestId:body.requestKey||undefined,labels:{pending:'저장 중',success:'저장됨',error:'저장 실패'}
@@ -149,19 +154,33 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
     renderRegistration();
   }
   const personal={active:false,revision:0,pending:null,remote:null,saved:null};
+  const priceBookModel=makeBook(makeModel());
+  const priceBook=mountBook($('personalBook'),priceBookModel,matrix,$('matrix'),dirty,choice=>{
+    $('personalName').value=choice.name;$('personalShell').value=choice.shell||'';
+    const p=choice.package,pack=choice.basePackSize;
+    $('personalPack').value=pack==null?'':String(pack);$('personalPack').readOnly=Boolean(p);priceShell.sync();
+  });
+  $('personalShell').addEventListener('change',()=>{if(personal.active)priceBook.syncShell($('personalShell').value);});
+  $('personalName').addEventListener('input',()=>{if(personal.active)priceBook.renameActive($('personalName').value.trim());});
+  $('personalPack').addEventListener('input',()=>{if(personal.active)priceBook.setBasePackSize($('personalPack').value===''?null:Number($('personalPack').value));});
+  document.addEventListener('ia-session-restored',event=>{if(event.detail?.csrf)state.csrf=event.detail.csrf;});
   const privateGrades=[['king','왕란'],['xl','특란'],['large','대란'],['medium','중란']].map(([id,name])=>({id,name}));
   const originalGrid=$('matrix').parentNode, nextToGrid=$('matrix').nextElementSibling;
   function ownDraftFields(){
+    priceBook.renameActive($('personalName').value.trim());
+    priceBook.setBasePackSize($('personalPack').value===''?null:Number($('personalPack').value));
     return {name:$('personalName').value.trim(),supplierName:$('personalSupplier').value.trim()||null,
       originName:$('personalOrigin').value.trim()||null,productName:$('personalProduct').value.trim()||null,
       shell:$('personalShell').value||null,packSize:$('personalPack').value===''?null:Number($('personalPack').value),
-      minimumOrder:Number($('personalMinimum').value),matrix:matrix.read()};
+      minimumOrder:Number($('personalMinimum').value),matrix:matrix.read(),priceBook:priceBook.read()};
   }
   function showImportChoices(){
     const d=personal.saved;
+    const importable=!d?.priceBook||priceBookModel.canImportSelected(d.priceBook);
+    $('personalImportNotice').hidden=importable;
     const matches=scope=>scope.definition&&['supplierName','originName','productName'].every(k=>!d?.[k]||d[k]===scope.definition[k])
       &&(!d?.shell||scope.definition.shells.includes(d.shell))&&(d?.packSize==null||scope.definition.packSizes.includes(d.packSize));
-    const options=state.scope.map((s,i)=>[s,i]).filter(([s])=>matches(s));
+    const options=importable?state.scope.map((s,i)=>[s,i]).filter(([s])=>matches(s)):[];
     selectOptions($('personalDest'),[['','등록 상품 선택'],...options.map(([s,i])=>[String(i),[s.definition.supplierName,s.definition.originName,s.definition.productName].join(' · ')])],'');
     $('personalImport').hidden=!d||!options.length;
     $('personalDest').onchange();
@@ -182,12 +201,13 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
     $('personalMinimum').value=d.minimumOrder??10;
     if($('matrix').parentNode!==$('personalGrid'))$('personalGrid').append($('matrix'));$('matrix').hidden=false;
     matrix.set(d.matrix||null,privateGrades,d.matrix||null,false,retain);
+    priceBook.set({...d,matrix:d.matrix||matrix.read()});
     $('personalStatus').textContent=receipt.revision?'본인 입력 초안 · r'+receipt.revision+' · '+new Date(receipt.updatedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'아직 저장하지 않은 본인 입력 초안';
     $('personalComparison').replaceChildren();showImportChoices();state.dirty=false;
   }
   function leavePersonal(){
     if(!personal.active)return;
-    personal.active=false;personal.remote=null;personal.pending=null;$('personal-panel').hidden=true;
+    personal.active=false;personal.remote=null;personal.pending=null;priceBook.clear();$('personal-panel').hidden=true;
     originalGrid.insertBefore($('matrix'),nextToGrid);$('openPersonalDraft').hidden=false;
     $('pricing-editor').hidden=!state.scope.length;$('staff-desk').hidden=!state.scope.length;
   }
@@ -210,6 +230,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
     }
     const diffMatrix=JSON.stringify(local.matrix)!==JSON.stringify(remote.matrix);
     if(diffMatrix)results.push('가격표 구간 또는 단가가 다릅니다.');
+    if(JSON.stringify(local.priceBook)!==JSON.stringify(remote.priceBook))results.push('날짜별 버전 또는 분류가 다릅니다.');
     const list=$('personalComparison');list.replaceChildren();
     const summary=document.createElement('p');summary.textContent='서버 r'+latest.revision+' · '+(results.join(' / ')||'입력 내용이 같습니다.');list.append(summary);
     if(diffMatrix){
@@ -253,7 +274,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
     $('minimum').value=source.minimumOrder;matrix.set(source.matrix,target.definition.grades);$('history').replaceChildren();switchTab('price');dirty();
     say('단가를 가져왔습니다. 이 상품의 가격표에 반영하려면 초안 저장을 눌러 주세요.');
   });
-  Object.assign(localized,{PERSONAL_FIELDS_REQUIRED:'초안 정보와 최소 주문량을 확인해 주세요.',PERSONAL_SCOPE_MISMATCH:'저장한 초안과 일치하는 등록 상품·난각번호·판당 구수를 선택해 주세요.'});
+  Object.assign(localized,{PERSONAL_FIELDS_REQUIRED:'초안 정보와 최소 주문량을 확인해 주세요.',PERSONAL_SCOPE_MISMATCH:'저장한 초안과 일치하는 등록 상품·난각번호·판당 구수를 선택해 주세요.',PERSONAL_PACKAGE_UNIT_MISMATCH:'이 포장 단가는 등록 상품에 바로 가져올 수 없습니다. 기존 원란·포장 표를 선택해 저장한 뒤 가져와 주세요.'});
   function retryKey(previous,body){
     const signature=JSON.stringify(body);
     return previous?.signature===signature?previous:{signature,key:crypto.randomUUID()};
@@ -554,16 +575,16 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   state.newId=crypto.randomUUID();paint(null);
   if(state.practice){$('versions-panel').open=true;$('review-actions').open=true;$('simulation-panel').open=true;}
   switchTab(location.hash==='#shipping'?'shipping':'price');
-  run(()=>motion.reveal($('price-workspace'),async()=>{const me=await fetch('/api/ia/r3-price/session',{cache:'no-store'});if(me.ok){const session=await me.json();state.csrf=session.csrf;$('practice-entry').hidden=!session.practiceAllowed;}
+  run(()=>motion.reveal($('price-workspace'),async()=>{const me=await fetch('/api/ia/r3-price/session',{cache:'no-store'});if(me.ok){const session=await me.json();state.csrf=session.csrf;state.ownerSession=session.practiceAllowed===true;$('practice-entry').hidden=!session.practiceAllowed;if(session.practiceAllowed)document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:session}));}
     await desk();const requested=new URLSearchParams(location.search).get('priceVersion');if(requested&&state.versions.some(v=>v.id===requested))await open(requested);else if(!state.practice&&!requested&&state.versions.length)await open(state.versions[0].id);else{rememberVersion(null);paint(null);}await buyerSites();await registrationInfo();
-    if(!state.practice){$('openPersonalDraft').hidden=false;if(!state.scope.length&&!registration.organizations.length&&!query.has('quote')&&location.hash!=='#quote')await openPersonal();}
+    if(!state.practice){$('openPersonalDraft').hidden=false;if(!requested&&!query.has('quote')&&location.hash!=='#quote')await openPersonal();}
     if(!state.practice&&query.has('quote'))await restoreQuoteInputs(query.get('quote'));if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}},{labels:{pending:'가격표 불러오는 중',success:'가격표 불러옴',error:'가격표를 불러오지 못했습니다.'}}))();
 
 }
 export function renderR3PricePage(nonce) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>계란 가격표 | Order</title>
 <style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}#price-workspace{--r3-skeleton-size:min(19rem,46vh)}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}html{scrollbar-width:none}body{font-family:system-ui,sans-serif}button{background:#edf1f6;border:0;font-weight:600}button.primary{background:#2455ce;color:white}input,select{border:1px solid #cdd5e1;background:white}section{border-top:1px solid #e0e6ef}.desk-heading,.bar,.weekdays{display:flex;flex-wrap:wrap;gap:.625rem}.desk-heading a{line-height:44px;color:#354965}.editor-fields{display:block;min-width:0;border:0;margin:0;padding:0}.weekdays label{display:inline-flex;align-items:center;flex:none;gap:.25rem}.weekdays input{width:1rem;min-height:1rem}.fields label,.bar label{flex-basis:9rem}pre{overflow:auto;white-space:pre-wrap}.matrix-scroll,body,main{scrollbar-width:none}.price-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;position:sticky;top:0;background:white;z-index:4;border-bottom:1px solid #d4dce5;padding:.45rem 0}.price-tabs{display:flex;gap:.25rem}.price-tabs button{background:transparent;color:#526074}.price-tabs button[aria-pressed=true]{color:#172b4a;background:#e8edf5}.desk-heading>span{font-weight:bold}#notice:empty{margin:0}#price-registration>summary{font-weight:650}#price-registration input:read-only{background:#f2f4f7}.subtle{color:#526074;font-size:.9rem}.price-title{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.price-title p{margin:0;color:#526074}.price-title h1{margin:.5rem 0}.product-setup{display:grid;gap:.75rem;margin-top:.5rem;padding-bottom:.5rem}.product-setup button{justify-self:start}.price-meta{margin:.5rem 0}.price-meta label{flex-basis:8rem}.desk-heading a{line-height:1.4}details:has(>summary){padding:.65rem 0}.desk-heading{align-items:center}.connection-list:empty{display:none}#practice-entry{font-size:.85rem}#practice-entry a{color:#657184}@media(max-width:680px){body{padding:.75rem}.price-title h1{font-size:1.5rem}.product-setup .fields{display:grid;grid-template-columns:1fr 1fr}.price-meta{display:grid;grid-template-columns:1fr 1fr}}
-${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${waitSceneCss}${priceShellCss}</style></head><body>
+${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${waitSceneCss}${priceShellCss}${priceBookCss}</style></head><body>
 <header class="price-app-header"><div class="price-app-heading"><a href="/ia/">IA 포털</a><span aria-hidden="true">/</span><h1>계란 가격표</h1></div><nav class="price-app-nav" aria-label="가격표 도구"><a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA랩</a><details class="price-utilities"><summary>더 보기</summary><div><span id="practice-entry" hidden><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">연습 화면</a></span></div></details></nav></header><main class="price-desk">
 <fieldset id="practice" hidden><legend>연습 공간</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset>
 <output aria-live="polite" id="notice"></output>
@@ -571,8 +592,9 @@ ${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${w
 <section id="personal-panel" hidden><div class="price-toolbar"><div class="price-book-title"><div class="price-book-name"><h2 id="personalTitle">새 가격표</h2><span class="price-scope-label" title="내 계정에 저장한 초안">내 초안</span></div><div id="personalSummary" class="price-summary"></div></div><div class="price-main-actions"><span id="priceSaveState" class="price-save-state" aria-live="polite"></span><button type="button" id="personalSettingsOpen" data-price-open="personalSettings">설정</button><button type="button" id="savePersonalDraft" class="primary">저장</button></div></div>
 <dialog id="personalSettings" class="price-settings" aria-labelledby="personalSettingsTitle"><div class="t-panel-slide" data-open="false"><header class="price-settings-header"><h2 id="personalSettingsTitle">가격표 설정</h2><button type="button" data-price-close>닫기</button></header><div class="price-settings-body"><p class="subtle">내 계정에 저장한 초안이에요. 공급처에 연결한 뒤 납품 가격으로 사용할 수 있어요.</p>
 <div class="fields price-meta"><label>초안 이름<input id="personalName" maxlength="80" placeholder="예: 11월 9일 참고 단가"></label><label>공급처<input id="personalSupplier" maxlength="80" placeholder="미지정"></label><label>출고장<input id="personalOrigin" maxlength="80" placeholder="미지정"></label><label>상품명<input id="personalProduct" maxlength="80" placeholder="미지정"></label><label>난각번호<select id="personalShell"><option value="">미지정</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="personalPack" type="number" min="1" max="360" placeholder="미지정"></label><label>배송 최소 주문량 (판)<input id="personalMinimum" type="number" min="1" value="10"></label></div></div></div></dialog>
-<output id="personalStatus" aria-live="polite"></output><div id="personalGrid"></div>
+<output id="personalStatus" aria-live="polite"></output>${priceBookMarkup}
 <div id="personalConflict" hidden><div id="personalComparison"></div><button type="button" id="readPersonalRemote">서버 초안 열기</button><button type="button" id="keepPersonalLocal">서버 내용 확인 후 내 입력 유지</button></div>
+<p id="personalImportNotice" class="subtle" hidden>이 포장 단가는 등록 상품에 바로 가져올 수 없어요. 기존 원란·포장 표를 선택해 저장한 뒤 가져와 주세요.</p>
 <details id="personalImport" hidden><summary>등록 상품 가격표로 가져오기</summary><div class="fields"><label>연결된 상품<select id="personalDest"></select></label><label>상품 난각번호<select id="personalImportShell"></select></label><label>상품 포장 단위<select id="personalImportPack"></select></label></div><button type="button" id="importPersonalDraft">등록 상품에 단가 가져오기</button></details>
 <button id="personalBack" type="button" hidden>상품 관리로 돌아가기</button></section>
 <details id="price-registration" hidden><summary id="registrationTitle">공급처·출고장·상품 등록</summary>
@@ -597,5 +619,5 @@ ${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${w
 </main><script nonce="${nonce}">${bloubScript}
 ${quoteJellyRuntime}
 window.OrderMagneticAction=(${browserFunction(mountMagneticAction)});
-;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${browserFunction(mountWaitScene)},${JSON.stringify({...bloubMontages,...waitMontages})},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)},${browserFunction(mountAsyncMotion)},${browserFunction(bindEditorMotion)},${browserFunction(mountPriceShell)});</script></body></html>`;
+;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${browserFunction(mountWaitScene)},${JSON.stringify({...bloubMontages,...waitMontages})},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)},${browserFunction(mountAsyncMotion)},${browserFunction(bindEditorMotion)},${browserFunction(mountPriceShell)},${browserFunction(createPriceBookModel)},${browserFunction(mountPriceBook)},${browserFunction(installQaSession)});</script></body></html>`;
 }

@@ -32,7 +32,10 @@ export async function handlePreview(context,fetcher=fetch) {
     return new Response(null,{status:303,headers:{...headers,Location:dest.pathname+dest.search}});
   }
   let existing;
-  try { existing=await readSession(request,env); } catch { /* New or expired session. */ }
+  try { existing=await readSession(request,env); } catch(error) {
+    if(error?.message==='SESSION_STORE_UNAVAILABLE')return deny(503);
+    // Only a missing/expired session may enter the established SSO flow.
+  }
   if(existing)return context.next();
 
   let session;

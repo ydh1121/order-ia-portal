@@ -26,11 +26,11 @@ const versionAccess=`EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND
 const verified="m.role='BUYER' AND m.active=1 AND s.verification='VERIFIED'";
 const nextState={create:'DRAFT',edit:'DRAFT',submit:'SUBMITTED',return:'RETURNED',approve:'APPROVED',withdraw:'WITHDRAWN'};
 const version=v=>({id:v.id,revision:v.revision,status:v.status,policy:JSON.parse(v.policy_json),predecessor:v.predecessor,createdBy:v.created_by,approvedBy:v.approved_by,approvedAt:v.approved_at,approvalId:v.approved_by?v.id+':'+v.revision:null});
-async function parseBody(request) {
+async function parseBody(request,limit=131072) {
   if(!request.headers.get('content-type')?.split(';')[0].match(/^application\/json$/)) invalid();
-  if(!request.body || Number(request.headers.get('content-length'))>131072) invalid();
+  if(!request.body || Number(request.headers.get('content-length'))>limit) invalid();
   const reader=request.body.getReader(),decoder=new TextDecoder('utf-8',{fatal:true});let length=0,text='';
-  try{for(;;){const {value,done}=await reader.read();if(done)break;length+=value.length;if(length>131072){await reader.cancel();invalid('TOO_LARGE');}text+=decoder.decode(value,{stream:true});}text+=decoder.decode();const value=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value))invalid();return value;}
+  try{for(;;){const {value,done}=await reader.read();if(done)break;length+=value.length;if(length>limit){await reader.cancel();invalid('TOO_LARGE');}text+=decoder.decode(value,{stream:true});}text+=decoder.decode();const value=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value))invalid();return value;}
   catch(e){if(e instanceof PolicyError)throw e;invalid();}finally{reader.releaseLock();}
 }
 async function mustStaff(db,actorId,p,approve=false){
@@ -199,7 +199,7 @@ export async function handleR3Price({request,env,actor,path,clock=()=>new Date()
     }
     if(!practiceSupplier && path==='/personal-draft'){
       if(!get&&request.method!=='POST')return reply({error:'METHOD_NOT_ALLOWED'},405);
-      return reply(await personalPrice(db,actor,get?null:await parseBody(request),now));
+      return reply(await personalPrice(db,actor,get?null:await parseBody(request,1048576),now));
     }
     if(!practiceSupplier && path==='/registration'){
       if(get)return reply(await registrationDesk(db,actor,u.searchParams.get('request')));

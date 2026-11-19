@@ -262,6 +262,10 @@ def check(browser, subject, width):
         # A new browser context has no address bookmark, local storage, or session cookie.
         page = new_page(browser, subject, width)
         page.goto(entry)
+        # The dated personal book is now the shared default; open registered-product
+        # management explicitly to verify the same saved commercial draft.
+        expect(page.locator('#personal-panel')).to_be_visible()
+        page.locator('#personalBack').click()
         expect(page.locator("#current")).to_contain_text("r1")
         check_reference_ui(page)
         grid = page.locator("#matrix")

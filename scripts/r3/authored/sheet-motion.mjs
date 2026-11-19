@@ -44,7 +44,7 @@ export function mountSheetGesture(sheet, handles, {signal, reduced, close, open 
     active=null;
     if (event.type === 'pointercancel' || event.type === 'lostpointercapture') {snap(snapped);return;}
     if (dy>0 && (offset>=travel()*.4 || (snapped>0 && dy>peek()*.6))) {
-      snap(0);close();return;
+      close({offset});return;
     }
     snap(offset>peek()*.55 ? peek() : 0);
   }

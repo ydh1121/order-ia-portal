@@ -1,5 +1,5 @@
 const sourceSha = 'e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
-const kinds = new Set(['comment','reply','draft','review','change','figma','artifact','screen']);
+const kinds = new Set(['comment','reply','draft','review','change','figma','artifact','screen','feedback']);
 const actions = new Set(['save','relocate','resolve','delete','reopen']);
 const viewFields = new Set(['id','instance','x','y','viewport','scale','scroll','layers','artifactHash']);
 const pointId = x => typeof x === 'string' && /^[\w.:-]{1,120}$/u.test(x);
@@ -39,7 +39,8 @@ function validData(kind,d) {
   const types = {
     comment:['body','anchor','sourceKey','sourceCommentId'], reply:['body','parent'], draft:['body','anchor','sourceKey','sourceCommentId','parent'],
     review:['decision','sourceKey'], change:['status','evidenceRef','body','sourceKey','sourceCommentId'],
-    figma:['figmaUrl','status','evidenceRef','sourceKey','note'], artifact:['evidenceRef','status'], screen:['sourceKey','evidenceRef','status','body']
+    figma:['figmaUrl','status','evidenceRef','sourceKey','note'], artifact:['evidenceRef','status'], screen:['sourceKey','evidenceRef','status','body'],
+    feedback:['parent','status']
   };
   if (!keys(d,allowed('target',...types[kind])) || !validTarget(d.target)) return false;
   if ('sourceKey' in d && !recordId(d.sourceKey)) return false;
@@ -50,6 +51,7 @@ function validData(kind,d) {
   if ('parent' in d && (!keys(d.parent,allowed('origin','id')) ||
       !['current','legacy'].includes(d.parent.origin) || !recordId(d.parent.id))) return false;
   if (kind==='reply' && !d.parent) return false;
+  if (kind==='feedback') return Boolean(d.parent) && ['unresolved','recheck','resolved'].includes(d.status);
   if (kind==='reply'||kind==='comment') return typeof d.body==='string' && d.body.trim().length>0;
   if (kind==='draft') return typeof d.body==='string';
   if (kind==='review') return ['changes_requested','unreviewed','approved'].includes(d.decision);
@@ -96,7 +98,7 @@ async function write(db,actor,b) {
   if ((previous?.revision??0)!==b.expectedRevision) return conflict();
   if(previous){
     const data=JSON.parse(previous.data);
-    if (b.kind==='reply' && (data.parent.id!==b.data.parent.id || data.parent.origin!==b.data.parent.origin)) return invalid();
+    if (['reply','feedback'].includes(b.kind) && (data.parent.id!==b.data.parent.id || data.parent.origin!==b.data.parent.origin)) return invalid();
     // A moved point may attach to the next build of the same logical screen. The
     // old target/hash and coordinates remain on their previous immutable event.
     const oldTarget=action==='relocate'?{...data.target,artifactHash:b.data.target.artifactHash}:data.target;
@@ -111,7 +113,7 @@ async function write(db,actor,b) {
   // A new reply must be attached to an existing comment on this exact screen.
   // Evaluate the parent and revision in the insert so a concurrent delete wins cleanly.
   let parentCondition='',parentArgs=[];
-  if(b.kind==='reply' && !previous){
+  if((b.kind==='reply' && !previous)||b.kind==='feedback'){
     const {parent,target}=b.data;
     if(parent.origin==='legacy'){
       parentCondition=` AND EXISTS (SELECT 1 FROM qa_legacy_records r JOIN qa_legacy_sources s ON s.sha256=r.source_sha AND s.complete=1,
@@ -123,11 +125,11 @@ async function write(db,actor,b) {
       parentCondition=` AND EXISTS (SELECT 1 FROM qa_review_events p
         WHERE p.release=? AND p.kind='comment' AND p.id=? AND p.revision=(
           SELECT max(newer.revision) FROM qa_review_events newer WHERE newer.release=p.release AND newer.kind=p.kind AND newer.id=p.id)
-        AND p.action NOT IN ('delete','resolve')
+        AND p.action NOT IN (${b.kind==='feedback'?"'delete'":"'delete','resolve'"})
         AND json_extract(p.data,'$.target.screen')=? AND json_extract(p.data,'$.target.state')=?
         AND json_extract(p.data,'$.target.variant')=? AND json_extract(p.data,'$.target.viewport')=?
-        AND json_extract(p.data,'$.target.artifactHash')=?)`;
-      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,target.artifactHash];
+        ${b.kind==='feedback'?'':"AND json_extract(p.data,'$.target.artifactHash')=?"})`;
+      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,...(b.kind==='feedback'?[]:[target.artifactHash])];
     }
   }
   const insertion=await db.prepare(`INSERT OR IGNORE INTO qa_review_events
@@ -138,7 +140,7 @@ async function write(db,actor,b) {
       b.expectedRevision,b.release,b.kind,b.id,...parentArgs).run();
   const saved=await replay();
   if(saved)return result(saved,insertion.meta.changes===0);
-  if(parentCondition && !await getCurrent())return json({error:'REPLY_PARENT_UNAVAILABLE'},409);
+  if(parentCondition && !await getCurrent())return json({error:b.kind==='feedback'?'FEEDBACK_SOURCE_UNAVAILABLE':'REPLY_PARENT_UNAVAILABLE'},409);
   return conflict();
 }
 function pageNumber(s,fallback,min,max) {

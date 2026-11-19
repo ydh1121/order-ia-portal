@@ -9,7 +9,10 @@
   const passwordRule = '영문·숫자·특수문자를 포함해 10자 이상 입력해 주세요.';
   const spinner = '<span class="spinner" aria-hidden="true"></span><span class="sr-only">처리 중</span>';
   const interactive=api=>typeof api.interactive==='function'?api.interactive():api.interactive!==false;
-  const social=(compact=false)=>`<div class="social-buttons">${button(compact?'카카오':'카카오로 계속하기','social-kakao','social kakao')}${button(compact?'네이버':'네이버로 계속하기','social-naver','social naver')}${button(compact?'구글':'구글로 계속하기','social-google','social google')}</div>`;
+  const social=()=>'<div class="social-buttons integrated-providers" role="group" aria-label="간편 로그인">'+['kakao','naver','google'].map(provider=>{
+    const ref=w.ORDER_QA_PROVIDER_BUTTONS?.[provider];
+    return ref?'<button type="button" class="integrated-provider" data-action="social-'+provider+'" aria-label="'+esc(ref.label)+'"><img width="48" height="48" alt="" src="data:image/png;base64,'+ref.png+'"></button>':button(({kakao:'카카오',naver:'네이버',google:'구글'})[provider],'social-'+provider,'social '+provider);
+  }).join('')+'</div>';
   const success=(title,body,action='login')=>`<div class="empty"><div class="success-mark">${icon('check')}</div><h2>${title}</h2><p>${body}</p>${button('계속하기',action)}</div>`;
   const meter=(level=0)=>`<div class="password-meter" data-level="${level}" aria-label="비밀번호 강도 예시"><div class="liquid-segments">${[1,2,3,4].map(i=>`<i class="${i<=level?'filled':''}"><b></b><em aria-hidden="true"></em></i>`).join('')}</div><p class="meter-label" aria-live="polite">${meterText[level]}</p></div>`;
 
@@ -128,7 +131,8 @@
     anim.finished.then(()=>{if(!signal.aborted)callback();},()=>{});
   }
   function scene(content,title,opts={}) {
-    return `<div class="auth-scene"><div class="auth-background" aria-hidden="true" inert>${head('우리 사업장에 맞는<br>계란 최저가를 알아보세요','',opts)}<div class="scene-egg">${w.ORDER_QA_ASSETS?.avatar||''}</div></div><div class="sheet-dim" aria-hidden="true"></div><section class="auth-sheet t-modal is-open" role="dialog" aria-modal="true" aria-label="${esc(title)}" tabindex="-1"><div class="sheet-handle" aria-hidden="true"></div><button type="button" class="icon-btn sheet-close" data-action="close-sheet" aria-label="닫기">${icon('close')}</button>${content}</section></div>`;
+    const closed=opts.sheetState==='closed';
+    return `<div class="auth-scene ${closed?'is-closed':''}"><div class="auth-background" ${closed?'':'aria-hidden="true" inert'}>${head('우리 사업장에 맞는<br>계란 최저가를 알아보세요','',opts)}<div class="scene-egg">${w.ORDER_QA_ASSETS?.avatar||''}</div></div><div class="sheet-dim" aria-hidden="true" ${closed?'hidden':''}></div><section class="auth-sheet t-modal is-open" role="dialog" aria-modal="true" aria-label="${esc(title)}" tabindex="-1" ${closed?'hidden':''}><div class="sheet-handle" aria-hidden="true"></div>${content}</section>${title==='로그인'?'<div class="auth-return-action" '+(closed?'':'hidden')+'>'+button('로그인','open-login')+'</div>':''}</div>`;
   }
   function consumeAuthReturn(api,authenticated) {
     const target=w.ORDER_QA_AUTH_RETURN;
@@ -139,10 +143,57 @@
   }
   function commonAuthMount(root,state,api,authenticated=false) {
     const c=new AbortController();
-    const close=()=>{if(!consumeAuthReturn(api,authenticated))navigate(api,'onboarding',authenticated?'member-4':'guest-4');};
-    const handle=root.querySelector('.sheet-handle');
-    const sheet=root.querySelector('.auth-sheet');
-    w.ORDER_QA_SHEET?.(sheet,[handle],{signal:c.signal,reduced:api.reduced,close});
+    const handle=root.querySelector('.sheet-handle'),sheet=root.querySelector('.auth-sheet');
+    const scene=root.querySelector('.auth-scene'),background=root.querySelector('.auth-background'),dim=root.querySelector('.sheet-dim');
+    const ownLogin=api.screen==='login'||Boolean(root.querySelector('.auth-layout'));
+    let sheetOpen=state!=='closed',moving=false,flight=null;
+    let reopen=root.querySelector('.auth-return-action');
+    if(ownLogin&&!reopen){reopen=document.createElement('div');reopen.className='auth-return-action';reopen.innerHTML=button('로그인','open-login');reopen.hidden=sheetOpen;scene?.append(reopen);}
+    const notify=next=>{if(api.localState)api.localState(next);else navigate(api,'login',next);};
+    function settle(open,announce=true){
+      sheetOpen=open;moving=false;sheet.hidden=!open;sheet.inert=!open;sheet.style.transform='';
+      scene?.classList.toggle('is-closed',!open);if(dim)dim.hidden=!open;if(reopen)reopen.hidden=open;
+      if(background){background.inert=open;if(open)background.setAttribute('aria-hidden','true');else background.removeAttribute('aria-hidden');}
+      if(open){gesture?.activate();gesture?.reset();sheet.querySelector('input,button')?.focus({preventScroll:true});}else{gesture?.deactivate();reopen?.querySelector('button')?.focus({preventScroll:true});}
+      if(announce)notify(open?'empty':'closed');
+    }
+    const close=(options={})=>{
+      if(moving||!sheetOpen||!sheet){options.done?.();return;}
+      if(!ownLogin||authenticated){if(!consumeAuthReturn(api,authenticated))navigate(api,'onboarding',authenticated?'member-4':'guest-4');return;}
+      moving=true;sheet.inert=true;flight?.cancel();
+      const finish=()=>{if(c.signal.aborted)return;settle(false,options.announce!==false&&!api.authOriginStep);options.done?.();if(api.authOriginStep&&options.announce!==false)navigate(api,'login','closed');};
+      if(api.reduced?.()||!sheet.animate){finish();return;}
+      const from=sheet.style.transform||'translateY(0)';
+      flight=sheet.animate([{transform:from,filter:'blur(0px)'},{transform:'translateY(105%)',filter:'blur(2px)'}],{duration:350,easing:'cubic-bezier(.22,1,.36,1)',fill:'forwards'});
+      dim?.animate([{opacity:1},{opacity:0}],{duration:280,easing:'ease-out'});
+      flight.finished.then(finish,()=>{});
+    };
+    const gesture=w.ORDER_QA_SHEET?.(sheet,[handle],{signal:c.signal,reduced:api.reduced,close,open:sheetOpen});
+    function openSheet(announce=true,done=null){
+      if(!ownLogin||sheetOpen||moving)return false;moving=true;flight?.cancel();
+      sheet.hidden=false;sheet.inert=false;scene?.classList.remove('is-closed');if(dim)dim.hidden=false;if(reopen)reopen.hidden=true;
+      if(background){background.inert=true;background.setAttribute('aria-hidden','true');}gesture?.activate();gesture?.reset();
+      const finish=()=>{if(!c.signal.aborted){settle(true,announce);done?.();}};
+      if(api.reduced?.()||!sheet.animate){finish();return true;}
+      flight=sheet.animate([{transform:'translateY(100px)',opacity:0,filter:'blur(2px)'},{transform:'translateY(0)',opacity:1,filter:'blur(0px)'}],{duration:400,easing:'cubic-bezier(.22,1,.36,1)'});
+      flight.finished.then(finish,()=>{});return true;
+    }
+    root.addEventListener('r3-auth-sheet-state',event=>{
+      const next=event.detail?.state;if(!ownLogin||authenticated||!['empty','closed'].includes(next))return;
+      event.preventDefault();flight?.cancel();moving=false;
+      if(next==='closed')close({announce:false,done:event.detail.done});
+      else if(!openSheet(false,event.detail.done)){settle(true,false);event.detail.done?.();}
+    },{signal:c.signal});
+    c.signal.addEventListener('abort',()=>flight?.cancel(),{once:true});
+    root.querySelectorAll('.sheet-close').forEach(el=>el.remove());
+    if(dim)dim.addEventListener('click',close,{signal:c.signal});
+    if(ownLogin&&state==='closed')settle(false,false);
+    const eyes='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="eye-open"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></g><g class="eye-closed"><path d="M3 10c2.2 3.6 5.2 5.2 9 5.2s6.8-1.6 9-5.2M5 13l-1.5 2M9 15l-.5 2M15 15l.5 2M19 13l1.5 2"/></g></svg>';
+    for(const toggle of root.querySelectorAll('[data-action=password-visibility]')){
+      toggle.innerHTML=eyes;toggle.classList.add('password-eye');
+      const sync=()=>toggle.classList.toggle('is-visible',toggle.closest('.field')?.querySelector('input')?.type==='text');
+      toggle.addEventListener('click',()=>queueMicrotask(sync),{signal:c.signal});sync();
+    }
     if(authenticated && interactive(api)){
       const timer=setTimeout(()=>exitSheet(root,api,close,c.signal),api.reduced?.()?250:780);
       c.signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});
@@ -168,15 +219,14 @@
       else if(!e.shiftKey&&(active===last||active===dialog)){e.preventDefault();first.focus({preventScroll:true});}
     },{signal:c.signal});
     applyPendingFocus(root,api);
-    return()=>c.abort();
+    const dispose=()=>c.abort();dispose.open=openSheet;return dispose;
   }
 
   registry.push({id:'login',group:'로그인·가입',label:'로그인 바텀시트',description:'이메일 우선·간편 로그인 우선·통합형 배치와 인증 예외를 비교합니다.',width:'mobile',variants:[{id:'email',label:'이메일 우선'},{id:'social',label:'간편 로그인 우선'},{id:'compact',label:'통합형'}],states:states([['empty','기본'],['filled','입력됨'],['email-error','이메일 오류'],['error','인증 오류'],['loading','처리 중'],['limited','시도 제한'],['success','완료 예시'],['closed','닫힘']]),render(s,o={}) {
-    if(s==='closed')return `<div class="page">${head('다시 만나서<br>반가워요','내 견적과 납품 조건을 이어서 확인하세요.',o)}<div class="surface login-return">${icon('user',42)}<h2>내 견적을 한곳에서</h2><p class="muted">저장한 견적과 요청을 확인해요.</p></div><div class="bottom-actions">${button('로그인','open-login')}</div></div>`;
     const form=`${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',required:true,value:s==='filled'?'my@order.ooo':s==='email-error'?'my.order.ooo':'',error:s==='email-error'?'이메일 양식을 확인해 주세요.':''})}${field('비밀번호','password','비밀번호',{type:'password',autocomplete:'current-password',required:true,value:s==='filled'?EXAMPLE_PASSWORD:'',error:s==='error'?'비밀번호를 확인해 주세요.':''})}<div class="auth-options"><label class="check-row"><input type="checkbox">로그인 상태 유지</label>${button('비밀번호 찾기','reset-password','text')}</div>${s==='limited'?note('시도가 많아요. 잠시 후 다시 시도해 주세요.','error'):''}${button(s==='loading'?spinner:s==='limited'?'잠시 후 재시도':'로그인','submit-login','primary wide',s==='loading'||s==='limited'?'disabled':'')}`;
     const v=o.variant==='social'?'social':o.variant==='email'?'email':'compact',sep='<div class="auth-separator"><span>또는</span></div>';
     const body=s==='success'?'<div class="auth-complete" role="status"><span class="success-mark">'+icon('check',32)+'</span><h2>로그인했어요</h2></div>':`<div class="sheet-title"><h1>로그인</h1></div><form novalidate data-submit-action="submit-login">${v==='social'?social()+sep+form:form+sep+social(v==='compact')}</form><div class="auth-footer"><span>아직 계정이 없나요?</span>${button('회원가입','signup','text blue')}</div>`;
-    return scene(`<div class="auth-layout ${v}">${s==='loading'?frozenFixture(body):body}</div>`,'로그인',o);
+    return scene(`<div class="auth-layout ${v}">${s==='loading'?frozenFixture(body):body}</div>`,'로그인',{...o,sheetState:s==='closed'?'closed':'open'});
   },mount(root,s,api={}) {
     const dispose=commonAuthMount(root,s,api,s==='success'),c=new AbortController();
     if(s==='error'&&api.authState?.reason==='email_unknown'){
@@ -189,7 +239,7 @@
     },c.signal);
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]'),a=btn?.dataset.action;if(btn?.disabled)return;
-      if(a==='open-login')navigate(api,'login','empty','[name=email]');
+      if(a==='open-login'&&!dispose.open?.())navigate(api,'login','empty','[name=email]');
       if(a==='submit-login'){
         const email=root.querySelector('[name=email]'),pass=root.querySelector('[name=password]');
         const validEmail=emailValid(email),validPass=fieldError(pass,pass?.value?'':'비밀번호를 입력해 주세요.');

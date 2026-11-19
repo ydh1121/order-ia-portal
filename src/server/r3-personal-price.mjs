@@ -1,7 +1,9 @@
+import {createPriceBookModel} from './r3-price-book-model.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
 import {PolicyError} from './order-engine/calculation/supply-policy.mjs';
 
 const model=createPriceMatrixModel();
+const books=createPriceBookModel(model);
 const fail=(code,status=422)=>{throw new PolicyError(code,status);};
 const title=v=>typeof v==='string'&&v.trim()===v&&v.length>0&&v.length<=80;
 const code=v=>typeof v==='string'&&/^[\w.:-]{1,100}$/.test(v);
@@ -22,7 +24,12 @@ function normalized(d){
   const matrix={schema:1,grades:d.matrix.grades.map(({id,name})=>({id,name})),
     rows:d.matrix.rows.map(({min,max,cells})=>({min,max,cells:cells.map(model.normalize)}))};
   if(new Set(matrix.grades.map(g=>g.name)).size!==matrix.grades.length)fail('PRICE_MATRIX_INVALID');
-  return {name:d.name||'',supplierName:d.supplierName||null,originName:d.originName||null,productName:d.productName||null,
+  let priceBook;
+  if(d.priceBook!=null){try{priceBook=books.normalize(d.priceBook);}catch(e){fail(e.message);}
+    const selected=books.selected(priceBook);
+    if(JSON.stringify(selected.matrix)!==JSON.stringify(matrix)||(d.shell??'unspecified')!==selected.shell.key||d.packSize!==selected.shell.basePackSize)fail('PRICE_BOOK_SELECTION');
+  }
+  return {...(priceBook?{priceBook}:{}),name:d.name||'',supplierName:d.supplierName||null,originName:d.originName||null,productName:d.productName||null,
     shell:d.shell,packSize:d.packSize,minimumOrder:d.minimumOrder,matrix};
 }
 const project=row=>row?{revision:row.revision,updatedAt:row.saved_at,draft:JSON.parse(row.content)}:{revision:0,updatedAt:null,draft:null};
@@ -38,6 +45,9 @@ async function prepareImport(db,actor,own,b){
         AND r.org_id=a.supplier_id AND r.role='SUPPLIER' AND r.active=0)))`,b.supplierId,b.originId,b.productId,actor.id,actor.id).first();
   if(!catalog)fail('ACCESS_REQUIRED',403);
   const d=JSON.parse(own.content),c=JSON.parse(catalog.definition);
+  // Alternate tables retain the original base-pack metadata. Only equal per-tray
+  // units may enter that product's policy; a different package needs its own scope.
+  if(d.priceBook&&!books.canImportSelected(d.priceBook))fail('PERSONAL_PACKAGE_UNIT_MISMATCH');
   if(['supplierName','originName','productName'].some(k=>d[k]!==null&&d[k]!==c[k])||!c.shells.includes(b.shell)||(d.shell!==null&&b.shell!==d.shell)||
     !c.packSizes.includes(b.packSize)||(d.packSize!==null&&b.packSize!==d.packSize))fail('PERSONAL_SCOPE_MISMATCH');
   const grades=d.matrix.grades.map(g=>c.grades.find(approved=>approved.name===g.name));

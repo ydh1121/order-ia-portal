@@ -22,7 +22,8 @@ export function mountPriceShell(root=document) {
     listen(dialog,'click',e=>{if(e.target===dialog)close(dialog);});
     for(const button of dialog.querySelectorAll('[data-price-close]'))listen(button,'click',()=>close(dialog));
   }
-  function syncPersonal() {
+  function syncPersonal(preserveDirty=false) {
+    const wasDirty=$('priceSaveState').dataset.dirty==='true';
     const name=$('personalName').value.trim()||'새 가격표';
     $('personalTitle').textContent=name;$('personalTitle').title=name;
     const items=[$('personalSupplier').value.trim(),$('personalShell').value&&$('personalShell').selectedOptions[0]?.text,
@@ -30,8 +31,9 @@ export function mountPriceShell(root=document) {
     $('personalSummary').replaceChildren(...items.map(text=>{const item=document.createElement('span');item.textContent=text;return item;}));
     const saved=$('personalStatus').textContent;
     if(saved){$('priceSaveState').textContent=/아직 저장/.test(saved)?'미저장':'저장됨';$('priceSaveState').dataset.dirty='false';}
+    if(preserveDirty&&wasDirty){$('priceSaveState').textContent='수정 중';$('priceSaveState').dataset.dirty='true';}
   }
-  const observe=new MutationObserver(syncPersonal);
+  const observe=new MutationObserver(()=>syncPersonal());
   observe.observe($('personalStatus'),{childList:true,characterData:true,subtree:true});
   const input=e=>{
     if(e.target.closest('#personalSettings'))syncPersonal();
@@ -44,7 +46,7 @@ export function mountPriceShell(root=document) {
   const announce=()=>{clearTimeout(noticeTimer);notice.dataset.visible=notice.textContent.trim()?'true':'false';if(notice.dataset.visible==='true')noticeTimer=setTimeout(()=>{notice.dataset.visible='false';},5000);};
   const noticeObserver=new MutationObserver(announce);noticeObserver.observe(notice,{childList:true,characterData:true,subtree:true});
   syncPersonal();announce();
-  return {destroy(){observe.disconnect();noticeObserver.disconnect();clearTimeout(noticeTimer);for(const fn of cleanups)fn();for(const timer of timers.values())clearTimeout(timer);}};
+  return {sync:()=>syncPersonal(true),destroy(){observe.disconnect();noticeObserver.disconnect();clearTimeout(noticeTimer);for(const fn of cleanups)fn();for(const timer of timers.values())clearTimeout(timer);}};
 }
 
 export const priceShellCss=`

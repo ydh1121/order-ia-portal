@@ -8,6 +8,7 @@ export const matrixMarkup = `<div class="mx-toolbar">
 <details><summary>선택 가격 일괄 수정</summary><div class="matrix-controls"><button type="button" data-mx="start">범위 시작 셀</button><button type="button" data-mx="end">범위 끝 셀</button><span data-mx="range"></span><label>변경 방식<select data-mx="method"><option value="adjust">정액 변경 (원)</option><option value="percent">정률 변경 (%)</option><option value="fee">원란에 포장비 가산</option></select></label><label>변경값<input data-mx="delta" inputmode="decimal"></label><button data-mx="preview" type="button">변경 미리보기</button></div><div data-mx="proposal" hidden><ul></ul><button data-mx="apply" type="button">표에 적용</button></div></details>
 <details><summary>입력 도움말</summary><p class="matrix-help">엑셀에서 복사한 셀을 바로 붙여넣을 수 있습니다.</p><p class="matrix-help">포장 칸에 +210을 입력하면 원란 가격에 210원을 더합니다. 빈칸은 미입력입니다.</p><p class="matrix-help">판매하지 않는 가격은 미판매, 별도 상담이 필요한 가격은 협의로 입력하세요.</p></details>
 </div></details></div></div>
+<div class="mx-quick" role="toolbar" aria-label="가격표 바로 편집"><button type="button" data-mx-short="add">구간 추가</button><button type="button" data-mx-short="copy">복제</button><button type="button" data-mx-short="remove">삭제</button><button type="button" data-mx-short="undo">실행 취소</button><button type="button" data-mx-short="bulk">일괄 수정</button></div>
 <div class="matrix-scroll" data-mx="scroll" tabindex="0" aria-label="단가표 가로 이동"><table class="price-matrix"><caption class="sr-only">수량·규격별 원란과 포장 단가 (원)</caption><thead></thead><tbody></tbody></table></div>
 <datalist id="price-cell-states"><option value="협의"></option><option value="미판매"></option></datalist>
 <output class="mx-status" data-mx="status" aria-live="polite"></output>`;
@@ -39,25 +40,31 @@ export const matrixLayoutCss = `
 .price-matrix th.mx-fixed{background:#f6f7f9;z-index:5}
 @media(max-width:680px){.matrix-scroll{--bound-width:45px;max-height:calc(100dvh - 210px)}}
 `;
-export const matrixCss=baseMatrixCss+matrixLayoutCss;
+export const matrixCss=baseMatrixCss+matrixLayoutCss+`
+.mx-quick{display:flex;align-items:center;justify-content:flex-end;gap:5px;margin:0;min-width:0;flex:1;overflow:auto;scrollbar-width:none}.mx-quick button{min-height:32px;padding:6px 10px;border:0;border-radius:7px;background:#f1f3f6;color:#465161;font-size:12px;white-space:nowrap}.mx-quick button:disabled{opacity:.35}.mx-quick button:first-child{color:#2454d8;background:#edf2ff}.price-matrix{table-layout:fixed}.price-matrix td:not(.mx-bound):not(.mx-interval){width:132px;min-width:132px}.price-matrix td.mx-interval{width:108px;min-width:108px}.price-desk .matrix-scroll{width:fit-content;max-width:calc(100% + 36px)}@media(max-width:1000px){.mx-toolbar{flex-wrap:wrap}.mx-quick{order:3;flex:1 0 100%;justify-content:flex-start}.mx-toolbar-end{margin-left:auto}}@media(max-width:680px){.price-desk .matrix-scroll{max-width:calc(100% + 20px)}.matrix-scroll:not(.all-grades) .price-matrix{width:372px;min-width:372px}.matrix-scroll:not(.all-grades) .mx-interval{width:108px}}
+`;
 export function mountPriceMatrix(root, model) {
   const find = name => root.querySelector('[data-mx="'+name+'"]');
   const head=root.querySelector('thead'), body=root.querySelector('tbody');
+  let displayOrder=[];
   let available=[],grades=[], rows=[], base=null, point=[0,2], range=null, endpoint='', pending=[], all=!matchMedia('(max-width:680px)').matches, readOnly=false, editingBounds=false, viewTouched=false;
   const status=text=>{find('status').textContent=text;};
+  const orderedRows=()=>{const order=new Map(displayOrder.map((key,i)=>[key,i]));return rows.map((_,i)=>i).sort((a,b)=>(order.get(rows[a][0]+':'+(rows[a][1]||'*'))??(order.size+a))-(order.get(rows[b][0]+':'+(rows[b][1]||'*'))??(order.size+b)));};
+  const quick=root.querySelector('.mx-quick');find('grade-chips').after(quick);
+  for(const button of root.querySelectorAll('[data-mx-short]'))button.onclick=()=>{const name=button.dataset.mxShort;if(name==='bulk'){find('tools').open=true;find('method').closest('details').open=true;find('delta').focus();}else find(name).click();};
   const names=()=>['시작 판수','끝 판수',...grades.flatMap(g=>[g.name+' 원란',g.name+' 포장'])];
   const cells=row=>[row.min===null?'':String(row.min),row.max===null?'':String(row.max),...row.cells];
   const undo=[];
   function checkpoint(){
     if(undo.length>=40)undo.shift();
     undo.push({rows:rows.map(row=>row.slice()),grades:grades.map(g=>({...g}))});
-    find('undo').disabled=false;
+    find('undo').disabled=false;root.querySelector('[data-mx-short=undo]')?.removeAttribute('disabled');
   }
   function notify(){root.dispatchEvent(new Event('input',{bubbles:true}));}
   find('undo').onclick=()=>{
     if(readOnly||!undo.length)return;
     const prior=undo.pop();rows=prior.rows;grades=prior.grades;range=null;cancelProposal();render();
-    find('undo').disabled=!undo.length;notify();status('이전 입력으로 되돌렸습니다.');
+    find('undo').disabled=!undo.length;root.querySelector('[data-mx-short=undo]')?.toggleAttribute('disabled',!undo.length);notify();status('이전 입력으로 되돌렸습니다.');
   };
   const display=text=>typeof text==='string'?text.replace(/^(\+?)(\d+)(\.\d+)?$/,(_,prefix,whole,fraction='')=>prefix+whole.replace(/\B(?=(\d{3})+(?!\d))/g,',')+fraction):text;
   const numeric=s=>s===''?null:/^\d+$/.test(s)?Number(s):s;
@@ -70,6 +77,7 @@ export function mountPriceMatrix(root, model) {
     for(const item of root.querySelectorAll('[data-bound-col]'))item.hidden=!editingBounds;
     for(const item of root.querySelectorAll('[data-interval-col]'))item.hidden=editingBounds;
     find('scroll').classList.toggle('all-grades',all);
+    const width=(editingBounds?120:108)+(all?grades.length:1)*264;root.querySelector('table').style.width=width+'px';root.querySelector('table').style.minWidth=width+'px';
     find('view').setAttribute('aria-pressed',String(all));find('view').textContent=all?'선택 규격 보기':'전체표 보기';
     find('bounds').setAttribute('aria-pressed',String(editingBounds));find('bounds').textContent=editingBounds?'구간 편집 끝내기':'구간 편집';
     for(const chip of find('grade-chips').querySelectorAll('button'))chip.setAttribute('aria-pressed',String(chip.dataset.grade===''?all:!all&&chip.dataset.grade===grade));
@@ -143,8 +151,8 @@ export function mountPriceMatrix(root, model) {
     header(columns,'끝');columns.lastChild.dataset.boundCol='';columns.lastChild.className='mx-fixed mx-fixed-end';
     grades.forEach((g,i)=>{header(group,g.name,2,i);header(columns,'원란',1,i);header(columns,'포장',1,i);});
     head.replaceChildren(group,columns);body.replaceChildren();
-    rows.forEach((row,r)=>{
-      const tr=document.createElement('tr');
+    orderedRows().forEach(r=>{
+      const row=rows[r];const tr=document.createElement('tr');
       const interval=document.createElement('td'),edit=document.createElement('button');interval.className='mx-interval';interval.dataset.intervalCol='';interval.dataset.intervalRow=String(r);
       edit.type='button';edit.textContent=intervalLabel(row);edit.setAttribute('aria-label',(r+1)+'행 주문 판수 편집');edit.disabled=readOnly;edit.onclick=()=>{point=[r,0];openBounds(r);};interval.append(edit);tr.append(interval);
       row.forEach((v,c)=>{
@@ -164,8 +172,8 @@ export function mountPriceMatrix(root, model) {
         input.onkeydown=e=>{
           if(e.isComposing||e.altKey||e.ctrlKey||e.metaKey)return;
           let nr=r,nc=c;
-          if(e.key==='Enter'||e.key==='ArrowDown')nr+=e.shiftKey&&e.key==='Enter'?-1:1;
-          else if(e.key==='ArrowUp')nr--;else if(e.key==='ArrowLeft')nc--;else if(e.key==='ArrowRight')nc++;else return;
+          if(e.key==='Enter'||e.key==='ArrowDown'){const indices=orderedRows();nr=indices[indices.indexOf(r)+(e.shiftKey&&e.key==='Enter'?-1:1)]??-1;}
+          else if(e.key==='ArrowUp'){const indices=orderedRows();nr=indices[indices.indexOf(r)-1]??-1;}else if(e.key==='ArrowLeft')nc--;else if(e.key==='ArrowRight')nc++;else return;
           e.preventDefault();while(cell(nr,nc)?.parentElement.hidden&&nc!==c)nc+=nc<c?-1:1;
           const dest=cell(nr,nc);if(dest){select(nr,nc,e.shiftKey&&e.key!=='Enter');dest.focus();dest.select();}
         };
@@ -193,10 +201,11 @@ export function mountPriceMatrix(root, model) {
             }
             if(!window.confirm('물량 구간, '+grades.map(g=>g.name+' 원란·포장').join(', ')+' 순서로 '+data.length+'개 행을 적용할까요?'))return;
           }else if(data.length===rows.length&&data.every(line=>line.length===width)){start=2;}
-          if(incoming.length+r>100||incoming.some(line=>line.length+start>row.length)){status('선택한 위치에서 붙여넣을 수 있는 범위를 벗어났습니다.');return;}
+          const pasteOrder=orderedRows(),pasteOffset=pasteOrder.indexOf(r);
+          if(incoming.length+pasteOffset>100||incoming.some(line=>line.length+start>row.length)){status('선택한 위치에서 붙여넣을 수 있는 범위를 벗어났습니다.');return;}
           checkpoint();
-          while(rows.length<r+incoming.length)rows.push(Array(labels.length).fill(''));
-          incoming.forEach((line,i)=>line.forEach((v,j)=>{rows[r+i][start+j]=start+j<2?v.trim():model.normalize(v);}));
+          while(rows.length<pasteOffset+incoming.length){pasteOrder.push(rows.length);rows.push(Array(labels.length).fill(''));}
+          incoming.forEach((line,i)=>line.forEach((v,j)=>{rows[pasteOrder[pasteOffset+i]][start+j]=start+j<2?v.trim():model.normalize(v);}));
           cancelProposal();render();cell(r,start<2&&!editingBounds?2:start)?.focus();notify();
         };
         td.append(input,error);tr.append(td);
@@ -215,6 +224,7 @@ export function mountPriceMatrix(root, model) {
       };return label;
     }));
     for(const name of ['add','copy','remove','preview','apply','bounds'])find(name).disabled=readOnly;
+    for(const button of root.querySelectorAll('[data-mx-short]'))button.disabled=readOnly||(button.dataset.mxShort==='undo'&&!undo.length);
     const activeRow=Math.max(0,Math.min(rows.length-1,Number(find('row-select').value)));
     find('row-select').replaceChildren(...rows.map((row,r)=>new Option((r+1)+'행 · '+(row[0]||'미입력')+'~'+(row[1]||'이상')+'판',String(r))));
     find('row-select').value=String(activeRow);if(find('row-detail').open)rowDetail();
@@ -264,5 +274,5 @@ export function mountPriceMatrix(root, model) {
   };
   find('delta').oninput=cancelProposal;find('method').onchange=cancelProposal;
   find('apply').onclick=()=>{if(readOnly||!pending.length)return;checkpoint();for(const x of pending)rows[x.r][x.c]=x.after;cancelProposal();render();notify();status('변경 내용을 표에 적용했습니다.');};
-  return {set,read:value,validate:()=>update(true).length===0};
+  return {set,read:value,validate:()=>update(true).length===0,selectGrade:chooseGrade,setRowOrder(order=[]){displayOrder=[...order];render();},focusRow(min,max){const r=rows.findIndex(row=>Number(row[0])===min&&(row[1]===''?null:Number(row[1]))===max);if(r>=0){point=[r,2];cell(r,2)?.focus();cell(r,2)?.scrollIntoView({block:'nearest'});}},editBounds:()=>openBounds(),addRange:()=>find('add').click()};
 }
