@@ -62,12 +62,12 @@ export function mountPriceMatrix(root, model) {
     const detail=find('row-detail');
     if(detail.open){const r=Number(find('row-select').value);for(const input of find('row-fields').querySelectorAll('input')){
       const c=Number(input.dataset.detailCol),message=indexed.get(r+'/'+c);
-      if(rows[r])input.value=rows[r][c];input.setAttribute('aria-invalid',String(Boolean(message)));input.nextElementSibling.textContent=message||'';
+      if(rows[r]&&input.value!==rows[r][c])input.value=rows[r][c];input.setAttribute('aria-invalid',String(Boolean(message)));input.nextElementSibling.textContent=message||'';
     }}
     if(scroll&&issues.length){
       const first=issues[0],input=cell(first.row,first.col);
       if(input){if(first.col>=2)find('grade').value=grades[Math.floor((first.col-2)/2)].id;visibleColumns();input.focus();input.classList.remove('mx-error');void input.offsetWidth;input.classList.add('mx-error');}
-      status(first.message);
+      status('');
     }
     return issues;
   }
@@ -171,7 +171,15 @@ export function mountPriceMatrix(root, model) {
     find('row-select').value=String(activeRow);if(find('row-detail').open)rowDetail();
     showRange();visibleColumns();update();
   }
-  function set(matrix,options,compare=null,locked=false){
+  function set(matrix,options,compare=null,locked=false,retain=false){
+    if(retain&&matrix&&readOnly===locked){
+      const sameGrades=(a,b)=>a.length===b.length&&a.every((grade,i)=>grade.id===b[i].id&&grade.name===b[i].name);
+      const current=value();
+      if(sameGrades(current.grades,matrix.grades)&&sameGrades(available,options||[])&&current.rows.length===matrix.rows.length&&
+        current.rows.every((row,i)=>row.min===matrix.rows[i].min&&row.max===matrix.rows[i].max&&row.cells.every((v,c)=>v===matrix.rows[i].cells[c]))){
+        base=compare||matrix;update();return;
+      }
+    }
     available=(options||[]).map(g=>({...g}));
     grades=(matrix?.grades||available).map(g=>({...g}));rows=(matrix?.rows||model.emptyRows(grades.length)).map(cells);
     undo.length=0;find('undo').disabled=true;

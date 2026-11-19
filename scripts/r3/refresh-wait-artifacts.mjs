@@ -5,15 +5,16 @@ import {gunzipSync, gzipSync} from 'node:zlib';
 import * as catalogData from '../../src/server/r3-ui/catalog.gen.mjs';
 import * as runtimeData from '../../src/server/r3-ui/runtime.gen.mjs';
 import {bloubScript, bloubMontages} from '../../src/server/r3-bloub.mjs';
+import {createQuoteWait,mountWaitScene,waitSceneCss} from '../../src/server/r3-quote-wait.mjs';
 import {installWaitPlayer} from './authored/quote-wait-player.mjs';
 
 const read = path => readFile(new URL(path, import.meta.url), 'utf8');
 const digest = text => createHash('sha256').update(text).digest('hex');
-const css = await read('./authored/quote-wait.css');
+const css = (await read('./authored/quote-wait.css'))+waitSceneCss;
 const supplemental = JSON.parse(await read('./authored/quote-wait-montages.json'));
 const montages = {...bloubMontages, ...supplemental};
 const player = [runtimeData.runtimes.member, bloubScript,
-  ';('+installWaitPlayer.toString()+')('+JSON.stringify(montages)+');'].join('\n');
+  ';('+installWaitPlayer.toString()+')('+JSON.stringify(montages)+','+createQuoteWait.toString()+','+mountWaitScene.toString()+');'].join('\n');
 const runtimeHash = digest(runtimeData.frameCode.replace(/^function /, '') + player);
 const frames = {...catalogData.frames};
 const catalog = catalogData.catalog.map(row => {

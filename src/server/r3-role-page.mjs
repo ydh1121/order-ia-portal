@@ -1,3 +1,5 @@
+import {mountAsyncMotion,asyncMotionCss} from './r3-async-motion.mjs';
+import {createCustomerControls} from './r3-customer-controls.mjs';
 import {runRolePage} from './r3-role-client.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {practiceCatalog,startRolePractice} from './r3-role-practice.mjs';
@@ -26,14 +28,28 @@ export function renderR3RolePage(nonce){
   input,select,textarea{border:1px solid #cbd3dc;border-radius:7px;padding:8px;background:white;color:#1e2f3c}input:invalid:not(:placeholder-shown):focus{outline-color:#a33}input[type=checkbox]{width:22px;min-height:22px}
   #filter-bar{display:grid;gap:6px;margin:12px 0}#r3-practice{margin:18px 0}summary{cursor:pointer;min-height:40px}dl{display:grid;grid-template-columns:minmax(4rem,max-content) minmax(0,1fr);gap:7px 14px}dt{color:#526578}dd{margin:0;overflow-wrap:anywhere}
   #account-panel{position:relative;display:grid;gap:9px;background:white;border-radius:16px;padding:18px;margin:0 0 18px;max-width:34rem}#account-panel :focus-visible{outline-offset:2px}#detail details[data-case-action]{margin:8px 0;border-top:1px solid #dde3ec}#detail details[data-case-action]>summary{padding:9px 0;font-weight:600}
+
+  ${asyncMotionCss}
+  .role-badge{border-radius:1rem;background:#a72d43;color:white;display:inline-flex;min-width:1rem;justify-content:center;margin-left:5px;font:600 12px/1.45 system-ui;font-variant-numeric:tabular-nums}#role-search-tags{display:flex;gap:4px;flex-wrap:wrap}#role-search-tags button{padding:3px 7px;border-radius:5px}
+  #account-panel{overflow:clip}#account-panel .customer-panel-page{display:grid;gap:9px;min-width:0}
+  #account-panel .customer-panel-leaving{position:absolute;inset:18px;pointer-events:none}
+  #queue-list>.signed-passes{padding:0;border:0;background:none;display:block}
+  .signed-pass-tools,.signed-pass-pager{display:flex;align-items:center;gap:8px;margin:8px 0}
+  .signed-pass-tools [aria-pressed=true]{background:#273e5e;color:white}
+  .signed-pass-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:12px;touch-action:pan-y}
+  .signed-pass{min-width:0;display:grid;align-content:start;gap:9px;border:1px solid #d8e0eb;border-radius:16px;background:#f5f7fb;padding:16px 14px}
+  .signed-pass header{display:grid;gap:4px;background:none;color:inherit;padding:0}.signed-pass hr{width:100%;margin:4px 0;border:0;border-top:1px dashed #a5b4c6}
+  .signed-pass-cards.deck{display:grid;isolation:isolate;margin:0 12px 22px 0}
+  .signed-pass-cards.deck .signed-pass{grid-area:1/1;transform:translate(calc(var(--depth)*3px),calc(var(--depth)*5px)) rotate(calc(var(--depth)*.7deg))}
+  @media(prefers-reduced-motion:no-preference){.signed-pass{transition:transform .3s cubic-bezier(.2,.8,.3,1)}}
   *{scrollbar-width:none}select[multiple]{scrollbar-width:thin}:focus-visible{outline:3px solid #3966bd;outline-offset:2px}
   @media(max-width:700px){main{grid-template-columns:minmax(0,1fr)}#detail:not(:empty){grid-row:1}body{padding:12px}}@media(prefers-reduced-motion:no-preference){#detail:not(:empty){animation:appear .15s ease-out}@keyframes appear{from{opacity:.4;transform:translateY(3px)}}}
   </style></head><body><header><h1>내 업무</h1><button hidden id="account-trigger" type="button" aria-expanded="false" aria-controls="account-panel">내 계정</button><a id="home" href="/ia?view=roles-r3">내 업무 홈</a></header>
   <section id="account-panel" aria-label="계정 패널" hidden></section>
   <nav id="role-menu" aria-label="내 역할의 업무"></nav><p role="status" id="status"></p>
-  <main><section class="panel"><h2 id="section-title">지금 할 일</h2><div id="filter-bar" hidden><input id="query" type="search" placeholder="상호·업무·상태 검색" aria-label="업무 검색"><div id="filters" aria-label="업무 상태"><button data-filter="all">전체</button><button data-filter="todo">내가 처리할 일</button><button data-filter="done">종료</button></div></div>
+  <main><section class="panel"><h2 id="section-title">지금 할 일</h2><div id="filter-bar" hidden><input id="query" type="search" placeholder="상호·업무·상태 검색" aria-label="업무 검색"><div id="role-search-tags" hidden></div><div id="filters" aria-label="업무 상태"><button data-filter="all">전체</button><button data-filter="todo">내가 처리할 일</button><button data-filter="done">종료</button></div></div>
   <ul id="queue-list"></ul><ul id="list"></ul><button type="button" hidden id="more">다음 50건</button><button type="button" id="refresh">새로고침</button>
   <form id="create" hidden></form></section><section class="panel" id="detail" aria-live="polite"></section></main>
   <section id="publication"></section><section id="r3-practice" hidden></section>
-  <script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
+  <script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)},${browserFunction(createCustomerControls)},${browserFunction(mountAsyncMotion)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
 }

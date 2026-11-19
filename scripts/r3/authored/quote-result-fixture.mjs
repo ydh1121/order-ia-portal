@@ -21,20 +21,40 @@ export function reviewQuoteFixture(state) {
 
 export function installReviewQuote(mount,fixture) {
   (window.ORDER_DESIGN_MODULES||=[]).push({id:'quote-result',mount(root,state,api){
-    const {now,model,selected}=fixture(state);
+    let sample=fixture(state);
+    let currentState=state;
     const host=root.querySelector('[data-review-result]');
-    const start=Date.now();
+    let start=Date.now();
     const view=mount(host,{
-      now:()=>now+Date.now()-start,
+      now:()=>sample.now+Date.now()-start,
+      reducedMotion:()=>document.documentElement.hasAttribute('data-review-reduced'),
       guide:false,
-      onDetail:async()=>model,
+      onDetail:async()=>sample.model,
+      onSelected(kind){
+        const single=['no-current','new-only-detail'].includes(currentState);
+        if(!single&&!['saving','current-detail','new-detail'].includes(currentState))return;
+        const next=single?(kind==='proposed'?'new-only-detail':'no-current'):
+          kind==='current'?'current-detail':kind==='proposed'?'new-detail':'saving';
+        if(currentState!==next)api.select('quote-result',next);
+      },
       onAction(action){
         const targets={consult:['role-consult',''],delivery:['role-delivery',''],new:['q1','before'],same:['quote-review','normal'],back:['quote-review','normal'],verify:['business','empty']};
         if(targets[action])api.select(...targets[action]);
       }
     });
-    view.show(model,selected);
-    if(state==='recompare')view.chooseConditions();
-    return ()=>view.clear();
+    function display(next,replay=false){
+      const previous=sample;
+      currentState=next;
+      sample=fixture(next);
+      host.dataset.view=next;
+      if(replay||previous.now!==sample.now){start=Date.now();if(replay)view.clear();}
+      if(next!=='recompare')host.querySelector('dialog[open]')?.close();
+      view.show(sample.model,sample.selected);
+      if(next==='recompare')view.chooseConditions();
+    }
+    const update=e=>display(e.detail.state,e.detail.replay);
+    root.addEventListener('r3-result-state',update);
+    display(state);
+    return ()=>{root.removeEventListener('r3-result-state',update);view.clear();};
   }});
 }

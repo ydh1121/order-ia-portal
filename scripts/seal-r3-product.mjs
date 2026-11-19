@@ -16,7 +16,7 @@ const commit=git('rev-parse','HEAD').toString().trim();
 if(!/^[0-9a-f]{40}$/.test(commit)||identity.scope!=='INTEGRATED_PRODUCT'||identity.repository!=='ydh1121/order'||identity.commitSha!==commit)throw Error('Rebuild order at the selected Git commit');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const files={},sourceHashes={};
-let html;
+let html,quoteJellyRuntime;
 function once(text,from,to){
  if(text.split(from).length!==2)throw Error('Private mount adapter no longer matches its pinned source: '+from);
  return text.replace(from,to);
@@ -32,6 +32,11 @@ for(const item of identity.files){
  sourceHashes[publicPath]=item.sha256;
  let text=bytes.toString('utf8');
  if(publicPath==='web/index.html'){html=text;continue;}
+ if(publicPath==='web/code1-jelly.mjs'){
+  const split=text.indexOf('\nexport const '),factory=text.slice(0,split);
+  if(split<0||!factory.endsWith('globalThis);\n'))throw Error('Unexpected CODE1 module shape');
+  quoteJellyRuntime='(()=>{'+factory+'window.Code1Jelly=Code1Jelly;})();\n';
+ }
  if(publicPath==='web/main.mjs')text=once(text,"new URL(location.href).searchParams.get('mode')==='simple'","document.documentElement.dataset.r3QuoteMode==='simple'");
  // The private host's existing Access cookie is required even for its public boolean projection.
  if(publicPath==='web/order-menu.mjs')text=once(text,
@@ -51,10 +56,11 @@ for(const item of identity.files){
  if(publicPath==='web/contact-ui.mjs')text=once(text,'createBrowserIanaProvider({origin:location.origin,allowLocalOrigin:true})',"createBrowserIanaProvider({origin:location.origin,allowLocalOrigin:true,fetcher:(_url,init)=>fetch('/ia/r3-product/assets/iana-reference.json',{...init,credentials:'same-origin'})})");
  files[publicPath]=gzipSync(text,{level:9}).toString('base64');
 }
-if(!html||!files['web/main.mjs']||!files['assets/iana-reference.json'])throw Error('Incomplete product build');
+if(!html||!quoteJellyRuntime||!files['web/main.mjs']||!files['assets/iana-reference.json'])throw Error('Incomplete product build');
 const output=fileURLToPath(new URL('../src/server/r3-product-sources.mjs',import.meta.url));
 const value='// Generated only by scripts/seal-r3-product.mjs from verified production assets.\n'+
  'export const quoteCommit='+JSON.stringify(commit)+';\nexport const quoteTemplate='+JSON.stringify(html)+';\n'+
+ 'export const quoteJellyRuntime='+JSON.stringify(quoteJellyRuntime)+';\n'+
  'export const quoteSourceHashes='+JSON.stringify(sourceHashes)+';\nexport const quoteFiles='+JSON.stringify(files)+';\n';
 await writeFile(output,value);
 // The Worker and offline QA generator execute the very same reviewed presentation module.

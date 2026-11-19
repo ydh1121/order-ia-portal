@@ -1,15 +1,20 @@
+import {quoteJellyRuntime} from './r3-product-sources.mjs';
 import {browserFunction} from './browser-source.mjs';
+import {mountAsyncMotion,asyncMotionCss,bindEditorMotion,editorMotionCss} from './r3-async-motion.mjs';
 import {buyerResultCss,buyerResultClient,projectBuyerResult} from './r3-quote-result.mjs';
 import {bloubScript,bloubMontages} from './r3-bloub.mjs';
-import {createQuoteWait} from './r3-quote-wait.mjs';
+import {createQuoteWait,mountWaitScene,waitMontages,waitSceneCss} from './r3-quote-wait.mjs';
 
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
 import {mountPriceMatrix,matrixMarkup,matrixCss} from './r3-matrix-editor.mjs';
 import {mountCarrierEditor,carrierMarkup,carrierCss} from './r3-carrier-page.mjs';
 
-function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,mountCarrier) {
+function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeModel,mountMatrix,mountCarrier,mountMotion,bindEditors) {
   const $=id=>document.getElementById(id);
   const state={csrf:'',scope:[],versions:[],country:[],regionVersion:'',current:null,pending:null,operation:false,dirty:false,practice:new URLSearchParams(location.search).get('practice')==='1'};
+  const motion=mountMotion(document,{source:state.practice?'server-practice':'server'});
+  const editorMotion=bindEditors($('price-workspace'));
+  window.addEventListener('pagehide',()=>{editorMotion.destroy();motion.destroy();},{once:true});
   const number=v=>v===''?null:Number(v), say=t=>{$('notice').textContent=t;};
   const opts=(...v)=>[['','선택'],...v];
   const field=(group,key,label,value='',type='text',options=null)=>{
@@ -36,6 +41,9 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     const res=await fetch('/api/ia/r3-price'+(state.practice?'/practice/'+$('persona').value:'')+path,{signal,method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
     const data=await res.json();if(!res.ok){const error=new Error(data.error||'SERVICE_UNAVAILABLE');error.candidates=data.candidates;throw error;}return data;
   }
+  const commit=(button,path,body)=>motion.run(button,({signal})=>api(path,body,signal),{
+    requestId:body.requestKey||undefined,labels:{pending:'저장 중',success:'저장됨',error:'저장 실패'}
+  });
   const freightReasons={OUT_OF_SCOPE:'지역·우편번호·계약 사용 범위 밖',EXPIRED:'계약 기간 밖',CLOSED:'배송 요일 또는 접수 마감 밖',
     PACKING_OR_CONTRACT_UNCONFIRMED:'포장·계란 수탁 또는 계약 조건 확인 필요',CAPACITY_UNAVAILABLE:'크기·중량·차량 적재 조건 미충족',
     VOLUME_OUT_OF_SCOPE:'회당 배송량 조건 밖',UNSET:'미설정',CONSULT:'별도 협의',UNAVAILABLE:'배송 불가',TAX_UNCONFIRMED:'세금 조건 미확인',SEPARATE_QUOTE:'별도 견적 필요'};
@@ -44,12 +52,12 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   function busy(active){
     state.operation=active;
     for(const id of ['pricing-editor','staff-desk','price-registration','personal-panel'])$(id).inert=active;
-    const saveButton=document.querySelector('[data-action="save"]');saveButton.disabled=active;saveButton.setAttribute('aria-busy',String(active));
+    const saveButton=document.querySelector('[data-action="save"]');saveButton.disabled=active;
     for(const id of ['registerProduct','requestConnection','openPersonalDraft','savePersonalDraft']){
-      $(id).disabled=active;$(id).setAttribute('aria-busy',String(active));
+      $(id).disabled=active;
     }
   }
-  const run=fn=>async()=>{if(state.operation)return;busy(true);try{await fn();}catch(e){if(Array.isArray(e.candidates)){$('result').textContent='';$('freightResult').textContent=freightExcluded(e.candidates);}say(e instanceof TypeError?'연결이 끊겼습니다. 입력을 유지했습니다. 연결 후 다시 저장해 주세요.':localized[e.message]||'조건을 확인해 주세요. '+e.message);}finally{busy(false);}};
+  const run=fn=>async()=>{if(state.operation)return;let invalidMatrix=false;busy(true);try{await fn();}catch(e){if(e.message==='PRICE_MATRIX_INVALID'){invalidMatrix=true;say('');return;}if(Array.isArray(e.candidates)){$('result').textContent='';$('freightResult').textContent=freightExcluded(e.candidates);}say(e instanceof TypeError?'연결이 끊겼습니다. 입력을 유지했습니다. 연결 후 다시 저장해 주세요.':localized[e.message]||'조건을 확인해 주세요. '+e.message);}finally{busy(false);if(invalidMatrix)$('matrix').querySelector('td:not([hidden]) input[aria-invalid=true]')?.focus();}};
   const selectOptions=(select,choices,selected)=>{select.replaceChildren(...choices.map(([v,title])=>new Option(title,v)));if(choices.some(([v])=>String(v)===String(selected)))select.value=String(selected);};
   const shellName=v=>v==='unspecified'?'번호 구분 없음':'난각번호 '+v;
   const elem=(id,key)=>$(id).querySelector('[data-field="'+key+'"]');
@@ -162,15 +170,15 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     selectOptions($('personalImportShell'),[['','난각번호 선택'],...shells.filter(v=>!d?.shell||v===d.shell).map(v=>[v,shellName(v)])],d?.shell||'');
     selectOptions($('personalImportPack'),[['','판당 구수 선택'],...packs.filter(v=>d?.packSize==null||v===d.packSize).map(v=>[String(v),v+'구'])],d?.packSize==null?'':String(d.packSize));
   };
-  function paintPersonal(receipt){
+  function paintPersonal(receipt,retain=false){
     const d=receipt.draft||{};
     personal.active=true;personal.revision=receipt.revision;personal.saved=receipt.draft;personal.remote=null;personal.pending=null;
     $('personalConflict').hidden=true;$('personal-panel').hidden=false;$('openPersonalDraft').hidden=true;
     $('pricing-editor').hidden=true;$('staff-desk').hidden=true;$('personalBack').hidden=!state.scope.length&&!registration?.organizations.length;
     for(const [id,k] of Object.entries({personalName:'name',personalSupplier:'supplierName',personalOrigin:'originName',personalProduct:'productName',personalShell:'shell',personalPack:'packSize'}))$(id).value=d[k]??'';
     $('personalMinimum').value=d.minimumOrder??10;
-    $('personalGrid').append($('matrix'));$('matrix').hidden=false;
-    matrix.set(d.matrix||null,privateGrades,d.matrix||null);
+    if($('matrix').parentNode!==$('personalGrid'))$('personalGrid').append($('matrix'));$('matrix').hidden=false;
+    matrix.set(d.matrix||null,privateGrades,d.matrix||null,false,retain);
     $('personalStatus').textContent=receipt.revision?'본인 입력 초안 · r'+receipt.revision+' · '+new Date(receipt.updatedAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'}):'아직 저장하지 않은 본인 입력 초안';
     $('personalComparison').replaceChildren();showImportChoices();state.dirty=false;
   }
@@ -221,9 +229,9 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     const body={action:'save',expectedRevision:personal.revision,draft:ownDraftFields()};
     personal.pending=retryKey(personal.pending,body);
     try{
-      const saved=await api('/personal-draft',{...body,requestKey:personal.pending.key});
+      const saved=await commit($('savePersonalDraft'),'/personal-draft',{...body,requestKey:personal.pending.key});
       // If the previous response was lost and a different tab already advanced, reopen the latest server revision.
-      const latest=await api('/personal-draft');paintPersonal(latest.revision>=saved.revision?latest:saved);
+      const latest=await api('/personal-draft');paintPersonal(latest.revision>=saved.revision?latest:saved,true);
       say('본인 입력 초안을 저장했습니다.');
     }catch(e){
       if(e.message==='REVISION_CONFLICT'){const latest=await api('/personal-draft');renderConflict(latest);return;}
@@ -253,7 +261,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     if(!body.supplierName||!body.originName||!body.productName||!body.shell||!Number.isSafeInteger(body.packSize)||body.packSize<1||body.packSize>360)throw new Error('REGISTRATION_FIELDS_REQUIRED');
     if(!changeAllowed())return;
     setupKey=retryKey(setupKey,body);
-    const created=await api('/registration',{...body,requestKey:setupKey.key});leavePersonal();await desk();
+    const created=await commit($('registerProduct'),'/registration',{...body,requestKey:setupKey.key});leavePersonal();await desk();
     const i=state.scope.findIndex(s=>s.supplier_id===created.supplier_id&&s.origin_id===created.origin_id&&s.product_id===created.product_id);
     if(i<0)throw new Error('ACCESS_REQUIRED');
     $('scope').value=String(i);state.newId=crypto.randomUUID();state.predecessor=null;state.parent=null;
@@ -266,7 +274,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   $('requestConnection').onclick=run(async()=>{
     const body={action:'request',supplierName:$('requestCompany').value.trim(),invite:query.get('join')||null};
     if(!body.supplierName)throw new Error('REGISTRATION_FIELDS_REQUIRED');
-    connectionKey=retryKey(connectionKey,body);await api('/registration',{...body,requestKey:connectionKey.key});
+    connectionKey=retryKey(connectionKey,body);await commit($('requestConnection'),'/registration',{...body,requestKey:connectionKey.key});
     await registrationInfo();connectionKey=null;say('연결 요청을 저장했습니다. 담당 운영자가 상품 연결을 확인합니다.');
   });
   Object.assign(localized,{QUOTE_INPUTS_REQUIRED:'승인 상품, 규격, 납품일과 1회 납품 수량을 확인해 주세요.',REGISTRATION_FIELDS_REQUIRED:'공급처·출고장·상품명과 직접 확인한 난각번호·판당 구수를 입력해 주세요.',CATALOG_INVALID:'상품명과 판매 규격을 확인해 주세요.',CATALOG_EXISTS:'같은 출고장과 상품이 다른 규격으로 등록돼 있습니다. 등록된 상품을 선택해 주세요.',SUPPLIER_NAME_CHANGED:'등록된 공급처 이름을 다시 확인해 주세요.',CONNECTION_UNAVAILABLE:'연결 요청 상태와 계정 권한을 다시 확인해 주세요.',INVITATION_INVALID:'공급처 이름과 담당자가 공유한 연결 주소를 다시 확인해 주세요.'});
@@ -282,7 +290,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     const s=scope();if(!s||s.role!=='OPERATOR')throw new Error('ACCESS_REQUIRED');
     const old=s.definition?.grades||[], names=$('catalogGrades').value.split(',').map(n=>n.trim()).filter(Boolean);
     const definition={supplierName:$('supplierName').value.trim(),originName:$('originName').value.trim(),productName:$('productName').value.trim(),grades:names.map(name=>old.find(g=>g.name===name)||{name,id:crypto.randomUUID()}),shells:[...$('catalogShells').querySelectorAll('input:checked')].map(x=>x.value),packSizes:$('catalogPacks').value.split(',').map(x=>Number(x.trim()))};
-    const result=await api('/catalog',{supplierId:s.supplier_id,originId:s.origin_id,productId:s.product_id,expectedRevision:s.catalogRevision||0,definition});s.definition=result.definition;s.catalogRevision=result.revision;await desk();paint(state.current);say('상품 표시 정보를 저장했습니다.');
+    const result=await commit($('saveCatalog'),'/catalog',{supplierId:s.supplier_id,originId:s.origin_id,productId:s.product_id,expectedRevision:s.catalogRevision||0,definition});s.definition=result.definition;s.catalogRevision=result.revision;await desk();paint(state.current);say('상품 표시 정보를 저장했습니다.');
   });
   function collect(){
     const s=scope(),p=state.current?.policy||state.parent?.policy||{},pr=read($('basis')),cost=read($('cost'));
@@ -299,14 +307,14 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
       effectiveFrom:keepDate(p.effectiveFrom,$('start-date').value),effectiveTo:keepDate(p.effectiveTo,$('end-date').value),currency:'KRW',timeZone:'Asia/Seoul',
       performance:{...p.performance,...pr,defaultQty:number(pr.defaultQty)},rounding:cost.rounding,tax:{ruleId:p.tax?.ruleId||'krw-tax',type:cost.taxType,percent:cost.percent||null},discount:p.discount||{ruleId:'standard-none',type:'NONE'},delivery};
   }
-  let currentScopeIndex='0';
+  let currentScopeIndex='0',carrierCatalogKey='',carrierComparisonKey='';
   let currentGroup=null;
   const rememberVersion=id=>{
     const url=new URL(location.href);
     if(id)url.searchParams.set('priceVersion',id);else url.searchParams.delete('priceVersion');
     if(url.href!==location.href)window.history.replaceState(null,'',url);
   };
-  function paint(v,previous=null,previousCarrier=null){
+  function paint(v,previous=null,previousCarrier=null,retain=false){
     state.current=v;state.pending=null;state.conflict=null;state.previousRevision=null;$('replaceApproved').hidden=true;$('conflict').hidden=true;const p=v?.policy||{};
     if(v){const idx=state.scope.findIndex(s=>s.supplier_id===p.supplierId&&s.origin_id===p.originId&&s.product_id===p.productId);if(idx>=0)$('scope').value=String(idx);}
     currentScopeIndex=$('scope').value;const s=scope(),d=s?.definition,locked=Boolean(v&&!['DRAFT','RETURNED'].includes(v.status));
@@ -317,11 +325,14 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     selectOptions($('egg-shell'),(d?.shells||[]).map(n=>[n,shellName(n)]),p.matrix?.shell);
     selectOptions($('pack-size'),(d?.packSizes||[]).map(n=>[n,n+'구 / 판']),p.packSize);
     currentGroup={shell:$('egg-shell').value,pack:$('pack-size').value};
-    matrix.set(p.matrix,d?.grades||[],previous||p.matrix||null,locked);gradeChoice($('simGrade'),p.matrix?.grades||d?.grades||[]);
+    matrix.set(p.matrix,d?.grades||[],previous||p.matrix||null,locked,retain);gradeChoice($('simGrade'),p.matrix?.grades||d?.grades||[]);
     $('minimum').value=p.minimumOrder??(state.practice?1:10);$('start-date').value=p.effectiveFrom?day(Date.parse(p.effectiveFrom)):day(Date.now());$('end-date').value=p.effectiveTo?day(Date.parse(p.effectiveTo)):'';
     fill($('basis'),{basis:'DELIVERY',fallback:'CONSULT',scope:'SITE',event:'DELIVERED',...p.performance});
     fill($('cost'),{rounding:p.rounding||'HALF_UP',taxType:p.tax?.type||'INCLUDED',percent:p.tax?.percent||''});
-    $('groupBasis').value=p.delivery?.groupBasis||'SHIPMENT';$('regions').replaceChildren();for(const r of p.delivery?.regions||[])addRegion(r);carrier.set(p.delivery?.carrierPolicy||null,previousCarrier??state.parent?.policy.delivery?.carrierPolicy);
+    $('groupBasis').value=p.delivery?.groupBasis||'SHIPMENT';$('regions').replaceChildren();for(const r of p.delivery?.regions||[])addRegion(r);const contract=p.delivery?.carrierPolicy||null,priorContract=previousCarrier??state.parent?.policy.delivery?.carrierPolicy;
+    const priorKey=JSON.stringify(priorContract??null);
+    if(!retain||carrierComparisonKey!==priorKey||JSON.stringify(carrier.read())!==JSON.stringify(contract))carrier.set(contract,priorContract);
+    carrierComparisonKey=priorKey;
     $('current').textContent=v?(v.policy.displayName||s?.definition?.productName||'가격표')+' · '+statusNames[v.status]+' · r'+v.revision:'새 가격표';
     for (const [a,enabled] of Object.entries({save:!locked,submit:v&&!locked,return:v?.status==='SUBMITTED'&&s?.role==='OPERATOR',approve:v?.status==='SUBMITTED'&&s?.role==='OPERATOR',withdraw:v?.status==='APPROVED'&&s?.role==='OPERATOR'})){
       const b=document.querySelector('[data-action="'+a+'"]');b.hidden=!enabled;
@@ -339,19 +350,19 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     selectOptions($('scope'),state.scope.map((s,i)=>[i,s.definition?[s.definition.supplierName,s.definition.originName,s.definition.productName].join(' · '):'표시명 등록 대기 '+(i+1)]));
     const prior=old&&state.scope.findIndex(s=>s.supplier_id===old.supplier_id&&s.origin_id===old.origin_id&&s.product_id===old.product_id);if(prior>=0&&prior!=null)$('scope').value=prior;
     selectOptions($('versions'),[['','가격표 선택'],...d.versions.map(v=>[v.id,[v.name||'기존 가격표',v.shell&&shellName(v.shell),v.packSize&&v.packSize+'구',statusNames[v.status],'r'+v.revision].filter(Boolean).join(' · ')])]);
-    state.country=d.freightPack?.regionChoices||[];state.regionVersion=d.freightPack?.regionVersion||'kr-legal-region-code-20261001-observed-20261112';carrier.setCatalog(d.freightPack);
+    state.country=d.freightPack?.regionChoices||[];state.regionVersion=d.freightPack?.regionVersion||'kr-legal-region-code-20261001-observed-20261112';const catalogKey=JSON.stringify(d.freightPack||null);if(catalogKey!==carrierCatalogKey){carrierCatalogKey=catalogKey;carrier.setCatalog(d.freightPack);}
     const r=elem('scenario','region');selectOptions(r,state.country.map(x=>[x.value,x.label]),r.value);
     $('pricing-editor').hidden=!d.scopes.length;$('staff-desk').hidden=!d.scopes.length;
     if(!d.scopes.length && !state.practice)say('처음 사용할 공급처와 상품을 등록하거나 담당 가격표의 연결을 요청해 주세요.');
   }
-  async function open(id){
-    const data=await api('/version?id='+encodeURIComponent(id));state.parent=null;state.predecessor=data.version.predecessor;paint(data.version,data.previousMatrix,data.previousCarrierPolicy);$('versions').value=id;rememberVersion(id);
+  async function open(id,retain=false){
+    const data=await api('/version?id='+encodeURIComponent(id));state.parent=null;state.predecessor=data.version.predecessor;paint(data.version,data.previousMatrix,data.previousCarrierPolicy,retain);$('versions').value=id;rememberVersion(id);
     if(data.previousStatus==='APPROVED'&&data.version.status==='SUBMITTED'&&data.version.policy.matrix&&scope()?.role==='OPERATOR'){
       state.previousRevision=data.previousRevision;$('replaceApproved').hidden=false;
     }
     $('history').replaceChildren(...data.history.map(e=>{const li=document.createElement('li');li.textContent=[e.event_at,'r'+e.revision,actionNames[e.action],e.actor_id,e.reason].filter(Boolean).join(' · ');return li;}));
   }
-  async function save(action,replace=false){
+  async function save(action,button,replace=false){
     if(!state.csrf)throw new Error('ACCESS_REQUIRED');const v=state.current;if(action!=='create'&&!v)throw new Error('VERSION_REQUIRED');
     if(!['create','edit'].includes(action)&&state.dirty){say('먼저 수정한 초안을 저장해 주세요.');return;}
     const body={id:v?.id||state.newId,action,expectedRevision:v?.revision||0,...(['create','edit'].includes(action)?{policy:collect(),predecessor:state.predecessor??null}:{}),reason:$('reason').value||null};
@@ -360,7 +371,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
       body.replacePredecessorRevision=state.previousRevision;
     }
     const signature=JSON.stringify(body);if(state.pending?.signature!==signature)state.pending={signature,key:crypto.randomUUID()};
-    try{const out=await api('/version',{...body,requestKey:state.pending.key});await desk();await open(out.id);say('저장했습니다. '+statusNames[out.status]+' · r'+out.revision);}
+    try{const out=await commit(button,'/version',{...body,requestKey:state.pending.key});await desk();await open(out.id,true);say('저장했습니다. '+statusNames[out.status]+' · r'+out.revision);}
     catch(e){if(v&&['CONFLICT','REVISION_CONFLICT'].includes(e.message)){
       const latest=await api('/version?id='+encodeURIComponent(v.id));
       if(latest.version.revision!==v.revision){
@@ -377,7 +388,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
       }
     }throw e;}
   }
-  $('replaceApproved').onclick=run(()=>save('approve',true));
+  $('replaceApproved').onclick=run(()=>save('approve',$('replaceApproved'),true));
   $('keepInput').onclick=()=>{if(state.conflict){state.current=state.conflict;state.conflict=null;state.pending=null;$('conflict').hidden=true;state.dirty=true;say('서버 변경을 확인했습니다. 내 입력을 저장하려면 초안 저장을 눌러 주세요.');}};
   $('remoteInput').onclick=run(()=>state.conflict&&changeAllowed()?open(state.conflict.id):undefined);
   f('basis','basis','단가 구간 기준',null,[['DELIVERY','이번 1회 납품량'],['PREVIOUS_MONTH','전월 확정 실적']]);
@@ -400,7 +411,7 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   $('new').onclick=()=>{if(!changeAllowed())return;rememberVersion(null);state.newId=crypto.randomUUID();state.predecessor=null;state.parent=null;paint(null);$('history').replaceChildren();};
   $('next').onclick=()=>{if(!state.current||!changeAllowed())return;const old=state.current;rememberVersion(null);state.newId=crypto.randomUUID();state.parent=old;state.predecessor=old.id;paint({...old,status:'DRAFT'},old.policy.matrix);state.current=null;state.dirty=true;$('current').textContent='후속 가격표 · 이전 r'+old.revision;};
   $('addRegion').onclick=()=>addRegion();
-  for(const b of document.querySelectorAll('[data-action]'))b.onclick=run(()=>save(b.dataset.action==='save'?(state.current?'edit':'create'):b.dataset.action));
+  for(const b of document.querySelectorAll('[data-action]'))b.onclick=run(()=>save(b.dataset.action==='save'?(state.current?'edit':'create'):b.dataset.action,b));
   $('simulate').onclick=run(async()=>{
     $('result').textContent='';$('freightResult').replaceChildren();
     const v=state.current;if(!v)throw new Error('VERSION_REQUIRED');const p=v.policy,x=read($('scenario')),asOf=new Date().toISOString();
@@ -427,24 +438,14 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     say('저장한 가격표로 계산했습니다.');
   });
   const buyerState={sites:[],offers:[],retry:null};
-  let waitPlayer=null,motionGeneration=0,previousPhase='',inputRevision=1,offerScope=0;
-  const quoteWait=createWait({paint(phase,banners){
-    const host=$('quotePending'),slot=$('quoteAvatar');
-    host.hidden=phase==='idle'||phase==='complete';
-    host.dataset.phase=phase;
-    $('quoteBanners').replaceChildren(...banners.map(text=>{const li=document.createElement('li');li.textContent=text;return li;}));
-    $('quoteWaitTitle').textContent=phase==='error'?'견적을 불러오지 못했습니다.':'납품가를 확인하고 있어요';
-    if(phase===previousPhase)return;
-    previousPhase=phase;const gen=++motionGeneration;waitPlayer?.destroy();waitPlayer=null;slot.replaceChildren();
-    if(!montages[phase])return;
-    const mount=document.createElement('div');slot.append(mount);
-    window.BloubR4.mountBloub(mount,montages[phase],{autoplay:false,ariaLabel:'계란 애니메이션'}).then(player=>{
-      if(gen!==motionGeneration){player.destroy();return;}
-      waitPlayer=player;
-      if(matchMedia('(prefers-reduced-motion: reduce)').matches)player.seek(phase==='entry'?3.5:0);
-      else player.play();
-    }).catch(()=>{if(gen===motionGeneration)slot.replaceChildren();});
-  }});
+  let inputRevision=1,offerScope=0;
+  const quoteWait=makeWaitScene($('quotePending'),montages,createWait,(phase,data)=>{
+    $('quotePending').hidden=phase==='idle'||phase==='complete';
+    $('quotePending').setAttribute('aria-busy',String(data.status==='pending'));
+    $('retryQuote').hidden=!['error','offline'].includes(phase);
+  });
+  let retryButton=null;
+  $('retryQuote').onclick=()=>retryButton?.click();
   const resultView=makeResult($('buyerResult'),project,id=>api('/quote?id='+encodeURIComponent(id)),(mode,id)=>{
     invalidateQuote();
     if(mode==='new'){
@@ -455,11 +456,6 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     inputRevision++;quoteWait.stop();buyerState.retry=null;resultView.clear();
   }
   for(const id of ['buyerGrade','offerSelect','quoteQty','quoteDay','quoteHistory'])$(id).addEventListener('input',invalidateQuote);
-  window.addEventListener('offline',()=>{
-    if (!['entry','comparing'].includes(previousPhase)) return;
-    quoteWait.stop('error');
-    // Keep the request key, as the server may have issued the quote before disconnect.
-  });
   function clearQuote(){
     offerScope++;invalidateQuote();
     $('offerSelect').replaceChildren();$('quoteHistory').replaceChildren();resultView.clear();buyerState.offers=[];buyerState.retry=null;
@@ -518,10 +514,11 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
     if($('offerSelect').value===''||!offer||(offer.gradeChoices?.length&&!$('buyerGrade').value)||!$('quoteDay').value||$('quoteDay').value<day(Date.now())||!Number.isSafeInteger(number($('quoteQty').value))||number($('quoteQty').value)<1)throw new Error('QUOTE_INPUTS_REQUIRED');
     const body={orgId:site.org_id,siteId:site.site_id,inputRevision,lines:[{id:'line',shipmentId:'first',productId:offer.product_id,versionId:offer.id,unit:offer.unit,serviceDate:$('quoteDay').value,deliveryQty:number($('quoteQty').value),grade:$('buyerGrade').value.split('/')[0]||undefined,packing:$('buyerGrade').value.split('/')[1]||undefined}]};
     const signature=JSON.stringify(body);if(buyerState.retry?.signature!==signature)buyerState.retry={signature,key:crypto.randomUUID()};
-    const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[offer.product_id,String(body.lines[0].deliveryQty)+' '+offer.unit,body.lines[0].serviceDate]);
+    retryButton=$('quoteIssue');
+    const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[{values:[offer.product_id]},{values:[String(body.lines[0].deliveryQty)+' '+offer.unit]},{values:[body.lines[0].serviceDate]}]);
     if(!result)return;resultView.show(result);$('quoteHistory').add(new Option(result.id,result.id));$('quoteHistory').value=result.id;
   });
-  $('quoteRecall').onclick=run(async()=>{resultView.clear();const result=await quoteWait.request(signal=>api('/quote?id='+encodeURIComponent($('quoteHistory').value),undefined,signal),[]);if(result)resultView.show(result);});
+  $('quoteRecall').onclick=run(async()=>{retryButton=$('quoteRecall');resultView.clear();const result=await quoteWait.request(signal=>api('/quote?id='+encodeURIComponent($('quoteHistory').value),undefined,signal),[]);if(result)resultView.show(result);});
   // Re-entering a restored page requires a fresh server grant before redisplay.
   window.addEventListener('pagehide',clearQuote);
   window.addEventListener('pageshow',event=>{if(event.persisted)location.reload();});
@@ -554,21 +551,21 @@ function priceDesk(createWait,montages,makeResult,project,makeModel,mountMatrix,
   state.newId=crypto.randomUUID();paint(null);
   if(state.practice){$('versions-panel').open=true;$('review-actions').open=true;$('simulation-panel').open=true;}
   switchTab(location.hash==='#shipping'?'shipping':'price');
-  run(async()=>{const me=await fetch('/api/ia/r3-price/session',{cache:'no-store'});if(me.ok){const session=await me.json();state.csrf=session.csrf;$('practice-entry').hidden=!session.practiceAllowed;}
+  run(()=>motion.reveal($('price-workspace'),async()=>{const me=await fetch('/api/ia/r3-price/session',{cache:'no-store'});if(me.ok){const session=await me.json();state.csrf=session.csrf;$('practice-entry').hidden=!session.practiceAllowed;}
     await desk();const requested=new URLSearchParams(location.search).get('priceVersion');if(requested&&state.versions.some(v=>v.id===requested))await open(requested);else if(!state.practice&&!requested&&state.versions.length)await open(state.versions[0].id);else{rememberVersion(null);paint(null);}await buyerSites();await registrationInfo();
     if(!state.practice){$('openPersonalDraft').hidden=false;if(!state.scope.length&&!registration.organizations.length&&!query.has('quote')&&location.hash!=='#quote')await openPersonal();}
-    if(!state.practice&&query.has('quote'))await restoreQuoteInputs(query.get('quote'));if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}})();
+    if(!state.practice&&query.has('quote'))await restoreQuoteInputs(query.get('quote'));if(location.hash){const target=document.getElementById(location.hash.slice(1));if(target&&!target.closest('[hidden]'))target.scrollIntoView();}},{labels:{pending:'가격표 불러오는 중',success:'가격표 불러옴',error:'가격표를 불러오지 못했습니다.'}}))();
 
 }
 export function renderR3PricePage(nonce) {
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>계란 가격표 | Order</title>
-<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error] #quoteAvatar{display:none}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}html{scrollbar-width:none}body{font-family:system-ui,sans-serif}button{background:#edf1f6;border:0;font-weight:600}button.primary{background:#2455ce;color:white}input,select{border:1px solid #cdd5e1;background:white}section{border-top:1px solid #e0e6ef}.desk-heading,.bar,.weekdays{display:flex;flex-wrap:wrap;gap:.625rem}.desk-heading a{line-height:44px;color:#354965}.editor-fields{display:block;min-width:0;border:0;margin:0;padding:0}.weekdays label{display:inline-flex;align-items:center;flex:none;gap:.25rem}.weekdays input{width:1rem;min-height:1rem}.fields label,.bar label{flex-basis:9rem}pre{overflow:auto;white-space:pre-wrap}.matrix-scroll,body,main{scrollbar-width:none}.price-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;position:sticky;top:0;background:white;z-index:4;border-bottom:1px solid #d4dce5;padding:.45rem 0}.price-tabs{display:flex;gap:.25rem}.price-tabs button{background:transparent;color:#526074}.price-tabs button[aria-pressed=true]{color:#172b4a;background:#e8edf5}.desk-heading>span{font-weight:bold}#notice:empty{margin:0}#price-registration>summary{font-weight:650}#price-registration input:read-only{background:#f2f4f7}.subtle{color:#526074;font-size:.9rem}.price-title{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.price-title p{margin:0;color:#526074}.price-title h1{margin:.5rem 0}.product-setup{display:grid;gap:.75rem;margin-top:.5rem;padding-bottom:.5rem}.product-setup button{justify-self:start}.price-meta{margin:.5rem 0}.price-meta label{flex-basis:8rem}.desk-heading a{line-height:1.4}details:has(>summary){padding:.65rem 0}.desk-heading{align-items:center}.connection-list:empty{display:none}#practice-entry{font-size:.85rem}#practice-entry a{color:#657184}@media(max-width:680px){body{padding:.75rem}.price-title h1{font-size:1.5rem}.product-setup .fields{display:grid;grid-template-columns:1fr 1fr}.price-meta{display:grid;grid-template-columns:1fr 1fr}}
-${matrixCss}${carrierCss}${buyerResultCss}</style></head><body>
+<style>*{box-sizing:border-box}body{margin:0 auto;padding:1rem;max-width:72rem;font:1rem/1.5 system-ui,sans-serif;color:#17202b}a{color:inherit}h1{font-size:1.75rem}section,details{padding:1rem 0;border-top:1px solid #ccd2da}[hidden]{display:none!important}#price-workspace{--r3-skeleton-size:min(19rem,46vh)}fieldset,.fields,.bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:end}fieldset{margin:.5rem 0;border:1px solid #ccd2da;padding:.75rem;min-width:0}label{display:grid;gap:.25rem;flex:1 1 10rem;min-width:0}input,select,button{font:inherit;min-height:44px;border:1px solid #a7b0bc;border-radius:.4rem;background:white;padding:.4rem .6rem;color:inherit}input,select{width:100%;max-width:100%;min-width:0}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid currentColor;outline-offset:2px}output{display:block;margin:.75rem 0;font-weight:600}summary{cursor:pointer;min-height:44px}li{overflow-wrap:anywhere}#quoteAvatar{width:8rem;height:8rem}#quoteAvatar>div{width:100%;height:100%}#quotePending[data-phase=error]{color:#a52b29}#quoteBanners{list-style:none;padding:0;display:grid;isolation:isolate}#quoteBanners li{grid-area:1/1;width:fit-content;max-width:100%;padding:.3rem .7rem;border:1px solid currentColor;border-radius:1rem;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;background:white}#quoteBanners li:nth-child(2){margin:.55rem 0 0 .65rem}#quoteBanners li:nth-child(3){margin:1.1rem 0 0 1.3rem}@media(prefers-reduced-motion:no-preference){#quotePending[data-phase=error]{animation:quote-notice .3s ease-out}@keyframes quote-notice{25%{transform:translateX(-2px)}75%{transform:translateX(2px)}}}html{scrollbar-width:none}body{font-family:system-ui,sans-serif}button{background:#edf1f6;border:0;font-weight:600}button.primary{background:#2455ce;color:white}input,select{border:1px solid #cdd5e1;background:white}section{border-top:1px solid #e0e6ef}.desk-heading,.bar,.weekdays{display:flex;flex-wrap:wrap;gap:.625rem}.desk-heading a{line-height:44px;color:#354965}.editor-fields{display:block;min-width:0;border:0;margin:0;padding:0}.weekdays label{display:inline-flex;align-items:center;flex:none;gap:.25rem}.weekdays input{width:1rem;min-height:1rem}.fields label,.bar label{flex-basis:9rem}pre{overflow:auto;white-space:pre-wrap}.matrix-scroll,body,main{scrollbar-width:none}.price-toolbar{display:flex;align-items:center;justify-content:space-between;gap:.5rem;position:sticky;top:0;background:white;z-index:4;border-bottom:1px solid #d4dce5;padding:.45rem 0}.price-tabs{display:flex;gap:.25rem}.price-tabs button{background:transparent;color:#526074}.price-tabs button[aria-pressed=true]{color:#172b4a;background:#e8edf5}.desk-heading>span{font-weight:bold}#notice:empty{margin:0}#price-registration>summary{font-weight:650}#price-registration input:read-only{background:#f2f4f7}.subtle{color:#526074;font-size:.9rem}.price-title{display:flex;align-items:center;justify-content:space-between;gap:.75rem}.price-title p{margin:0;color:#526074}.price-title h1{margin:.5rem 0}.product-setup{display:grid;gap:.75rem;margin-top:.5rem;padding-bottom:.5rem}.product-setup button{justify-self:start}.price-meta{margin:.5rem 0}.price-meta label{flex-basis:8rem}.desk-heading a{line-height:1.4}details:has(>summary){padding:.65rem 0}.desk-heading{align-items:center}.connection-list:empty{display:none}#practice-entry{font-size:.85rem}#practice-entry a{color:#657184}@media(max-width:680px){body{padding:.75rem}.price-title h1{font-size:1.5rem}.product-setup .fields{display:grid;grid-template-columns:1fr 1fr}.price-meta{display:grid;grid-template-columns:1fr 1fr}}
+${matrixCss}${carrierCss}${buyerResultCss}${asyncMotionCss}${editorMotionCss}${waitSceneCss}</style></head><body>
 <header class="desk-heading"><a href="/ia/">IA 포털</a></header>
 <div class="price-title"><h1>계란 가격표</h1><span id="practice-entry" hidden><a id="switchPractice" href="/ia?view=pricing-r3&amp;practice=1">합성 역할 체험</a></span></div>
 <fieldset id="practice" hidden><legend>연습 공간</legend><label>검토 역할<select id="persona"><option value="supplier">공급처 작성자</option><option value="operator">운영 검토자</option><option value="buyer">인증 사업장 예시</option></select></label><button id="startPractice">내 연습 공간 열기</button><button id="practiceSample">합성 예시 불러오기</button></fieldset>
 <output aria-live="polite" id="notice"></output>
-<button type="button" id="openPersonalDraft" hidden>본인 입력 초안 열기</button>
+<div id="price-workspace"><button type="button" id="openPersonalDraft" hidden>본인 입력 초안 열기</button>
 <section id="personal-panel" hidden><div class="price-toolbar"><strong>본인 입력 초안</strong><button type="button" id="savePersonalDraft" class="primary">본인 초안 저장</button></div>
 <p class="subtle">작성한 계정에서만 볼 수 있습니다. 공급처 상품에 연결하기 전까지 구매자 견적에 적용되지 않습니다.</p>
 <div class="fields price-meta"><label>초안 이름<input id="personalName" maxlength="80" placeholder="예: 11월 9일 참고 단가"></label><label>공급처<input id="personalSupplier" maxlength="80" placeholder="미지정"></label><label>출고장<input id="personalOrigin" maxlength="80" placeholder="미지정"></label><label>상품명<input id="personalProduct" maxlength="80" placeholder="미지정"></label><label>난각번호<select id="personalShell"><option value="">미지정</option><option value="1">1번</option><option value="2">2번</option><option value="3">3번</option><option value="4">4번</option><option value="unspecified">구분 없음</option></select></label><label>판당 구수<input id="personalPack" type="number" min="1" max="360" placeholder="미지정"></label><label>배송 최소 주문량 (판)<input id="personalMinimum" type="number" min="1" value="10"></label></div>
@@ -594,7 +591,8 @@ ${matrixCss}${carrierCss}${buyerResultCss}</style></head><body>
 </fieldset>
 <details id="review-actions"><summary>검토 요청·승인</summary><label>보완·철회 사유<input id="reason" maxlength="240"></label><div class="bar"><button data-action="submit">검토 요청</button><button data-action="return">보완 요청</button><button data-action="approve">승인</button><button data-action="withdraw">철회</button><button id="replaceApproved" hidden>기존 가격표 종료 후 승인</button></div></details><div id="conflict" hidden><p>다른 사용자가 저장한 가격표가 있습니다. 현재 입력과 서버 버전을 비교해 주세요.</p><details><summary>서버 버전 보기</summary><div id="remoteVersion" class="matrix-scroll"></div></details><button id="keepInput">서버 변경 확인 후 내 입력 유지</button><button id="remoteInput">서버 버전 열기</button></div>
 <details id="simulation-panel"><summary>미리 계산</summary><div id="simulation"><label>단가 규격<select id="simGrade"></select></label><div class="fields" id="scenario"></div><button id="simulate">저장된 조건으로 계산</button><output id="result" aria-live="polite"></output><output id="freightResult" aria-live="polite"></output></div></details><details><summary>변경 이력</summary><ol id="history"></ol></details></div>
-<section id="quote" hidden><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label id="buyerGradeGroup" hidden>단가 규격<select id="buyerGrade"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" role="status" hidden><strong id="quoteWaitTitle"></strong><div id="quoteAvatar" aria-hidden="true"></div><ul id="quoteBanners"></ul></div><div aria-live="polite" id="buyerResult"></div></section>
+</div><section id="quote" hidden><h2>사업장 견적</h2><div class="fields"><label>사업장<select id="buyerSite"></select></label><label>승인 상품<select id="offerSelect"></select></label><label id="buyerGradeGroup" hidden>단가 규격<select id="buyerGrade"></select></label><label>이번 납품 수량<input inputmode="numeric" id="quoteQty"></label><label>납품일<input type="date" id="quoteDay"></label></div><button id="quoteIssue">견적 발급</button><div class="bar"><label>발급한 견적<select id="quoteHistory"></select></label><button id="quoteRecall">다시 보기</button></div><div id="quotePending" data-wait-scene hidden><div id="quoteBanners" data-banner-stack aria-hidden="true"></div><div id="quoteAvatar" data-wait-avatar aria-hidden="true"></div><p id="quoteWaitTitle" data-wait-copy aria-live="polite"></p><button type="button" id="retryQuote" hidden>다시 비교하기</button></div><div aria-live="polite" id="buyerResult"></div></section>
 <script nonce="${nonce}">${bloubScript}
-;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${JSON.stringify(bloubMontages)},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)});</script></body></html>`;
+${quoteJellyRuntime}
+;(${browserFunction(priceDesk)})(${browserFunction(createQuoteWait)},${browserFunction(mountWaitScene)},${JSON.stringify({...bloubMontages,...waitMontages})},${buyerResultClient},${browserFunction(projectBuyerResult)},${browserFunction(createPriceMatrixModel)},${browserFunction(mountPriceMatrix)},${browserFunction(mountCarrierEditor)},${browserFunction(mountAsyncMotion)},${browserFunction(bindEditorMotion)});</script></body></html>`;
 }

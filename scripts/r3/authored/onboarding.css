@@ -80,3 +80,24 @@
  .ob .ob-quick-items{animation:none}.ob .ob-quick-items button{transform-origin:bottom right;animation:ob-dial .28s cubic-bezier(.23,.9,.44,1.14) both}.ob .ob-quick-items button:first-child{animation-delay:45ms}
  @keyframes ob-dot-fade{from{opacity:1}to{opacity:0}}@keyframes ob-idle{50%{transform:translateY(-1.5px) scale(1.02)}}@keyframes ob-dial{from{opacity:0;transform:translateY(18px) scale(.55)}to{opacity:1;transform:none}}
 }
+.ob.footer-open .ob-stage{filter:none}
+.ob.footer-open .ob-stage>:not(header){filter:blur(3px);transform:translateY(clamp(-260px,-28vh,-96px));border-radius:0 0 22px 22px}
+.ob .ob-stage>header{position:relative;z-index:1}
+.ob.footer-open .ob-shade{backdrop-filter:none}
+.ob .ob-drawer{scrollbar-width:none}
+.ob .ob-drawer::-webkit-scrollbar{display:none}
+.ob .ob-grip{touch-action:none;cursor:grab}
+@media(prefers-reduced-motion:no-preference){
+ .ob.member .ob-main.step-4 .ob-mode-grid{animation:ob-modes-arrive .22s ease-out both}
+ @keyframes ob-modes-arrive{from{opacity:0;transform:translateY(22px) scale(.97)}to{opacity:1;transform:none}}
+}
+.ob .ob-quick-items button { animation:none; }
+.ob .ob-mode.card [data-intro-icon]{transition:none;animation:none}
+.ob .ob-mode.card:is(:hover,:focus-visible) [data-intro-icon]{transform:none}
+.ob .ob-mark-btn .ob-dots-logo{animation:none}
+
+.ob .ob-quick>button { position:relative; }
+.ob .quick-unread { position:absolute; top:-3px; right:-3px; min-width:18px; padding:0 4px; border:2px solid white; border-radius:12px; background:#bf2e43; color:white; font:600 11px/16px system-ui; font-variant-numeric:tabular-nums; }
+.ob .ob-pages{position:relative}
+.ob .ob-pages.has-active-pill [aria-current] i{width:7px;background:#d4d9de}
+.ob .ob-active-pill{pointer-events:none;position:absolute;height:7px;top:18.5px;left:0;border-radius:8px;background:var(--ob-blue)}

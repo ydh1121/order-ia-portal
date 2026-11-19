@@ -99,6 +99,9 @@ export function approvedShellBody(){
           <button class="drawer-button" id="link-figma">피그마 작업 기록 저장</button><p id="export-record"></p>
         </details>
       </div>
+      <details class="figma-details" id="motion-review"><summary>모션 재생·출처</summary>
+        <p id="motion-build"></p><div id="motion-actions"></div><output id="motion-note" aria-live="polite"></output><div id="motion-sources"></div>
+      </details>
       <div id="authoring" hidden>
         <p id="point-state" class="comment-location"></p><button class="qa-inline-button" id="reposition">위치 다시 선택</button>
         <label for="body-text">코멘트<textarea id="body-text" maxlength="10000" placeholder="수정할 부분을 남겨 주세요."></textarea></label><p id="conflict" hidden></p>

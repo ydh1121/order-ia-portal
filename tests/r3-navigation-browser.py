@@ -21,8 +21,16 @@ def check(page, origin, width):
     frame_click(page, frame.locator('[data-site="샘플카페"]'))
     expect(cards).to_have_count(1)
     frame_click(page, frame.locator('[data-site="전체"]'))
+    cards.first.evaluate("(card)=>{window.originalPass=card}")
     frame_click(page, frame.locator('[data-view="deck"]'))
+    assert cards.first.evaluate("(card)=>card===window.originalPass")
     frame_click(page, frame.get_by_role("button", name="다음", exact=True))
+    expect(frame.locator(".deck-position")).to_have_text("2 / 4")
+    front=cards.nth(1)
+    front.evaluate("""card=>{
+      const fire=(name,x,y)=>card.dispatchEvent(new PointerEvent(name,{bubbles:true,button:0,pointerId:4,isPrimary:true,clientX:x,clientY:y}));
+      fire('pointerdown',150,90);fire('pointermove',152,130);fire('pointerup',152,130);
+    }""")
     expect(frame.locator(".deck-position")).to_have_text("2 / 4")
     frame_click(page, frame.locator('[data-view="grid"]'))
     frame_click(page, frame.locator('[data-pass-id="b17"] button'))
@@ -46,6 +54,9 @@ def check(page, origin, width):
 
     frame = screen("search", "empty")
     field = frame.locator(".tag-field input")
+    field.evaluate("""e=>{e.dispatchEvent(new CompositionEvent('compositionstart'));e.value='특';e.dispatchEvent(new InputEvent('input',{isComposing:true,bubbles:true}));}""")
+    expect(field).to_have_attribute("aria-expanded","false")
+    field.evaluate("""e=>e.dispatchEvent(new CompositionEvent('compositionend'))""")
     field.fill("특란")
     frame_click(page, frame.locator('[data-suggestion="특란"]'))
     expect(field).to_have_attribute("placeholder", "")
@@ -143,6 +154,10 @@ def check(page, origin, width):
     expect(frame.get_by_text("상담을 예약했어요", exact=True)).to_be_visible()
     expect(frame.locator(".functional-drawer .empty button")).to_have_count(0)
     frame = screen("profile", "notification")
+    read = frame.locator('[data-action="read-notice"]')
+    frame_click(page,read)
+    expect(read).to_be_hidden()
+    expect(frame.locator('p[role=status]').first).to_have_text('모두 읽었어요.')
     # Only the fixed menu is passed. The real page derives grants and cases from the signed-in session.
     with page.expect_navigation(wait_until="domcontentloaded"):
         frame_click(page,frame.get_by_role("button",name="내 업무 알림 열기"))

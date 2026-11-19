@@ -1,5 +1,5 @@
 // Trusted top-level chrome. Only typed review fields and allow-listed UI positions are persisted.
-export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, createBuyerResult, projectBuyerResult) {
+export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, createBuyerResult, projectBuyerResult, motionReview={requirements:[]}) {
   const $=id=>document.getElementById(id),release='MSG0585-R3',base='/api/ia/r3-qa';
   const node=(tag,text)=>Object.assign(document.createElement(tag),{textContent:text??''});
   function btn(text,handler){const b=node('button',text);b.type='button';b.onclick=handler;return b;}
@@ -17,6 +17,53 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     r.kind==='reply' && r.data.parent?.origin==='current' && r.data.parent.id===testThread);
   const showTest=()=>$('audit-demo')?.checked===true;
   const frame=$('frame'), drawer=$('drawer'),body=$('body-text');
+  let displayed=null, transitionTimeout=0, exitAnimation=null, publication=null;
+  let returnMode=history.state?.orderReviewMode;
+  function restoreOnboardingChoice(){
+    if(!returnMode||!displayed||current?.screen!=='onboarding'||current.id!==returnMode.row)return;
+    if(['simple','detailed'].includes(returnMode.mode))send('returnToMode',{mode:returnMode.mode});
+    returnMode=null;
+    const state={...history.state};delete state.orderReviewMode;history.replaceState(state,'',location.href);
+  }
+  addEventListener('pageshow',event=>{
+    if(event.persisted){returnMode=history.state?.orderReviewMode;restoreOnboardingChoice();}
+  });
+  const motionModes={replay:'다시 재생',normal:'정상',delay:'지연',error:'오류',offline:'오프라인',complete:'완료'};
+  function scenario(mode){
+    if(!target||!displayed||displayed.channel!==session||!Object.hasOwn(motionModes,mode)||artifact?.version!=='current')return;
+    send('motionScenario',{mode});
+    if($('motion-note'))$('motion-note').textContent='검수 입력 · '+motionModes[mode];
+  }
+  function presentMotion(){
+    const box=$('motion-sources');if(!box||!current||!target)return;
+    const version=artifact?.version;
+    box.replaceChildren();$('motion-actions').replaceChildren();$('motion-note').textContent='';
+    const build=$('motion-build');
+    build.textContent=version==='current'?
+      [('IA '+(publication?.iaCommit?.slice(0,12)||'게시 확인 대기')),'제품 '+(publication?.productCommit||motionReview.product||'미확인').slice(0,12),'화면 '+target.artifactHash.slice(0,12),publication?.deploymentId&&'배포 '+publication.deploymentId].filter(Boolean).join(' · '):
+      '이전 검토판 · 화면 '+target.artifactHash.slice(0,12);
+    if(version!=='current')return;
+    if(publication?.iaCommit&&/^[a-f0-9]{40}$/.test(publication.iaCommit)){
+      const link=node('a','검토 중인 IA 코드');link.href='https://github.com/ydh1121/order-ia-portal/commit/'+publication.iaCommit;
+      link.rel='noopener noreferrer';link.target='_blank';build.append(document.createTextNode(' '),link);
+    }
+    const canSimulate=['quote-wait','common'].includes(current.screen)||current.screen.startsWith('admin-');
+    const options=current.screen==='quote-result'?['replay']:canSimulate?Object.keys(motionModes):[];
+    for(const key of options){
+      const control=btn(motionModes[key],()=>scenario(key));control.dataset.motionMode=key;$('motion-actions').append(control);
+    }
+    for(const r of motionReview.requirements.filter(r=>r.screens.includes('*')||r.screens.includes(current.screen)||(r.screens.includes('admin-*')&&current.screen.startsWith('admin-')))){
+      const d=node('details'),summary=node('summary',r.id+' · '+r.name);d.append(summary,node('p',r.trigger),node('p',r.scope));
+      if(r.status==='SUPERSEDED')d.append(node('p','후속 요청으로 제외'));
+      const sourceLabel=r.sourceState==='PUBLIC_PREVIEW_ONLY_SOURCE_ACCESS_LIMITED'?'공개 예시 확인 · 코드 접근 제한':r.sourceState==='REFERENCE_IDENTIFIED'?'원문 참조 확인':r.sourceState==='SELECTED_MEDIA_OBSERVATIONS_ARCHIVED'?'지정 영상 관찰 기록 보존':'원문 보관';
+      d.append(node('small',sourceLabel+' · '+(artifact.mount?'이 화면에 실행 모듈 연결':'정적 화면')));
+      for(const [i,url] of r.links.entries()){
+        const link=node('a','참조 '+(i+1));link.href=url;link.target='_blank';link.rel='noopener noreferrer';d.append(link,document.createTextNode(' '));
+      }
+      if(r.feedback.length)d.append(node('small','관련 Figma 의견 '+r.feedback.join(', ')));
+      box.append(d);
+    }
+  }
   const reviewKey=(v,width)=>[v.screen,v.state,v.variant,width].join('/');
   const localKey=(kind,id)=>kind+'/'+id;
   const match=(t,v,width)=>t&&t.screen===v.screen&&t.state===v.state&&t.variant===v.variant&&t.viewport===width;
@@ -168,6 +215,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const key=reviewKey(target,target.viewport);const past=legacy.get(key),live=comments();
     const indexed=showRecords(),info=stateInfo(current,target.viewport,indexed);
     $('review-heading').textContent=current.label+' / '+current.stateLabel;
+    presentMotion();
     const widths=shell?.reviewWidths()||[];
     $('review-viewports').replaceChildren(...(widths.length?widths:[target.viewport]).map(width=>{
       const choice=btn(width+'px',async()=>{if(width!==target.viewport){$('width').value=String(width);await select(current);if(target)notes();}});
@@ -331,19 +379,23 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   const sameOriginUrl=(path)=>new URL(path,location.href);
   function download(filename,bytes,mime){const url=URL.createObjectURL(new Blob([bytes],{type:mime}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function frameDocument(a,row,channel){
-      const boot=frameBootstrap.replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant}).replaceAll('<','\\u003c');
+      const boot=(a.replayFrame||frameBootstrap).replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant}).replaceAll('<','\\u003c');
       const script='<script nonce="'+nonce+'">('+boot+')('+params+')</'+'script>';
       // srcdoc inherits parent CSP; the child further restricts network, forms and images.
       const policy='<meta http-equiv="Content-Security-Policy" content="default-src \'none\';script-src \'nonce-'+nonce+'\';style-src \'unsafe-inline\';img-src data:;connect-src \'none\';form-action \'none\';base-uri \'none\'">';
       const reduced=$('motion-enabled')?.checked===false?'<style>*, *:before, *:after{transition:none!important;animation-play-state:paused!important;scroll-behavior:auto!important}</style>':'';
-      return a.html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
+      const html=reduced?a.html.replace('<html ','<html data-review-reduced '):a.html;
+      return html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
   }
   // The source step is short-lived and belongs to this QA tab's guest authentication flow.
   let authOriginStep = null, arrivalScreen = null;
   async function select(row,version=$('version').value,originStep=null,pinnedHash=null){
+    if(!row)return;
+    clearTimeout(transitionTimeout);exitAnimation?.cancel();
+    const previous=displayed;displayed=null;
     if(row && row.id !== current?.id) authOriginStep = originStep;
-    if(!row)return;if(wantsPoint)send('mode',false);wantsPoint=false;clearPrivateQuote();$('buyer').hidden=row.screen!=='quote-result'||version!=='current';remember();editor=null;drawer.hidden=true;$('pick-cancel').hidden=true;$('conflict').hidden=true;
-    document.querySelectorAll('[data-review]').forEach(b=>b.disabled=version!=='current');const n=++generation;current=row;$('quote-candidates').hidden=version!=='current'||!['q1','q2','q3','q4','quote-review'].includes(row.screen);target=null;artifact=null;session='';missing.clear();frame.srcdoc='';$('caption').textContent=row.label+' · '+row.stateLabel;
+    if(wantsPoint)send('mode',false);wantsPoint=false;clearPrivateQuote();$('buyer').hidden=row.screen!=='quote-result'||version!=='current';remember();editor=null;drawer.hidden=true;$('pick-cancel').hidden=true;$('conflict').hidden=true;
+    document.querySelectorAll('[data-review]').forEach(b=>b.disabled=version!=='current');const n=++generation;current=row;$('quote-candidates').hidden=version!=='current'||!['q1','q2','q3','q4','quote-review'].includes(row.screen);target=null;artifact=null;session='';missing.clear();frame.inert=true;$('caption').textContent=row.label+' · '+row.stateLabel;
     const width=widthFor(row);shell?.render();$('surface').style.setProperty('--width',width+'px');
     for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3'||version==='recorded';
     const url=sameOriginUrl(location.href);url.searchParams.set('screen',row.id);url.searchParams.set('width',width);
@@ -356,10 +408,24 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       if(version==='recorded'||version!==a.version){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
       artifact=a;session=crypto.randomUUID();if(version==='current'){row.hashes??={};row.hashes[width]=a.hash;}
       target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash};
-      frame.srcdoc=frameDocument(a,row,session);
+      const documentSwap=()=>{if(n===generation)frame.srcdoc=frameDocument(a,row,session);};
+      const onboarding=row.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(row.state)&&row.state.split('-')[0]===previous?.state.split('-')[0];
+      if((row.screen==='quote-result'||onboarding)&&previous?.version==='current'&&row.screen===previous.screen&&row.variant===previous.variant&&version==='current'&&previous.width===width&&previous.motion===$('motion-enabled').checked&&!pinnedHash){
+        const payload={state:row.state,hash:a.hash,channel:session};
+        if(onboarding)payload.markup=a.html;
+        frame.contentWindow.postMessage({scope:'ORDER_R3_HOST',channel:previous.channel,artifact:previous.hash,type:onboarding?'onboardingState':'resultState',payload},'*');
+        transitionTimeout=setTimeout(documentSwap,320);
+      }else{
+        if(previous&&$('motion-enabled')?.checked&&!matchMedia('(prefers-reduced-motion: reduce)').matches&&frame.animate){
+          exitAnimation=frame.animate([{opacity:1},{opacity:0}],{duration:100,easing:'ease-out',fill:'forwards'});
+          try{await exitAnimation.finished;}catch{/* A newer state owns the frame. */}
+        }
+        if(n!==generation)return;
+        exitAnimation?.cancel();documentSwap();
+      }
       $('version-mark').textContent=version==='previous'?'이전 화면':version==='prior-r3'?'이전 R3 검토판':'이번 판';
       list();
-    }catch(e){if(n===generation)announceError(e);}
+    }catch(e){if(n===generation){frame.srcdoc='';frame.inert=false;announceError(e);}}
   }
   async function refresh(first=false){
     try{
@@ -383,6 +449,15 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     let after=0;try{for(;;){const j=await api(base+'/legacy?after='+after+'&limit=50');for(const r of j.items)legacy.set(r.sourceKey,r.data);if(!j.hasMore)break;after=j.nextCursor;}legacyAvailable=true;list();}catch(e){announceError(e);}
   }
   let journeyDraft=null;
+  let sampleUnread=1;
+  function widgetKey(){
+    return draftStorageKey&&current?.id==='admin-overview/normal/email'&&target?'order.ia.widget.'+draftStorageKey+'/'+current.id+'/'+target.viewport+'/'+target.artifactHash:null;
+  }
+  function validWidgets(p){
+    return p&&Object.keys(p).length===1&&Array.isArray(p.layout)&&p.layout.length===3&&
+      p.layout.every(v=>v&&Object.keys(v).length===2&&[0,1,2].includes(v.index)&&typeof v.wide==='boolean')&&
+      new Set(p.layout.map(v=>v.index)).size===3;
+  }
   const questionScreens=['q1','q2','q3','q4','quote-review'];
   let menuPublished=false;
   async function loadPublication(){
@@ -417,6 +492,18 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     }
     if(!artifact||e.source!==frame.contentWindow||e.origin!=='null'||m?.scope!=='ORDER_R3_FRAME'||m.channel!==session||m.artifact!==artifact.hash)return;
     const isCurrent=$('version').value==='current';
+    if(isCurrent&&!wantsPoint&&m.type==='downloadReviewDocument'){
+      if(['receipt/complete','admin-quotes/list'].includes(current.screen+'/'+current.state))
+        download('QA_'+current.screen+'_'+current.state+'.html',artifact.editable,'text/html;charset=utf-8');
+      return;
+    }
+    if(isCurrent&&!wantsPoint&&m.type==='readNoticeFixture'&&current.screen==='profile'){
+      sampleUnread=0;send('noticeCountFixture',sampleUnread);return;
+    }
+    if(isCurrent&&!wantsPoint&&m.type==='reviewWidgetLayout'&&widgetKey()&&validWidgets(m.payload)){
+      try{sessionStorage.setItem(widgetKey(),JSON.stringify(m.payload));}catch{/* The current fixture can still be arranged without local storage. */}
+      return;
+    }
     const notices=isCurrent&&(current.screen==='profile'||current.id==='terms/optional/email');
     const consultation=isCurrent&&current.screen==='drawer';
     if(consultation&&!wantsPoint&&m.type==='setConsultationFixture'){
@@ -449,7 +536,13 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       journeyDraft={basis:d.basis,qty:d.qty,unit:d.unit,price:d.price,unknown:d.unknown};
       select(screens.find(r=>r.id==='quote-review/normal/email'));return;
     }
-    if(m.type==='ready'){if(isCurrent&&arrivalScreen===current.id){send('memberArrival',true);arrivalScreen=null;}
+    if(m.type==='ready'){clearTimeout(transitionTimeout);frame.inert=false;displayed={channel:session,hash:artifact.hash,width:target.viewport,version:artifact.version,screen:current.screen,state:current.state,variant:current.variant,motion:$('motion-enabled').checked};
+      if(isCurrent&&arrivalScreen===current.id){send('memberArrival',true);arrivalScreen=null;}
+      if(isCurrent)restoreOnboardingChoice();
+      if(isCurrent&&['profile','onboarding'].includes(current.screen))send('noticeCountFixture',sampleUnread);
+      if(isCurrent&&widgetKey()){
+        try{const layout=JSON.parse(sessionStorage.getItem(widgetKey()));if(validWidgets(layout))send('restoreWidgetLayout',layout);}catch{/* Invalid or unavailable browser storage. */}
+      }
       if(input&&journeyDraft)send('journeyDraft',journeyDraft);
       if(isCurrent&&questionScreens.includes(current.screen))send('menuPublication',menuPublished);
       if(notices)send('noticeFixture',fixtureNotices);if(consultation)send('consultationFixture',consultationFixture);syncPins();if(wantsPoint)send('mode',true);return;}
@@ -477,8 +570,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
         return;
       }
       if(current.screen==='onboarding'){
-        if(screen==='simple-r3'){location.assign('/ia?view=simple-r3');return;}
-        if(screen==='detailed-r3' && current.state.startsWith('member-')){location.assign('/ia?view=detailed-r3');return;}
+        if(screen==='simple-r3'||screen==='detailed-r3'&&current.state.startsWith('member-')){
+          history.replaceState({...history.state,orderReviewMode:{row:current.id,mode:screen==='simple-r3'?'simple':'detailed'}},'',location.href);
+          location.assign('/ia?view='+screen);return;
+        }
         originStep=/^guest-[1-4]$/.test(current.state) && (screen==='login'||screen==='signup') ? current.state.slice(-1) : null;
       } else if(originStep && ['login','signup','password','otp','terms'].includes(current.screen)){
         const closed=screen==='login' && state==='closed';
@@ -641,7 +736,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   });
   for(const b of document.querySelectorAll('[data-review]'))b.onclick=async()=>{if(!target||$('version').value!=='current')return;const val=b.dataset.review,id='verdict/'+reviewKey(target,target.viewport)+'/'+target.artifactHash;const currentReview=records.get(localKey('review',id));if(await write('review',id,{target,decision:val},currentReview?.revision??0))notes();};
   (async()=>{try{
-    const [me,a]=await Promise.all([api('/api/ia/auth/me'),api(base+'/artifact')]);csrf=me.csrf;screens=a.items;await loadDrafts(me.email);
+    const [me,a]=await Promise.all([api('/api/ia/auth/me'),api(base+'/artifact')]);csrf=me.csrf;screens=a.items;publication=a.publication||null;await loadDrafts(me.email);
     const u=new URL(location.href);if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(u.searchParams.get('width')))$('width').value=u.searchParams.get('width');
     const requested=u.searchParams.get('version');
     if(['previous','prior-r3'].includes(requested))$('version').value=requested;

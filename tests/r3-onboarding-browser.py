@@ -8,6 +8,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from playwright.sync_api import expect, sync_playwright
 
+from r3_auth_motion_browser import check_auth_motion
 from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +130,9 @@ def main():
                 if width == 320:
                     check_archived_entry(page,fixture["url"])
                 check(page,fixture["url"],width)
+                if width == 375:
+                    page.emulate_media(reduced_motion="no-preference")
+                    check_auth_motion(page,fixture["url"],width)
                 context.close()
             browser.close()
     finally:

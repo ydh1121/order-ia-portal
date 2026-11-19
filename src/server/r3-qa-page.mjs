@@ -4,23 +4,34 @@ import {hostCode,frameCode,runtimes} from './r3-ui/runtime.gen.mjs';
 
 import {archivedRows,archivedBodies,archivedScripts} from './r3-ui/reviewed-r3.gen.mjs';
 import * as beforeRework from './r3-ui/pre-rework.gen.mjs';
+import * as beforeMotion from './r3-ui/motion-history.gen.mjs';
 import {approvedShellBody,shellStyles} from './r3-ui/approved-shell.mjs';
 import {approvedHash,reviewHashes,approvedWidths} from './r3-ui/approved-width.mjs';
 import {installReviewShortcut, mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
 import {approvedRegistry} from './r3-ui/approved-registry.mjs';
 import {bootApprovedShell} from './r3-ui/approved-controller.mjs';
 import {mountQuoteJourneyBridge} from './r3-ui/quote-journey-bridge.mjs';
+import {installReviewMotion} from './r3-ui/review-motion-bridge.mjs';
+import {motionRequirements} from './r3-ui/motion-requirements.mjs';
+import {quoteCommit} from './r3-product-sources.mjs';
 import {buyerResultClient,projectBuyerResult,buyerResultCss} from './r3-quote-result.mjs';
 import {mountReviewDownloads} from './r3-qa-downloads.mjs';
+import {readPublication} from './r3-qa-publication.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
-const reviewFrameCode='function presentReviewFrame(session){('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+frameCode+')(session);('+browserFunction(mountApprovedMarkers)+')(session);}';
+const reviewFrameCode='function presentReviewFrame(session){('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);('+browserFunction(mountApprovedMarkers)+')(session);}';
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cached=new Map();
 async function sha(s){const b=await crypto.subtle.digest('SHA-256',utf8.encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function inflate(data){const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();}
+let historicalBodyIndex;
+async function historicalBody(digest){
+  historicalBodyIndex??=inflate(beforeMotion.archivedBodyPack).then(JSON.parse);
+  const {fragments,paths}=await historicalBodyIndex;
+  return paths[digest].map(index=>fragments[index]).join('');
+}
 let stylesheet,oldStylesheet;
 const styles=version=>version==='previous'?(oldStylesheet??=inflate(previousCssGzip)):(stylesheet??=inflate(cssGzip));
 const frameStyle=`
@@ -38,7 +49,7 @@ export async function isR3ReviewTarget(target,revision=release){
 }
 const apiHeaders={'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie, Cf-Access-Jwt-Assertion','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none';frame-ancestors 'none';sandbox",'X-Robots-Tag':'noindex'};
 const json=(j,status=200)=>Response.json(j,{status,headers:apiHeaders});
-export async function serveR3Artifact(request){
+export async function serveR3Artifact(request,env){
   if(request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
   const q=new URL(request.url).searchParams;
   if(!q.has('id')){
@@ -51,12 +62,12 @@ export async function serveR3Artifact(request){
         description:reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
         authoredChange:Boolean(authoredChange)};
     }));
-    return json({release,items});
+    return json({release,items,publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname)});
   }
   const r=catalog.find(f=>f.id===q.get('id')); const width=Number(q.get('width'));let version=q.get('version');
   if(!r||!approvedWidths.includes(width)||!['current','previous','prior-r3','recorded'].includes(version)||[...q.keys()].some(k=>!['id','width','version','artifactHash'].includes(k)))return json({error:'UNKNOWN_REVIEW_TARGET'},404);
   const pinned=q.get('artifactHash');
-  const history=[archivedRows[r.id],beforeRework.archivedRows[r.id]].filter(Boolean);
+  const history=[archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id]].filter(Boolean);
   let archived=null;
   if(version==='prior-r3'&&!pinned)archived=archivedRows[r.id]||null;
   if(pinned){
@@ -75,10 +86,12 @@ export async function serveR3Artifact(request){
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
   if(q.has('artifactHash')&&q.get('artifactHash')!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  const body=await inflate(frames[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest]),css=await styles(sourceVersion);
+  const packed=frames[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
+  const body=packed?await inflate(packed):await historicalBody(bodyDigest);
+  const css=archived&&cssHash!==beforeMotion.cssHash?await inflate(beforeMotion.cssGzip):await styles(sourceVersion);
   const title=esc(r.label+' · '+r.stateLabel);
   const common='<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+title+'</title>';
-  const meta=js({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:bodyDigest,cssSha256:version==='previous'?previousCssHash:cssHash});
+  const meta=js({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:bodyDigest,cssSha256:version==='previous'?previousCssHash:archived?beforeMotion.cssHash:cssHash});
   const page=common+'<!--R3-POLICY--><style>'+css+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
   const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
   const candidates={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member', 'quote-wait':'member'};
@@ -87,15 +100,15 @@ export async function serveR3Artifact(request){
   if(archived){
     mount=null;
     if(archived.script){
-      if(!cached.has(archived.script))cached.set(archived.script,inflate(archivedScripts[archived.script]||beforeRework.archivedScripts[archived.script]));
+      if(!cached.has(archived.script))cached.set(archived.script,inflate(archivedScripts[archived.script]||beforeRework.archivedScripts[archived.script]||beforeMotion.archivedScripts[archived.script]));
       mount=await cached.get(archived.script);
     }
   }
-  return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
+  return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame:beforeMotion.replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
 }
 export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}
 ${buyerResultCss.replaceAll('#buyerResult','#snapshot')}</style></head><body>
 ${approvedShellBody()}
-<script nonce="${esc(nonce)}">(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}))</script></body></html>`;
+<script nonce="${esc(nonce)}">(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})})</script></body></html>`;
 }

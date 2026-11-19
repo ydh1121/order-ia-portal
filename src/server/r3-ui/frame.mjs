@@ -1,15 +1,17 @@
 // Runs only in the opaque, network-disabled review frame. No customer fields cross the boundary.
-export function bootReviewFrame(session) {
+export function bootReviewFrame(session, installMotion, installReviewRequests, motionStyles) {
   const send=(type,payload={})=>parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type,payload},'*');
   if(window===parent)return;
   const root=document.querySelector('#order-single');
   const authored=window.ORDER_DESIGN_MODULES?.find(m=>m.id===session.screen);
   if(authored){
+    const style=document.createElement('style');style.textContent=motionStyles;document.head.append(style);
+    const requests=installReviewRequests(root,installMotion(root,{source:'controlled-qa'}));
     const go=(screen,state)=>send('navigate',{screen,state});
-    const api={interactive:true,variant:session.variant,reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches,select:go,
+    const api={interactive:true,screen:session.screen,variant:session.variant,reduced:()=>document.documentElement.hasAttribute('data-review-reduced')||matchMedia('(prefers-reduced-motion: reduce)').matches,select:go,
       toast:message=>{let hint=root.querySelector('[data-local-toast]');if(!hint){hint=document.createElement('p');hint.dataset.localToast='';hint.setAttribute('role','status');root.append(hint);}hint.textContent=message;},
-      demoSuccess:(_button,done)=>done?.()};
-    const cleanup=[window.QAUI?.sharedMount?.(root,api),authored.mount?.(root,session.state,api)];
+      demoSuccess:requests.run,downloadReviewDocument:()=>send('downloadReviewDocument'),saveReviewLayout:layout=>send('reviewWidgetLayout',{layout})};
+    const cleanup=[window.QAUI?.sharedMount?.(root,api),authored.mount?.(root,session.state,api),requests.destroy];
     addEventListener('pagehide',()=>cleanup.forEach(f=>{if(typeof f==='function')f();}),{once:true});
   }
   function fingerprint(el) {
@@ -57,6 +59,7 @@ export function bootReviewFrame(session) {
   function setPicking(on){
     picking=on;veil.hidden=!on;if(on){keyPoint={x:innerWidth/2,y:innerHeight/2};veil.focus({preventScroll:true});}else keyPoint=null;
   }
+  root.addEventListener('r3-motion-identity-reset',()=>{pins=[];previousFocus=null;setPicking(false);index();schedule();});
   // Cover disabled inputs, embedded svg, empty space and fixed overlays before their handlers run.
   for(const type of ['pointerdown','pointerup','click','dblclick','contextmenu','dragstart','submit','drop']){
     window.addEventListener(type,event=>{
@@ -106,6 +109,7 @@ export function bootReviewFrame(session) {
     else if(m.type==='pins'){pins=Array.isArray(m.payload)?m.payload:[];schedule();}
     else if(m.type==='visible'){shown=m.payload===true;schedule();}
     else if(m.type==='restore'&&m.payload)restore(m.payload);
+    else if(m.type==='restoreWidgetLayout'&&session.version==='current'&&session.screen==='admin-overview'&&session.state==='normal')root.dispatchEvent(new CustomEvent('r3-widget-layout',{detail:m.payload}));
   });
   // Native select popups live outside the DOM. Mirror the real options as a local accessible layer
   // so an open list can receive a pin. Keep the original select for keyboard and form semantics.

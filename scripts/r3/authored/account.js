@@ -11,7 +11,7 @@
   const interactive=api=>typeof api.interactive==='function'?api.interactive():api.interactive!==false;
   const social=(compact=false)=>`<div class="social-buttons">${button(compact?'카카오':'카카오로 계속하기','social-kakao','social kakao')}${button(compact?'네이버':'네이버로 계속하기','social-naver','social naver')}${button(compact?'구글':'구글로 계속하기','social-google','social google')}</div>`;
   const success=(title,body,action='login')=>`<div class="empty"><div class="success-mark">${icon('check')}</div><h2>${title}</h2><p>${body}</p>${button('계속하기',action)}</div>`;
-  const meter=(level=0)=>`<div class="password-meter" data-level="${level}" aria-label="비밀번호 강도 예시"><div class="liquid-segments">${[1,2,3,4].map(i=>`<i class="${i<=level?'filled':''}"><b></b></i>`).join('')}</div><p class="meter-label" aria-live="polite">${meterText[level]}</p></div>`;
+  const meter=(level=0)=>`<div class="password-meter" data-level="${level}" aria-label="비밀번호 강도 예시"><div class="liquid-segments">${[1,2,3,4].map(i=>`<i class="${i<=level?'filled':''}"><b></b><em aria-hidden="true"></em></i>`).join('')}</div><p class="meter-label" aria-live="polite">${meterText[level]}</p></div>`;
 
   // Only synchronous user navigation may carry these values. Render/export never reads them.
   let pendingFocus=null,pendingTermsSession=null,pendingSignupRestore=null;
@@ -74,17 +74,49 @@
     return fieldError(input,!input.value?'이메일 주소를 입력해 주세요.':input.validity.typeMismatch?'이메일 양식을 확인해 주세요.':'');
   }
   function firstInvalid(root) {root.querySelector('input[aria-invalid="true"]')?.focus({preventScroll:true});}
-  function mountMeter(root,c) {
-    root.querySelectorAll('[name=password],[name=new-password]').forEach(input=>{
-      const update=animate=>{
-        const el=root.querySelector('.password-meter');if(!el)return;
-        const level=strength(input.value),old=+el.dataset.level;el.dataset.level=level;
-        el.querySelectorAll('i').forEach((it,i)=>it.classList.toggle('filled',i<level));
-        el.querySelector('.meter-label').textContent=meterText[level];
-        if(animate&&level!==old){el.classList.remove('is-linking');void el.offsetWidth;el.classList.add('is-linking');}
-      };
-      update(false);input.addEventListener('input',()=>update(true),{signal:c.signal});
-    });
+  function mountMeter(root,c,api) {
+    const input=root.querySelector('[name=password],[name=new-password]'),el=root.querySelector('.password-meter');
+    if(!input||!el)return;
+    const label=el.querySelector('.meter-label'),bars=[...el.querySelectorAll('.liquid-segments i')];
+    label.id ||= U.uid('password-strength');
+    const descriptions=new Set((input.getAttribute('aria-describedby')||'').split(/\s+/).filter(Boolean));
+    descriptions.add(label.id);input.setAttribute('aria-describedby',[...descriptions].join(' '));
+    const flights=new Map();
+    const stop=target=>{flights.get(target)?.cancel();flights.delete(target);};
+    function move(target,frames,options){
+      stop(target);
+      if(!target.animate||api.reduced?.())return;
+      const flight=target.animate(frames,options);flights.set(target,flight);
+      flight.finished.then(()=>{if(flights.get(target)===flight)flights.delete(target);},()=>{});
+    }
+    function update(animate){
+      const level=strength(input.value),old=Number(el.dataset.level);
+      if(animate&&level===old)return;
+      el.dataset.level=String(level);
+      label.textContent=meterText[level];
+      const advancing=level>old;
+      bars.forEach((bar,index)=>{
+        const filled=index<level,changed=(index<old)!==filled,fill=bar.querySelector('b');
+        let neck=bar.querySelector('em');
+        if(!neck){neck=document.createElement('em');neck.setAttribute('aria-hidden','true');bar.append(neck);}
+        const start=animate&&changed?w.getComputedStyle(fill).transform:null;
+        bar.classList.toggle('filled',filled);
+        if(!animate||!changed)return;
+        const delay=(advancing?index-old:old-index-1)*50;
+        move(fill,[{transform:start==='none'?'scaleX('+(filled?0:1)+')':start},
+          {transform:'scaleX('+(filled?1:0)+')'}],{duration:300,delay,easing:'cubic-bezier(.25,.6,.3,1)',fill:'backwards'});
+        if(!index)return;
+        // The frame-6 neck spans the gap at 133ms, thins at 167ms and breaks by 200ms.
+        const neckFrames=[[0,0,0],[.333,.2,.4],[.443,1.05,1],[.557,1,.32],[.667,0,0],[1,0,0]]
+          .map(([offset,x,y])=>({offset,transform:'scale('+x+','+y+')',opacity:x?1:0}));
+        move(neck,neckFrames,{duration:300,delay,direction:advancing?'normal':'reverse',fill:'backwards',easing:'linear'});
+      });
+      if(animate)move(label,[{opacity:.55,transform:'translateY(4px)'},{opacity:1,transform:'none'}],{duration:180,easing:'ease-out'});
+    }
+    update(false);
+    input.addEventListener('input',event=>{if(!event.isComposing)update(true);},{signal:c.signal});
+    input.addEventListener('compositionend',()=>update(true),{signal:c.signal});
+    c.signal.addEventListener('abort',()=>{for(const flight of flights.values())flight.cancel();flights.clear();},{once:true});
   }
   function exitSheet(root,api,callback,signal) {
     const content=root.querySelector('.auth-sheet');
@@ -110,23 +142,7 @@
     const close=()=>{if(!consumeAuthReturn(api,authenticated))navigate(api,'onboarding',authenticated?'member-4':'guest-4');};
     const handle=root.querySelector('.sheet-handle');
     const sheet=root.querySelector('.auth-sheet');
-    let pointer=null;
-    function settle(){if(sheet){sheet.style.removeProperty('transform');sheet.style.removeProperty('transition');}pointer=null;}
-    handle?.addEventListener('pointerdown',e=>{
-      pointer={id:e.pointerId,y:e.clientY};handle.setPointerCapture(e.pointerId);sheet.style.transition='none';
-    },{signal:c.signal});
-    handle?.addEventListener('pointermove',e=>{
-      if(pointer?.id!==e.pointerId)return;
-      const delta=e.clientY-pointer.y;
-      sheet.style.transform='translateY('+(delta>=0?delta:-Math.sqrt(-delta)*1.6)+'px)';
-    },{signal:c.signal});
-    handle?.addEventListener('pointerup',e=>{
-      if(pointer?.id!==e.pointerId)return;
-      const dy=e.clientY-pointer.y,from=sheet.style.transform;settle();
-      if(dy>=48){close();return;}
-      if(!api.reduced?.()&&from)sheet.animate([{transform:from},{transform:'translateY(0)'}],{duration:190,easing:'cubic-bezier(.2,.9,.3,1)'});
-    },{signal:c.signal});
-    handle?.addEventListener('pointercancel',settle,{signal:c.signal});
+    w.ORDER_QA_SHEET?.(sheet,[handle],{signal:c.signal,reduced:api.reduced,close});
     if(authenticated && interactive(api)){
       const timer=setTimeout(()=>exitSheet(root,api,close,c.signal),api.reduced?.()?250:780);
       c.signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});
@@ -209,7 +225,7 @@
   },mount(root,s,api={}) {
     const restore=pendingSignupRestore;
     if(restore&&s==='empty'&&interactive(api))restoreSignup(root,restore);
-    const dispose=commonAuthMount(root,s,api),c=new AbortController();mountMeter(root,c);
+    const dispose=commonAuthMount(root,s,api),c=new AbortController();mountMeter(root,c,api);
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]'),a=btn?.dataset.action;if(btn?.disabled)return;
       if(a==='allow-notices'||a==='skip-notices'){
@@ -241,13 +257,13 @@
   registry.push({id:'otp',group:'로그인·가입',label:'이메일 인증번호',description:'6자리 입력·붙여넣기·오류·만료·재전송을 확인합니다.',width:'mobile',states:states([['empty','입력 전'],['partial','일부 입력'],['error','번호 오류'],['expired','시간 만료'],['sending','재전송 중'],['verified','인증 예시']]),render(s,o={}) {
     if(s==='verified')return scene('<div class="auth-complete" role="status"><span class="success-mark">'+icon('check')+'</span><h2>회원가입이 완료됐어요</h2></div>','회원가입 완료',o);
     const errorId=U.uid('otp-error');
-    return scene(`<div data-submit-action="verify-otp"><div class="sheet-title"><h1>인증번호 입력</h1></div><div class="otp-wrap t-input ${s==='error'||s==='expired'?'is-error is-shaking':''}">${Array.from({length:6},(_,i)=>`<input class="otp-digit" ${s==='expired'?'disabled':''} type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="${i===0?'one-time-code':'off'}" maxlength="6" required aria-label="인증번호 ${i+1}번째 자리" aria-invalid="${s==='error'||s==='expired'}" aria-describedby="${errorId}" value="${s==='partial'&&i<3?i+1:''}">`).join('')}</div><div class="row between otp-meta"><span class="${s==='expired'?'danger':'blue'}" data-otp-clock>${s==='expired'?'인증번호가 만료됐어요.':'받은 메일에서 인증번호 만료 시간을 확인해 주세요.'}</span>${button(s==='sending'?spinner:'인증번호 다시 받기','resend','text',s==='sending'?'disabled':'')}</div><div id="${errorId}" data-otp-feedback ${s==='error'||s==='expired'?'':'hidden'}>${note(s==='expired'?'인증번호를 다시 받아 주세요.':'인증번호가 맞지 않아요. 다시 확인해 주세요.','error')}</div><div class="surface otp-help"><h3>메일이 도착하지 않았나요?</h3><p class="muted">스팸메일함과 휴면 메일함도 확인해 주세요.</p></div><div class="bottom-actions">${button('인증하기','verify-otp','primary',s==='expired'?'disabled':'')}</div></div>`,'인증번호 입력',o);
+    return scene(`<div data-submit-action="verify-otp"><div class="sheet-title"><h1>인증번호 입력</h1></div><div class="otp-wrap t-input ${s==='error'||s==='expired'?'is-error is-shaking':''}">${Array.from({length:6},(_,i)=>`<input class="otp-digit" ${s==='expired'?'disabled':''} type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="${i===0?'one-time-code':'off'}" maxlength="6" required aria-label="인증번호 ${i+1}번째 자리" aria-invalid="${s==='error'||s==='expired'}" aria-describedby="${errorId}" value="${s==='partial'&&i<3?i+1:''}">`).join('')}</div><div class="row between otp-meta"><span class="${s==='expired'?'danger':'blue'}" data-otp-clock>${s==='expired'?'00분 00초':'받은 메일에서 인증번호 만료 시간을 확인해 주세요.'}</span>${button(s==='sending'?spinner:'인증번호 다시 받기','resend','text',s==='sending'?'disabled':'')}</div><div id="${errorId}" class="sr-only" data-otp-feedback ${s==='error'||s==='expired'?'':'hidden'}>${note(s==='expired'?'인증번호를 다시 받아 주세요.':'인증번호가 맞지 않아요. 다시 확인해 주세요.','error')}</div><div class="surface otp-help"><h3>메일이 도착하지 않았나요?</h3><p class="muted">스팸메일함과 휴면 메일함도 확인해 주세요.</p></div><div class="bottom-actions">${button('인증하기','verify-otp','primary',s==='expired'?'disabled':'')}</div></div>`,'인증번호 입력',o);
   },mount(root,s,api={}) {
     const c=new AbortController(),dispose=commonAuthMount(root,s,api,s==='verified'),fields=[...root.querySelectorAll('.otp-digit')];
     const clock=root.querySelector('[data-otp-clock]');
     if(clock&&s!=='expired')runDeadline(api.authState?.otpExpiresAt,(remaining,time)=>{
-      clock.textContent=remaining?time+' 후 인증번호가 만료돼요':'인증번호가 만료됐어요.';
-      if(!remaining){fields.forEach(field=>{field.disabled=true;});const verify=root.querySelector('[data-action="verify-otp"]');if(verify)verify.disabled=true;}
+      clock.textContent=remaining?time+' 후 인증번호가 만료돼요':'00분 00초';
+      if(!remaining){root.querySelector('.otp-wrap')?.classList.add('is-error');const reason=root.querySelector('[data-otp-feedback]');if(reason){reason.hidden=false;reason.textContent='인증번호가 만료됐어요. 인증번호를 다시 받아 주세요.';}fields.forEach(field=>{field.disabled=true;field.setAttribute('aria-invalid','true');});const verify=root.querySelector('[data-action="verify-otp"]');if(verify)verify.disabled=true;}
     },c.signal);
     const clearError=()=>{if(s==='expired')return;root.querySelector('.otp-wrap')?.classList.remove('is-error','is-shaking');fields.forEach(el=>el.setAttribute('aria-invalid','false'));const msg=root.querySelector('[data-otp-feedback]');if(msg)msg.hidden=true;};
     function fill(value,index,multiple) {
@@ -284,7 +300,7 @@
       }
       if(a==='verify-otp'){
         const missing=fields.find(el=>!/^\d$/.test(el.value));
-        if(missing){root.querySelector('[data-otp-feedback]').hidden=false;fields.forEach(el=>el.setAttribute('aria-invalid','true'));U.shake(root.querySelector('.otp-wrap'));missing.focus({preventScroll:true});return;}
+        if(missing){root.querySelector('.otp-wrap').classList.add('is-error');root.querySelector('[data-otp-feedback]').hidden=false;fields.forEach(el=>el.setAttribute('aria-invalid','true'));U.shake(root.querySelector('.otp-wrap'));missing.focus({preventScroll:true});return;}
         navigate(api,'otp','verified','[data-action="login"]');
       }
       if(a==='login'&&s==='verified'&&consumeAuthReturn(api,true))return;
@@ -297,7 +313,7 @@
     const request=s==='request'||s==='request-error';
     return scene(`<div data-submit-action="${request?'send-reset':'submit-password'}"><div class="sheet-title"><h1>비밀번호 재설정</h1></div>${request?`${field('이메일','email','이메일 주소',{type:'email',autocomplete:'email',required:true,error:s==='request-error'?'이메일 양식을 확인해 주세요.':'',value:s==='request-error'?'my.order.ooo':''})}${button('인증코드 전송','send-reset','primary wide')}`:s==='sent'?success('메일함을 확인해 주세요','가입 정보와 일치하면 재설정 안내를 보내드려요.','show-password'):s==='complete'?success('비밀번호를 바꿨어요','새 비밀번호로 로그인해 주세요.','login'):`${field('새 비밀번호','new-password','비밀번호 입력',{type:'password',autocomplete:'new-password',required:true,value:s==='strong'?EXAMPLE_PASSWORD:s==='weak'?'abc':''})}${meter(s==='strong'?strength(EXAMPLE_PASSWORD):s==='weak'?1:0)}${field('비밀번호 확인','password-confirm','한 번 더 입력해 주세요',{type:'password',autocomplete:'new-password',required:true,value:s==='strong'?EXAMPLE_PASSWORD:'',error:s==='error'?'입력한 비밀번호가 달라요.':''})}<div class="bottom-actions">${button('비밀번호 바꾸기','submit-password')}</div>`}</div>`,'비밀번호 재설정',o);
   },mount(root,s,api={}) {
-    const c=new AbortController(),dispose=commonAuthMount(root,s,api);mountMeter(root,c);
+    const c=new AbortController(),dispose=commonAuthMount(root,s,api);mountMeter(root,c,api);
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]'),a=btn?.dataset.action;if(btn?.disabled)return;
       if(a==='send-reset'){if(!emailValid(root.querySelector('[name=email]'))){firstInvalid(root);return;}navigate(api,'password','sent','[data-action="show-password"]');}

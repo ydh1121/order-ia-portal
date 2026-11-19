@@ -1,4 +1,6 @@
-export function runRolePage(labels,createEvidenceEditor){
+export function runRolePage(labels,createEvidenceEditor,createCustomerControls,mountAsyncMotion){
+  let asyncMotion;
+  const controls=createCustomerControls(),signedView={mode:'grid',selected:null,gesture:null,tags:[]};
   const $=id=>document.getElementById(id), name=x=>labels[x]||x;
   const endpoint='/api/ia/r3-role';
   const menus={
@@ -71,9 +73,9 @@ export function runRolePage(labels,createEvidenceEditor){
   }
   const qMap=id=>opts.quotes.find(q=>q.id===id);
   const status=s=>{$('status').textContent=s;};
-  const error=e=>status(messages[e.message]||(navigator.onLine?'업무를 불러오지 못했습니다. 새로고침해 주세요.':'연결이 끊겼습니다. 연결 후 다시 저장해 주세요.'));
-  async function api(path,body){
-    const settings={cache:'no-store',credentials:'same-origin'};
+  const error=e=>{if(e.name==='AbortError')return;status(messages[e.message]||(navigator.onLine?'업무를 불러오지 못했습니다. 새로고침해 주세요.':'연결이 끊겼습니다. 연결 후 다시 저장해 주세요.'));};
+  async function api(path,body,signal){
+    const settings={cache:'no-store',credentials:'same-origin',signal};
     if(body)Object.assign(settings,{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify(body)});
     const res=await fetch(path,settings);
     const data=await res.json();
@@ -81,8 +83,8 @@ export function runRolePage(labels,createEvidenceEditor){
     return data;
   }
   function clear(){
-    ++epoch;cipher=null;drafts={};clearTimeout(expiryTimer);dispose();dispose=()=>{};ready=false;csrf='';pending=null;grants=[];cases=[];next='';opts={quotes:[],products:[],businesses:[]};
-    for(const id of ['role-menu','queue-list','list','detail','create','publication'])$(id).replaceChildren();
+    ++epoch;signedView.gesture?.abort();panelView='';signedView.selected=null;signedView.tags=[];asyncMotion?.destroy();asyncMotion=null;cipher=null;drafts={};clearTimeout(expiryTimer);dispose();dispose=()=>{};ready=false;csrf='';pending=null;grants=[];cases=[];next='';opts={quotes:[],products:[],businesses:[]};
+    for(const id of ['role-search-tags','role-menu','queue-list','list','detail','create','publication'])$(id).replaceChildren();
     $('account-trigger').hidden=true;$('account-panel').hidden=true;$('account-panel').replaceChildren();
     $('create').hidden=true;$('filter-bar').hidden=true;$('more').hidden=true;$('r3-practice').hidden=true;
   }
@@ -93,11 +95,21 @@ export function runRolePage(labels,createEvidenceEditor){
   }
   function go(changes){historyChange(changes);render();if(query().get('case'))showCase(query().get('case'));}
   const gName=g=>opts.businesses.find(x=>x.org_id===g.org_id&&x.site_id===g.site_id)?.businessName||g.site_id||g.org_id;
+  const eventKey=e=>e.case_id+':'+e.revision;
+  function unreadActivity(){return (opts.activity||[]).filter(e=>!(drafts.readActivity||[]).includes(eventKey(e)));}
+  function readActivity(e){
+    const seen=new Set(drafts.readActivity||[]);seen.add(eventKey(e));
+    drafts.readActivity=[...seen].slice(-256);persistDrafts();renderMenu();
+  }
   function renderMenu(){
     const area=$('role-menu');area.replaceChildren();
     for(const [key,[title]] of Object.entries(menus)){
       if(key==='inbox'||!allowed(key))continue;
       const a=link(title,'/ia?view=roles-r3&menu='+key);
+      if(key==='activity'){
+        const count=unreadActivity().length;
+        if(count){const badge=node('span',String(count));badge.className='role-badge';badge.setAttribute('aria-label','이 세션에서 열어보지 않은 알림 '+count+'개');a.append(badge);}
+      }
       a.onclick=e=>{if(e.ctrlKey||e.metaKey||e.shiftKey||e.altKey)return;e.preventDefault();go({menu:key,case:null,quote:null,filter:null,q:null});};
       if(menu()===key)a.setAttribute('aria-current','page');area.append(a);
     }
@@ -119,14 +131,34 @@ export function runRolePage(labels,createEvidenceEditor){
     return li;
   }
   function list(){
-    const key=menu(),out=$('list'),related=$('queue-list');out.replaceChildren();related.replaceChildren();
+    const key=menu(),out=$('list'),related=$('queue-list');signedView.gesture?.abort();out.replaceChildren();related.replaceChildren();
+    $('query').removeAttribute('list');$('query').onkeydown=null;$('role-search-tags').replaceChildren();
     if(!allowed(key)){out.append(node('li','이 메뉴에 연결된 권한이 없습니다.'));return;}
     const term=(query().get('q')||'').trim().toLocaleLowerCase(),filter=query().get('filter')||'all';
     const contains=x=>String(x||'').toLocaleLowerCase().includes(term);
+    const tagArea=$('role-search-tags');tagArea.replaceChildren();tagArea.hidden=key!=='quotes';
     if(key==='quotes'){
+      const available=[...new Set(opts.quotes.flatMap(q=>[q.productName,q.supplierName,gName(q),q.deliveryState?name(q.deliveryState):null]).filter(Boolean))];
+      const input=$('query');input.setAttribute('list','role-tag-options');const options=node('datalist');options.id='role-tag-options';
+      for(const tag of available.filter(v=>!signedView.tags.includes(v))){const o=node('option');o.value=tag;options.append(o);}
+      tagArea.append(options);
+      for(const tag of signedView.tags){const chip=button(tag+' ×',()=>{signedView.tags=signedView.tags.filter(v=>v!==tag);list();input.focus();});chip.setAttribute('aria-label',tag+' 태그 제거');tagArea.append(chip);}
+      input.onkeydown=e=>{
+        if(e.isComposing||e.keyCode===229)return;
+        if(e.key==='Enter'&&available.includes(input.value)&&!signedView.tags.includes(input.value)){
+          e.preventDefault();signedView.tags.push(input.value);input.value='';historyChange({q:null},true);list();input.focus();
+        }else if(e.key==='Backspace'&&!input.value&&signedView.tags.length){e.preventDefault();signedView.tags.pop();list();}
+      };
+      const tools=node('div'),deck=node('li'),cards=node('div'),pager=node('div');
+      tools.className='signed-pass-tools';deck.className='signed-passes';cards.className='signed-pass-cards';pager.className='signed-pass-pager';
+      const rows=[];
       for(const q of opts.quotes){
-        if(![qTitle(q),q.supplierName,gName(q),name(q.deliveryState)].some(contains))continue;
-        const li=node('li');li.append(node('strong',qTitle(q)),node('small',[gName(q),q.supplierName,money(q.total),q.deliveryState?name(q.deliveryState):null].filter(Boolean).join(' · ')));
+        const terms=[qTitle(q),q.supplierName,gName(q),name(q.deliveryState)];
+        if(!terms.some(contains)||!signedView.tags.every(tag=>terms.some(v=>String(v||'').includes(tag))))continue;
+        const li=node('article');li.tabIndex=0;li.dataset.ticket=q.id;li.className='signed-pass';
+        const h=node('header');h.append(node('strong',qTitle(q)),node('small',q.deliveryState?name(q.deliveryState):'발급'));
+        li.append(h,node('small',[gName(q),q.supplierName,money(q.total)].filter(Boolean).join(' · ')));
+        li.append(node('hr'));
         li.append(link('견적 결과 보기','/ia?view=simple-r3&quote='+encodeURIComponent(q.id)+'#/result'));
         if(q.deliveryCase)li.append(button('납품 내역',()=>go({menu:'delivery',case:q.deliveryCase})));
         if(Date.parse(q.expires_at)>Date.now()){
@@ -134,9 +166,27 @@ export function runRolePage(labels,createEvidenceEditor){
             if(cmd==='delivery'&&q.deliveryCase)continue;li.append(button(label,()=>go({menu:cmd,quote:q.id,case:null})));
           }
         }else li.append(node('small','견적 기한 만료'));
-        related.append(li);
+        rows.push(li);cards.append(li);
       }
-      if(!related.childElementCount)related.append(node('li','이 사업장에서 확인할 수 있는 발급 견적이 없습니다.'));
+      if(rows.length){
+        related.append(deck);deck.append(tools,cards,pager);
+        const grid=button('격자 보기',()=>view('grid')),stack=button('카드 넘기기',()=>view('deck'));
+        tools.append(grid,stack);
+        const counter=node('span');counter.setAttribute('aria-live','polite');
+        const move=step=>{const i=Math.max(0,rows.findIndex(r=>r.dataset.ticket===signedView.selected));signedView.selected=rows[(i+step+rows.length)%rows.length].dataset.ticket;view(signedView.mode);};
+        pager.append(button('이전',()=>move(-1)),counter,button('다음',()=>move(1)));
+        function view(mode){
+          signedView.mode=mode;
+          const current=Math.max(0,rows.findIndex(r=>r.dataset.ticket===signedView.selected));
+          signedView.selected=rows[current].dataset.ticket;
+          cards.classList.toggle('deck',mode==='deck');grid.setAttribute('aria-pressed',String(mode==='grid'));stack.setAttribute('aria-pressed',String(mode==='deck'));
+          rows.forEach((card,i)=>{const depth=(i-current+rows.length)%rows.length;card.inert=mode==='deck'&&depth!==0;card.style.setProperty('--depth',String(Math.min(3,depth)));card.style.zIndex=String(rows.length-depth);});
+          counter.textContent=(current+1)+' / '+rows.length;pager.hidden=mode!=='deck'||rows.length<2;
+        }
+        view(signedView.mode);signedView.gesture=new AbortController();
+        controls.swipeDeck(cards,{enabled:()=>signedView.mode==='deck'&&rows.length>1,top:()=>rows.find(el=>el.dataset.ticket===signedView.selected),step:move,signal:signedView.gesture.signal});
+        cards.onkeydown=e=>{if(signedView.mode==='deck'&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();move(e.key==='ArrowLeft'?-1:1);rows.find(el=>el.dataset.ticket===signedView.selected).focus();}};
+      }else related.append(node('li','이 사업장에서 확인할 수 있는 발급 견적이 없습니다.'));
       related.append(link('간편 견적','/ia?view=simple-r3'),link('상세 견적','/ia?view=detailed-r3'),link('내 사업장 견적 발급','/ia?view=pricing-r3#quote'));
     }else if(key==='activity'){
       for(const e of opts.activity||[]){
@@ -144,7 +194,7 @@ export function runRolePage(labels,createEvidenceEditor){
         const c=cases.find(row=>row.id===e.case_id);
         if((filter==='todo'&&!c?.actions.length)||(filter==='done'&&!complete.has(e.next_state)))continue;
         const li=node('li');
-        li.append(button(name(e.kind)+' · '+name(e.action),()=>go({case:e.case_id})),node('small',[name(e.next_state),gName(e),titleDate(e.created_at)].filter(Boolean).join(' · ')));
+        li.append(button(name(e.kind)+' · '+name(e.action),()=>{readActivity(e);go({case:e.case_id});}),node('small',[name(e.next_state),gName(e),titleDate(e.created_at)].filter(Boolean).join(' · ')));
         out.append(li);
       }
     }else{
@@ -214,16 +264,18 @@ export function runRolePage(labels,createEvidenceEditor){
       for(const k of ['quoteId','productId'])if(v.has(k))data[k]=v.get(k);
       const ctx={};for(const k of ['businessName','industry','trade','openingDate','subject','memo','desiredDate'])if(v.get(k))ctx[k]=v.get(k).trim();
       const targets=v.getAll('targets');if(targets.length)ctx.targets=targets;
-      if(Object.keys(ctx).length)data.context=ctx;remember();save(data,keyDraft);
+      if(Object.keys(ctx).length)data.context=ctx;remember();save(data,keyDraft,submit);
     };
   }
-  let panelRequest=0;
+  let panelRequest=0,panelView='';
   async function accountPanel(view='home',active=0){
-    const panel=$('account-panel'),at=epoch,request=++panelRequest;panel.hidden=false;
-    const state=await api(endpoint+'/account');if(at!==epoch||panel.hidden||request!==panelRequest)return;
-    panel.replaceChildren();const top=node('header'),heading=node('h2',({home:'내 계정',business:'사업자 정보',people:'구성원과 권한'})[view]);
+    const box=$('account-panel'),at=epoch,request=++panelRequest;box.hidden=false;
+    const state=await asyncMotion.reveal(box,({signal})=>api(endpoint+'/account',null,signal));if(at!==epoch||box.hidden||request!==panelRequest)return;
+    const direction=!panelView||view===panelView?0:view==='home'?-1:1;
+    const panel=controls.slidePanel(box,()=>{},direction);panelView=view;
+    const top=node('header'),heading=node('h2',({home:'내 계정',business:'사업자 정보',people:'구성원과 권한'})[view]);
     const show=(next,scope=active)=>accountPanel(next,scope).catch(error);
-    const close=()=>{panel.hidden=true;$('account-trigger').setAttribute('aria-expanded','false');$('account-trigger').focus();};
+    const close=()=>{box.hidden=true;panelView='';$('account-trigger').setAttribute('aria-expanded','false');$('account-trigger').focus();};
     top.append(heading,button('닫기',close));panel.append(top);
     if(view!=='home')panel.append(button('내 계정으로',()=>show('home')));
     const pick=field(panel,'사업장','business-scope',state.sites.map((site,i)=>[String(i),[site.info.businessName||gName(site),name(site.role)].join(' · ')]));
@@ -244,7 +296,7 @@ export function runRolePage(labels,createEvidenceEditor){
         const submit=node('button','사업자 정보 초안 저장');submit.type='submit';form.append(submit);panel.append(form);
         const id=crypto.randomUUID(),requestKey=crypto.randomUUID();
         form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;
-          try{await api(endpoint,{action:'create',caseId:id,requestKey,orgId:site.org_id,siteId:site.site_id,kind:'business',expectedRevision:0,context:Object.fromEntries(new FormData(form))});await accountPanel('business',active);status('사업자 정보 초안을 저장했습니다.');}
+          try{await asyncMotion.run(submit,({signal})=>api(endpoint,{action:'create',caseId:id,requestKey,orgId:site.org_id,siteId:site.site_id,kind:'business',expectedRevision:0,context:Object.fromEntries(new FormData(form))},signal));await accountPanel('business',active);status('사업자 정보 초안을 저장했습니다.');}
           catch(e){error(e);submit.disabled=false;}
         };
       }
@@ -259,7 +311,7 @@ export function runRolePage(labels,createEvidenceEditor){
       field(form,'요청 권한','role',roleOptions);
       const submit=node('button','관리자에게 요청');submit.type='submit';form.append(submit);panel.append(form);
       const key=crypto.randomUUID();form.onsubmit=async e=>{e.preventDefault();submit.disabled=true;
-        try {await api(endpoint+'/account',{...Object.fromEntries(new FormData(form)),orgId:site.org_id,siteId:site.site_id,requestKey:key});await accountPanel('people',active);status('요청을 저장했습니다. 권한 담당자의 확인이 필요합니다.');}
+        try {await asyncMotion.run(submit,({signal})=>api(endpoint+'/account',{...Object.fromEntries(new FormData(form)),orgId:site.org_id,siteId:site.site_id,requestKey:key},signal));await accountPanel('people',active);status('요청을 저장했습니다. 권한 담당자의 확인이 필요합니다.');}
         catch(e){error(e);submit.disabled=false;}
       };
       const pending=state.requests.filter(r=>r.org_id===site.org_id&&(site.role==='OPERATOR'||r.site_id===site.site_id));
@@ -269,7 +321,7 @@ export function runRolePage(labels,createEvidenceEditor){
   }
   $('account-trigger').onclick=()=>{
     const panel=$('account-panel');
-    if(!panel.hidden){panel.hidden=true;$('account-trigger').setAttribute('aria-expanded','false');return;}
+    if(!panel.hidden){panel.hidden=true;panelView='';$('account-trigger').setAttribute('aria-expanded','false');return;}
     $('account-trigger').setAttribute('aria-expanded','true');accountPanel().catch(error);
   };
   $('account-panel').onkeydown=e=>{if(e.key==='Escape')$('account-trigger').click();};
@@ -277,9 +329,9 @@ export function runRolePage(labels,createEvidenceEditor){
     const el=$('publication');el.replaceChildren();if(!opts.publication)return;
     const form=node('form'),cb=node('input');cb.type='checkbox';cb.checked=Boolean(opts.publication.enabled);
     const label=node('label','Order 메뉴 공개');label.prepend(cb);form.append(label);
-    form.append(node('button','공개 설정 저장'));el.append(form);
+    const submit=node('button','공개 설정 저장');form.append(submit);el.append(form);
     const current=opts.publication.revision,requestKey=crypto.randomUUID();
-    form.onsubmit=async e=>{e.preventDefault();try{await api(endpoint+'/publication',{enabled:cb.checked,expectedRevision:current,requestKey});await load();status('공개 설정을 저장했습니다.');}catch(err){error(err);}};
+    form.onsubmit=async e=>{e.preventDefault();try{await asyncMotion.run(submit,({signal})=>api(endpoint+'/publication',{enabled:cb.checked,expectedRevision:current,requestKey},signal));await load();status('공개 설정을 저장했습니다.');}catch(err){error(err);}};
   }
   function render(){
     if(!ready)return;
@@ -291,22 +343,22 @@ export function runRolePage(labels,createEvidenceEditor){
   }
   async function load(append=false){
     const start=epoch;
-    const [r,w]=await Promise.all([api(endpoint+'?context=1'+(append&&next?'&after='+encodeURIComponent(next):'')),append?Promise.resolve(opts):api(endpoint+'/workspace')]);
+    const [r,w]=await asyncMotion.reveal($('queue-list'),({signal})=>Promise.all([api(endpoint+'?context=1'+(append&&next?'&after='+encodeURIComponent(next):''),null,signal),append?Promise.resolve(opts):api(endpoint+'/workspace',null,signal)]));
     if(start!==epoch)return;
     grants=r.grants;$('account-trigger').hidden=!grants.length;opts=w;cases=append?[...cases,...r.cases]:r.cases;next=r.next;ready=true;render();
   }
-  async function save(data,keyDraft){
+  async function save(data,keyDraft,submit){
     if(loading)return;loading=true;
     const prior=pending||drafts.request;
     const request=prior&&JSON.stringify(prior.data)===JSON.stringify(data)?prior:{data,key:crypto.randomUUID()};pending=request;drafts.request=request;
-    try{await persistDrafts();const result=await api(endpoint,{...data,requestKey:request.key});pending=null;delete drafts.request;if(keyDraft)delete drafts[keyDraft];await persistDrafts();historyChange({case:result.case.id});await load();await showCase(result.case.id);status('저장했습니다.');}
+    try{await persistDrafts();const result=await asyncMotion.run(submit,({signal})=>api(endpoint,{...data,requestKey:request.key},signal));pending=null;delete drafts.request;if(keyDraft)delete drafts[keyDraft];await persistDrafts();historyChange({case:result.case.id});await load();await showCase(result.case.id);status('저장했습니다.');}
     catch(e){error(e);if(e.status===409 && data.action!=='create')$('status').append(button('최신 상태와 내 입력 비교',()=>showCase(data.caseId,data)));}
     finally{loading=false;}
   }
   async function showCase(caseId,conflicted){
     const start=epoch;dispose();const detail=$('detail');
     try{
-      const r=await api(endpoint+'?context=1&id='+encodeURIComponent(caseId));if(start!==epoch||query().get('case')!==caseId)return;
+      const r=await asyncMotion.reveal(detail,({signal})=>api(endpoint+'?context=1&id='+encodeURIComponent(caseId),null,signal));if(start!==epoch||query().get('case')!==caseId)return;
       const c=r.case;detail.replaceChildren(node('h2',name(c.kind)+' · '+name(c.state)));
       detail.append(button('목록으로',()=>go({case:null})));
       const dl=node('dl');
@@ -375,10 +427,10 @@ export function runRolePage(labels,createEvidenceEditor){
             const val=values.get(key)?.trim();if(val)context[key]=val;
           }
           if(Object.keys(context).length)data.context=context;
-          save(data,draftKey);
+          save(data,draftKey,saveAction);
         };
       }
-    }catch(e){detail.replaceChildren();error(e);}
+    }catch(e){if(e.name!=='AbortError'){detail.replaceChildren();error(e);}}
   }
   $('filters').onclick=e=>{if(e.target.dataset.filter)go({filter:e.target.dataset.filter});};
   $('query').oninput=e=>{historyChange({q:e.target.value},true);list();};
@@ -386,7 +438,7 @@ export function runRolePage(labels,createEvidenceEditor){
   $('refresh').onclick=()=>boot();
   window.addEventListener('popstate',()=>{render();if(query().get('case'))showCase(query().get('case'));});
   async function boot(){
-    clear();status('업무를 불러오는 중입니다.');
+    clear();asyncMotion=mountAsyncMotion(document);status('업무를 불러오는 중입니다.');
     const start=epoch;
     try{const session=await api(endpoint+'/session');if(start!==epoch)return;csrf=session.csrf;await openDrafts(csrf);if(start!==epoch)return;
       $('r3-practice').hidden=session.practiceAllowed===false;

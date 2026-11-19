@@ -116,12 +116,38 @@ try:
         expect(page.locator('#offerSelect option')).to_have_count(1)
         page.locator('#quoteQty').fill('10')
         page.locator('#quoteDay').fill((datetime.now(timezone.utc)+timedelta(days=1)).date().isoformat())
+        # Hold only the delivery of the genuine signed response. The operation still
+        # issues one immutable server snapshot; the pending player cannot manufacture it.
+        pending=[]
+        quote_url='**/api/ia/r3-price/**/quote'
+        page.route(quote_url,lambda route:pending.append(route))
         page.locator('#quoteIssue').click()
+        wait=page.locator('#quotePending')
+        page.wait_for_function("Number(document.querySelector('#quotePending').dataset.emitted)>=4",timeout=12000)
+        expect(wait.locator('[data-banner-index]')).to_have_count(3)
+        assert int(wait.get_attribute('data-visual-ms'))>=4990
+        request_id=wait.get_attribute('data-wait-request')
+        assert len(pending)==1 and pending[0].request.method=='POST'
+        response=pending[0].fetch();assert response.ok,response.text()
+        pending[0].fulfill(response=response);page.unroute(quote_url)
+        expect(wait).to_be_hidden()
         expect(page.locator('#buyerResult')).to_contain_text('524원')
         assert '운송 회귀 검수' not in page.locator('#buyerResult').inner_text()
         page.reload();page.locator('#persona').select_option('buyer');page.locator('#buyerSite').select_option(index=1)
         page.locator('#quoteHistory option').first.wait_for(state='attached')
+        # Recall an issued quote, disconnect before its response and retry the same
+        # authorized read. A cancelled read cannot repaint or issue another quote.
+        pending.clear();recall='**/api/ia/r3-price/**/quote?id=*'
+        page.route(recall,lambda route:pending.append(route))
         page.get_by_role('button',name='다시 보기').click()
+        expect(wait).to_have_attribute('data-phase','entry');old=wait.get_attribute('data-wait-request')
+        page.context.set_offline(True)
+        expect(wait).to_have_attribute('data-phase','offline')
+        expect(wait.locator('[data-banner-index]')).to_have_count(0)
+        for route in pending: route.abort()
+        page.unroute(recall);page.context.set_offline(False)
+        page.locator('#retryQuote').click()
+        expect(wait).to_have_attribute('data-phase','complete');assert old!=wait.get_attribute('data-wait-request')
         expect(page.locator('#buyerResult')).to_contain_text('524원')
         (evidence/'receipt.json').write_text(json.dumps({'scope':'isolated synthetic practice data, browser on 390 and 1440 px','referenceCounts':[4,137,12],'serviceRows':112,'trays':10,'boxes':2,'shipping':'274','quotedTotal':'524','realBusinessAccountVerified':False,'ownerAcceptance':None},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
         print('PASS freight reference 4/137, Sema 112, copied reference remains inactive, signed review → approved contract, 10 trays/2 boxes, freight 274 + merchandise 250 = 524, immutable snapshot reload')

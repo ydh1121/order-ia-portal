@@ -42,6 +42,16 @@ try:
             expect(page.locator('#status')).to_have_text('저장했습니다.')
         buyer, operator, supplier, other = (persona('buyer',390),persona('operator',1440),persona('supplier',320),persona('buyer2',390))
         visit(buyer,'quotes')
+        quote_card=buyer.locator('#queue-list [data-ticket]').first
+        quote_card.evaluate('card=>{window.originalIssuedCard=card}')
+        buyer.get_by_role('button',name='카드 넘기기',exact=True).click()
+        assert quote_card.evaluate('card=>card===window.originalIssuedCard')
+        buyer.get_by_role('button',name='격자 보기',exact=True).click()
+        query=buyer.locator('#query');query.fill('시험 특란');query.press('Enter')
+        expect(buyer.locator('#role-search-tags').get_by_role('button',name='시험 특란 태그 제거')).to_be_visible()
+        query.press('Backspace')
+        expect(buyer.locator('#role-search-tags button')).to_have_count(0)
+        buyer.evaluate("window.signedMotion=[];document.addEventListener('r3:async-state',e=>window.signedMotion.push(e.detail))")
         initial=buyer.url
         buyer.get_by_role('button',name='내 계정',exact=True).click()
         panel=buyer.get_by_role('region',name='계정 패널')
@@ -56,6 +66,8 @@ try:
         panel.get_by_role('button',name='관리자에게 요청').click()
         expect(panel.get_by_text('sample@example.invalid',exact=False)).to_be_visible()
         assert buyer.url==initial
+        assert {'pending','success'}.issubset({step['phase'] for step in buyer.evaluate('window.signedMotion') if step['source']=='server'})
+        (evidence/'customer-controls.json').write_text(json.dumps({'origin':'signed SQLite business fixture','width':390,'stableIssuedCard':True,'authorizedTag':True,'sameUrlAccount':True,'serverMotion':buyer.evaluate('window.signedMotion')},ensure_ascii=False,indent=2))
         panel.get_by_role('button',name='닫기').click()
         expect(buyer.locator('#role-menu')).not_to_contain_text('검토함')
         expect(buyer.locator('#queue-list')).to_contain_text('시험 특란')

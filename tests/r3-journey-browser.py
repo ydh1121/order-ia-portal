@@ -99,7 +99,7 @@ def check_motion(page, origin):
         if(!p||!c)return;
         const grow=Number(p.style.getPropertyValue('--grow'));
         const price=el=>Number(el.querySelector('.oq-price-value').textContent.replaceAll(',',''));
-        if(last!==grow){trace.graph.push({grow,current:price(c),proposed:price(p)});last=grow;}
+        if(last!==grow){trace.graph.push({grow,current:price(c),proposed:price(p),currentReels:c.querySelectorAll('.oq-reel-cell').length,proposedReels:p.querySelectorAll('.oq-reel-cell').length,turn:[...p.querySelectorAll('.oq-reel-face')].some(f=>Number(f.style.opacity)>0&&Number(f.style.opacity)<1)});last=grow;}
       });
       observer.observe(document,{subtree:true,attributes:true,attributeFilter:['style'],childList:true,characterData:true});
     }""")
@@ -112,6 +112,9 @@ def check_motion(page, origin):
     assert any(0 < item['grow'] < 1 for item in graph),graph
     animated=[item for item in graph if 0 < item['grow'] < 1]
     assert all(item['current']==12540000 and 0<item['proposed']<11940000 for item in animated),animated
+    assert all(item['currentReels']==0 for item in graph),graph
+    assert any(item['proposedReels']>0 and item['turn'] for item in animated),animated
+    expect(proposed.locator('.oq-price-reel')).to_have_count(0)
     # The identical graph button grows into the card while the fresh-detail data loads.
     token=proposed.evaluate("el=>{window.__originalGraph=el;return el.getBoundingClientRect().width}")
     frame_click(page,proposed)
@@ -161,6 +164,10 @@ def run(page, origin, width):
         wrapper=frame.locator('[data-review-result]')
         expect(wrapper).to_have_attribute('data-view',state)
         view=wrapper.locator('[data-order-result]')
+        if state=='saving':
+            view.evaluate("el=>{window.originalReviewPlot=el.querySelector('.oq-plot')}")
+        else:
+            assert view.evaluate("el=>window.originalReviewPlot===el.querySelector('.oq-plot')"), (width,state,'preview replaced the live plot')
         check_result(view,state)
         assert '7,300' not in view.inner_text()
         layout=view.evaluate('''el=>{

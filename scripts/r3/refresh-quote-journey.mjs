@@ -7,6 +7,7 @@ import {runtimes,frameCode} from '../../src/server/r3-ui/runtime.gen.mjs';
 import {inputJourney,mountInputJourney} from './authored/quote-journey.mjs';
 import {bootQaHost} from '../../src/server/r3-ui/host.mjs';
 import {installReviewQuote,reviewQuoteFixture} from './authored/quote-result-fixture.mjs';
+import {quoteJellyRuntime} from '../../src/server/r3-product-sources.mjs';
 import {mountQuoteResult,quoteResultScreenCss} from '../../src/server/order-engine/browser/quote-result-screen.mjs';
 
 const require=createRequire(new URL('../../tests/build-tools/package.json',import.meta.url));
@@ -15,7 +16,7 @@ const read=relative=>readFile(new URL(relative,import.meta.url),'utf8');
 const digest=s=>createHash('sha256').update(s).digest('hex');
 const [style,question]=await Promise.all(['quote-journey.css','quote-question-polish.css'].map(f=>read('./authored/'+f)));
 const frames={...data.frames};
-const modules={quoteJourney:'('+mountInputJourney.toString()+')();',sharedQuoteResult:'('+installReviewQuote.toString()+')('+mountQuoteResult.toString()+','+reviewQuoteFixture.toString()+');'};
+const modules={quoteJourney:'('+mountInputJourney.toString()+')();',sharedQuoteResult:quoteJellyRuntime+'('+installReviewQuote.toString()+')('+mountQuoteResult.toString()+','+reviewQuoteFixture.toString()+');'};
 
 function staticResult(state){
   const dom=new JSDOM('<div id="order-single" class="qa-screen" data-motion="on"><style>'+quoteResultScreenCss+'</style><div data-review-result data-quote-fixture="figma-20261118"></div></div>',{runScripts:'outside-only',pretendToBeVisual:true});
