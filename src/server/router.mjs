@@ -26,11 +26,17 @@ export async function handleIaRequest(request,env,dependencies={}) {
       actor={...actor,csrf:session.csrf};
     }
     if((r3[1]==='role'||r3[1]==='price') && r3[2]==='/session' && request.method==='GET'){
-      try{const session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);return json({csrf:session.csrf,expiresAt:session.expiresAt,practiceAllowed:actor.role==='OWNER'});}
+      try{const session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);return json({csrf:session.csrf,expiresAt:session.expiresAt,absoluteExpiresAt:session.absoluteExpiresAt,serverNow:session.serverNow,practiceAllowed:actor.role==='OWNER'});}
       catch(error){return error?.message==='SESSION_STORE_UNAVAILABLE'?json({error:'SESSION_STORE_UNAVAILABLE'},503):json({error:'SESSION_DENIED'},403);}
     }
     const ctx={request,env,actor,path:r3[2]||'/'};
     try {
+      if(r3[1]==='role' && ctx.path==='/businesses'){
+        const {handleSavedBusinesses}=await import('./r3-business-directory.mjs');return await handleSavedBusinesses(ctx);
+      }
+      if(r3[1]==='qa' && ctx.path==='/navigation'){
+        const {handleQaNavigation}=await import('./r3-qa-navigation.mjs');return await handleQaNavigation(ctx);
+      }
       if(r3[1]==='qa' && ctx.path==='/artifact' && request.method==='GET'){
         const {serveR3Artifact}=await import('./r3-qa-page.mjs');return await serveR3Artifact(request,env);
       }

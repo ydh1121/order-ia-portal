@@ -46,6 +46,14 @@ html,body{overflow:hidden}
 #qa-session-notice{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:90;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px;max-width:calc(100vw - 32px);border-radius:12px;background:#fff0df;color:#63360b;box-shadow:0 4px 24px #191f2820;font-size:12px}
 #qa-session-notice[hidden]{display:none}
 #qa-session-notice a,#qa-session-notice button{padding:7px 10px;border:0;border-radius:7px;background:white;color:inherit;white-space:nowrap}
+.lab-nav-section{margin:8px 0;border-radius:10px;border:1px solid #e5e8eb;overflow:hidden}
+.lab-nav-heading{display:flex;align-items:center;gap:8px;justify-content:space-between;padding:12px 10px;cursor:pointer;font-size:12px;font-weight:750;list-style:none;background:#f7f8fa}
+.lab-nav-heading::before{content:'›';transform:rotate(0);transition:transform .15s}.lab-nav-section[open]>.lab-nav-heading::before{transform:rotate(90deg)}
+.lab-nav-heading>span:first-child{flex:1}.lab-nav-heading input{min-width:0;width:100%;padding:5px;border:1px solid #315de6;border-radius:4px;font:inherit}
+.lab-nav-section.drag-over{outline:2px solid #315de6;background:#edf2ff}.lab-nav-section .lab-group{margin:12px 8px 4px}
+.lab-nav-item{display:flex;align-items:stretch;min-width:0}.lab-nav-item .lab-nav{flex:1;min-width:0;width:auto}.lab-nav-item .nav-label{overflow:hidden;text-overflow:ellipsis}
+.lab-nav-move{width:26px;flex:none;border:0;border-radius:5px;background:transparent;color:#8b95a1;cursor:pointer;font-size:15px}.lab-nav-move:hover,.lab-nav-move:focus-visible{background:#e9efff;color:#315de6}.lab-nav-move:disabled{opacity:.35;cursor:wait}
+.lab-nav-heading:focus-visible,.lab-nav-move:focus-visible{outline:2px solid #315de6;outline-offset:-2px}
 `;
 
 export const shellStyles = approvedShellStyle+'\n'+additions;
@@ -59,7 +67,7 @@ export function approvedShellBody(){
     <div class="lab-wordmark">${wordmark}<small>QA 1.0</small></div>
     <input class="lab-search" id="catalog-search" type="search" placeholder="화면·경로 찾기" aria-label="QA 화면 찾기">
     <div class="lab-role-filter" aria-label="사용자별 화면">
-      <button data-role="current" class="active">현재 범위</button><button data-role="customer">매장 고객</button><button data-role="supplier">공급자</button><button data-role="admin">관리자</button><button data-role="common">공통</button><button data-role="future">향후 검토</button><button data-role="all">전체</button>
+      <button data-role="current">MVP</button><button data-role="customer">매장 고객</button><button data-role="supplier">공급자</button><button data-role="admin">관리자</button><button data-role="common">공통</button><button data-role="future">향후 검토</button><button data-role="all" class="active">전체</button>
     </div>
     <nav class="lab-catalog" id="catalog" aria-label="QA 화면"></nav>
     <div class="lab-sidebar-footer"><button data-lab-action="overview" id="overview-button">전체 검토 현황 <span id="open-total"></span></button><div id="state-total"></div><span>진행 방식 1.0 · 검토판 R3</span></div>
@@ -77,6 +85,8 @@ export function approvedShellBody(){
     <section class="lab-stage" id="surface" data-mode="focus" aria-label="화면 미리보기">
       <div class="lab-stage-heading"><span id="stage-hint">화면에서 직접 조작하거나 위치 코멘트를 남겨 주세요.</span><span class="prototype-pill" id="prototype-badge">디자인 예시</span></div>
       <nav id="quote-candidates" hidden aria-label="실제 견적 입력"><a href="/ia?view=simple-r3#/form" target="_blank" rel="noopener">간편 견적 입력 열기</a> · <a href="/ia?view=detailed-r3#/form" target="_blank" rel="noopener">상세 견적 입력 열기</a></nav>
+      <nav id="business-candidates" hidden aria-label="내 사업장"><a href="/ia?view=businesses-r3" target="_blank" rel="noopener">내 사업장 관리</a></nav>
+      <nav id="consult-candidates" hidden aria-label="상담 업무"><a href="/ia?view=roles-r3&amp;menu=consult" target="_blank" rel="noopener">상담 예약·내역 관리</a><p>기존 업무 화면에서 희망일·상담 대상·답변·처리 이력을 확인합니다. 연결된 사업장과 업무 권한에 따라 표시됩니다.</p></nav>
       <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><section id="snapshot" aria-label="선택한 견적"></section></section>
       <div class="preview-list" id="preview-list">
         <section class="preview-unit mobile" id="focus-unit" data-width="390" data-height="844">

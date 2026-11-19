@@ -7,7 +7,7 @@ nav{display:grid;gap:.65rem}a{padding:1rem 1.25rem;border:1px solid #d4dae1;bord
 a:hover,a:focus-visible{outline:2px solid #336ab0}small{font-weight:400;color:#495565;margin-inline-start:.5rem}
 </style><main><h1>Order. 비공개 IA</h1><nav aria-label="R3 작업 공간">
 <a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA 랩 <small>새 창에서 열기</small></a>
-<details><summary>새 창이 열리지 않을 때</summary><a href="/ia?view=qa-lab">이 탭에서 QA 랩 열기</a></details>
+
 <a href="/ia?view=simple-r3">간편 견적</a><a href="/ia?view=detailed-r3">상세 견적</a>
 <a href="https://order-ia-portal.pages.dev/ia/" rel="noreferrer">기존 IA 전체 현황</a>
 <a href="/ia?view=roles-r3">역할별 업무</a><a href="/ia?view=pricing-r3">가격·배송비</a></nav></main></html>`;

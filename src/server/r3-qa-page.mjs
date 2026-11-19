@@ -19,6 +19,8 @@ import {quoteCommit} from './r3-product-sources.mjs';
 import {buyerResultClient,projectBuyerResult,buyerResultCss} from './r3-quote-result.mjs';
 import {mountReviewDownloads} from './r3-qa-downloads.mjs';
 import {readPublication} from './r3-qa-publication.mjs';
+import {getQaSupplemental,qaMvpCss} from './r3-qa-assets.mjs';
+import {defaultQaNavigation} from './r3-qa-navigation.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
@@ -44,6 +46,8 @@ const frameStyle=`
 `;
 export async function isR3ReviewTarget(target,revision=release){
   if(revision!==release||!target||!approvedWidths.includes(target.viewport))return false;
+  const additional=(await getQaSupplemental()).documents.get([target.screen,target.state,target.variant].join('/'));
+  if(additional?.hashes[target.viewport]===target.artifactHash)return true;
   const row=catalog.find(f=>f.screen===target.screen&&f.state===target.state&&f.variant===target.variant);
   if(!row)return false;
   const [current,previous]=await Promise.all(['current','previous'].map(version=>approvedHash(row,target.viewport,version)));
@@ -57,14 +61,34 @@ export async function serveR3Artifact(request,env){
   if(!q.has('id')){
     if(q.size)return json({error:'INVALID_CATALOG_REQUEST'},400);
     // Reference metadata belongs to the outer review tool. Rendered product documents keep their release identities.
-    const items=await Promise.all(catalog.map(async row=>{
-      const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange}=row;
+    const additions=await getQaSupplemental(),byId=new Map(additions.rows.map(row=>[row.id,row]));
+    const supplemental=additions.rows.filter(row=>row.supplemental),sales=supplemental.filter(row=>row.screen==='admin-analytics');
+    let salesInserted=false;
+    const inventory=[...catalog.flatMap(row=>{
+      const selected=byId.get(row.id)||row;
+      if(row.screen==='admin-analytics'&&!salesInserted){salesInserted=true;return [...sales,selected];}
+      return [selected];
+    }),...supplemental.filter(row=>row.screen!=='admin-analytics')];
+    const items=await Promise.all(inventory.map(async row=>{
+      const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
-      return {hashes:await reviewHashes(row),id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,
-        description:reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
-        authoredChange:Boolean(authoredChange)};
+      return {hashes:await reviewHashes(row),id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':label,stateLabel,defaultWidth,phase,role,
+        description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
+        authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
     }));
-    return json({release,items,publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname)});
+    return json({release,items,navigationDefaults:defaultQaNavigation(items.map(row=>row.screen)),publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname)});
+  }
+  const supplement=(await getQaSupplemental()).documents.get(q.get('id'));
+  if(supplement&&approvedWidths.includes(Number(q.get('width')))&&['current','recorded'].includes(q.get('version'))&&[...q.keys()].every(k=>['id','width','version','artifactHash'].includes(k))){
+    const width=Number(q.get('width')),artifactHash=supplement.hashes[width],pinned=q.get('artifactHash');
+    if((q.get('version')==='current'&&!pinned)||pinned===artifactHash){
+      const css=await styles('current'),title=esc(supplement.row.label+' · '+supplement.row.stateLabel),body=supplement.body;
+      const common='<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+title+'</title>';
+      const meta=js({release,artifactHash,version:'current',screen:supplement.row.screen,state:supplement.row.state,variant:'email',viewport:width,bodySha256:await sha(body),cssSha256:await sha(css+qaMvpCss)});
+      const html=common+'<!--R3-POLICY--><style>'+css+qaMvpCss+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
+      const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+qaMvpCss+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
+      return json({release,version:'current',hash:artifactHash,html,editable,exportHash:await sha(editable),mount:supplement.mount,file:release+'_'+supplement.row.id.replaceAll('/','_')+'_'+width+'.html'});
+    }
   }
   const r=catalog.find(f=>f.id===q.get('id')); const width=Number(q.get('width'));let version=q.get('version');
   if(!r||!approvedWidths.includes(width)||!['current','previous','prior-r3','recorded'].includes(version)||[...q.keys()].some(k=>!['id','width','version','artifactHash'].includes(k)))return json({error:'UNKNOWN_REVIEW_TARGET'},404);

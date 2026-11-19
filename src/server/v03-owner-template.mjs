@@ -4,19 +4,15 @@
 import {ORIGINAL_V03_SOURCE} from './v03-source.mjs';
 import {UX_CSS} from './v03-ux.css.mjs';
 import {UX_RUNTIME,UX_NAV_RUNTIME} from './v03-ux.js.mjs';
+import {browserFunction} from './browser-source.mjs';
+import {installQaSession} from './qa-session-client.mjs';
+import {mountPortalSession} from './portal-session-client.mjs';
 const prelude=String.raw`
 (async()=>{
 'use strict';
 ${UX_NAV_RUNTIME}
 async function attachLogout(){
- const banner=document.getElementById('ia-live-banner');
- if(!banner)return;
- const owner=await fetch('/api/ia/auth/me',{credentials:'same-origin',cache:'no-store'});
- if(owner.ok){
-  const actor=await owner.json();
-  const btn=document.createElement('button');btn.type='button';btn.textContent='로그아웃';btn.style.cssText='float:right;margin-left:8px;border:1px solid #91bbac;border-radius:6px;background:#fff;color:#245d4e;padding:3px 10px;cursor:pointer';
-  btn.addEventListener('click',async()=>{const res=await fetch('/api/ia/auth/logout',{method:'POST',credentials:'same-origin',headers:{'X-IA-CSRF':actor.csrf}});if(res.ok)location.replace('/login')});banner.prepend(btn);
- }
+ await (${browserFunction(mountPortalSession)})(document.getElementById('ia-live-banner'),${browserFunction(installQaSession)});
 }
 
 try {
@@ -84,7 +80,7 @@ if(query.get('screen')&&/^[FUPCA]\d{2}$/.test(query.get('screen')))document.quer
 }catch(error){
  console.error('IA_SOURCE_VERIFICATION_FAILED',String(error.message||error));
  const banner=document.getElementById('ia-live-banner');
- if(banner)banner.textContent='Google 원장 또는 기획 자료 검증에 실패했습니다. 새로고침해 주세요. 미승인 기록을 임의 표시하지 않습니다.';
+ if(banner){banner.dataset.sourceError='기획 자료를 불러오지 못했습니다. 새로고침해 주세요.';banner.textContent=banner.dataset.sourceError;}
 }finally{
  try{await attachLogout()}catch{ /* The account control requires an active IA session. */ }
 }
@@ -138,7 +134,7 @@ html,body,.sidebar,#nav{scrollbar-width:none}html::-webkit-scrollbar,body::-webk
 s=s.replace('</style>','\n'+UX_CSS+'\n'+toolStyles+'</style>');
 // Keep QA in the existing IA menu, with a real user-activated new-window link.
 // It remains available even when the live Google dashboard reports a loading error.
-const tools='<div class="ia-tool-label">검토 도구</div><a class="ia-tool-link" href="/ia?view=qa-lab" target="_blank" rel="noopener noreferrer" aria-label="QA랩 새 창에서 열기"><span>09</span>QA랩</a><details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details><a class="ia-tool-link" href="/ia?view=pricing-r3"><span>10</span>계란 가격표·배송 정책</a>';
+const tools='<div class="ia-tool-label">검토 도구</div><a class="ia-tool-link" href="/ia?view=qa-lab" target="_blank" rel="noopener noreferrer" aria-label="QA랩 새 창에서 열기"><span>09</span>QA랩</a><a class="ia-tool-link" href="/ia?view=pricing-r3"><span>10</span>계란 가격표·배송 정책</a>';
 s=s.replace('</nav><div class="sidefoot">',tools+'</nav><div class="sidefoot">');
 s=s.replace('<body>','<body><div id="ia-live-banner" style="padding:10px 18px;background:#eaf6f1;color:#164e43;font-size:12px;border-bottom:1px solid #cbe6d9;line-height:1.7" role="status">OWNER · Google 원장 인증 확인 중</div>');
 s=s.replace('<script>','<script nonce="'+nonce+'">'+prelude);

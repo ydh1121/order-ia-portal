@@ -55,7 +55,7 @@ MEASURE = """()=>{
    variants:all('#state-buttons button[data-variant]').map(b=>b.dataset.variant),mode:document.querySelector('.lab-stage').dataset.mode,
    drawerTabs:all('button[data-drawer-tab]').map(b=>b.dataset.drawerTab),
    modeButtons:all('.lab-topbar button[data-mode]').map(b=>b.textContent.trim()),
-   navCount:all('#catalog button[data-module]').length,bodyOverflow:document.documentElement.scrollWidth-innerWidth,
+   navCount:all('#catalog button[data-module]').length,navModules:all('#catalog button[data-module]').map(b=>b.dataset.module),navGroups:all('#catalog [data-nav-group]').map(g=>g.dataset.navGroup),bodyOverflow:document.documentElement.scrollWidth-innerWidth,
    boardOpen:all('#preview-list button[data-open-state]').filter(visible).length,
    shellFonts:Object.fromEntries(['.lab-topbar','.lab-states','.lab-catalog'].map(s=>[s,getComputedStyle(document.querySelector(s)).fontFamily]))};
 }"""
@@ -110,8 +110,13 @@ def compare(name, original, candidate, drawer, mode):
     errors = []
     def require(condition, message):
         if not condition: errors.append(message)
-    for key in ("roles","modes","states","variants","drawerTabs","modeButtons","mode","navCount"):
+    for key in ("roles","modes","states","variants","drawerTabs","modeButtons","mode"):
         require(original[key]==candidate[key],f"{key}: {original[key]} / {candidate[key]}")
+    # The user's 2026-11-20 directive replaces the flat menu with two editable
+    # accordions. All existing preview geometry and other shell gates remain.
+    require(set(original["navModules"]).issubset(candidate["navModules"]),"an approved menu module was lost")
+    require(candidate["navCount"]==101 and len(set(candidate["navModules"]))==101,"MVP inventory missing or duplicated")
+    require(candidate["navGroups"]==["mvp","future"],"MVP and future accordions missing")
     require(candidate["bodyOverflow"] <= 1, f"document horizontal overflow {candidate['bodyOverflow']}px")
     def compare_box(what, a, b, axes=range(4), tol=2):
         if not a or not b: errors.append(f"{what} missing");return

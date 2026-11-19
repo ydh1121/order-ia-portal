@@ -94,7 +94,7 @@ def save_personal(page, status):
 def exercise_personal(page, reopen, origin, label, width):
     # Neither the owner login nor the signed unassigned account gets a contract price scope.
     route='/api/ia/r3-price/personal-draft'
-    entry=origin+'/ia?view=pricing-r3'
+    entry=origin+'/ia?view=pricing-r3&mode=contract'
     grid=page.locator('#matrix')
     open_personal_settings(page)
     expect(page.locator('#personalProduct')).to_be_visible()
@@ -176,11 +176,11 @@ def independent_owner_check(browser):
         def login():
             context=browser.new_context(viewport={'width':390,'height':850},reduced_motion='reduce')
             p=context.new_page()
-            p.goto(origin+'/ia?view=pricing-r3')
+            p.goto(origin+'/ia?view=pricing-r3&mode=contract')
             p.locator('input[name=email]').fill(conf['email'])
             p.locator('input[name=password]').fill(conf['pass'])
             p.locator('button[type=submit]').click()
-            p.wait_for_url('**/ia?view=pricing-r3')
+            p.wait_for_url('**/ia?view=pricing-r3&mode=contract')
             return p
         return exercise_personal(login(),login,origin,'portal-owner',390)
     finally:
@@ -193,7 +193,7 @@ def check(browser, subject, width):
     try:
         origin = host.stdout.readline().strip()
         assert origin.startswith("http://127.0.0.1:")
-        entry = origin + "/ia?view=pricing-r3"
+        entry = origin + "/ia?view=pricing-r3&mode=contract"
         page = new_page(browser, subject, width)
         requests = []
         page.on("request", lambda request: requests.append(request.url))
@@ -327,7 +327,7 @@ def check(browser, subject, width):
             applicant.context.close()
         assert not any("/practice/" in url or "practice=1" in url for url in requests)
         page.context.close()
-        return {"subject":subject, "width":width, "route":"/ia?view=pricing-r3",
+        return {"subject":subject, "width":width, "route":"/ia?view=pricing-r3&mode=contract",
                 "before":{"catalogScopes":0,"priceVersions":0},
                 "savedReferenceMoneyCells":152,"savedState":"DRAFT",
                 "freshContextReopenedRevision":1,"distinctStatesAfterReload":values[0][2:6],

@@ -38,12 +38,25 @@ test('signed challenge and synthetic 310000-round proof issue secure session',as
  const proof=await clientProof(pass,env.IA_OWNER_EMAIL,item);
  const r=await handleOwnerAuthRequest(proofReq(cookie,{email:env.IA_OWNER_EMAIL,nonce:item.nonce,proof}),env);
  assert.equal(r.status,200);
- for(const part of ['Secure','HttpOnly','SameSite=Strict','Max-Age=1800'])assert.ok(r.headers.get('Set-Cookie').includes(part));
+ for(const part of ['Secure','HttpOnly','SameSite=Strict','Max-Age=43200'])assert.ok(r.headers.get('Set-Cookie').includes(part));
  assert.match(r.headers.get('Set-Cookie'),/__Host-ia_session=/);
 });
 test('anonymous and forged-cookie API denied',async()=>{assert.equal((await handleIaRequest(req('/api/ia/screens'),env)).status,403);assert.equal((await handleIaRequest(req('/api/ia/screens',{cookie:'__Host-ia_session=forged'}),env)).status,403)});
 test('logout requires origin and CSRF, clears cookie',async()=>{const s=await issueSession(env),cookie=s.cookie.split(';')[0];assert.equal((await handleOwnerAuthRequest(req('/api/ia/auth/logout',{method:'POST',cookie,origin}),env)).status,403);const r=await handleOwnerAuthRequest(req('/api/ia/auth/logout',{method:'POST',cookie,origin,csrf:s.csrf}),env);assert.equal(r.status,200);assert.match(r.headers.get('Set-Cookie'),/Max-Age=0/)});
 test('private IA deep links are inaccessible without server session',async()=>{const r=await onRequest({request:req('/ia/screen/F17'),env});assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login')});
+test('price links retain approved editor and version parameters across sign-in without accepting redirects',async()=>{
+ const r=await onRequest({request:req('/ia?view=pricing-r3&mode=contract&practice=1&priceVersion=pv_123&quote=q_456&next=https://evil.invalid'),env});
+ assert.equal(r.status,302);
+ assert.equal(r.headers.get('location'),'/login?returnView=pricing-r3&mode=contract&practice=1&priceVersion=pv_123&quote=q_456');
+ const rejected=await onRequest({request:req('/ia?view=pricing-r3&mode=other&practice=2&priceVersion=https://evil.invalid&quote=%2F%2Fevil.invalid'),env});
+ assert.equal(rejected.headers.get('location'),'/login?returnView=pricing-r3');
+});
+test('consultation links return to the existing workspace menu after sign-in',async()=>{
+ const r=await onRequest({request:req('/ia?view=roles-r3&menu=consult'),env});
+ assert.equal(r.status,302);assert.equal(r.headers.get('location'),'/login?returnView=roles-r3&menu=consult');
+ const bad=await onRequest({request:req('/ia?view=roles-r3&menu=https://evil.invalid'),env});
+ assert.equal(bad.headers.get('location'),'/login?returnView=roles-r3');
+});
 test('notes still deny writes',async()=>{const s=await issueSession(env);assert.equal((await handleIaRequest(req('/api/ia/notes',{method:'POST',cookie:s.cookie.split(';')[0]}),env)).status,405)});
 
 test('synthetic incorrect proof is JSON 401 not platform HTML',async()=>{

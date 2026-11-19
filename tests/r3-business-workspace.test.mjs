@@ -53,5 +53,7 @@ test('independent signed subjects link issued quotes, scoped consultation notes,
   assert.equal((await f.request('buyer','/api/ia/r3-qa/records')).status,403);
   assert.equal((await f.request('buyer','/api/ia/dashboard')).status,403);
   assert.equal((await f.request('buyer',api+'/session',null,{jwt:f.token('buyer',-1)})).status,403);
-  f.db.exec("UPDATE r3_membership SET active=0 WHERE actor_id='buyer'");assert.equal((await f.request('buyer',api+'/session')).status,403);
+  f.db.exec("UPDATE r3_membership SET active=0 WHERE actor_id='buyer'");assert.equal((await f.request('buyer',api+'/session')).status,200);
+  assert.equal((await f.request('buyer',api+'/workspace')).status,403);
+  assert.equal((await f.request('buyer',api+'/businesses')).status,200);
 });

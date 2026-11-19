@@ -19,7 +19,7 @@ try {
   assert.match(built,/__name\(/,'regression fixture must include Wrangler-style preserved names');
   const pages=await import(pathToFileURL(output));
   const failures=[];
-  for (const [view,render] of [['qa-lab',pages.renderR3Qa],['pricing-r3',pages.renderR3PricePage],['roles-r3',pages.renderR3RolePage]]) {
+  for (const [view,render] of [['qa-lab',pages.renderR3Qa],['pricing-r3',pages.renderR3PricePage],['pricing-workspace',pages.renderPriceWorkspace],['roles-r3',pages.renderR3RolePage]]) {
     const dom=new JSDOM(render('0123456789abcdef0123456789abcdef'),{
       url:'https://qa-test.order-ia-portal.pages.dev/ia?view='+view,
       runScripts:'outside-only',pretendToBeVisual:true
@@ -37,6 +37,9 @@ try {
         assert.ok(requests.includes('/api/ia/auth/me'),'QA reaches authenticated initialization');
       }else if(view==='pricing-r3') {
         assert.ok(window.document.querySelectorAll('[data-field]').length>=10,'price editor mounts editable fields');
+      }else if(view==='pricing-workspace') {
+        assert.ok(requests.includes('/api/ia/r3-price/session'),'workspace reaches its authenticated session request');
+        assert.ok(window.document.querySelector('#pw-main'),'workspace mounts its reusable editing surface');
       }else {
         assert.ok(window.document.querySelector('#r3-practice button'),'role practice controls mount');
       }

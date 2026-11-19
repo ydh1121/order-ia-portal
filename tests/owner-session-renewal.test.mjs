@@ -1,7 +1,7 @@
 import {test,before} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes,createHmac} from 'node:crypto';
-import {deriveVerifier,issueSession,readSession,handleOwnerAuthRequest,OWNER_SESSION_IDLE_SECONDS,OWNER_SESSION_MAX_SECONDS} from '../src/server/owner-session.mjs';
+import {deriveVerifier,issueSession,readSession,handleOwnerAuthRequest,OWNER_SESSION_MAX_SECONDS} from '../src/server/owner-session.mjs';
 const origin='https://order-ia-portal.pages.dev',now=1900000000;
 let env;
 function db(){
@@ -20,21 +20,24 @@ before(async()=>{env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@exampl
 const request=(path,cookie,csrf,method='POST',site=origin)=>new Request(origin+path,{method,headers:{Origin:site,Cookie:cookie,...(csrf?{'X-IA-CSRF':csrf}:{})}});
 const cookieOf=x=>x.cookie.split(';')[0];
 async function refresh(e,s,at){return handleOwnerAuthRequest(request('/api/ia/auth/refresh',cookieOf(s),s.csrf),e,at);}
-test('active review can continue past old 10-minute deadline with unchanged CSRF in two tabs',async()=>{
+test('a fixed twelve-hour login survives idle time and keeps CSRF across tabs',async()=>{
  const config={...env,ORDER_QA_DB:db()},s=await issueSession(config,now);
- assert.equal(s.expiresIn,OWNER_SESSION_IDLE_SECONDS);
+ assert.equal(s.expiresIn,43200);
+ assert.equal((await readSession(request('/ia',cookieOf(s)),config,now+43199)).role,'OWNER');
  assert.equal((await readSession(request('/ia',cookieOf(s)),config,now+601)).role,'OWNER');
  const a=await refresh(config,s,now+240),b=await refresh(config,s,now+241);
  assert.equal(a.status,200);assert.equal(b.status,200);
  const first=await a.json(),second=await b.json();
  assert.equal(first.csrf,s.csrf);assert.equal(second.csrf,s.csrf);
- assert.equal(first.expiresAt,now+240+OWNER_SESSION_IDLE_SECONDS);
+ assert.equal(first.expiresAt,now+43200);
+ assert.equal(second.expiresAt,now+43200);
+ assert.equal(first.serverNow,now+240);
  assert.equal(first.absoluteExpiresAt,now+OWNER_SESSION_MAX_SECONDS);
  assert.equal((await readSession(request('/ia',a.headers.get('Set-Cookie').split(';')[0]),config,now+1900)).csrf,s.csrf);
 });
-test('idle or absolute expiration cannot be refreshed; GET does not extend the deadline',async()=>{
+test('the twelve-hour deadline cannot be extended by reads, refreshes or continued activity',async()=>{
  const config={...env,ORDER_QA_DB:db()},s=await issueSession(config,now);
- assert.equal((await refresh(config,s,now+OWNER_SESSION_IDLE_SECONDS)).status,401);
+ assert.equal((await refresh(config,s,now+OWNER_SESSION_MAX_SECONDS)).status,401);
  const me=await handleOwnerAuthRequest(request('/api/ia/auth/me',cookieOf(s),null,'GET'),config,now+200);
  assert.equal(me.status,200);assert.equal(me.headers.get('Set-Cookie'),null);
  let current=s;
@@ -83,7 +86,7 @@ test('a valid legacy 10-minute cookie upgrades without losing CSRF; an expired l
  assert.equal((await refresh(env,s,now+600)).status,401);
 });
 
-test('missing D1 allows only the old bounded bootstrap cookie and cannot renew or accept v2',async()=>{
+test('missing D1 cannot accept the fixed twelve-hour session or renew a bootstrap cookie',async()=>{
  const s=await issueSession(env,now);assert.equal(s.expiresIn,600);
  assert.equal((await refresh(env,s,now+240)).status,503);
  const longer=await issueSession({...env,ORDER_QA_DB:db()},now);
@@ -102,4 +105,21 @@ test('a session-store outage returns unavailable without sending an authenticate
  const previewCookie=cookieOf(await issueSession(preview));
  const out=await handlePreview({request:new Request(previewOrigin+'/ia?view=qa-lab',{headers:{Cookie:previewCookie}}),env:{...preview,ORDER_QA_DB:broken.ORDER_QA_DB},next(){assert.fail('Unavailable revocation store must not reach document');}},()=>{assert.fail('Outage must not start a new SSO session');});
  assert.equal(out.status,503);assert.equal(out.headers.get('Set-Cookie'),null);
+});
+
+// Valid old cookies migrate once while retaining their original login and revocation identity.
+test('the identity read upgrades old 30-minute cookies without resetting the login clock',async()=>{
+ const sid=randomBytes(24).toString('base64url'),key=Buffer.from(env.IA_OWNER_SESSION_KEY,'base64url');
+ const packed=Buffer.from(JSON.stringify({v:2,sid,iat:now,renewedAt:now+600,exp:now+2400})).toString('base64url');
+ const signature=createHmac('sha256',key).update('ia.session.v1.'+packed).digest('base64url');
+ const cookie='__Host-ia_session='+packed+'.'+signature,config={...env,ORDER_QA_DB:db()};
+ const me=await handleOwnerAuthRequest(request('/api/ia/auth/me',cookie,null,'GET'),config,now+1200);
+ assert.equal(me.status,200);const data=await me.json();
+ assert.equal(data.expiresAt,now+43200);assert.equal(data.serverNow,now+1200);
+ assert.match(me.headers.get('Set-Cookie'),/Max-Age=42000/);
+ const upgraded=me.headers.get('Set-Cookie').split(';')[0];
+ assert.equal((await readSession(request('/ia',upgraded),config,now+43199)).csrf,data.csrf);
+ await assert.rejects(readSession(request('/ia',upgraded),config,now+43200),/SESSION_DENIED/);
+ const expired=await handleOwnerAuthRequest(request('/api/ia/auth/me',cookie,null,'GET'),config,now+2400);
+ assert.equal(expired.status,401);assert.equal(expired.headers.get('Set-Cookie'),null);
 });
