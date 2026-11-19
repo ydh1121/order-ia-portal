@@ -90,12 +90,20 @@ test('large Order Pass flips in place and withdrawal requires reason, exact phra
 
 test('purchase preserves equal cash/card totals and revenue preview validates the allocation before applying',async()=>{
   const a=await mount('store-purchase/select/email');
+  const confirm=a.root.querySelector('[data-purchase-confirm]');assert.equal(confirm.type,'button');confirm.click();assert.deepEqual(a.calls,[],'missing price must not advance');
+  a.root.querySelector('[name=unit-price]').value='6000';a.root.querySelector('[name=quantity]').value='0';confirm.click();assert.deepEqual(a.calls,[],'zero quantity must not advance');
   a.root.querySelector('[name=unit-price]').value='6000';a.root.querySelector('[name=quantity]').value='12';a.root.querySelector('form').dispatchEvent(new a.w.Event('input',{bubbles:true}));
   assert.deepEqual([...a.root.querySelectorAll('[data-same-price]')].map(el=>el.textContent),['72,000원','72,000원']);
-  a.root.querySelector('[value=card]').checked=true;a.root.querySelector('form').dispatchEvent(new a.w.Event('submit',{cancelable:true}));assert.deepEqual(a.calls,[['store-purchase','card']]);a.w.close();
+  a.root.querySelector('[value=card]').checked=true;confirm.click();assert.deepEqual(a.calls,[['store-purchase','card']]);
+  a.root.querySelector('[value=cash]').checked=true;a.root.querySelector('[name=quantity]').dispatchEvent(new a.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.deepEqual(a.calls.at(-1),['store-purchase','cash']);a.w.close();
   const b=await mount('admin-revenue-rules/settings/email'),apply=b.root.querySelector('[data-revenue-apply]');assert.equal(apply.disabled,true);
+  assert.equal(apply.type,'button');apply.click();assert.equal(b.root.querySelector('[data-revenue-note]').textContent,'');
   b.root.querySelector('[name=gross]').value='100000';b.root.querySelector('[name=cost]').value='40000';b.root.querySelector('[data-rate]').value='100';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));
-  assert.equal(apply.disabled,false);assert.equal(b.root.querySelector('[data-contributors] output').textContent,'60,000원');b.root.querySelector('[data-contributor-add]').click();assert.equal(b.root.querySelector('[data-contributors]').children.length,2);
+  assert.equal(apply.disabled,false);apply.click();assert.equal(b.root.querySelector('[data-revenue-note]').textContent,'','contributor name is required');
+  b.root.querySelector('[data-name]').value='첫 기여자';b.root.querySelector('[name=cost]').value='';apply.click();assert.equal(b.root.querySelector('[data-revenue-note]').textContent,'','cost is required even when allocation totals 100%');
+  b.root.querySelector('[name=cost]').value='40000';assert.equal(b.root.querySelector('[data-contributors] output').textContent,'60,000원');apply.click();assert.match(b.root.querySelector('[data-revenue-note]').textContent,/이 검토 화면에 설정을 반영/);
+  b.root.querySelector('[data-revenue-note]').textContent='';b.root.querySelector('[data-name]').dispatchEvent(new b.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.match(b.root.querySelector('[data-revenue-note]').textContent,/이 검토 화면에 설정을 반영/);
+  b.root.querySelector('[data-contributor-add]').click();assert.equal(b.root.querySelector('[data-contributors]').children.length,2);
   b.root.querySelectorAll('[data-rate]')[1].value='10';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(apply.disabled,true);b.w.close();
 });
 
@@ -140,10 +148,14 @@ test('3D motion respects reduced-motion both at entry and when the preference ch
 });
 
 test('existing shipment detail accepts a tracking number and status while direct farm delivery may omit a waybill',async()=>{
-  const {w,root}=await mount('admin-shipments/packing/email'),form=root.querySelector('[data-shipment-form]'),method=root.querySelector('[name=shipment-method]'),tracking=root.querySelector('[name=tracking-number]');
-  assert.equal(tracking.required,false);form.dispatchEvent(new w.Event('submit',{cancelable:true}));assert.match(root.querySelector('[data-shipment-summary]').textContent,/합천 농장.*송장 미사용/);
-  method.value='parcel';method.dispatchEvent(new w.Event('change'));assert.equal(tracking.required,true);assert.equal(form.checkValidity(),false);
-  tracking.value='1234-5678';root.querySelector('[name=shipment-status]').value='dispatched';form.dispatchEvent(new w.Event('submit',{cancelable:true}));assert.match(root.querySelector('[data-shipment-summary]').textContent,/배송 중.*1234-5678/);w.close();
+  for(const screen of ['admin-shipments','supplier-shipments']){
+    const {w,root}=await mount(screen+'/packing/email'),form=root.querySelector('[data-shipment-form]'),method=root.querySelector('[name=shipment-method]'),tracking=root.querySelector('[name=tracking-number]'),apply=root.querySelector('[data-shipment-apply]'),summary=root.querySelector('[data-shipment-summary]');
+    assert.equal(apply.type,'button');assert.equal(tracking.required,false);apply.click();assert.match(summary.textContent,/합천 농장.*송장 미사용/);
+    summary.textContent='';method.value='parcel';method.dispatchEvent(new w.Event('change'));assert.equal(tracking.required,true);assert.equal(form.checkValidity(),false);apply.click();assert.equal(summary.textContent,'');
+    tracking.value='1234-5678';root.querySelector('[name=shipment-status]').value='dispatched';apply.click();assert.match(summary.textContent,/배송 중.*1234-5678/);
+    tracking.value='ENTER-1234';const enter=new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});tracking.dispatchEvent(enter);assert.equal(enter.defaultPrevented,true);assert.match(summary.textContent,/ENTER-1234/);
+    summary.textContent='';tracking.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true}));assert.equal(summary.textContent,'');root.querySelector('[name=shipment-note]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.equal(summary.textContent,'','textarea Enter keeps its newline behavior');w.close();
+  }
 });
 
 test('BLOUB repeated sequences reveal each result once without hiding the observed player or remounting the result every tick',async()=>{

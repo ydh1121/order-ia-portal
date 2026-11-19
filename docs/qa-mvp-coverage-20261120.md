@@ -61,10 +61,11 @@
 
 ## 검증과 게시 경계
 
-- `tests/r3-qa-mvp.test.mjs`: 메뉴 기본 분류/단일 소속, 계정별 저장·동시 수정 충돌·이력, 이름/이동 UI, 실제 자산 사용처, 이전 아티팩트 보존, 카드 플립, 탈퇴 가드, 카드/현금 동일 금액, 수익 배분, BLOUB 조합, 송장 입력, 3D 원본 불변·모션 제어·재생 중 모션 감소 반영.
+- `tests/r3-qa-mvp.test.mjs`: 메뉴 기본 분류/단일 소속, 계정별 저장·동시 수정 충돌·이력, 이름/이동 UI, 실제 자산 사용처, 이전 아티팩트 보존, 카드 플립, 탈퇴 가드, 카드/현금 동일 금액, 수익 배분, BLOUB 조합, 송장 입력, 3D 원본 불변·모션 제어·재생 중 모션 감소 반영. 배송·구매·배분은 직접 버튼 클릭/Enter와 필수값 검증을 함께 검사한다.
 - `tests/r3-qa-mvp-bundle.test.mjs`: Wrangler의 `keepNames`와 minify 이후에도 모든 추가/보완 아티팩트와 publication receipt의 해시가 같아야 한다.
 - 기존 `r3-qa-ui`, `r3-qa-publication`, `r3-qa-interactions` 회귀 검사를 유지했다.
-- `tests/r3-qa-mvp-browser.py`: 실제 Chrome에서 메뉴 저장/재로드·드래그, 자산 사용처 이동/코멘트 해결, 패스 플립, 탈퇴 차단, 3D CSS 애니메이션의 재생/일시정지/초기화·재생 중 모션 감소 전환을 검증하도록 CI에 연결했다. 로컬 실행은 Chromium의 `socket() Operation not permitted`로 시작 전에 차단되었으며 통과로 기록하지 않는다.
+- `tests/r3-qa-mvp-browser.py`: 실제 Chrome에서 메뉴 저장/재로드·드래그, 자산 사용처 이동/코멘트 해결, 패스 플립, 탈퇴 차단, 3D CSS 애니메이션의 재생/일시정지/초기화·재생 중 모션 감소 전환, 배송·구매·배분 입력 검증과 반영을 검증하도록 CI에 연결했다. 로컬 실행은 Chromium의 `socket() Operation not permitted`로 시작 전에 차단되었으며 통과로 기록하지 않는다.
+- 첫 Chrome CI `44577676056`은 390px에서 메뉴 저장·이름 변경·그룹 이동·재로드, 자산 댓글 해결·사용처 이동, 3D 모션, 패스 플립, 탈퇴 확인을 통과한 뒤 배송 요약 반영에서 실패했다. 기존 iframe의 `sandbox="allow-scripts"`에서는 native form submit이 차단되기 때문이다. 세 QA 검토 폼(배송·구매·배분)은 권한을 늘리지 않고 버튼/Enter에서 `reportValidity()`를 거친 직접 동작으로 수정했다. Chrome 회귀에는 빈 송장, 누락 단가, 수량 0, 배분 필수값 차단과 유효값 반영을 추가했다. 수정 후 실제 Chrome 통과 여부는 후속 CI 결과로 확정한다.
 - 생성된 `runtime.gen.mjs`의 hostCode만 갱신했다. 기존 프레임과 제품 runtime family는 바꾸지 않았다. 신규 QA 런타임은 `qa-assets.gen.mjs`에 고정해 배포 빌드로 해시가 달라지지 않게 했다.
-- 후보 ID: `MSG0585-R3-20261120-MVP-PRICE-01`. 기존 후보 receipt를 수정하지 않고 새 receipt로 게시해야 한다.
+- 후보 ID: `MSG0585-R3-20261120-MVP-PRICE-02`. 기존 후보 receipt를 수정하지 않고 새 receipt로 게시해야 한다.
 - 실제 PG 결제 성공, 메일 발송, 회원 탈퇴, 고객 주문/출고·정산 완료로 판정한 신규 사례는 없다. 이 문서의 QA 흐름 결과와 구분한다.

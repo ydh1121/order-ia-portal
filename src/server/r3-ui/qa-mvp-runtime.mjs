@@ -3,6 +3,18 @@ export function registerQaMvp(montages={}) {
   function mount(root,state,api){
     const $=selector=>root.querySelector(selector),all=selector=>[...root.querySelectorAll(selector)];
     const cleanups=[];
+    // Opaque QA frames deliberately disallow native form submission. Review-only
+    // actions validate locally and activate directly from their button or Enter.
+    const localForm=(form,button,run)=>{
+      const activate=()=>{if(!button.disabled&&form.reportValidity())run();};
+      button.onclick=activate;form.onsubmit=event=>event.preventDefault();
+      const onKey=event=>{
+        if(event.key!=='Enter'||event.isComposing||event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||!event.target.matches('input:not([type=checkbox]):not([type=radio]):not([type=button])'))return;
+        event.preventDefault();activate();
+      };
+      form.addEventListener('keydown',onKey);cleanups.push(()=>form.removeEventListener('keydown',onKey));
+      return activate;
+    };
     const brandPlayers=[];
     if(window.Code1Jelly)for(const svg of all('svg.brand-mark,svg[data-code1-jelly]')){
       const paths=[...svg.querySelectorAll('path')];if(paths.length!==3)continue;
@@ -94,18 +106,20 @@ export function registerQaMvp(montages={}) {
         serial++;const row=document.createElement('tr');
         for(const [field,label,type,value] of [['name','기여자 이름','text',''],['code','레퍼럴 코드','text',''],['rate','배분율','number','0']]){
           const td=document.createElement('td'),input=document.createElement('input');input.type=type;input.value=value;input.setAttribute('aria-label',label+' '+serial);input.dataset[field]='';
+          input.required=field!=='code';
           if(type==='number'){input.min='0';input.max='100';input.step='0.1';}else input.maxLength=80;td.append(input);row.append(td);
         }
         const amount=document.createElement('td');amount.append(document.createElement('output'));row.append(amount);
         const td=document.createElement('td'),remove=document.createElement('button');remove.type='button';remove.textContent='삭제';remove.onclick=()=>{row.remove();recalc();};td.append(remove);row.append(td);rows.append(row);recalc();
       };
-      $('[data-contributor-add]').onclick=add;form.oninput=recalc;form.onsubmit=e=>{e.preventDefault();$('[data-revenue-note]').textContent='이 검토 화면에 설정을 반영했어요. 운영 적용과 정산 확정은 관리자 승인 후 진행합니다.';};add();
+      $('[data-contributor-add]').onclick=add;form.oninput=recalc;
+      localForm(form,$('[data-revenue-apply]'),()=>{$('[data-revenue-note]').textContent='이 검토 화면에 설정을 반영했어요. 운영 적용과 정산 확정은 관리자 승인 후 진행합니다.';});add();
       $('[name=initial-referral]').onchange=e=>{$('[data-referral-status]').textContent=e.target.checked?'첫 기여자 코드 자동 적용':'첫 기여자 코드 자동 적용 안 함';};
     }
     if($('[data-purchase-form]')){
       const form=$('[data-purchase-form]'),output=$('[data-purchase-total]');
       const recalc=()=>{const amount=(Number($('[name=unit-price]').value)||0)*(Number($('[name=quantity]').value)||0);output.textContent=amount.toLocaleString('ko-KR')+'원';for(const n of all('[data-same-price]'))n.textContent=output.textContent;};
-      form.oninput=recalc;form.onsubmit=e=>{e.preventDefault();const method=$('[name=payment]:checked')?.value;api.select('store-purchase',method==='card'?'card':'cash');};recalc();
+      form.oninput=recalc;localForm(form,$('[data-purchase-confirm]'),()=>{const method=$('[name=payment]:checked')?.value;api.select('store-purchase',method==='card'?'card':'cash');});recalc();
     }
     if($('[data-email-editor]')){
       const render=()=>{$('[data-email-preview-subject]').textContent=$('[name=email-subject]').value;$('[data-email-preview-body]').textContent=$('[name=email-body]').value;};
@@ -114,14 +128,15 @@ export function registerQaMvp(montages={}) {
     if($('[data-shipment-form]')){
       const form=$('[data-shipment-form]'),method=$('[name=shipment-method]'),tracking=$('[name=tracking-number]');
       method.onchange=()=>{tracking.required=method.value==='parcel';};
-      form.onsubmit=e=>{e.preventDefault();if(!form.reportValidity())return;
+      const reflect=()=>{
         $('[data-shipment-summary]').textContent='검토 반영 · 합천 농장 · '+method.selectedOptions[0].textContent+' · '+$('[name=shipment-status]').selectedOptions[0].textContent+' · '+(tracking.value.trim()||'송장 미사용');
       };
+      localForm(form,$('[data-shipment-apply]'),reflect);
       if(api.screen==='supplier-shipments'){
         for(const b of all('[data-op-route]'))b.onclick=()=>api.select(b.dataset.opRoute,'');
         for(const b of all('[data-action=list],[data-action=damage]'))b.onclick=()=>api.select(api.screen,b.dataset.action);
         const dispatch=$('[data-action=confirm-dispatch]');if(dispatch)dispatch.onclick=()=>{
-          if(!form.reportValidity())return;$('[name=shipment-status]').value='dispatched';form.dispatchEvent(new Event('submit',{cancelable:true}));
+          if(!form.reportValidity())return;$('[name=shipment-status]').value='dispatched';reflect();
         };
       }
     }

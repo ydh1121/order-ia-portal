@@ -46,6 +46,14 @@ form.addEventListener('submit',async event=>{
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);
         if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))target.set('width',width);
       }
+      if(view==='pricing-r3'){
+        if(incoming.get('mode')==='contract')target.set('mode','contract');
+        if(incoming.get('practice')==='1')target.set('practice','1');
+        for(const key of ['priceVersion','quote']){
+          const value=incoming.get(key);
+          if(value&&/^[A-Za-z0-9_.:-]{1,160}$/.test(value))target.set(key,value);
+        }
+      }
       location.assign(target.size?'/ia?'+target:'/ia/');return;
     }
     let error='';if((response.headers.get('content-type')||'').includes('application/json'))try{error=(await response.json()).error||''}catch{}

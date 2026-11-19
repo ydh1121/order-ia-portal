@@ -48,6 +48,21 @@ jobs:
           fc-match 'sans-serif:lang=ko' --format '%{family} | %{file}\n'
       - run: python -m pip install playwright==1.56.0
         id: browser-deps
+      - name: Check persisted MVP menus, component review, pass flip and withdrawal guards
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-qa-mvp-browser.py
+      - name: Check the four-menu price workspace at four widths
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-price-workspace-browser.py
+      - name: Check saved business accounts and both real quote forms
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-saved-business-browser.py
       - name: Compare approved QA 1.0 and protected R3 shell at matching viewports
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -79,11 +94,6 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-navigation-browser.py
-      - name: Check persisted MVP menus, component review, pass flip and withdrawal guards
-        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
-        env:
-          R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-qa-mvp-browser.py
       - name: Check detailed quote lists, keyboard and swipe confirmation
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -132,16 +142,6 @@ jobs:
           R3_ROLE_EVIDENCE_DIR: artifacts/role-browser
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-business-menu-browser.py
-      - name: Check the four-menu price workspace at four widths
-        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
-        env:
-          R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-price-workspace-browser.py
-      - name: Check saved business accounts and both real quote forms
-        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
-        env:
-          R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-saved-business-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

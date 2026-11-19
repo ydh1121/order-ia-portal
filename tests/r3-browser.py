@@ -16,7 +16,7 @@ def check_qa_menu(page,url,width,dashboard_ready=False):
     if dashboard_ready:
         page.locator('.ux-account').wait_for(state='visible')
     else:
-        page.locator('#ia-live-banner').filter(has_text='Google 원장 또는').wait_for(state='visible')
+        page.locator('#ia-live-banner[data-source-error]').filter(has_text='기획 자료를 불러오지 못했습니다.').wait_for(state='visible')
     menu=page.locator('.ux-nav-toggle')
     assert menu.count()==1
     anchor=page.locator('.sidebar a[href="/ia?view=qa-lab"]')

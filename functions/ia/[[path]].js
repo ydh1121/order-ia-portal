@@ -26,6 +26,14 @@ export async function onRequest({request,env}){
      if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
      if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))next.set('width',width);
    }
+   if(r3View==='pricing-r3'){
+     if(url.searchParams.get('mode')==='contract')next.set('mode','contract');
+     if(url.searchParams.get('practice')==='1')next.set('practice','1');
+     for(const key of ['priceVersion','quote']){
+       const value=url.searchParams.get(key);
+       if(value&&/^[A-Za-z0-9_.:-]{1,160}$/.test(value))next.set(key,value);
+     }
+   }
    return new Response(null,{status:302,headers:{...base,Location:next.size?'/login?'+next:'/login'}});
  }
  if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && isBusinessSurface(url)))return new Response(null,{status:403,headers:base});
