@@ -11,13 +11,17 @@ def prepare_frame_pointer(page):
         return
     page._qa_pointer_installed = True
     page.add_init_script("""if(window!==top){
+        window.__qaPointerProbeInstalled=true;
+        window.__qaPointerReceipts=[];
         for(const type of ['pointerdown','pointerup','pointercancel','click'])window.addEventListener(type,e=>{
             const arm=window.__qaArmedPointer;
             if(!arm)return;
-            console.debug('__qa_physical_pointer__'+JSON.stringify({
+            const receipt={
                 id:arm.id,phase:type,trusted:e.isTrusted,hit:arm.el.contains(e.target),
                 pointer:e.pointerType||'mouse'
-            }));
+            };
+            window.__qaPointerReceipts.push(receipt);
+            console.debug('__qa_physical_pointer__'+JSON.stringify(receipt));
             if(type===arm.last)window.__qaArmedPointer=null;
         },true);
     }""")
@@ -36,7 +40,7 @@ class ReviewScreens:
             }
         });""")
         page.goto(f"{origin}/ia?view=qa-lab&width={width}")
-        expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", re.compile(r'^[0-9a-f]{64}$'))
+        expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", re.compile(r'^[0-9a-f]{64}$'), timeout=30000)
         self.current_module = None
 
     def screen(self, module, state):
@@ -65,6 +69,9 @@ class ReviewScreens:
 
 def frame_pointer_position(page, locator, position=None):
     """Find the visible child control in both documents, accounting for the review scale."""
+    # The veil is attached before the host accepts the matching frame-ready receipt.
+    # The host clears inert only after that receipt; wait for the usable document.
+    expect(page.locator("#frame")).to_have_js_property("inert", False)
     expect(locator).to_be_visible()
     locator.element_handle().wait_for_element_state("stable")
     point = locator.evaluate("""async (el, relative) => {
@@ -125,18 +132,41 @@ def frame_pointer_position(page, locator, position=None):
 def frame_click(page, locator, position=None, *, activation="click"):
     x, y = frame_pointer_position(page, locator, position)
     request_id = uuid4().hex
-    locator.evaluate("(el,arg)=>{window.__qaArmedPointer={el,id:arg.id,last:arg.last};}", {"id":request_id,"last":activation})
+    locator.evaluate("(el,arg)=>{window.__qaPointerReceipts=[];window.__qaArmedPointer={el,id:arg.id,last:arg.last};}", {"id":request_id,"last":activation})
     touch = page.evaluate("navigator.maxTouchPoints>0")
     def is_receipt(message):
         return message.text.startswith('__qa_physical_pointer__') and request_id in message.text
     def event_for(phase):
         return lambda m:is_receipt(m) and f'"phase":"{phase}"' in m.text
-    with page.expect_console_message(predicate=event_for("pointerdown"), timeout=5000) as down:
-        with page.expect_console_message(predicate=event_for(activation), timeout=5000) as result:
-            if touch:
-                page.touchscreen.tap(x, y)
-            else:
-                page.mouse.click(x, y)
+    try:
+        with page.expect_console_message(predicate=event_for("pointerdown"), timeout=5000) as down:
+            with page.expect_console_message(predicate=event_for(activation), timeout=5000) as result:
+                if touch:
+                    page.touchscreen.tap(x, y)
+                else:
+                    page.mouse.click(x, y)
+    except Exception:
+        # Report observed trusted phases and both hit surfaces without retrying,
+        # synthesizing a click or accepting an incomplete physical interaction.
+        details={"request":request_id,"activation":activation,"touch":touch,"point":[x,y]}
+        try:
+            details["host"]=page.evaluate("""point=>{
+                const frame=document.getElementById('frame'),hit=document.elementFromPoint(point.x,point.y);
+                return {hit:hit?.id||hit?.localName,frameInert:frame?.inert,
+                    drawerHidden:document.getElementById('drawer')?.hidden,
+                    pointMode:document.getElementById('new')?.getAttribute('aria-pressed')};
+            }""",{"x":x,"y":y})
+            child=page.locator("#frame").element_handle().content_frame()
+            details["child"]=child.evaluate("""()=>({
+                probeInstalled:window.__qaPointerProbeInstalled===true,
+                receipts:window.__qaPointerReceipts||[],
+                veilHidden:document.getElementById('r3-veil')?.hidden,
+                activeElement:document.activeElement?.id||document.activeElement?.localName
+            })""")
+        except Exception as diagnostic_error:
+            details["inspectionError"]=str(diagnostic_error)
+        print('PHYSICAL_POINTER_FAILURE '+json.dumps(details,ensure_ascii=False),flush=True)
+        raise
     for captured in (down,result):
         receipt=json.loads(captured.value.text.removeprefix('__qa_physical_pointer__'))
         assert receipt["trusted"] and receipt["hit"], "Physical "+receipt["phase"]+" did not reach the requested child control"

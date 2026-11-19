@@ -7,7 +7,7 @@ import {renderR3RolePage} from '../src/server/r3-role-page.mjs';
 
 function workspace(){
   const sql=new DatabaseSync(':memory:');
-  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
+  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests','0013_owner_session_revocations'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
   const prepare=(query,params=[])=>({query,params,bind:(...v)=>prepare(query,v),first:async()=>sql.prepare(query).get(...params),all:async()=>({results:sql.prepare(query).all(...params)})});
   const db={prepare,batch:async rows=>{sql.exec('BEGIN');try{for(const {query,params} of rows)sql.prepare(query).run(...params);sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}};
   const grant=(actor,role,org,site='')=>sql.prepare('INSERT INTO r3_membership VALUES(?,?,?,?,1)').run(actor,role,org,site);
@@ -63,8 +63,14 @@ test('frozen price quote, verified site and supplier scope link order → dispat
   const create=body('d',0,'create',{kind:'delivery',orgId:'store',siteId:'one',quoteId:'q'});
   assert.equal((await request('buyer',create)).case.supplier_org_id,'farm');assert.equal((await run('buyer','conflict',0,'create',{kind:'delivery',orgId:'store',siteId:'one',quoteId:'q'})).status,409);
   const transitions=[['buyer','submit'],['ops','accept'],['buyer','payment-request'],['ops','payment-review'],['farmer','schedule'],['farmer','dispatch'],['buyer','report-issue'],['ops','reschedule'],['farmer','dispatch'],['buyer','receive'],['ops','document-review'],['farmer','settlement-review'],['ops','settle']];let rev=1;
-  for(const [role,action] of transitions){const result=await run(role,'d',rev,action,action==='report-issue'?{reason:'DELIVERY_EXCEPTION'}:{});assert.equal(result.status,200,action);rev++;}
-  const res=await request('buyer',null,'?id=d');assert.equal(res.case.state,'SETTLEMENT_REVIEWED');for(const k of ['order_id','delivery_id','document_id','settlement_id'])assert.ok(res.case[k]);assert.equal(res.case.quote_id,'q');assert.equal(res.events.length,14);
+  for(const [role,action] of transitions){
+    if(action==='document-review'){
+      sql.prepare('INSERT INTO r3_evidence_receipt VALUES(?,?,?,?,?)').run('doc','store','one','delivery','MASKED_SCANNED');
+      sql.prepare('INSERT INTO r3_evidence_object VALUES(?,?,?,?,?,?,?,?)').run('doc','d','farmer','doc-key','test','private/test',1,new Date().toISOString());
+      assert.equal((await run('farmer','d',rev++,'attach',{evidenceId:'doc'})).status,200);
+    }
+    const result=await run(role,'d',rev,action,action==='report-issue'?{reason:'DELIVERY_EXCEPTION'}:{});assert.equal(result.status,200,action);rev++;}
+  const res=await request('buyer',null,'?id=d');assert.equal(res.case.state,'SETTLEMENT_REVIEWED');for(const k of ['order_id','delivery_id','document_id','settlement_id'])assert.ok(res.case[k]);assert.equal(res.case.quote_id,'q');assert.equal(res.events.length,15);
   assert.doesNotMatch(JSON.stringify([res,await request('ops')]),/syntheticAmountOnly|32100/);
   sql.exec("UPDATE r3_membership SET active=0 WHERE actor_id='farmer'");assert.equal((await request('farmer',null,'?id=d')).status,403);
 });
@@ -102,4 +108,22 @@ test('signed IA route carries validated CSRF into the independently granted role
   const post=token=>handleIaRequest(new Request(origin+'/api/ia/r3-role',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json',Cookie:session.cookie.split(';')[0],'X-IA-CSRF':token},body:JSON.stringify(cmd)}),env);
   assert.equal((await post(session.csrf)).status,403);grant('owner','BUYER','specific','qa');assert.equal((await post('wrong')).status,403);
   const res=await post(session.csrf);assert.equal(res.status,200,JSON.stringify(await res.clone().json()));assert.equal((await res.json()).committedRevision,1);
+});
+
+test('in-panel requests stay pending, retain one request on retry, and reveal no cross-company members',async()=>{
+  const {sql,request}=workspace();
+  const body={requestKey:crypto.randomUUID(),orgId:'store',siteId:'one',purpose:'INVITE',contact:'Team@Example.invalid',role:'BUYER'};
+  const members=()=>sql.prepare('SELECT COUNT(*) n FROM r3_membership').get().n;
+  const before=members();
+  assert.equal((await request('buyer',body,'/account')).pending,true);
+  assert.equal((await request('buyer',body,'/account')).pending,true);
+  assert.equal((await request('other',body,'/account')).status,403);
+  assert.equal((await request('buyer',{...body,role:'SUPPLIER'},'/account')).status,403);
+  assert.equal((await request('buyer',{...body,role:'OPERATOR'},'/account')).status,400);
+  const account=await request('buyer',null,'/account');
+  assert.equal(account.requests.length,1);assert.equal(account.requests[0].contact,'team@example.invalid');
+  assert.ok(account.members.every(m=>m.self));
+  assert.equal((await request('other',null,'/account')).requests.length,0);
+  assert.equal((await request('ops',null,'/account')).requests.length,1);
+  assert.equal(members(),before);
 });

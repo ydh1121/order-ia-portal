@@ -12,6 +12,7 @@ const origin='https://order-ia-portal.pages.dev';
 const base=origin+'/api/ia/r3-qa';
 const db=new DatabaseSync(':memory:');
 db.exec(readFileSync(new URL('../migrations/0001_r3_qa.sql',import.meta.url),'utf8'));
+db.exec(readFileSync(new URL('../migrations/0013_owner_session_revocations.sql',import.meta.url),'utf8'));
 const binding={prepare(sql){return {bind(...args){const st=db.prepare(sql);return {
   first:async()=>st.get(...args),all:async()=>({results:st.all(...args)}),run:async()=>({meta:st.run(...args)})};}};}};
 const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(18).toString('hex')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),ORDER_QA_DB:binding};
@@ -159,4 +160,66 @@ test('screen memo is independently versioned, clearable and does not change the 
   const history=await (await read('/events?release=MSG0585-R3&kind=screen&id=memo-fixture')).json();
   assert.deepEqual(history.items.map(r=>r.data.body),['매장별 확인 사항','수정한 메모','']);
   assert.equal(db.prepare("SELECT count(*) AS n FROM qa_review_events WHERE kind='review' AND id='memo-fixture'").get().n,0);
+});
+
+test('each earlier feedback item has independent unresolved, recheck and resolved revisions without changing original feedback or approval',async()=>{
+  const original=db.prepare('SELECT payload FROM qa_legacy_records WHERE source_key=?').get('login/empty/email/390').payload;
+  const approvals=db.prepare("SELECT count(*) AS n FROM qa_review_events WHERE kind='review'").get().n;
+  const feedback=(status,revision,key)=>({release:'MSG0585-R3',kind:'feedback',id:'legacy-feedback-state',expectedRevision:revision,idempotencyKey:key,
+    data:{target,parent:{origin:'legacy',id:'legacy-1'},status}});
+  assert.equal((await send(feedback('unresolved',0,'feedback-initial'))).status,200);
+  assert.equal((await send(feedback('recheck',1,'feedback-recheck'))).status,200);
+  assert.equal((await send(feedback('resolved',2,'feedback-resolved'))).status,200);
+  const conflict=await send(feedback('unresolved',2,'feedback-stale'));
+  assert.equal(conflict.status,409);assert.equal((await conflict.json()).current.data.status,'resolved');
+  assert.equal((await send(feedback('unresolved',3,'feedback-reopen'))).status,200);
+  const history=await (await read('/events?release=MSG0585-R3&kind=feedback&id=legacy-feedback-state')).json();
+  assert.deepEqual(history.items.map(row=>[row.revision,row.data.status]),[[1,'unresolved'],[2,'recheck'],[3,'resolved'],[4,'unresolved']]);
+  assert.equal(db.prepare('SELECT payload FROM qa_legacy_records WHERE source_key=?').get('login/empty/email/390').payload,original);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM qa_review_events WHERE kind='review'").get().n,approvals);
+  const missing=feedback('resolved',0,'feedback-wrong-source');missing.id='wrong-feedback';missing.data.parent.id='legacy-2';
+  assert.equal((await send(missing)).status,409);
+  assert.equal((await send({...missing,idempotencyKey:'feedback-invalid-status',data:{...missing.data,status:'approved'}})).status,400);
+});
+
+test('a prior artifact comment can be reviewed against the current screen without editing its old source or granting access to another screen',async()=>{
+  const oldTarget={...target,artifactHash:'1'.repeat(64)};
+  const oldBody=JSON.stringify({body:'이전 판에서 남긴 위치 의견',target:oldTarget});
+  db.prepare(`INSERT INTO qa_review_events (release,kind,id,revision,data,action,reason,actor,request_key,request_hash) VALUES (?,?,?,?,?,'save','','owner',?,?)`)
+    .run('MSG0585-R3','comment','old-artifact-comment',1,oldBody,'old-artifact-seed','0'.repeat(64));
+  const row={release:'MSG0585-R3',kind:'feedback',id:'old-artifact-status',expectedRevision:0,idempotencyKey:'old-artifact-state',
+    data:{target,parent:{origin:'current',id:'old-artifact-comment'},status:'resolved'}};
+  assert.equal((await send(row)).status,200);
+  const comment=db.prepare("SELECT data,revision FROM qa_review_events WHERE kind='comment' AND id='old-artifact-comment'").get();
+  assert.equal(comment.data,oldBody);assert.equal(comment.revision,1);
+  const other=await (await read('/artifact?id=login%2Ferror%2Femail&version=current&width=390')).json();
+  const denied=await send({...row,id:'other-screen-status',idempotencyKey:'other-screen-status',data:{...row.data,target:{...target,state:'error',artifactHash:other.hash}}});
+  assert.equal(denied.status,409);assert.equal((await denied.json()).error,'FEEDBACK_SOURCE_UNAVAILABLE');
+  const changedParent=await send({...row,expectedRevision:1,idempotencyKey:'immutable-parent',data:{...row.data,parent:{origin:'current',id:'fixture'}}});
+  assert.equal(changedParent.status,400);
+});
+
+test('late feedback cannot conceal a concurrent source reopen or resolve on the same artifact',async()=>{
+  const source={...event('status-race-create','두 탭에서 검토한 의견'),id:'status-race-comment'};
+  const change=(action,revision,key)=>send({...source,action,reason:'다른 탭에서 확인',expectedRevision:revision,idempotencyKey:key});
+  const feedback=(status,revision,key)=>send({release:'MSG0585-R3',kind:'feedback',id:'status-race-feedback',
+    expectedRevision:revision,idempotencyKey:key,data:{target,parent:{origin:'current',id:source.id},status}});
+  assert.equal((await send(source)).status,200);
+  assert.equal((await change('resolve',1,'status-race-a-resolve')).status,200);
+  assert.equal((await change('reopen',2,'status-race-b-reopen')).status,200);
+  assert.equal((await feedback('resolved',0,'status-race-a-late-feedback')).status,409);
+  assert.equal(db.prepare("SELECT count(*) AS n FROM qa_review_events WHERE kind='feedback' AND id='status-race-feedback'").get().n,0);
+  let current=db.prepare("SELECT action,revision FROM qa_review_events WHERE kind='comment' AND id=? ORDER BY revision DESC LIMIT 1").get(source.id);
+  assert.equal(current.action,'reopen');assert.equal(current.revision,3);
+  assert((await (await read('/records?release=MSG0585-R3&unresolved=1')).json()).items.some(r=>r.id===source.id));
+
+  assert.equal((await feedback('unresolved',0,'status-race-current-feedback')).status,200);
+  assert.equal((await change('resolve',3,'status-race-c-resolve')).status,200);
+  assert.equal((await feedback('recheck',1,'status-race-b-late-feedback')).status,409);
+  const retained=db.prepare("SELECT revision,data FROM qa_review_events WHERE kind='feedback' AND id='status-race-feedback' ORDER BY revision DESC LIMIT 1").get();
+  assert.equal(retained.revision,1);assert.equal(JSON.parse(retained.data).status,'unresolved');
+  assert(!(await (await read('/records?release=MSG0585-R3&unresolved=1')).json()).items.some(r=>r.id===source.id));
+  assert.equal((await feedback('resolved',1,'status-race-final-feedback')).status,200);
+  current=db.prepare("SELECT action,revision FROM qa_review_events WHERE kind='comment' AND id=? ORDER BY revision DESC LIMIT 1").get(source.id);
+  assert.equal(current.action,'resolve');assert.equal(current.revision,4);
 });

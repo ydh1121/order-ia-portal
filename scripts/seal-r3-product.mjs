@@ -1,6 +1,6 @@
 // Seal the approved product build into server-private assets. Never copy dist
 // into public: every resource is returned by the existing OWNER gate.
-import {readFile,writeFile} from 'node:fs/promises';
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {gzipSync} from 'node:zlib';
@@ -16,7 +16,7 @@ const commit=git('rev-parse','HEAD').toString().trim();
 if(!/^[0-9a-f]{40}$/.test(commit)||identity.scope!=='INTEGRATED_PRODUCT'||identity.repository!=='ydh1121/order'||identity.commitSha!==commit)throw Error('Rebuild order at the selected Git commit');
 const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
 const files={},sourceHashes={};
-let html;
+let html,quoteJellyRuntime;
 function once(text,from,to){
  if(text.split(from).length!==2)throw Error('Private mount adapter no longer matches its pinned source: '+from);
  return text.replace(from,to);
@@ -32,7 +32,16 @@ for(const item of identity.files){
  sourceHashes[publicPath]=item.sha256;
  let text=bytes.toString('utf8');
  if(publicPath==='web/index.html'){html=text;continue;}
+ if(publicPath==='web/code1-jelly.mjs'){
+  const split=text.indexOf('\nexport const '),factory=text.slice(0,split);
+  if(split<0||!factory.endsWith('globalThis);\n'))throw Error('Unexpected CODE1 module shape');
+  quoteJellyRuntime='(()=>{'+factory+'window.Code1Jelly=Code1Jelly;})();\n';
+ }
  if(publicPath==='web/main.mjs')text=once(text,"new URL(location.href).searchParams.get('mode')==='simple'","document.documentElement.dataset.r3QuoteMode==='simple'");
+ // The private host's existing Access cookie is required even for its public boolean projection.
+ if(publicPath==='web/order-menu.mjs')text=once(text,
+  "fetch('/api/order/features',{credentials:'omit',redirect:'error'",
+  "fetch('/api/order/features',{credentials:'same-origin',redirect:'error'");
  if(publicPath==='web/storage.mjs')text=once(text,'export function createBrowserStorage(options={}){',`export function createBrowserStorage(options={}){
  const partition=document.documentElement.dataset.r3QuotePartition;
  if(!/^[a-f0-9]{64}$/.test(partition))throw TypeError('Private quote scope unavailable');
@@ -47,10 +56,30 @@ for(const item of identity.files){
  if(publicPath==='web/contact-ui.mjs')text=once(text,'createBrowserIanaProvider({origin:location.origin,allowLocalOrigin:true})',"createBrowserIanaProvider({origin:location.origin,allowLocalOrigin:true,fetcher:(_url,init)=>fetch('/ia/r3-product/assets/iana-reference.json',{...init,credentials:'same-origin'})})");
  files[publicPath]=gzipSync(text,{level:9}).toString('base64');
 }
-if(!html||!files['web/main.mjs']||!files['assets/iana-reference.json'])throw Error('Incomplete product build');
+if(!html||!quoteJellyRuntime||!files['web/main.mjs']||!files['assets/iana-reference.json'])throw Error('Incomplete product build');
 const output=fileURLToPath(new URL('../src/server/r3-product-sources.mjs',import.meta.url));
 const value='// Generated only by scripts/seal-r3-product.mjs from verified production assets.\n'+
  'export const quoteCommit='+JSON.stringify(commit)+';\nexport const quoteTemplate='+JSON.stringify(html)+';\n'+
+ 'export const quoteJellyRuntime='+JSON.stringify(quoteJellyRuntime)+';\n'+
  'export const quoteSourceHashes='+JSON.stringify(sourceHashes)+';\nexport const quoteFiles='+JSON.stringify(files)+';\n';
 await writeFile(output,value);
+// The Worker and offline QA generator execute the very same reviewed presentation module.
+const sharedBrowserFiles=['quote-result-screen.mjs','magnetic-action.mjs'];
+const copyDir=new URL('../src/server/order-engine/browser/',import.meta.url);
+await mkdir(copyDir,{recursive:true});
+for(const name of sharedBrowserFiles){
+ if(!sourceHashes['web/'+name])throw Error('Missing verified product module '+name);
+ await writeFile(new URL(name,copyDir),git('show',commit+':web/'+name));
+}
+const manifestPath=new URL('../src/server/order-engine/SOURCE.json',import.meta.url);
+const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
+for(const file of manifest.files.filter(file=>!file.path.startsWith('browser/'))){
+  const source=git('show',commit+':src/engine/'+file.path);
+  if(hash(source)!==hash(await readFile(new URL('../src/server/order-engine/'+file.path,import.meta.url))))throw Error('Private engine copy differs from product: '+file.path);
+  file.sha256=hash(source);
+}
+manifest.commit=commit;
+manifest.files=manifest.files.filter(file=>!file.path.startsWith('browser/'));
+for(const name of sharedBrowserFiles)manifest.files.push({path:'browser/'+name,source:'web/'+name,sha256:sourceHashes['web/'+name]});
+await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({commit,files:Object.keys(files).length,bytes:Buffer.byteLength(value),sha256:hash(value)}));

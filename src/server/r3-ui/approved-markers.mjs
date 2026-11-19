@@ -79,6 +79,9 @@ export function mountApprovedMarkers(session) {
   function schedule(){
     if(!frame)frame=requestAnimationFrame(()=>{frame=0;paint();});
   }
+  root.addEventListener('r3-motion-identity-reset',()=>{
+    pins=[];selection=[];draftAnchor=null;picking=false;dirty=true;order.clear();draft.hidden=true;schedule();
+  });
   new MutationObserver(schedule).observe(markers,{childList:true});
   new MutationObserver(()=>{dirty=true;schedule();}).observe(root,{childList:true,subtree:true});
   addEventListener('scroll',schedule,true);

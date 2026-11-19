@@ -4,7 +4,9 @@ import {readFile, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {catalog, release} from '../../src/server/r3-ui/catalog.gen.mjs';
 
-const [traceFile, output] = process.argv.slice(2);
+const [traceFile, output, mode] = process.argv.slice(2);
+if (mode && mode !== '--followup72') throw Error('Unknown import mode');
+const followup = mode === '--followup72';
 if (!traceFile || !output) throw new Error('Usage: node feedback-change-import.mjs feedback-trace.json output.json');
 const sha = value => createHash('sha256').update(value).digest('hex');
 const source = 'e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
@@ -18,26 +20,34 @@ const parameters = [];
 for (const comment of trace.comments) {
   if (seen.has(comment.id)) throw new Error('Duplicate feedback ID');
   seen.add(comment.id);
-  if (comment.originalDeleted) continue;
+  if (comment.originalDeleted) {
+    if (followup) throw Error('Deleted follow-up target '+comment.id);
+    continue;
+  }
   const row = byFrame.get(comment.afterFrameId);
   const viewport = Number(comment.record.split('/').at(-1));
   if (!row || !row.hashes[viewport] || comment.record !== row.id+'/'+viewport) throw new Error('Unmatched target '+comment.id);
   const artifactHash = row.hashes[viewport];
   const change = comment.disposition === 'SOURCE_DELTA_REVIEW_REQUIRED';
   const related = ['RELATED_PRICE_ROUTE_ONLY','RELATED_LAUNCH_ROUTE_ONLY','RELATED_LOGIN_VARIANT_ONLY'].includes(comment.disposition);
+  if (followup && (!['recheck','unknown','blocked','not_started','implemented','verified','carried'].includes(comment.developerStatus) ||
+      !comment.evidence?.observed || !comment.evidence.path || comment.userAcceptedR3 !== null ||
+      comment.afterArtifactHash !== artifactHash || !comment.beforeCommentTextSha256?.match(/^[a-f0-9]{64}$/)))
+    throw Error('Invalid scoped developer evidence '+comment.id);
   if ((change || related) && !comment.evidence?.observed) throw new Error('Missing observation '+comment.id);
   const data = {
     target:{screen:row.screen, state:row.state, variant:row.variant, viewport, artifactHash},
-    sourceKey:comment.record, sourceCommentId:comment.id, status:change?'recheck':'unknown',
-    body:(change || related)?comment.evidence.observed:'이 의견에 개별 반영 근거를 아직 연결하지 않았습니다.'
+    sourceKey:comment.record, sourceCommentId:comment.id, status:followup?comment.developerStatus:change?'recheck':'unknown',
+    body:(followup || change || related)?comment.evidence.observed:'이 의견에 개별 반영 근거를 아직 연결하지 않았습니다.'
   };
-  if (change || related) data.evidenceRef = String(comment.evidence.path || trace.sources.iaCommit).slice(0,512);
+  if (followup || change || related) data.evidenceRef = String(comment.evidence.path || trace.sources.iaCommit).slice(0,512);
   const content = JSON.stringify(data);
   const id = 'feedback:'+comment.id+':'+artifactHash;
   const hash = sha(id+'\n'+content);
   parameters.push([release,id,content,'astra-evidence:'+hash,hash,source,comment.record,comment.id]);
 }
-if (seen.size !== 173 || parameters.length !== 162) throw new Error('Feedback counts do not match the original');
+if (followup ? seen.size !== 72 || parameters.length !== 72 : seen.size !== 173 || parameters.length !== 162)
+  throw new Error('Feedback counts do not match the original');
 const sql = `WITH incoming(release,id,data,event_key,digest,source_sha,source_key,comment_id) AS
  (VALUES (?,?,?,?,?,?,?,?))
 INSERT INTO qa_review_events (release,kind,id,revision,action,reason,data,actor,request_key,request_hash)

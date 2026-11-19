@@ -7,7 +7,10 @@ def check_private_product(context, origin):
     errors = []
     page.on('pageerror', lambda error: errors.append(str(error)))
     try:
-        page.goto(origin + '/ia?view=simple-r3#/home')
+        with page.expect_request(lambda request: request.url == origin + '/api/order/features') as publication:
+            page.goto(origin + '/ia?view=simple-r3#/home')
+        assert '__Host-ia_session=' in publication.value.all_headers().get('cookie','')
+        assert publication.value.redirected_from is None
         page.wait_for_function("document.documentElement.dataset.storageReady === 'true'")
         assert page.locator('html').get_attribute('data-r3-quote-mode') == 'simple'
         partition = page.locator('html').get_attribute('data-r3-quote-partition')

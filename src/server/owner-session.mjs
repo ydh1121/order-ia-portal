@@ -1,10 +1,16 @@
-/** Existing Pages only: single OWNER password verifier and stateless, short-lived cookie.
+/** Existing Pages only: single OWNER password verifier and bounded activity-renewed cookie.
  * All secrets are injected by Pages as encrypted bindings; none are stored in Git.
  * Per-isolate throttling is defense-in-depth only, NOT a distributed rate limit.
  */
 const enc=new TextEncoder();
 const COOKIE='__Host-ia_session';
-const TTL=600; // ten minutes. No silent sliding renewal.
+const LEGACY_TTL=600;
+export const OWNER_SESSION_IDLE_SECONDS=30*60;
+export const OWNER_SESSION_MAX_SECONDS=12*60*60;
+const TTL=OWNER_SESSION_IDLE_SECONDS;
+// Existing production/preview D1 records logout revocations across Worker isolates.
+// A deployment without the existing database may issue only a legacy 10-minute
+// bootstrap session. It cannot issue or renew the longer-lived v2 session.
 const MAX_BODY=2048;
 const CHALLENGE_COOKIE='__Host-ia_challenge';
 const CHALLENGE_TTL=90; // bounded proof validity; no persistent store or new infra
@@ -131,36 +137,64 @@ async function verifyChallenge(request,env,body,now){
   consumed.set(record.nonce,record.exp);
   return true;
 }
+const revocationId=async (env,sid)=>b64(await crypto.subtle.digest('SHA-256',bytes(sessionPrefix(env)+sid)));
+async function isRevoked(env,p,now) {
+  const id=await revocationId(env,p.sid);
+  if(env.ORDER_QA_DB){
+    try{
+      const row=await env.ORDER_QA_DB.prepare('SELECT 1 revoked FROM ia_owner_session_revocations WHERE session_hash=? AND expires_at>? LIMIT 1').bind(id,now).first();
+      return !!row?.revoked;
+    }catch{throw Error('SESSION_STORE_UNAVAILABLE');}
+  }
+  if(p.v===2)throw Error('SESSION_STORE_UNAVAILABLE');
+  return false;
+}
+async function revokeSession(env,p,now) {
+  const id=await revocationId(env,p.sid),expiresAt=p.iat+OWNER_SESSION_MAX_SECONDS;
+  if(env.ORDER_QA_DB){
+    try{await env.ORDER_QA_DB.prepare('INSERT INTO ia_owner_session_revocations(session_hash,revoked_at,expires_at) VALUES(?,?,?) ON CONFLICT(session_hash) DO UPDATE SET expires_at=MAX(expires_at,excluded.expires_at)').bind(id,now,expiresAt).run();}
+    catch{throw Error('SESSION_STORE_UNAVAILABLE');}
+    // Bounded retention. Failure to prune must not undo the already durable revocation.
+    try{await env.ORDER_QA_DB.prepare('DELETE FROM ia_owner_session_revocations WHERE expires_at<=?').bind(now).run();}catch{}
+  }else if(p.v===2)throw Error('SESSION_STORE_UNAVAILABLE');
+}
+async function sessionEnvelope(env,p,now) {
+  const key=await hmacKey(env),body=b64(bytes(JSON.stringify(p)));
+  const token=body+'.'+b64(await sign(key,sessionPrefix(env)+body));
+  const csrf=b64(await sign(key,'ia.csrf.v1.'+p.sid)),expiresIn=p.exp-now;
+  return {cookie:`${COOKIE}=${token}; Path=/; Max-Age=${expiresIn}; Secure; HttpOnly; SameSite=Strict`,csrf,expiresIn,expiresAt:p.exp,absoluteExpiresAt:p.iat+OWNER_SESSION_MAX_SECONDS};
+}
 export async function issueSession(env,now=Math.floor(Date.now()/1000)){
   if(!sessionConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
-  const key=await hmacKey(env);
   const sid=b64(rand(24));
-  const payload={v:1,sid,iat:now,exp:now+TTL};
-  const body=b64(bytes(JSON.stringify(payload)));
-  const signature=b64(await sign(key,sessionPrefix(env)+body));
-  const token=body+'.'+signature;
-  const csrf=b64(await sign(key,'ia.csrf.v1.'+sid));
-  return {cookie:`${COOKIE}=${token}; Path=/; Max-Age=${TTL}; Secure; HttpOnly; SameSite=Strict`,csrf,expiresIn:TTL};
+  if(!env.ORDER_QA_DB)return sessionEnvelope(env,{v:1,sid,iat:now,exp:now+LEGACY_TTL},now);
+  return sessionEnvelope(env,{v:2,sid,iat:now,renewedAt:now,exp:now+TTL},now);
 }
-export async function readSession(request,env,now=Math.floor(Date.now()/1000)){
+async function readSessionPayload(request,env,now){
   if(!sessionConfigured(env))throw Error('LOGIN_NOT_CONFIGURED');
   if(env?.IA_PREVIEW_OWNER_ORIGIN!==undefined && new URL(request.url).origin!==previewOwnerOrigin(env))throw Error('SESSION_DENIED');
   const value=getCookie(request);
   if(!value||value.length>900||value.split('.').length!==2)throw Error('SESSION_DENIED');
-  const [body,sig]=value.split('.');
-  const key=await hmacKey(env);
-  const expected=await sign(key,sessionPrefix(env)+body);
-  if(!eq(expected,unb64(sig)))throw Error('SESSION_DENIED');
+  const [body,sig]=value.split('.'),key=await hmacKey(env);
+  if(!eq(await sign(key,sessionPrefix(env)+body),unb64(sig)))throw Error('SESSION_DENIED');
   let p;try{p=JSON.parse(new TextDecoder().decode(unb64(body)))}catch{throw Error('SESSION_DENIED')}
-  if(p.v!==1||typeof p.sid!=='string'||unb64(p.sid).length!==24||!Number.isSafeInteger(p.iat)||!Number.isSafeInteger(p.exp)||
-    p.iat>now+30||p.exp<=now||p.exp-p.iat!==TTL)throw Error('SESSION_DENIED');
-  return {id:'owner',role:'OWNER',email:env.IA_OWNER_EMAIL.trim().toLowerCase(),csrf:b64(await sign(key,'ia.csrf.v1.'+p.sid)),expiresAt:p.exp};
+  const legacy=p.v===1&&p.exp-p.iat===LEGACY_TTL;
+  const current=p.v===2&&Number.isSafeInteger(p.renewedAt)&&p.renewedAt>=p.iat&&p.renewedAt<=now+30&&p.exp===Math.min(p.renewedAt+TTL,p.iat+OWNER_SESSION_MAX_SECONDS);
+  if((!legacy&&!current)||typeof p.sid!=='string'||unb64(p.sid).length!==24||!Number.isSafeInteger(p.iat)||!Number.isSafeInteger(p.exp)||
+    p.iat>now+30||p.exp<=now||p.iat+OWNER_SESSION_MAX_SECONDS<=now)throw Error('SESSION_DENIED');
+  if(await isRevoked(env,p,now))throw Error('SESSION_DENIED');
+  return p;
+}
+export async function readSession(request,env,now=Math.floor(Date.now()/1000)){
+  const p=await readSessionPayload(request,env,now),key=await hmacKey(env);
+  return {id:'owner',role:'OWNER',email:env.IA_OWNER_EMAIL.trim().toLowerCase(),csrf:b64(await sign(key,'ia.csrf.v1.'+p.sid)),expiresAt:p.exp,absoluteExpiresAt:p.iat+OWNER_SESSION_MAX_SECONDS};
 }
 export async function ownerActor(request,env,now){const {id,email,role}=await readSession(request,env,now);return{id,email,role};}
 export const clearSessionCookie=()=>`${COOKIE}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict`;
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Cross-Origin-Resource-Policy':'same-origin','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",Vary:'Cookie'};
 const result=(body,status=200,extra={})=>new Response(JSON.stringify(body),{status,headers:{...headers,...extra}});
 const reject=()=>result({error:'LOGIN_DENIED'},401);
+const sessionFailure=error=>error?.message==='SESSION_STORE_UNAVAILABLE'?result({error:'SESSION_STORE_UNAVAILABLE'},503):reject();
 const limiter=(request,now=Date.now())=>{
   // Per-isolate protection; owner must apply managed rate limiting for distributed protection.
   const ip=(request.headers.get('CF-Connecting-IP')||'unknown').slice(0,65);
@@ -175,8 +209,22 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
   const pathname=new URL(request.url).pathname;
   if(pathname==='/api/ia/auth/me'){
     if(request.method!=='GET')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'GET'});
-    try{const actor=await readSession(request,env,now);return result({authenticated:true,role:actor.role,email:actor.email,csrf:actor.csrf,expiresAt:actor.expiresAt})}
-    catch{return reject()}
+    try{const actor=await readSession(request,env,now);return result({authenticated:true,role:actor.role,email:actor.email,csrf:actor.csrf,expiresAt:actor.expiresAt,absoluteExpiresAt:actor.absoluteExpiresAt})}
+    catch(error){return sessionFailure(error)}
+  }
+  if(pathname==='/api/ia/auth/refresh'){
+    if(request.method!=='POST')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST'});
+    if(!sameOrigin(request,env))return result({error:'ORIGIN_DENIED'},403);
+    try{
+      const p=await readSessionPayload(request,env,now),key=await hmacKey(env);
+      const csrf=b64(await sign(key,'ia.csrf.v1.'+p.sid));
+      if(request.headers.get('X-IA-CSRF')!==csrf)return result({error:'CSRF_DENIED'},403);
+      if(!env.ORDER_QA_DB)return result({error:'SESSION_STORE_UNAVAILABLE'},503);
+      // Preserve the signed login time, SID and CSRF across tabs. No expired or
+      // logged-out session can be refreshed, including a pre-migration v1 cookie.
+      const session=await sessionEnvelope(env,{v:2,sid:p.sid,iat:p.iat,renewedAt:now,exp:Math.min(now+TTL,p.iat+OWNER_SESSION_MAX_SECONDS)},now);
+      return result({authenticated:true,role:'OWNER',csrf:session.csrf,expiresAt:session.expiresAt,absoluteExpiresAt:session.absoluteExpiresAt},200,{'Set-Cookie':session.cookie});
+    }catch(error){return sessionFailure(error)}
   }
   if(pathname==='/api/ia/auth/challenge'){
     if(request.method!=='GET')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'GET'});
@@ -221,10 +269,11 @@ export async function handleOwnerAuthRequest(request,env,now=Math.floor(Date.now
     if(request.method!=='POST')return result({error:'METHOD_NOT_ALLOWED'},405,{Allow:'POST'});
     if(!sameOrigin(request,env))return result({error:'ORIGIN_DENIED'},403);
     try{
-      const actor=await readSession(request,env,now);
-      if(request.headers.get('X-IA-CSRF')!==actor.csrf)return result({error:'CSRF_DENIED'},403);
+      const p=await readSessionPayload(request,env,now),key=await hmacKey(env);
+      if(request.headers.get('X-IA-CSRF')!==b64(await sign(key,'ia.csrf.v1.'+p.sid)))return result({error:'CSRF_DENIED'},403);
+      await revokeSession(env,p,now);
       return result({authenticated:false},200,{'Set-Cookie':clearSessionCookie()});
-    }catch{return reject()}
+    }catch(error){return sessionFailure(error)}
   }
   return result({error:'NOT_FOUND'},404);
 }

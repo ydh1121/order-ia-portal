@@ -8,13 +8,14 @@ import {resolve} from 'node:path';
 import {deriveVerifier} from '../src/server/owner-session.mjs';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {onRequest as iaPage} from '../functions/ia/[[path]].js';
+import {onRequest as features} from '../functions/api/order/features.js';
 import {onRequest as login} from '../functions/login.js';
 const dir=resolve(import.meta.dirname,'..'), db=new DatabaseSync(':memory:');
 for(const file of readdirSync(resolve(dir,'migrations')).filter(n=>n.endsWith('.sql')).sort()){
   db.exec(readFileSync(resolve(dir,'migrations',file),'utf8'));
 }
 const store={
-  prepare(sql){return {bind(...args){const st=db.prepare(sql);return {
+  prepare(sql){return {first:async()=>db.prepare(sql).get(),bind(...args){const st=db.prepare(sql);return {
     first:async()=>st.get(...args),run:()=>({meta:st.run(...args)}),all:async()=>({results:st.all(...args)})};}};},
   async batch(statements){
     db.exec('BEGIN');
@@ -43,7 +44,7 @@ const server=createServer(async (req,res)=>{
     if(headers.get('origin')===u.origin)headers.set('origin',production);
     const chunks=[];for await(const c of req)chunks.push(c);
     const request=new Request(production+u.pathname+u.search,{method:req.method,headers,body:chunks.length?Buffer.concat(chunks):undefined});
-    const out=u.pathname.startsWith('/api/ia/')?await handleIaRequest(request,env):
+    const out=u.pathname==='/api/order/features'?await features({request,env}):u.pathname.startsWith('/api/ia/')?await handleIaRequest(request,env):
       u.pathname==='/login'?await login({request,env}):u.pathname.startsWith('/ia')?await iaPage({request,env}):await assets(request);
     for(const [k,v] of out.headers){if(k!=='set-cookie')res.setHeader(k,v);}
     if(out.headers.getSetCookie().length)res.setHeader('set-cookie',out.headers.getSetCookie());

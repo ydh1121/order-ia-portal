@@ -10,7 +10,7 @@ permissions:
 jobs:
   ia:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -19,11 +19,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Install DOM and bundler test dependencies
+        run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |
-          npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
           node tests/r3-bundled-clients.mjs
+          node tests/r3-price-book-dom.mjs
+          node tests/r3-admin-common-dom.mjs
+          node tests/r3-async-motion-dom.mjs
+      - name: Compile Pages Functions with the deployment builder
+        env:
+          WRANGLER_SEND_METRICS: 'false'
+        run: npx --yes wrangler@3.114.17 pages functions build functions --outdir="$RUNNER_TEMP/order-ia-worker"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -75,23 +83,61 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-questions-browser.py
+      - name: Exercise controlled requests and approved admin interactions in the protected QA frame
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-admin-common-browser.py
+      - name: Verify pending, failure and retry in the signed price editor
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-async-motion-browser.py
+      - name: Check shared result states, motion and matched artboard exports
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+          R3_EVIDENCE_DIR: artifacts/quote-result
+        run: python tests/r3-journey-browser.py
       - name: Check price review and protected snapshots
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-price-browser.py
+      - name: Check first registration, account drafts and cross-tab conflicts
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-price-first-browser.py
+      - name: Check freight references and quantity policies
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-freight-browser.py
       - name: Check role cases and masked evidence
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_ROLE_EVIDENCE_DIR: artifacts/role-browser
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-role-browser.py
+      - name: Check three signed business identities and connected workflows
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_ROLE_EVIDENCE_DIR: artifacts/role-browser
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-business-menu-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: r3-private-browser-receipts
           path: |
             artifacts/role-browser/
+            artifacts/quote-result/
+            artifacts/price-matrix/
+            artifacts/freight-browser/
             artifacts/approved-shell/
+            artifacts/motion-runtime/
+            artifacts/motion-live/
+            artifacts/r3-auth-motion/
           if-no-files-found: ignore
           retention-days: 7

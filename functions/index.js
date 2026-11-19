@@ -17,6 +17,9 @@ export async function onRequest({request,env}){
   try{
     const actor=await requireActor(request,env);
     if(actor.role==='OWNER')target='/ia/';
-  }catch{/* Invalid, expired, or missing server session: never disclose IA data. */}
+  }catch(error){
+    if(error?.message==='SESSION_STORE_UNAVAILABLE')return new Response(null,{status:503,headers:h});
+    // Invalid, expired, or missing server session: never disclose IA data.
+  }
   return new Response(null,{status:302,headers:{...h,Location:target}});
 }

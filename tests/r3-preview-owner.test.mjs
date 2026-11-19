@@ -1,3 +1,5 @@
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomBytes,generateKeyPairSync,sign} from 'node:crypto';
@@ -6,11 +8,13 @@ import {onRequest as iaPage} from '../functions/ia/[[path]].js';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {sameOrigin} from '../src/server/owner-session.mjs';
 
+const authSql=new DatabaseSync(':memory:');authSql.exec(readFileSync(new URL('../migrations/0013_owner_session_revocations.sql',import.meta.url),'utf8'));
+const authDb={prepare(sql){return {bind(...values){const stmt=authSql.prepare(sql);return {first:async()=>stmt.get(...values),run:async()=>stmt.run(...values)};}};}};
 const origin='https://qa-test.order-ia-portal.pages.dev';
 const team='https://qa-test.cloudflareaccess.com';
 const owner='owner@example.invalid', reviewer='reviewer@example.invalid';
 const audience='preview_test_1234567890';
-const env={IA_PREVIEW_OWNER_ORIGIN:origin,IA_OWNER_EMAIL:owner,IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),
+const env={ORDER_QA_DB:authDb,IA_PREVIEW_OWNER_ORIGIN:origin,IA_OWNER_EMAIL:owner,IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),
   IA_ACCESS_TEAM_DOMAIN:team,IA_ACCESS_AUD:audience,IA_ROLE_BINDINGS_JSON:JSON.stringify({[owner]:'OWNER',[reviewer]:'REVIEWER'})};
 const keys=generateKeyPairSync('rsa',{modulusLength:2048});
 const jwk={...keys.publicKey.export({format:'jwk'}),kid:'preview-key',alg:'RS256'};
@@ -30,7 +34,7 @@ function visit(request,config=env){
 const entry=(email)=>new Request(origin+'/ia/',{headers:email?{'Cf-Access-Jwt-Assertion':token(email)}:{}});
 test('preview document verifies assigned owner, creates host session, serves the original IA menu and an independent QA desk',async()=>{
   const page=await visit(entry(owner));assert.equal(page.status,200);
-  assert.match(page.headers.get('Set-Cookie'),/^__Host-ia_session=.*; Path=\/; Max-Age=600; Secure; HttpOnly; SameSite=Strict$/);
+  assert.match(page.headers.get('Set-Cookie'),/^__Host-ia_session=.*; Path=\/; Max-Age=1800; Secure; HttpOnly; SameSite=Strict$/);
   assert.match(page.headers.get('X-Robots-Tag'),/noindex/);
   const html=await page.text();
   assert.match(html,/<nav id="nav">[\s\S]*?class="ia-tool-link" href="\/ia\?view=qa-lab" target="_blank" rel="noopener noreferrer"[\s\S]*?<\/nav>/);

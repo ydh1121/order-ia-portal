@@ -33,13 +33,17 @@ test('current Google source exclusively controls decisions and provider status; 
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
 test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'084a755ff3fc2a171053be432f2603a1ce895d944352550b7ea09de4a2509961');
- assert.equal(sha256(actualCode),'b2aa01b2656bd1e81ce19deacd3369751485afd7413b73e02ab59924474e0662');
+ assert.equal(sha256(html),'fd5d6a73ac4f1a6fe17c26aab65697412d50e6a461c674e0474dc2d5971db1ee');
+ assert.equal(sha256(actualCode),'d13575163140682a4c062ee4cc59c49519a61868cfccf26655690eee1022c951');
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
 });
 
 test('private QA remains reachable in the same tab when a popup is blocked',()=>{
  const fallback='<details class="ia-tool-fallback"><summary>새 창이 열리지 않을 때</summary><a href="?view=qa-lab">이 탭에서 QA랩 열기</a></details>';
  assert.ok(html.includes(fallback));
- assert.equal(sha256(html.replace(fallback,'')),'1f1f7f993b8afbdf6289ec0ce8766a656b96d4d45fd27e982fe923963bb39f57');
+ const nav = html.match(/<nav\b[^>]*>[\s\S]*?<\/nav>/)?.[0] || '';
+ assert.match(nav, /href="\/ia\?view=qa-lab" target="_blank" rel="noopener noreferrer"/);
+ assert.match(nav, /href="\/ia\?view=pricing-r3"/);
+ assert.doesNotMatch(nav, /업무 흐름 검토|href="[^"]*view=roles-r3/);
+ assert.equal(sha256(html.replace(fallback,'')),'4d9faeae3525a3c01bf1656a6185f9deaa92bd9378fb4853d99b4851f38c84e5');
 });

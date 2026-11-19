@@ -26,3 +26,50 @@
 .ds .otp-digit{border:0}
 .ds .otp-digit:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
 @media(prefers-reduced-motion:no-preference){.ds .check-row button svg{transition:transform .15s ease}.ds .check-row button:hover svg,.ds .check-row button:focus-visible svg{transform:translateX(2px)}.ds .otp-digit:focus{animation:field-spring .18s ease-out}}
+
+.ds .auth-sheet .check-row{align-items:center}
+.ds .consent-block [data-action=open-terms]{display:inline-grid;align-items:center;justify-content:center;min-width:32px;min-height:32px}
+.ds .consent-block [data-action=open-terms] svg{transition:transform .18s ease-out}
+.ds .consent-block [data-action=open-terms]:is(:hover,:focus-visible) svg{transform:translateX(3px)}
+.ds .auth-sheet .sheet-handle{touch-action:none}
+.ds .otp-wrap .otp-digit{border:0;box-shadow:none}
+.ds .otp-wrap .otp-digit:focus-visible{background:#e7efff;outline:2px solid #396eed;outline-offset:1px}
+.ds .otp-wrap .otp-digit:not(:placeholder-shown){font-variant-numeric:tabular-nums}
+.ds .auth-complete .success-mark svg{stroke-dasharray:85;animation:qa-check-trace .42s ease-out}
+@keyframes qa-check-trace{from{stroke-dashoffset:85}to{stroke-dashoffset:0}}
+@media(prefers-reduced-motion:reduce){.ds .consent-block [data-action=open-terms] svg,.ds .auth-complete .success-mark svg{animation:none;transition:none}}
+/* Invalid inputs retain the target and its label while a screen reader receives the reason. */
+.ds .auth-sheet :is(.inline-field-state,.field-error-icon:empty){display:none!important}
+.ds .auth-sheet .field.shows-message :is(input,textarea,.float-caption){opacity:1!important}
+.ds .auth-sheet .otp-wrap.is-error{outline:2px solid var(--danger,#d33443);outline-offset:-2px}
+.ds .auth-sheet .otp-wrap.is-error::after,.ds .auth-sheet .otp-wrap.is-error::before{content:none!important}
+.ds .auth-sheet [data-otp-feedback]{position:absolute!important;width:1px!important;height:1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important}
+.ds .auth-sheet{overscroll-behavior:contain;scrollbar-width:none}
+.ds .auth-sheet::-webkit-scrollbar{display:none}
+.ds .auth-sheet .sheet-handle{width:66px;height:24px;top:0;background:transparent;cursor:grab}
+.ds .auth-sheet .sheet-handle::before{content:"";position:absolute;left:14px;top:10px;width:38px;height:4px;background:#d1d6db;border-radius:3px}
+.ds .auth-sheet .field.shows-message :is(input,textarea){color:var(--ink)!important;-webkit-text-fill-color:currentColor!important;caret-color:auto!important}
+.ds .auth-sheet .field.shows-message .float-caption{visibility:visible!important}
+/* Video 6 Liquid Link uses four independently filled capsules and a short-lived neck at a changed boundary. */
+.ds .password-meter .liquid-segments i,.ds .password-meter .liquid-segments i.filled{background:#e5e8eb;transition:none}
+.ds .password-meter .liquid-segments i b{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;background:var(--strength);opacity:1;transform:scaleX(0);transform-origin:left center}
+.ds .password-meter .liquid-segments i.filled b{transform:scaleX(1)}
+.ds .password-meter .liquid-segments i em{display:block;position:absolute;top:0;bottom:0;left:-8px;width:10px;background:var(--strength);opacity:0;transform:scale(0);transform-origin:center;clip-path:polygon(0 0,28% 17%,50% 25%,72% 17%,100% 0,100% 100%,72% 83%,50% 75%,28% 83%,0 100%)}
+
+/* The sheet closes over its own scene; provider artwork retains its official colors. */
+.ds .auth-sheet[hidden],.ds .sheet-dim[hidden],.ds .auth-return-action[hidden]{display:none!important}
+.ds .auth-scene.is-closed .auth-background{filter:none;opacity:1}
+.ds .auth-background{transition:filter 350ms,opacity 350ms}
+.ds .auth-return-action{position:absolute;bottom:28px;left:24px;right:24px;display:flex;justify-content:center}
+.ds .auth-return-action .btn{width:100%;max-width:412px}
+.ds .auth-sheet .sheet-title{padding-right:0}
+.ds .auth-sheet .sheet-handle{touch-action:none}
+.ds .auth-sheet .password-eye svg g{transform-origin:center;transition:opacity 160ms,transform 180ms cubic-bezier(.22,1,.36,1)}
+.ds .auth-sheet .password-eye .eye-closed{opacity:0;transform:scaleY(.4)}
+.ds .auth-sheet .password-eye.is-visible .eye-open{opacity:0;transform:scaleY(.1)}
+.ds .auth-sheet .password-eye.is-visible .eye-closed{opacity:1;transform:scaleY(1)}
+.ds .auth-layout .integrated-providers,.ds .auth-sheet .integrated-providers{display:flex;align-items:center;justify-content:center;gap:12px}
+.ds .auth-sheet .integrated-provider{display:grid;place-items:center;width:48px;height:48px;border-radius:50%;overflow:hidden;margin:0;padding:0;border:0;background:transparent;box-shadow:none}
+.ds .auth-sheet .integrated-provider[data-action=social-google]{border:1px solid #dadce0;background:white}
+.ds .auth-sheet .integrated-provider img{display:block;width:48px;height:48px;max-width:none;object-fit:contain}
+@media(prefers-reduced-motion:reduce){.ds .auth-background,.ds .auth-sheet .password-eye svg g{transition:none}}

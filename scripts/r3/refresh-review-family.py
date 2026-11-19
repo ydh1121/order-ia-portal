@@ -64,6 +64,11 @@ def refresh(source, family, catalog_file):
         raise ValueError("Private source core.js does not match the pinned core runtime.")
     # Both runtime and generated shapes use the same reviewed source file.
     family_script = core + "\n" + script_file.read_text()
+    if family in ("navigation", "onboarding"):
+        controls = (UI.parent / "r3-customer-controls.mjs").read_text()
+        controls = controls.replace("export function createCustomerControls()", "function createCustomerControls()", 1)
+        family_script += "\n" + controls + "\nwindow.ORDER_CUSTOMER_CONTROLS=createCustomerControls();"
+
     with tempfile.TemporaryDirectory() as temporary:
         result = Path(temporary) / "frames.json"
         subprocess.run(["node", str(HERE / "compile-catalog.mjs"), str(source), str(result),
@@ -85,9 +90,7 @@ def refresh(source, family, catalog_file):
                      "item-count contact-address contact-phone venue-modal venue-error order-venue-count order-summary order-error order-type").split()
     runtime_key = family
     if family == "account":
-        # Keep all existing login/empty targets and their current runtime available:
-        # this is the family that already contains a verified OWNER pin.
-        target_rows = [r for r in target_rows if (r["screen"],r["state"]) != ("login","empty")]
+        # Earlier issued login targets are retained by the R3 archive.
         data_keys = ("opt-choice",)
         runtime_key = "accountFeedback"
     for row in target_rows:

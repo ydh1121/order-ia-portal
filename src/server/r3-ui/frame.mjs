@@ -1,17 +1,68 @@
 // Runs only in the opaque, network-disabled review frame. No customer fields cross the boundary.
-export function bootReviewFrame(session) {
+export function bootReviewFrame(session, installMotion, installReviewRequests, motionStyles) {
   const send=(type,payload={})=>parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type,payload},'*');
   if(window===parent)return;
   const root=document.querySelector('#order-single');
   const authored=window.ORDER_DESIGN_MODULES?.find(m=>m.id===session.screen);
-  if(authored){
-    const go=(screen,state)=>send('navigate',{screen,state});
-    const api={interactive:true,variant:session.variant,reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches,select:go,
+  const authStates=new Set(['login','signup','password','otp','terms']);
+  let mounted=[],liveState=session.state,componentEpoch=0;
+  const ownsState=state=>authStates.has(session.screen)&&authored?.states?.some(entry=>(entry.id||entry)===state);
+  let api;
+  const mountAuthored=state=>{
+    mounted.forEach(f=>{if(typeof f==='function')f();});mounted=[];
+    const requests=installReviewRequests(root,installMotion(root,{source:'controlled-qa'}));
+    api={interactive:true,screen:session.screen,variant:session.variant,authOriginStep:session.authOriginStep,
+      reduced:()=>document.documentElement.hasAttribute('data-review-reduced')||matchMedia('(prefers-reduced-motion: reduce)').matches,
+      select(screen,state){
+        if(session.authOriginStep&&screen==='login'&&state==='closed')send('navigate',{screen,state});
+        else if(screen===session.screen&&ownsState(state))send('componentStateRequest',{screen,state});
+        else send('navigate',{screen,state});
+      },
+      localState(state){if(ownsState(state)){liveState=state;send('localState',{screen:session.screen,state});}},
       toast:message=>{let hint=root.querySelector('[data-local-toast]');if(!hint){hint=document.createElement('p');hint.dataset.localToast='';hint.setAttribute('role','status');root.append(hint);}hint.textContent=message;},
-      demoSuccess:(_button,done)=>done?.()};
-    const cleanup=[window.QAUI?.sharedMount?.(root,api),authored.mount?.(root,session.state,api)];
-    addEventListener('pagehide',()=>cleanup.forEach(f=>{if(typeof f==='function')f();}),{once:true});
+      demoSuccess:requests.run,downloadReviewDocument:()=>send('downloadReviewDocument'),saveReviewLayout:layout=>send('reviewWidgetLayout',{layout})};
+    mounted=[window.QAUI?.sharedMount?.(root,api),authored.mount?.(root,state,api),requests.destroy];
+  };
+  if(authored){
+    const style=document.createElement('style');style.textContent=motionStyles;document.head.append(style);
+    mountAuthored(session.state);
+    addEventListener('pagehide',()=>mounted.forEach(f=>{if(typeof f==='function')f();}),{once:true});
   }
+  let lastUserActivity=-Infinity;
+  for(const type of ['pointerdown','keydown','input','wheel'])addEventListener(type,event=>{
+    if(!event.isTrusted||Date.now()-lastUserActivity<30000)return;lastUserActivity=Date.now();send('userActivity');
+  },{capture:true,passive:true});
+  addEventListener('message',async event=>{
+    const m=event.data;
+    if(event.source!==parent||m?.scope!=='ORDER_R3_HOST'||m.channel!==session.channel||m.artifact!==session.artifact||m.type!=='componentState')return;
+    const p=m.payload;if(!p||!ownsState(p.state)||!/^[a-f0-9]{64}$/.test(p.hash)||!/^[a-f0-9-]{36}$/.test(p.channel))return;
+    const epoch=++componentEpoch;
+    if(p.applied){if(p.state!==liveState)return;}
+    else {
+      let handled=false;
+      if(session.screen==='login'&&['empty','closed'].includes(p.state)&&['empty','closed'].includes(liveState)){
+        await new Promise(resolve=>{
+          const update=new CustomEvent('r3-auth-sheet-state',{cancelable:true,detail:{state:p.state,done:resolve}});
+          handled=!root.dispatchEvent(update);if(!handled)resolve();
+        });
+      }
+      if(!handled){
+        if(typeof p.markup!=='string')return;
+        const next=new DOMParser().parseFromString(p.markup,'text/html').querySelector('#order-single');if(!next)return;
+        const oldHeight=root.querySelector('.auth-sheet')?.getBoundingClientRect().height;
+        mounted.forEach(f=>{if(typeof f==='function')f();});mounted=[];
+        root.replaceChildren(...[...next.childNodes].map(n=>document.importNode(n,true)));
+        mountAuthored(p.state);
+        const sheet=root.querySelector('.auth-sheet'),height=sheet?.getBoundingClientRect().height;
+        if(oldHeight&&height&&oldHeight!==height&&!api.reduced()&&sheet.animate){
+          const animation=sheet.animate([{height:oldHeight+'px'},{height:height+'px'}],{duration:300,easing:'cubic-bezier(.22,1,.36,1)'});animation.finished.catch(()=>{});
+        }
+      }
+    }
+    if(epoch!==componentEpoch)return;liveState=p.state;
+    root.dispatchEvent(new CustomEvent('r3-motion-identity-reset'));
+    session.channel=p.channel;session.artifact=p.hash;session.state=p.state;send('ready');
+  });
   function fingerprint(el) {
     const names=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
     return [el.localName,...names.map(n=>el.getAttribute(n)||'')].join('|');
@@ -57,6 +108,7 @@ export function bootReviewFrame(session) {
   function setPicking(on){
     picking=on;veil.hidden=!on;if(on){keyPoint={x:innerWidth/2,y:innerHeight/2};veil.focus({preventScroll:true});}else keyPoint=null;
   }
+  root.addEventListener('r3-motion-identity-reset',()=>{pins=[];previousFocus=null;setPicking(false);index();schedule();});
   // Cover disabled inputs, embedded svg, empty space and fixed overlays before their handlers run.
   for(const type of ['pointerdown','pointerup','click','dblclick','contextmenu','dragstart','submit','drop']){
     window.addEventListener(type,event=>{
@@ -106,6 +158,7 @@ export function bootReviewFrame(session) {
     else if(m.type==='pins'){pins=Array.isArray(m.payload)?m.payload:[];schedule();}
     else if(m.type==='visible'){shown=m.payload===true;schedule();}
     else if(m.type==='restore'&&m.payload)restore(m.payload);
+    else if(m.type==='restoreWidgetLayout'&&session.version==='current'&&session.screen==='admin-overview'&&session.state==='normal')root.dispatchEvent(new CustomEvent('r3-widget-layout',{detail:m.payload}));
   });
   // Native select popups live outside the DOM. Mirror the real options as a local accessible layer
   // so an open list can receive a pin. Keep the original select for keyboard and form semantics.

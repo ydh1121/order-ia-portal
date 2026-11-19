@@ -1,6 +1,6 @@
 {
   "repository": "ydh1121/order",
-  "commit": "4a459bf5b24ad42b5ef78f90e06bfa502c42d24d",
+  "commit": "fe78efdcfdd110e4c772dbf51bfeb38910228a9e",
   "scope": "Existing exact quote, projections and policy source copied byte-for-byte for private IA server bundling. No public assets.",
   "files": [
     {
@@ -8,12 +8,20 @@
       "sha256": "0eb1e5d0a90c654835d1fdae541572e6c34656254e3eaa1d8e17ed1ef6fea7f4"
     },
     {
+      "path": "calculation/freight-policy.mjs",
+      "sha256": "70d83cbb8a931e19497d20cf6f964b9359814e50a3e4b73d1b79dbc06b80bb65"
+    },
+    {
+      "path": "calculation/price-matrix.mjs",
+      "sha256": "c14d0688bda68ade6e12e640e389b3f48693c9e44374b8b08fdfe2f8ea1f927d"
+    },
+    {
       "path": "calculation/quote.mjs",
-      "sha256": "d0b3d52bf762f9bd74cb66016ac6baea0ee931a0a6083b4adc24c2104267a157"
+      "sha256": "ea328f2e9ab8f25d6eae02a016c29f258e470bb70583ff55e528f69190b6d2a0"
     },
     {
       "path": "calculation/supply-policy.mjs",
-      "sha256": "1744f0e92e84ddbae3215958fa5cb7be2cd663dba8cda48ab8c903b08fb029c5"
+      "sha256": "be76e2e1cf6298616d9acfa6cdcddf45012a1e9e99efea4445028a2e4379a30c"
     },
     {
       "path": "contracts/quote-response.mjs",
@@ -22,6 +30,16 @@
     {
       "path": "contracts/result.mjs",
       "sha256": "ec4f39abe6bdbab7a0b53f7f3af88fc172fbc628cc48b1931a92e76f7f4759ad"
+    },
+    {
+      "path": "browser/quote-result-screen.mjs",
+      "source": "web/quote-result-screen.mjs",
+      "sha256": "bb6a406733fd81a9e4ad4b336c26920dcfc532754270a7a9863ddb2c6e49eeab"
+    },
+    {
+      "path": "browser/magnetic-action.mjs",
+      "source": "web/magnetic-action.mjs",
+      "sha256": "e42db57c16e32db5ddcba68362d1f738634b371f46623d68affbd0afe3e3db77"
     }
   ]
 }

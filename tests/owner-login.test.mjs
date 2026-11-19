@@ -1,3 +1,5 @@
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
 import {test,before} from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto,randomBytes} from 'node:crypto';
@@ -5,9 +7,11 @@ import {ownerConfigured,deriveVerifier,issueSession,handleOwnerAuthRequest} from
 import {handleIaRequest} from '../src/server/router.mjs';
 import {onRequest} from '../functions/ia/[[path]].js';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
+const authSql=new DatabaseSync(':memory:');authSql.exec(readFileSync(new URL('../migrations/0013_owner_session_revocations.sql',import.meta.url),'utf8'));
+const authDb={prepare(sql){return {bind(...values){const stmt=authSql.prepare(sql);return {first:async()=>stmt.get(...values),run:async()=>stmt.run(...values)};}};}};
 const origin='https://order-ia-portal.pages.dev';let env,pass;let requestCount=0;
 const req=(path,opt={})=>new Request(origin+path,{method:opt.method||'GET',headers:{...(opt.origin?{Origin:opt.origin}:{}),...(opt.cookie?{Cookie:opt.cookie}:{}),...(opt.csrf?{'X-IA-CSRF':opt.csrf}:{}),...(opt.body?{'Content-Type':'application/json'}:{}),'CF-Connecting-IP':opt.ip||'198.51.100.'+(++requestCount%240+1)},body:opt.body?JSON.stringify(opt.body):undefined});
-before(async()=>{pass=randomBytes(30).toString('base64url');env={IA_OWNER_EMAIL:'one@sample.invalid',IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(pass),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),IA_GOOGLE_READ_ENABLED:'false'}});
+before(async()=>{pass=randomBytes(30).toString('base64url');env={ORDER_QA_DB:authDb,IA_OWNER_EMAIL:'one@sample.invalid',IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(pass),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),IA_GOOGLE_READ_ENABLED:'false'}});
 const decode=x=>Buffer.from(x,'base64url');
 async function clientProof(password,email,challenge){
  const key=await crypto.subtle.importKey('raw',new TextEncoder().encode(password),'PBKDF2',false,['deriveBits']);
@@ -34,7 +38,7 @@ test('signed challenge and synthetic 310000-round proof issue secure session',as
  const proof=await clientProof(pass,env.IA_OWNER_EMAIL,item);
  const r=await handleOwnerAuthRequest(proofReq(cookie,{email:env.IA_OWNER_EMAIL,nonce:item.nonce,proof}),env);
  assert.equal(r.status,200);
- for(const part of ['Secure','HttpOnly','SameSite=Strict','Max-Age=600'])assert.ok(r.headers.get('Set-Cookie').includes(part));
+ for(const part of ['Secure','HttpOnly','SameSite=Strict','Max-Age=1800'])assert.ok(r.headers.get('Set-Cookie').includes(part));
  assert.match(r.headers.get('Set-Cookie'),/__Host-ia_session=/);
 });
 test('anonymous and forged-cookie API denied',async()=>{assert.equal((await handleIaRequest(req('/api/ia/screens'),env)).status,403);assert.equal((await handleIaRequest(req('/api/ia/screens',{cookie:'__Host-ia_session=forged'}),env)).status,403)});

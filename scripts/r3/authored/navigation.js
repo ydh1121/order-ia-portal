@@ -3,7 +3,7 @@
 const U=w.QAUI,{esc,icon,button,head,states}=U,R=w.ORDER_DESIGN_MODULES;
 const passes=[
   {id:'b17',date:'2026.11.17',site:'샘플베이커리',status:'검토 중',tone:'review',lines:[['특란 30구','1,200판','정기 주문'],['대란 30구','800판','소진 시 주문']]},
-  {id:'c15',date:'2026.11.15',site:'샘플카페',status:'납품 요청',tone:'active',lines:[['대란 30구','400판','소진 시 주문']]},
+  {id:'c15',date:'2026.11.15',site:'샘플카페',status:'출고 확인',tone:'active',canReceive:true,lines:[['대란 30구','400판','소진 시 주문']]},
   {id:'r12',date:'2026.11.12',site:'샘플식당',status:'상담 예약',tone:'booked',lines:[['특란 30구','200판','1회 주문']]},
   {id:'b09',date:'2026.11.09',site:'샘플베이커리',status:'지난 견적',tone:'expired',lines:[['대란 30구','600판','정기 주문']]}
 ];
@@ -13,6 +13,7 @@ const summary=p=>p.lines.map(line=>line[0]).join(' · ');
 const sample='<small class="nav-sample">샘플 오더 패스</small>';
 const expireNotice=()=>'<aside class="expired-reminder" role="status">지난 견적은 가격이 달라질 수 있어요. 새 견적을 확인해 주세요.<button data-action="dismiss-expired">확인했어요</button></aside>';
 function brandDots(){return '<span class="pass-dots" aria-hidden="true"><i></i><i></i><i></i></span>';}
+function roleButton(menu,label){return button(label,'work-'+menu,'text');}
 function badge(p){return '<span class="pass-state tone-'+p.tone+'">'+p.status+'</span>';}
 function passCard(p,index){return `<article class="order-pass nav-ticket tone-${p.tone}" data-pass-id="${p.id}" style="--index:${index}" tabindex="0"><div class="row between"><span class="pass-date">${p.date}</span>${badge(p)}</div><h2>${p.site}</h2><p>${summary(p)}</p><strong class="pass-quantity">${p.lines.length>1?'복합 주문':p.lines[0][1]}</strong><div class="pass-perforation"></div><div class="row between"><span>오더 패스</span><button class="icon-btn" data-action="pass-detail" aria-label="${p.site} ${p.date} 견적 보기">${icon('next',18)}</button></div></article>`;}
 function ticketDetail(p){
@@ -25,11 +26,17 @@ function tag(text){return `<button class="search-tag" data-tag="${esc(text)}" ar
 function quoteRow(p){return `<button class="quote-search-row" data-detail="${p.id}"><span class="row-copy"><strong>${p.site}</strong><small>${summary(p)}</small></span><span class="row-end"><time>${p.date}</time>${icon('next',16)}</span></button>`;}
 function results(terms,none=false){
   const rows=none?[]:passes.filter(p=>matches(p,terms));
-  return `<div class="row between results-label"><h2>${terms.length?'검색 결과':'최근 견적'}</h2><span class="muted small">${rows.length}개</span></div>${rows.map(quoteRow).join('')||'<p class="muted">항목을 찾지 못했어요. 다른 태그를 선택해 주세요.</p>'}`;
+  return `<div class="row between results-label"><h2>${terms.length?'검색 결과':'최근 견적'}</h2><span class="muted small">${rows.length}개</span></div>${rows.map(quoteRow).join('')||'<p class="muted">이 태그를 모두 포함하는 오더 패스가 없어요.</p><button type="button" class="btn text" data-action="clear-tags">태그 지우기</button>'}`;
 }
 function palette(state){
   const terms=state==='results'?['특란']:state==='none'?['샘플카페','특란']:[];
   return `<section class="pass-search"><div class="search-input-wrap"><div class="tag-field"><div class="tag-list">${terms.map(tag).join('')}</div><input role="combobox" aria-label="오더 패스 검색 태그" aria-autocomplete="list" aria-expanded="${state==='suggestions'}" placeholder="${terms.length?'':'견적 검색'}" value="${state==='suggestions'?'특':''}"><button class="icon-btn" data-action="run-search" aria-label="검색 태그 선택">${icon('search',20)}</button></div><div class="tag-suggestions scrollbar-select t-dropdown ${state==='suggestions'?'is-open':''}" role="listbox" aria-label="검색 태그" ${state==='suggestions'?'':'inert'}>${(state==='suggestions'?dictionary.filter(t=>t.includes('특')):dictionary).map(t=>`<button role="option" data-suggestion="${esc(t)}">${esc(t)}</button>`).join('')}</div></div><div class="search-results" aria-live="polite">${results(terms,state==='none')}</div><div data-search-detail hidden></div></section>`;
+}
+function roleLinks(root,signal,api){
+  root.addEventListener('click',event=>{
+    const action=event.target.closest('button')?.dataset.action;
+    if(action?.startsWith('work-'))api.select('role-work',action.slice(5));
+  },{signal});
 }
 function wirePalette(root,signal){
   const input=root.querySelector('.tag-field input'),suggest=root.querySelector('.tag-suggestions');
@@ -41,21 +48,38 @@ function wirePalette(root,signal){
   function options(){return dictionary.filter(t=>!ids().includes(t)&&t.includes(input.value.trim()));}
   function refresh(){input.placeholder=ids().length?'':'견적 검색';result.innerHTML=results(ids());detail.hidden=true;result.hidden=false;}
   function populate(){suggest.innerHTML=options().map(t=>`<button role="option" data-suggestion="${esc(t)}">${esc(t)}</button>`).join('');show(Boolean(options().length));}
-  function add(value){if(!dictionary.includes(value)||ids().includes(value))return;tagList.insertAdjacentHTML('beforeend',tag(value));input.value='';refresh();show(false);input.focus();}
-  input.addEventListener('input',populate,{signal});
+  function add(value){
+    if(!dictionary.includes(value)||ids().includes(value))return;
+    tagList.insertAdjacentHTML('beforeend',tag(value));
+    w.ORDER_CUSTOMER_CONTROLS?.motion(tagList.lastElementChild,[{scale:'.78',opacity:0},{scale:'1.07',offset:.7},{scale:'1',opacity:1}],{duration:180});
+    input.value='';refresh();show(false);input.focus();
+  }
+  function removeTag(chip){
+    const ghost=chip.cloneNode(true),rect=chip.getBoundingClientRect();
+    ghost.removeAttribute('data-tag');ghost.removeAttribute('aria-label');ghost.inert=true;ghost.setAttribute('aria-hidden','true');
+    Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',pointerEvents:'none'});
+    document.body.append(ghost);chip.remove();refresh();input.focus();
+    const fade=w.ORDER_CUSTOMER_CONTROLS?.motion(ghost,[{opacity:1,scale:'1'},{opacity:0,scale:'.7'}],{duration:125});
+    if(fade){fade.onfinish=()=>ghost.remove();fade.oncancel=()=>ghost.remove();}else ghost.remove();
+  }
+  let composing=false;
+  input.addEventListener('compositionstart',()=>{composing=true;show(false);},{signal});
+  input.addEventListener('compositionend',()=>{composing=false;populate();},{signal});
+  input.addEventListener('input',e=>{if(!composing&&!e.isComposing)populate();},{signal});
   root.addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
     if(b.dataset.suggestion)add(b.dataset.suggestion);
-    if(b.dataset.tag){b.remove();refresh();input.focus();}
+    if(b.dataset.tag)removeTag(b);
+    if(b.dataset.action==='clear-tags'){tagList.replaceChildren();input.value='';show(false);refresh();input.focus();}
     if(b.dataset.action==='run-search'){populate();input.focus();}
-    if(b.dataset.detail){const p=passById(b.dataset.detail);if(!p)return;detail.innerHTML=ticketDetail(p)+button('목록으로','back-results','secondary');result.hidden=true;detail.hidden=false;detail.querySelector('button').focus();}
+    if(b.dataset.detail){const p=passById(b.dataset.detail);if(!p)return;detail.innerHTML=ticketDetail(p)+roleButton('quotes','내 사업장의 견적')+button('목록으로','back-results','secondary');result.hidden=true;detail.hidden=false;detail.querySelector('button').focus();}
     if(b.dataset.action==='back-results'){refresh();input.focus();}
   },{signal});
   root.addEventListener('focusout', e=>{if(!e.relatedTarget || !root.querySelector('.search-input-wrap')?.contains(e.relatedTarget))show(false);},{signal});
   root.addEventListener('keydown',e=>{
     if(e.isComposing||e.keyCode===229)return;
     const optionsList=[...suggest.querySelectorAll('button')];
-    if(e.target===input&&e.key==='Backspace'&&!input.value&&ids().length){e.preventDefault();tagList.lastElementChild.remove();refresh();return;}
+    if(e.target===input&&e.key==='Backspace'&&!input.value&&ids().length){e.preventDefault();removeTag(tagList.lastElementChild);return;}
     if(e.target===input&&e.key==='Enter'){e.preventDefault();if(input.value.trim()){const first=options()[0];if(first)add(first);}return;}
     if(e.target===input&&e.key==='ArrowDown'){e.preventDefault();populate();suggest.querySelector('button')?.focus();return;}
     if(suggest.contains(e.target)&&['ArrowDown','ArrowUp'].includes(e.key)&&optionsList.length){e.preventDefault();optionsList[(optionsList.indexOf(e.target)+(e.key==='ArrowDown'?1:-1)+optionsList.length)%optionsList.length].focus();}
@@ -63,15 +87,35 @@ function wirePalette(root,signal){
   },{signal});
 }
 R.push({id:'passes',group:'내 견적·메뉴',label:'오더 패스',description:'사업장과 날짜별 오더 패스·태그 검색',width:'mobile',states:states([['grid','격자 보기'],['deck','카드 넘기기'],['empty','내역 없음'],['loading','불러오는 중'],['expired','만료 포함']]),
-render(s,o={}){return `<div class="page passes-page">${head('내 오더 패스','',o)}${sample}${s==='empty'?`<div class="empty"><div class="nav-ticket empty-ticket">${brandDots()}${button('최저가 알아보기','new-quote')}</div><h2>아직 저장된 견적이 없어요</h2></div>`:s==='loading'?`<div class="pass-skeleton" role="status" aria-label="오더 패스 불러오는 중">${[0,1].map(()=>`<div class="nav-ticket skeleton-ticket">${brandDots()}<i></i><i></i><div class="pass-perforation"></div></div>`).join('')}</div>`:`<details class="collection-search"><summary>${icon('search',18)} 오더 패스 검색</summary>${palette('empty')}</details>${collectionPicker()}<div class="pass-stage ${s==='deck'?'is-deck':''}">${passes.map(passCard).join('')}</div><div class="deck-controls" ${s==='deck'?'':'hidden'}>${button('이전','deck-prev','secondary')}<span class="deck-position" aria-live="polite"></span>${button('다음','deck-next','secondary')}</div><div class="expanded-pass" hidden></div>${expireNotice()}`}</div>`;},
+render(s,o={}){return `<div class="page passes-page">${head('내 오더 패스','',o)}${sample}${s==='empty'?`<div class="empty"><div class="nav-ticket empty-ticket"><span class="empty-ticket-brand">Order. ${brandDots()}</span>${button('최저가 알아보기','new-quote')}</div><h2>아직 저장된 견적이 없어요</h2></div>`:s==='loading'?`<div class="pass-skeleton" role="status" aria-label="오더 패스 불러오는 중">${[0,1].map(()=>`<div class="nav-ticket skeleton-ticket"><div class="skeleton-top">${brandDots()}<i></i></div><i class="skeleton-title"></i><i class="skeleton-summary"></i><div class="pass-perforation"></div><i class="skeleton-foot"></i></div>`).join('')}</div>`:`<details class="collection-search"><summary>${icon('search',18)} 오더 패스 검색</summary>${palette('empty')}</details>${collectionPicker()}<div class="pass-stage ${s==='deck'?'is-deck':''}">${passes.map(passCard).join('')}</div><div class="deck-controls" ${s==='deck'?'':'hidden'}>${button('이전','deck-prev','secondary')}<span class="deck-position" aria-live="polite"></span>${button('다음','deck-next','secondary')}</div><div class="expanded-pass" hidden></div>${expireNotice()}`}</div>`;},
 mount(root,s,api){
-  const controller=new AbortController(),signal=controller.signal,stage=root.querySelector('.pass-stage');wirePalette(root,signal);
-  let view=s==='deck'?'deck':'grid',site='전체',sort='recent',current=0,start=null,didDrag=false,dismissed=false,selected=null;
-  const getRows=()=>passes.filter(p=>site==='전체'||p.site===site).sort((a,b)=>sort==='site'?a.site.localeCompare(b.site,'ko')||b.date.localeCompare(a.date):sort==='old'?a.date.localeCompare(b.date):b.date.localeCompare(a.date));
+  const controller=new AbortController(),signal=controller.signal,stage=root.querySelector('.pass-stage');
+  wirePalette(root,signal);roleLinks(root,signal,api);
+  const received=new Set();
+  let view=s==='deck'?'deck':'grid',site='전체',sort='recent',current=0,dismissed=false,selected=null;
+  function getRows(){
+    return passes.filter(p=>site==='전체'||p.site===site).sort((a,b)=>{
+      const grouped=Number(received.has(a.id))-Number(received.has(b.id));
+      if(grouped)return grouped;
+      if(sort==='site')return a.site.localeCompare(b.site,'ko')||b.date.localeCompare(a.date);
+      return sort==='old'?a.date.localeCompare(b.date):b.date.localeCompare(a.date);
+    });
+  }
   function renderStage(rebuild){
-    if(!stage)return;const rows=getRows();if(rebuild)stage.innerHTML=rows.map(passCard).join('');
+    if(!stage)return;const rows=getRows();
+    if(rebuild){
+      const existing=new Map([...stage.children].map(card=>[card.dataset.passId,card]));
+      rows.forEach((row,i)=>{
+        let card=existing.get(row.id);
+        if(!card){const hold=document.createElement('div');hold.innerHTML=passCard(row,i);card=hold.firstElementChild;}
+        existing.delete(row.id);card.style.setProperty('--index',i);stage.append(card);
+      });
+      existing.forEach(card=>card.remove());
+    }
     stage.classList.toggle('is-deck',view==='deck');let idx=0;
-    for(const card of stage.children){const offset=(idx-current+rows.length)%rows.length;card.style.setProperty('--stack',offset);card.style.zIndex=String(10-offset);card.inert=view==='deck'&&offset>0;idx++;}
+    for(const card of stage.children){const offset=(idx-current+rows.length)%rows.length;card.style.setProperty('--stack',offset);
+      card.style.setProperty('--deck-turn',offset===0?'0deg':(offset%2===1?-2.5:1.7)+'deg');
+      if(received.has(card.dataset.passId)){card.classList.add('ticket-received');card.querySelector('.pass-state').textContent='수령 확인';}card.style.zIndex=String(10-offset);card.inert=view==='deck'&&offset>0;idx++;}
     root.querySelector('.deck-controls').hidden=view!=='deck'||rows.length<2;
     root.querySelector('.deck-position').textContent=(current+1)+' / '+rows.length;
     root.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',String(view===b.dataset.view)));
@@ -79,35 +123,70 @@ mount(root,s,api){
     root.querySelector('.expired-reminder').hidden=dismissed||!rows.some(p=>p.tone==='expired');
   }
   function move(step){const count=getRows().length;current=(current+step+count)%count;renderStage(false);}
-  function open(id){const p=passById(id);if(!p)return;selected=id;const area=root.querySelector('.expanded-pass');area.innerHTML=ticketDetail(p)+button('목록으로','close-ticket','secondary');area.hidden=false;stage.hidden=true;area.querySelector('button').focus();}
+  function open(id){
+    const p=passById(id);if(!p)return;selected=id;
+    const area=root.querySelector('.expanded-pass');
+    const cut=p.canReceive&&!received.has(id)?'<button type="button" data-action="tear-ticket" class="pass-cut">✂ 수령 확인하기<span>옆으로 당겨 절취</span></button>':'';
+    area.innerHTML=ticketDetail(p)+cut+(received.has(id)?'<p role="status">수령 확인한 오더 패스</p>':'')+
+      '<section class="tear-confirm" role="alertdialog" aria-label="납품 수령 확인" hidden><strong>납품이 완료됐나요?</strong><p>수령 확인 후 절취한 패스는 복원할 수 없어요.</p>'+
+      button('취소','cancel-tear','secondary')+button('수령 확인','confirm-tear','primary')+'</section>'+
+      roleButton('quotes','내 사업장의 견적')+roleButton('delivery','납품 상태 확인')+button('목록으로','close-ticket','secondary');
+    area.hidden=false;stage.hidden=true;area.querySelector('button').focus();
+  }
+  function toggleCut(confirming){
+    const area=root.querySelector('.expanded-pass'),dialog=area.querySelector('.tear-confirm');
+    if(!dialog)return;
+    dialog.hidden=!confirming;
+    if(confirming)dialog.querySelector('button').focus();else area.querySelector('[data-action="tear-ticket"]')?.focus();
+  }
+  let cutStart;
+  root.addEventListener('pointerdown',e=>{
+    const cut=e.target.closest('[data-action="tear-ticket"]');if(!cut||!e.isPrimary)return;
+    cutStart={x:e.clientX,y:e.clientY,id:e.pointerId};cut.setPointerCapture(e.pointerId);
+  },{signal});
+  root.addEventListener('pointerup',e=>{
+    if(cutStart?.id===e.pointerId&&Math.abs(e.clientX-cutStart.x)>=48&&Math.abs(e.clientY-cutStart.y)<24)toggleCut(true);
+    cutStart=null;
+  },{signal});
+  root.addEventListener('pointercancel',()=>{cutStart=null;},{signal});
   function close(){const area=root.querySelector('.expanded-pass');area.hidden=true;stage.hidden=false;stage.querySelector('[data-pass-id="'+selected+'"]')?.focus();}
   root.addEventListener('change',e=>{if(e.target.matches('[data-sort]')){sort=e.target.selectedOptions[0]?.dataset.option||'recent';current=0;if(stage.hidden)close();renderStage(true);}},{signal});
   root.addEventListener('click',e=>{
-    const b=e.target.closest('button'),card=e.target.closest('[data-pass-id]');if(card&&!didDrag)open(card.dataset.passId);didDrag=false;
+    const b=e.target.closest('button'),card=e.target.closest('[data-pass-id]');if(card)open(card.dataset.passId);
     if(!b)return;const a=b.dataset.action;if(a==='new-quote')api.select('q1','before');
     if(a==='dismiss-expired'){dismissed=true;renderStage(false);}
     if(a==='close-ticket')close();
-    if(b.dataset.view||b.dataset.site){if(stage.hidden)close();view=b.dataset.view||view;site=b.dataset.site||site;current=0;renderStage(true);}
+    if(a==='tear-ticket')toggleCut(true);
+    if(a==='cancel-tear')toggleCut(false);
+    if(a==='confirm-tear'&&passById(selected)?.canReceive&&!received.has(selected)){
+      received.add(selected);current=0;renderStage(true);close();
+      api.toast?.('샘플 패스를 수령 확인했어요.');
+    }
+    if(b.dataset.view||b.dataset.site){
+      if(stage.hidden)close();view=b.dataset.view||view;
+      if(b.dataset.site){site=b.dataset.site;current=0;}
+      renderStage(Boolean(b.dataset.site));
+    }
     if(a==='deck-prev')move(-1);if(a==='deck-next')move(1);
   },{signal});
-  stage?.addEventListener('pointerdown',e=>{didDrag=false;if(view==='deck'&&!e.target.closest('button'))start=e.clientX;},{signal});
-  stage?.addEventListener('pointerup',e=>{if(start!==null&&Math.abs(e.clientX-start)>40){didDrag=true;move(e.clientX<start?1:-1);}start=null;},{signal});
-  stage?.addEventListener('pointercancel',()=>{start=null;didDrag=false;},{signal});
-  root.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){const details=root.querySelector('.collection-search');if(details){e.preventDefault();details.open=true;details.querySelector('input').focus();}}if(!stage?.contains(e.target))return;if(view==='deck'&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();move(e.key==='ArrowLeft'?-1:1);stage.children[current].focus();}else if(e.key==='Enter'&&e.target.matches('[data-pass-id]')){e.preventDefault();open(e.target.dataset.passId);}},{signal});
+  if(stage)w.ORDER_CUSTOMER_CONTROLS?.swipeDeck(stage,{
+    enabled:()=>view==='deck',top:()=>stage.children[current],step:move,signal
+  });
+  root.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){const details=root.querySelector('.collection-search');if(details){e.preventDefault();details.open=true;details.querySelector('input').focus();}}if(e.key==='Escape'&&root.querySelector('.tear-confirm:not([hidden])')){e.preventDefault();toggleCut(false);return;}if(!stage?.contains(e.target))return;if(view==='deck'&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();move(e.key==='ArrowLeft'?-1:1);stage.children[current].focus();}else if(e.key==='Enter'&&e.target.matches('[data-pass-id]')){e.preventDefault();open(e.target.dataset.passId);}},{signal});
   renderStage(false);return()=>controller.abort();
 }});
-R.push({id:'search',group:'내 견적·메뉴',label:'견적 검색·태그',description:'오더 패스의 태그와 복합 주문 상세',width:'mobile',states:states([['empty','검색 전'],['suggestions','자동 추천'],['results','검색 결과'],['none','검색 없음'],['detail','견적 상세']]),render(s,o={}){return `<div class="page quote-search-page">${head(s==='detail'?'견적 상세':'견적 검색','',o)}${sample}${s==='detail'?ticketDetail(passes[0])+button('목록으로','search-back','secondary'):palette(s)}</div>`;},mount(root,s,api){const c=new AbortController();wirePalette(root,c.signal);root.querySelector('[data-action="search-back"]')?.addEventListener('click',()=>api.select('search','empty'),{signal:c.signal});return()=>c.abort();}});
+R.push({id:'search',group:'내 견적·메뉴',label:'견적 검색·태그',description:'오더 패스의 태그와 복합 주문 상세',width:'mobile',states:states([['empty','검색 전'],['suggestions','자동 추천'],['results','검색 결과'],['none','검색 없음'],['detail','견적 상세']]),render(s,o={}){return `<div class="page quote-search-page">${head(s==='detail'?'견적 상세':'견적 검색','',o)}${sample}${s==='detail'?ticketDetail(passes[0])+button('목록으로','search-back','secondary'):palette(s)}</div>`;},mount(root,s,api){const c=new AbortController();wirePalette(root,c.signal);roleLinks(root,c.signal,api);root.querySelector('[data-action="search-back"]')?.addEventListener('click',()=>api.select('search','empty'),{signal:c.signal});return()=>c.abort();}});
 
 const noticeKinds = ['견적·납품 알림', '시세 변동 알림', '소식', '혜택'];
 const panelNames = {home:'내 계정',business:'사업자 정보',people:'구성원과 권한',switch:'계정 전환',alerts:'알림'};
-function accountPanel(name,s,settings){
+function accountPanel(name,s,settings,profile={site:'샘플베이커리',industry:'제과점',members:[{email:'내 계정',role:'매장 관리자'}]}){
   const top=name==='home'?'<h2>내 계정</h2>':button('뒤로','panel-home','text')+'<h2>'+panelNames[name]+'</h2>';
   const row=(key,title)=>button(title+icon('next',16),'panel-'+key,'menu-line');
-  if(name==='home')return top+'<p>샘플베이커리 · 매장 관리자</p>'+row('alerts','알림')+row('business','사업자 정보')+row('people','구성원과 권한')+row('switch','계정 전환');
-  if(name==='alerts')return top+'<p role="status">'+(s==='notification'?'매장에 새 견적이 도착했어요.':'새로운 알림이 없어요.')+'</p><h3>'+icon('bell',18)+' 알림 받기</h3>'+noticeKinds.map((title,i)=>'<button class="menu-line" role="switch" data-action="notice-'+i+'" aria-checked="'+settings[i]+'">'+title+'<span aria-hidden="true">'+(settings[i]?'켬':'끔')+'</span></button>').join('');
-  if(name==='switch')return top+'<p>샘플베이커리 · 매장 관리자</p>'+button('사업장 선택','choose-site','secondary');
-  if(name==='people')return top+'<p>샘플베이커리 · 관리자 1명</p>';
-  return top+'<p>샘플베이커리</p>'+button('사업자 정보 확인','view-business','secondary');
+  if(name==='home')return top+'<p>'+esc(profile.site)+' · 매장 관리자</p>'+row('alerts','알림')+row('business','사업자 정보')+row('people','구성원과 권한')+row('switch','계정 전환')+roleButton('quotes','내 견적·오더 패스');
+  if(name==='alerts')return top+roleButton('activity','내 업무 알림 열기')+'<p role="status">'+(s==='notification'?'매장에 새 견적이 도착했어요.':'새로운 알림이 없어요.')+'</p>'+(s==='notification'?button('읽음으로 표시','read-notice','text'):'')+'<h3>'+icon('bell',18)+' 알림 받기</h3>'+noticeKinds.map((title,i)=>'<button class="menu-line" role="switch" data-action="notice-'+i+'" aria-checked="'+settings[i]+'">'+title+'<span aria-hidden="true">'+(settings[i]?'켬':'끔')+'</span></button>').join('');
+  if(name==='switch')return top+'<label>검수용 사업장<select name="profile-site">'+sites.map(site=>'<option'+(profile.site===site?' selected':'')+'>'+esc(site)+'</option>').join('')+'</select></label>'+button('사업장 선택','choose-site','secondary');
+  if(name==='people')return top+'<small>검수용 구성원</small><ul>'+profile.members.map((m,i)=>'<li>'+esc(m.email)+' · '+esc(m.role)+(i?button('권한 변경','member-role-'+i,'text'):'')+'</li>').join('')+'</ul><label>초대할 이메일<input type="email" name="profile-email" required></label><label>권한<select name="profile-role"><option>구성원</option><option>매장 관리자</option></select></label>'+button('검수용 구성원 추가','add-member','secondary')+'<p role="status"></p>';
+  return top+'<small>검수용 사업자 정보</small><label>상호<input name="profile-name" required maxlength="100" value="'+esc(profile.site)+'"></label><label>업태<input name="profile-industry" required maxlength="100" value="'+esc(profile.industry)+'"></label>'+button('변경 내용 저장','save-business','secondary')+'<p role="status"></p>';
 }
 R.push({
   id:'profile',group:'내 견적·메뉴',label:'프로필·알림 설정',description:'계정 패널과 알림 수신 설정',width:'mobile',
@@ -118,21 +197,107 @@ R.push({
   },
   mount(root,s,api){
     const controller=new AbortController(),trigger=root.querySelector('.account-trigger'),panel=root.querySelector('.account-panel');
-    const settings=[true,false,false,false];
-    function close(){panel.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();}
+    roleLinks(root,controller.signal,api);const settings=[true,false,false,false];
+    const profile={site:'샘플베이커리',industry:'제과점',members:[{email:'내 계정',role:'매장 관리자'}]};
+    let activeKey='',fixtureEnvelope,unread=null;
+    function reflectUnread(){
+      const read=panel.querySelector('[data-action=read-notice]');if(!read||unread===null)return;
+      read.hidden=unread===0;if(unread===0)panel.querySelector('[role=status]').textContent='모두 읽었어요.';
+    }
+    window.addEventListener('message',e=>{
+      const m=e.data;if(e.source!==parent||m?.scope!=='ORDER_R3_HOST'||m.type!=='noticeCountFixture'||!Number.isInteger(m.payload)||m.payload<0||m.payload>99)return;
+      unread=m.payload;fixtureEnvelope={channel:m.channel,artifact:m.artifact};reflectUnread();
+    },{signal:controller.signal});
+    function show(key,message){
+      const direction=!activeKey||activeKey===key?0:key==='home'?-1:1;
+      const markup=accountPanel(key,s,settings,profile);
+      const page=w.ORDER_CUSTOMER_CONTROLS?.slidePanel(panel,el=>{el.innerHTML=markup;},direction);
+      if(!page)panel.innerHTML=markup;
+      const target=page||panel;activeKey=key;reflectUnread();
+      if(message&&target.querySelector('[role=status]'))target.querySelector('[role=status]').textContent=message;
+      const heading=target.querySelector('h2');heading.tabIndex=-1;heading.focus();
+    }
+    let start;
+    panel.addEventListener('pointerdown',e=>{if(activeKey&&activeKey!=='home'&&!e.target.closest('input,button,select,textarea'))start={x:e.clientX,y:e.clientY,id:e.pointerId};},{signal:controller.signal});
+    panel.addEventListener('pointerup',e=>{if(start?.id===e.pointerId&&e.clientX-start.x>65&&Math.abs(e.clientY-start.y)<30)show('home');start=null;},{signal:controller.signal});
+    panel.addEventListener('pointercancel',()=>{start=null;},{signal:controller.signal});
+    function close(){activeKey='';panel.hidden=true;trigger.setAttribute('aria-expanded','false');trigger.focus();}
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]');if(!btn)return;
       const action=btn.dataset.action;
-      if(action==='account-menu'){if(!panel.hidden){close();return;} panel.hidden=false;trigger.setAttribute('aria-expanded','true');panel.innerHTML=accountPanel('home',s,settings);panel.querySelector('button').focus();}
-      if(action.startsWith('panel-')){const key=action.slice(6);if(!Object.hasOwn(panelNames,key))return;panel.innerHTML=accountPanel(key,s,settings);panel.querySelector('button')?.focus();}
+      if(action==='read-notice'&&fixtureEnvelope)parent.postMessage({scope:'ORDER_R3_FRAME',...fixtureEnvelope,type:'readNoticeFixture'},'*');
+      if(action==='account-menu'){if(!panel.hidden){close();return;} panel.hidden=false;trigger.setAttribute('aria-expanded','true');show('home');}
+      if(action.startsWith('panel-')){const key=action.slice(6);if(!Object.hasOwn(panelNames,key))return;show(key);}
       if(action.startsWith('notice-')){const i=Number(action.slice(7));if(!Number.isInteger(i)||i<0||i>=settings.length)return;settings[i]=!settings[i];btn.setAttribute('aria-checked',String(settings[i]));btn.lastElementChild.textContent=settings[i]?'켬':'끔';}
-      if(action==='choose-site')api.select('q3','closed');
-      if(action==='view-business')api.select('business','filled');
+      if(action==='choose-site'){profile.site=panel.querySelector('[name=profile-site]').value;show('home');}
+      if(action==='save-business'){
+        const pane=btn.closest('.customer-panel-page')||panel,name=pane.querySelector('[name=profile-name]'),industry=pane.querySelector('[name=profile-industry]');
+        if(!name.value.trim()||!industry.value.trim()){(!name.value.trim()?name:industry).focus();return;}
+        profile.site=name.value.trim();profile.industry=industry.value.trim();show('business','검수용 사업자 정보를 변경했어요.');
+      }
+      if(action==='add-member'){
+        const email=panel.querySelector('[name=profile-email]');if(!email.reportValidity())return;
+        const value=email.value.trim().toLowerCase();
+        if(profile.members.some(m=>m.email===value)){panel.querySelector('[role=status]').textContent='이미 있는 구성원이에요.';return;}
+        profile.members.push({email:value,role:panel.querySelector('[name=profile-role]').value});show('people','검수용 구성원을 추가했어요.');
+      }
+      if(action.startsWith('member-role-')){const member=profile.members[Number(action.slice('member-role-'.length))];if(member){member.role=member.role==='구성원'?'매장 관리자':'구성원';show('people','검수용 권한을 변경했어요.');}}
     },{signal:controller.signal});
     root.addEventListener('keydown',e=>{if(e.key==='Escape'&&!panel.hidden){e.preventDefault();close();}},{signal:controller.signal});
     return ()=>controller.abort();
   }
 });
 
-R.push({id:'drawer',group:'공통 컴포넌트',label:'하단 패널·휠 선택',description:'정보 패널과 기능 패널의 높이, 드래그 닫기, 날짜·시간 휠을 확인합니다.',width:'mobile',states:states([['closed','닫힘'],['info','안내 패널'],['booking','상담 예약'],['wheel','시간 선택'],['saving','처리 중'],['done','완료 예시']]),render(s,o={}){return `<div class="drawer-scene"><div class="page">${head('납품 상담','',o)}${sample}<div class="consult-tickets">${passes.filter(p=>p.tone!=='expired').map(p=>'<label><input type=\"checkbox\" name=\"consult-pass\" data-id=\"'+p.id+'\"><span><strong>'+p.site+'</strong><small>'+summary(p)+'</small></span></label>').join('')}</div><div class="bottom-actions">${button('상담 예약','open-drawer')}</div></div><div class="drawer-dim ${s==='closed'?'is-closed':''}" data-action="close-drawer"></div><section class="functional-drawer t-panel-slide" data-open="${s!=='closed'}" ${s==='closed'?'inert':''} role="dialog" aria-label="상담 예약 패널"><button class="drawer-handle" data-action="close-drawer" aria-label="패널 닫기"><i></i></button><button class="icon-btn drawer-close" data-action="close-drawer" aria-label="닫기">${icon('close')}</button>${s==='info'?`<h1>어떤 상담을 받을까요?</h1><p class="muted">원하는 상담 항목을 골라 주세요.</p><fieldset class="consult-topics"><legend>상담 항목</legend>${['납품 일정','수량','가격 조건'].map(t=>'<label><input type="checkbox" name="topic"> '+t+'</label>').join('')}</fieldset><label class="consult-memo">요청 사항<textarea rows="3" maxlength="300"></textarea></label>${button('시간 선택하기','show-wheel','primary wide')}`:s==='done'?`<div class="empty"><div class="success-mark">${icon('check')}</div><h2>상담을 예약했어요</h2><p>예약시간 확정 후 담당자가 연락드릴 예정이에요.</p></div>`:`<h1>편한 시간을 알려주세요</h1><div class="booking-day"><span class="small muted">선택한 날짜</span><strong>2026년 11월 19일 목요일</strong></div><div class="wheel-picker" aria-label="상담 시간 선택"><div class="wheel-highlight"></div><div class="wheel-column" role="listbox" aria-label="시"><div class="wheel-spacer"></div>${[10,11,12,13,14,15,16,17,18].map(n=>`<button role="option" aria-selected="${n===11}" data-hour="${n}" class="${n===11?'selected':''}">${String(n).padStart(2,'0')}시</button>`).join('')}<div class="wheel-spacer"></div></div><div class="wheel-column" role="listbox" aria-label="분"><div class="wheel-spacer"></div>${[0,10,20,30,40,50].map(n=>`<button role="option" aria-selected="${n===0}" data-minute="${n}" class="${n===0?'selected':''}">${String(n).padStart(2,'0')}분</button>`).join('')}<div class="wheel-spacer"></div></div></div><div class="sr-only selected-time" aria-live="polite">오전 11시 00분</div>${button(s==='saving'?'<span class="spinner" role="status" aria-label="예약 요청 중"></span>':'예약 요청','request-booking','primary wide',s==='saving'?'disabled':'')}`}</section></div>`;},mount(root,s,api){const c=new AbortController();let hour=11,minute=0,start=null;const sheet=root.querySelector('.functional-drawer'),handle=root.querySelector('.drawer-handle');const label=()=>{const buttons=root.querySelectorAll('[data-minute]');for(const b of buttons){b.disabled=hour===18&&Number(b.dataset.minute)>0;}if(hour===18&&minute!==0){minute=0;const first=root.querySelector('[data-minute="0"]');for(const b of buttons){b.classList.toggle('selected',b===first);b.setAttribute('aria-selected',String(b===first));}if(first)first.closest('.wheel-column').scrollTop=first.offsetTop-first.closest('.wheel-column').offsetTop-68;}root.querySelector('.selected-time').textContent=`${hour<12?'오전':'오후'} ${hour%12||12}시 ${String(minute).padStart(2,'0')}분`;};root.querySelectorAll('.wheel-column').forEach(col=>{const selected=col.querySelector('.selected');if(selected)col.scrollTop=selected.offsetTop-col.offsetTop-68;let timer;col.addEventListener('scroll',()=>{clearTimeout(timer);timer=setTimeout(()=>{const items=[...col.querySelectorAll('button:not(:disabled)')];const nearest=items.reduce((a,b)=>Math.abs(a.offsetTop-col.offsetTop-col.scrollTop-68)<Math.abs(b.offsetTop-col.offsetTop-col.scrollTop-68)?a:b);items.forEach(b=>{b.classList.toggle('selected',b===nearest);b.setAttribute('aria-selected',String(b===nearest));});if(nearest.dataset.hour!==undefined)hour=+nearest.dataset.hour;else minute=+nearest.dataset.minute;label();},90);},{signal:c.signal});c.signal.addEventListener('abort',()=>clearTimeout(timer));});root.addEventListener('click',e=>{const b=e.target.closest('[data-action],.wheel-column button');if(!b)return;const a=b.dataset.action;if(a==='open-drawer')api.select('drawer','info');if(a==='show-wheel')api.select('drawer','booking');if(a==='close-drawer')api.select('drawer','closed');if(a==='request-booking')api.demoSuccess(b,()=>api.select('drawer','done'));if(b.closest('.wheel-column')){const col=b.closest('.wheel-column');col.scrollTo({top:b.offsetTop-col.offsetTop-68,behavior:api.reduced?.()?'auto':'smooth'});}},{signal:c.signal});handle?.addEventListener('pointerdown',e=>{start=e.clientY;handle.setPointerCapture(e.pointerId);},{signal:c.signal});handle?.addEventListener('pointerup',e=>{if(start!==null&&e.clientY-start>45)api.select('drawer','closed');start=null;},{signal:c.signal});root.addEventListener('keydown',e=>{if(e.key==='Escape'&&s!=='closed')api.select('drawer','closed');},{signal:c.signal});return()=>c.abort();}});
+// This transient sample follows a reviewer through separate, sandboxed product frames.
+function consultationSelection(root,state,signal){
+  let channel,artifact;
+  const current={passes:[],topics:[],memo:'',date:'',time:''};
+  const publish=()=>{if(channel)parent.postMessage({scope:'ORDER_R3_FRAME',channel,artifact,type:'setConsultationFixture',payload:current},'*');};
+  function summarize(){
+    const el=root.querySelector('.consult-summary');if(!el)return;
+    const labels=current.passes.map(passById).filter(Boolean).map(p=>p.site);
+    const parts=[...labels,...current.topics,current.memo,current.date,current.time].filter(Boolean);
+    el.textContent=parts.join(' · ');el.hidden=!parts.length;
+  }
+  function hydrate(data){
+    Object.assign(current,data);
+    for(const v of root.querySelectorAll('[name="consult-pass"]'))v.checked=current.passes.includes(v.dataset.id);
+    for(const v of root.querySelectorAll('[name="topic"]'))v.checked=current.topics.includes(v.parentElement.textContent.trim());
+    const memo=root.querySelector('.consult-memo textarea');if(memo)memo.value=current.memo;
+    const date=root.querySelector('[data-action="choose-consult-date"] strong');if(date&&current.date)date.textContent=current.date;
+    summarize();
+  }
+  addEventListener('message',e=>{
+    const m=e.data;
+    if(e.source!==parent||m?.scope!=='ORDER_R3_HOST'||m.type!=='consultationFixture')return;
+    channel=m.channel;artifact=m.artifact;hydrate(m.payload);root.dataset.consultReady='true';
+  },{signal});
+  root.addEventListener('change',e=>{
+    if(e.target.name==='consult-pass')current.passes=[...root.querySelectorAll('[name="consult-pass"]:checked')].map(x=>x.dataset.id);
+    else if(e.target.name==='topic')current.topics=[...root.querySelectorAll('[name="topic"]:checked')].map(x=>x.parentElement.textContent.trim());
+    else return;
+    summarize();publish();
+  },{signal});
+  root.addEventListener('input',e=>{
+    if(!e.target.matches('.consult-memo textarea'))return;
+    current.memo=e.target.value;summarize();publish();
+  },{signal});
+  root.addEventListener('click',e=>{
+    const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.day){current.date=b.dataset.day;publish();}
+    if(b.dataset.action==='request-booking'){
+      const hour=root.querySelector('[data-hour][aria-selected="true"]')?.textContent;
+      const minute=root.querySelector('[data-minute][aria-selected="true"]')?.textContent;
+      current.time=[hour,minute].filter(Boolean).join(' ');publish();
+    }
+    if(state==='closed'&&b.dataset.action==='open-drawer'&&!current.passes.length){
+      e.stopImmediatePropagation();
+      root.querySelector('[name="consult-pass"]')?.focus();
+      root.querySelector('.consult-selection-message').textContent='상담할 오더 패스를 선택해 주세요.';
+    }
+  },{capture:true,signal});
+}
+R.push({id:'drawer',group:'공통 컴포넌트',label:'하단 패널·휠 선택',description:'정보 패널과 기능 패널의 높이, 드래그 닫기, 날짜·시간 휠을 확인합니다.',width:'mobile',states:states([['closed','닫힘'],['info','안내 패널'],['booking','상담 예약'],['wheel','시간 선택'],['saving','처리 중'],['done','완료 예시']]),render(s,o={}){return `<div class="drawer-scene"><div class="page">${head('납품 상담','',o)}${sample}<div class="consult-tickets">${passes.filter(p=>p.tone!=='expired').map(p=>'<article class="consult-ticket"><label><input type="checkbox" name="consult-pass" data-id="'+p.id+'"><span><strong>'+p.site+'</strong><small>'+summary(p)+' · '+(p.lines.length>1?'복합 주문':p.lines[0][2])+'</small></span></label><button type="button" class="btn text" aria-expanded="false" data-action="consult-ticket-detail">패스 상세</button><div class="consult-ticket-detail" hidden>'+ticketDetail(p)+'</div></article>').join('')}</div><div class="bottom-actions"><p class="consult-selection-message" role="status"></p>${button('상담 예약','open-drawer')}${roleButton('consult','내 상담 내역')}</div></div><div class="drawer-dim ${s==='closed'?'is-closed':''}" data-action="close-drawer"></div><section class="functional-drawer t-panel-slide" data-open="${s!=='closed'}" ${s==='closed'?'inert':''} role="dialog" aria-label="상담 예약 패널"><button class="drawer-handle" data-action="close-drawer" aria-label="패널 닫기"><i></i></button><button class="icon-btn drawer-close" data-action="close-drawer" aria-label="닫기">${icon('close')}</button><p class="consult-summary" hidden></p>${s==='info'?`<h1>어떤 상담을 받을까요?</h1><p class="muted">원하는 상담 항목을 골라 주세요.</p><fieldset class="consult-topics"><legend>상담 항목</legend>${['납품 일정','수량','가격 조건'].map(t=>'<label><input type="checkbox" name="topic"> '+t+'</label>').join('')}</fieldset><label class="consult-memo">요청 사항<textarea rows="3" maxlength="300"></textarea></label>${button('시간 선택하기','show-wheel','primary wide')}`:s==='done'?`<div class="empty"><div class="success-mark">${icon('check')}</div><h2>상담을 예약했어요</h2><p>샘플 화면이에요. 실제 상담은 내 상담 내역에서 요청할 수 있어요.</p></div>`:`<h1>편한 시간을 알려주세요</h1><div class="booking-day"><span class="small muted">선택한 날짜</span><strong>2026년 11월 19일 목요일</strong></div><div class="wheel-picker" aria-label="상담 시간 선택"><div class="wheel-highlight"></div><div class="wheel-column" role="listbox" aria-label="시"><div class="wheel-spacer"></div>${[10,11,12,13,14,15,16,17,18].map(n=>`<button role="option" aria-selected="${n===11}" data-hour="${n}" class="${n===11?'selected':''}">${String(n).padStart(2,'0')}시</button>`).join('')}<div class="wheel-spacer"></div></div><div class="wheel-column" role="listbox" aria-label="분"><div class="wheel-spacer"></div>${[0,10,20,30,40,50].map(n=>`<button role="option" aria-selected="${n===0}" data-minute="${n}" class="${n===0?'selected':''}">${String(n).padStart(2,'0')}분</button>`).join('')}<div class="wheel-spacer"></div></div></div><div class="sr-only selected-time" aria-live="polite">오전 11시 00분</div>${button(s==='saving'?'<span class="spinner" role="status" aria-label="예약 요청 중"></span>':'예약 요청','request-booking','primary wide',s==='saving'?'disabled':'')}`}</section></div>`;},mount(root,s,api){const c=new AbortController();roleLinks(root,c.signal,api);consultationSelection(root,s,c.signal);let hour=11,minute=0,start=null;const sheet=root.querySelector('.functional-drawer'),handle=root.querySelector('.drawer-handle');const label=()=>{const buttons=root.querySelectorAll('[data-minute]');for(const b of buttons){b.disabled=hour===18&&Number(b.dataset.minute)>0;}if(hour===18&&minute!==0){minute=0;const first=root.querySelector('[data-minute="0"]');for(const b of buttons){b.classList.toggle('selected',b===first);b.setAttribute('aria-selected',String(b===first));}if(first)first.closest('.wheel-column').scrollTop=first.offsetTop-first.closest('.wheel-column').offsetTop-68;}root.querySelector('.selected-time').textContent=`${hour<12?'오전':'오후'} ${hour%12||12}시 ${String(minute).padStart(2,'0')}분`;};root.querySelectorAll('.wheel-column').forEach(col=>{const selected=col.querySelector('.selected');if(selected)col.scrollTop=selected.offsetTop-col.offsetTop-68;let timer;col.addEventListener('scroll',()=>{clearTimeout(timer);timer=setTimeout(()=>{const items=[...col.querySelectorAll('button:not(:disabled)')];const nearest=items.reduce((a,b)=>Math.abs(a.offsetTop-col.offsetTop-col.scrollTop-68)<Math.abs(b.offsetTop-col.offsetTop-col.scrollTop-68)?a:b);items.forEach(b=>{b.classList.toggle('selected',b===nearest);b.setAttribute('aria-selected',String(b===nearest));});if(nearest.dataset.hour!==undefined)hour=+nearest.dataset.hour;else minute=+nearest.dataset.minute;label();},90);},{signal:c.signal});c.signal.addEventListener('abort',()=>clearTimeout(timer));});root.addEventListener('click',e=>{const b=e.target.closest('[data-action],.wheel-column button');if(!b)return;const a=b.dataset.action;
+if(a==='consult-ticket-detail'){const line=b.closest('.consult-ticket');const detail=line.querySelector('.consult-ticket-detail');detail.hidden=!detail.hidden;b.setAttribute('aria-expanded',String(!detail.hidden));}
+if(a==='open-drawer')api.select('drawer','info');if(a==='show-wheel')api.select('drawer','booking');if(a==='close-drawer')api.select('drawer','closed');if(a==='request-booking')api.demoSuccess(b,()=>api.select('drawer','done'));if(b.closest('.wheel-column')){const col=b.closest('.wheel-column');col.scrollTo({top:b.offsetTop-col.offsetTop-68,behavior:api.reduced?.()?'auto':'smooth'});}},{signal:c.signal});handle?.addEventListener('pointerdown',e=>{start=e.clientY;handle.setPointerCapture(e.pointerId);},{signal:c.signal});handle?.addEventListener('pointerup',e=>{if(start!==null&&e.clientY-start>45)api.select('drawer','closed');start=null;},{signal:c.signal});root.addEventListener('keydown',e=>{if(e.key==='Escape'&&s!=='closed')api.select('drawer','closed');},{signal:c.signal});return()=>c.abort();}});
 })(window);

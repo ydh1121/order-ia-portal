@@ -1,3 +1,6 @@
+import {mountAsyncMotion,asyncMotionCss} from './r3-async-motion.mjs';
+import {createCustomerControls} from './r3-customer-controls.mjs';
+import {runRolePage} from './r3-role-client.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {practiceCatalog,startRolePractice} from './r3-role-practice.mjs';
 import {createEvidenceEditor} from './r3-evidence-client.mjs';
@@ -8,48 +11,45 @@ const labels={
   RECALCULATION_REQUESTED:'재산정 요청',REQUESTED:'납품 요청',ACCEPTED:'요청 수락',PAYMENT_REVIEW:'입금 검토 요청',PAYMENT_REVIEWED:'입금 검토 완료',SCHEDULED:'일정 확인',DISPATCHED:'출고 확인',ISSUE_REVIEW:'이상 접수',RECEIVED:'수령 확인',DOCUMENT_REVIEWED:'거래 문서 검토 완료',SETTLEMENT_REVIEW:'정산 검토 대기',SETTLEMENT_REVIEWED:'정산 검토 완료',CANCELLED:'취소',
   submit:'검토 요청',manual:'조회 장애 · 수동 심사',attach:'증빙 연결',supplement:'보완 요청',verify:'사업장 확인',reject:'반려',revoke:'인증 취소',approve:'승인',respond:'답변 처리',followup:'추가 문의',resolve:'종료',
   'request-price':'가격 재산정 요청',accept:'요청 수락','payment-request':'입금 검토 요청','payment-review':'입금 검토 확인',schedule:'일정 확인',dispatch:'출고 확인','report-issue':'이상 접수',reschedule:'일정 재조정',receive:'수령 확인','document-review':'거래 문서 검토','settlement-review':'정산 검토 요청',settle:'정산 검토 확인',cancel:'취소',resume:'이어서 작성',create:'새 업무',
+  'link-requote':'다시 발급한 견적 연결',QUOTE_UPDATED:'새 견적 연결 완료',
   MISSING_EVIDENCE:'증빙 보완',SCOPE_MISMATCH:'소속 확인',INVALID_DETAILS:'입력 정보 확인',DELIVERY_EXCEPTION:'납품 이상',REVIEW_DECISION:'검토 결과',
 };
-function runRolePage(labels,createEvidenceEditor){
-  const $=id=>document.getElementById(id),name=k=>labels[k]||k;
-  const roleUrl='/api/ia/r3-role',elements={list:$('list'),detail:$('detail'),create:$('create'),status:$('status')};
-  const elm=(tag,text)=>{const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el;};
-  const button=(text,action)=>{const b=elm('button',text);b.type='button';b.addEventListener('click',action);return b;};
-  const option=(s,value,label)=>{const o=elm('option',label);o.value=value;s.append(o);};
-  let disposeEvidence=()=>{};let grants=[],pending=null,csrf='',next='',activeId='',loading=false,generation=0;
-  const messages={NO_BUSINESS_MEMBERSHIP:'이 계정에 연결된 업무 권한이 없습니다.',ACCESS_DENIED:'이 업무에 접근할 수 없습니다.',CSRF_DENIED:'로그인을 다시 확인해 주세요.',NOT_FOUND:'업무를 열 수 없습니다.',QUOTE_UNAVAILABLE:'유효한 견적을 선택해 주세요.',REVISION_CONFLICT:'다른 사용자가 먼저 변경했습니다.',REVISION_OR_CONDITION_CHANGED:'검토 조건이 바뀌었습니다. 현재 상태를 확인해 주세요.',ACTION_NOT_ALLOWED:'현재 상태에서 처리할 수 없습니다.',CASE_EXISTS_OR_CHANGED:'이미 진행 중인 신청이 있습니다.'};
-  async function api(url,options={}){const r=await fetch(url,{credentials:'same-origin',cache:'no-store',...options});const result=await r.json();if(!r.ok)throw Object.assign(new Error(result.error||'UNAVAILABLE'),{status:r.status});return result;}
-  const show=(message)=>{elements.status.replaceChildren(document.createTextNode(message));};
-  function error(e){show(messages[e.message]||'업무를 불러오지 못했습니다. 다시 시도해 주세요.');}
-  function field(form,title,key,choices){const label=elm('label',title);const input=elm(choices?'select':'input');input.name=key;input.required=true;
-    if(choices)for(const [val,text] of choices)option(input,val,text);else input.maxLength=128;label.append(input);form.append(label);return input;}
-  async function save(data){
-    if(loading)return;loading=true;const request=pending&&JSON.stringify(pending.data)===JSON.stringify(data)?pending:{data,key:crypto.randomUUID()};pending=request;
-    try{const result=await api(roleUrl,{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify({...data,requestKey:request.key})});pending=null;await load();await detail(result.case.id);show('저장했습니다.');}
-    catch(e){error(e);if(e.status===409 && data.action!=='create')elements.status.append(button('최신 상태 보기',()=>detail(data.caseId)));}
-    finally{loading=false;}
-  }
-  function buildCreate(){const f=elements.create;f.replaceChildren();const creators=grants.filter(g=>g.role!=='OPERATOR');if(!creators.length){f.hidden=true;return;} f.hidden=false;
-    const scope=field(f,'업무 범위','scope',creators.map((g,i)=>[String(i),`${name(g.role)} · ${g.org_id}${g.site_id?' / '+g.site_id:''}`]));const rest=elm('div');f.append(rest);let caseId=crypto.randomUUID();
-    function populate(){rest.replaceChildren();const g=creators[+scope.value];const kinds=g.role==='SUPPLIER'?['supply','catalog']:['business','consult','reprice','delivery'];const kind=field(rest,'업무','kind',kinds.map(k=>[k,name(k)])); const extras=elm('div');rest.append(extras);
-      function extra(){extras.replaceChildren();if(['delivery','reprice'].includes(kind.value))field(extras,'발급된 견적 ID','quoteId');if(kind.value==='catalog')field(extras,'상품 ID','productId');caseId=crypto.randomUUID();}kind.onchange=extra;extra();}
-    scope.onchange=populate;populate();const submit=elm('button','작성 시작');f.append(submit);f.onsubmit=e=>{e.preventDefault();const g=creators[+scope.value],v=new FormData(f),data={action:'create',caseId,expectedRevision:0,kind:v.get('kind'),orgId:g.org_id};if(g.site_id)data.siteId=g.site_id;for(const k of ['quoteId','productId'])if(v.has(k))data[k]=String(v.get(k)).trim();save(data);};
-  }
-  function rows(cases){for(const c of cases){const li=elm('li');const b=button(`${name(c.kind)} · ${name(c.state)}`,()=>detail(c.id));b.dataset.anchor='case-'+c.id;li.append(b,elm('small',`${c.org_id}${c.site_id?' / '+c.site_id:''} · ${c.id}`));elements.list.append(li);}}
-  async function load(append=false){const token=++generation; try{const reply=await api(roleUrl+(append&&next?'?after='+encodeURIComponent(next):''));if(token!==generation)return;
-    grants=reply.grants;next=reply.next;if(!append){elements.list.replaceChildren();buildCreate();}rows(reply.cases);if(!elements.list.childElementCount)elements.list.append(elm('li','진행 중인 업무가 없습니다.'));$('more').hidden=!next;
-  }catch(e){elements.list.replaceChildren();elements.detail.replaceChildren();elements.create.hidden=true;error(e);}}
-  async function detail(caseId){disposeEvidence();activeId=caseId;try{const reply=await api(roleUrl+'?id='+encodeURIComponent(caseId));if(activeId!==caseId)return;const c=reply.case,el=elements.detail;el.replaceChildren();el.append(elm('h2',`${name(c.kind)} · ${name(c.state)}`));
-    const dl=elm('dl');for(const [k,n] of Object.entries({id:'업무',org_id:'소속',site_id:'사업장',quote_id:'견적',order_id:'주문',delivery_id:'납품',document_id:'문서',settlement_id:'정산'}))if(c[k])dl.append(elm('dt',n),elm('dd',c[k]));el.append(dl);
-    const history=elm('details');history.append(elm('summary','처리 이력'));const lines=elm('ol');for(const e of reply.events)lines.append(elm('li',`${e.revision}. ${name(e.action)} · ${name(e.next_state)}${e.reason_code?' · '+name(e.reason_code):''}`));history.append(lines);el.append(history);
-    if(c.evidenceId||c.actions.includes('attach')){const editor=elm('div');el.append(editor);disposeEvidence=createEvidenceEditor({container:editor,caseId:c.id,kind:c.kind,csrf,evidenceId:c.evidenceId,readOnly:!c.actions.includes('attach'),onError:show,onReceipt:evidenceId=>save({caseId:c.id,action:'attach',expectedRevision:c.revision,evidenceId})});}
-    if(c.actions.length){const f=elm('form'),act=field(f,'다음 처리','action',c.actions.map(a=>[a,name(a)])),extra=elm('div');f.append(extra);function inputs(){extra.replaceChildren();if(act.value==='attach')field(extra,'검사 완료 증빙 ID','evidenceId');if(['supplement','reject','revoke','report-issue'].includes(act.value))field(extra,'사유','reason',['MISSING_EVIDENCE','SCOPE_MISMATCH','INVALID_DETAILS','DELIVERY_EXCEPTION','REVIEW_DECISION'].map(r=>[r,name(r)]));}act.onchange=inputs;inputs();f.append(elm('button','선택한 처리 확인'));f.onsubmit=e=>{e.preventDefault();const d=Object.fromEntries(new FormData(f));save({...d,caseId:c.id,expectedRevision:c.revision});};el.append(f);}
-  }catch(e){elements.detail.replaceChildren();error(e);}}
-  $('more').onclick=()=>load(true);$('refresh').onclick=()=>load();
-  window.addEventListener('pageshow',async()=>{elements.list.replaceChildren();elements.detail.replaceChildren();elements.create.hidden=true;try{csrf=(await api('/api/ia/auth/me')).csrf||'';await load();}catch(e){error(e);}});
-  window.addEventListener('pagehide',()=>{disposeEvidence();generation++;activeId='';csrf='';pending=null;elements.list.replaceChildren();elements.detail.replaceChildren();elements.create.hidden=true;});
-}
 export function renderR3RolePage(nonce){
   if(!/^[a-f0-9]{16,128}$/i.test(nonce))throw Error('INVALID_NONCE');
-  return `<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>역할별 업무 · Order QA</title><style>:root{font-family:system-ui,sans-serif;color:#18232a;background:#fff}body{max-width:62rem;margin:auto;padding:clamp(1rem,4vw,3rem)}nav,.actions,form{display:flex;flex-wrap:wrap;align-items:end;gap:.75rem}main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:2rem}header{margin:1.8rem 0}section{min-width:0}h1{font-size:1.8rem}button,input,select{font:inherit;min-height:44px;max-width:100%;box-sizing:border-box}button{cursor:pointer}form{margin:1rem 0}form[hidden]{display:none}form div{display:contents}label{display:grid;gap:.3rem;max-width:100%}ul{padding:0;list-style:none}li{margin:.6rem 0;overflow-wrap:anywhere}li small{display:block;margin-top:.3rem}dl{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .8rem}dd{margin:0;overflow-wrap:anywhere}summary{cursor:pointer;min-height:44px}a{color:#22579b}p:empty{display:none}@media(max-width:640px){main{grid-template-columns:minmax(0,1fr)}}:focus-visible{outline:3px solid Highlight;outline-offset:2px}</style><body><nav><a href="/ia?view=qa-lab">QA랩</a><a href="/ia?view=pricing-r3#quote">가격·배송 설정</a></nav><header><h1>역할별 업무</h1><small>비공개 업무 검토</small></header><p role="status" id="status"></p><section id="r3-practice"></section><main><section><h2>내 업무</h2><button type="button" id="refresh">새로고침</button><form id="create" hidden></form><ul id="list"></ul><button type="button" hidden id="more">다음 50건</button></section><section id="detail" aria-live="polite"></section></main><script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
+  return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>내 업무 · Order</title><style>
+  *{box-sizing:border-box} :root{font-family:system-ui,sans-serif;color:#18232a;background:#f6f7f9;line-height:1.5}body{max-width:74rem;margin:auto;padding:clamp(12px,4vw,48px)}[hidden]{display:none!important}
+  a{color:#1d4b94;text-decoration:none}h1,h2,p{margin:0}header{display:flex;align-items:center;gap:16px;justify-content:space-between;margin-bottom:20px}
+  #role-menu,#filters{display:flex;gap:6px;flex-wrap:wrap}#role-menu a,#filters button{padding:9px 13px;background:#e9edf1;color:#394552;border-radius:8px;font-weight:600}
+  #role-menu a[aria-current=page],#filters [aria-pressed=true]{background:#1c344e;color:white}main{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:16px}
+  section.panel{min-width:0;border-radius:16px;padding:clamp(14px,3vw,28px);background:#fff}#detail:empty{display:none}
+  #status{margin:10px 0;color:#44576d}#status:empty{margin:0}ul{padding:0;list-style:none}li{padding:9px 0;border-bottom:1px solid #edf0f4;overflow-wrap:anywhere}li small{display:block;color:#546477}
+  button,input,select,textarea{font:inherit;max-width:100%;min-height:44px;box-sizing:border-box}button{background:#edf1f6;color:#233d55;border:0;border-radius:8px;padding:7px 12px;cursor:pointer}button[type=submit],form>button:not([type]){background:#234ba7;color:white}
+  label{display:grid;gap:4px;font-size:.92rem;font-weight:600;min-width:0}form{display:grid;gap:8px;margin:12px 0}form>div,form>div>div{display:grid;gap:8px}
+  input,select,textarea{border:1px solid #cbd3dc;border-radius:7px;padding:8px;background:white;color:#1e2f3c}input:invalid:not(:placeholder-shown):focus{outline-color:#a33}input[type=checkbox]{width:22px;min-height:22px}
+  #filter-bar{display:grid;gap:6px;margin:12px 0}#r3-practice{margin:18px 0}summary{cursor:pointer;min-height:40px}dl{display:grid;grid-template-columns:minmax(4rem,max-content) minmax(0,1fr);gap:7px 14px}dt{color:#526578}dd{margin:0;overflow-wrap:anywhere}
+  #account-panel{position:relative;display:grid;gap:9px;background:white;border-radius:16px;padding:18px;margin:0 0 18px;max-width:34rem}#account-panel :focus-visible{outline-offset:2px}#detail details[data-case-action]{margin:8px 0;border-top:1px solid #dde3ec}#detail details[data-case-action]>summary{padding:9px 0;font-weight:600}
+
+  ${asyncMotionCss}
+  .role-badge{border-radius:1rem;background:#a72d43;color:white;display:inline-flex;min-width:1rem;justify-content:center;margin-left:5px;font:600 12px/1.45 system-ui;font-variant-numeric:tabular-nums}#role-search-tags{display:flex;gap:4px;flex-wrap:wrap}#role-search-tags button{padding:3px 7px;border-radius:5px}
+  #account-panel{overflow:clip}#account-panel .customer-panel-page{display:grid;gap:9px;min-width:0}
+  #account-panel .customer-panel-leaving{position:absolute;inset:18px;pointer-events:none}
+  #queue-list>.signed-passes{padding:0;border:0;background:none;display:block}
+  .signed-pass-tools,.signed-pass-pager{display:flex;align-items:center;gap:8px;margin:8px 0}
+  .signed-pass-tools [aria-pressed=true]{background:#273e5e;color:white}
+  .signed-pass-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,15rem),1fr));gap:12px;touch-action:pan-y}
+  .signed-pass{min-width:0;display:grid;align-content:start;gap:9px;border:1px solid #d8e0eb;border-radius:16px;background:#f5f7fb;padding:16px 14px}
+  .signed-pass header{display:grid;gap:4px;background:none;color:inherit;padding:0}.signed-pass hr{width:100%;margin:4px 0;border:0;border-top:1px dashed #a5b4c6}
+  .signed-pass-cards.deck{display:grid;isolation:isolate;margin:0 12px 22px 0}
+  .signed-pass-cards.deck .signed-pass{grid-area:1/1;transform:translate(calc(var(--depth)*3px),calc(var(--depth)*5px)) rotate(calc(var(--depth)*.7deg))}
+  @media(prefers-reduced-motion:no-preference){.signed-pass{transition:transform .3s cubic-bezier(.2,.8,.3,1)}}
+  *{scrollbar-width:none}select[multiple]{scrollbar-width:thin}:focus-visible{outline:3px solid #3966bd;outline-offset:2px}
+  @media(max-width:700px){main{grid-template-columns:minmax(0,1fr)}#detail:not(:empty){grid-row:1}body{padding:12px}}@media(prefers-reduced-motion:no-preference){#detail:not(:empty){animation:appear .15s ease-out}@keyframes appear{from{opacity:.4;transform:translateY(3px)}}}
+  </style></head><body><header><h1>내 업무</h1><button hidden id="account-trigger" type="button" aria-expanded="false" aria-controls="account-panel">내 계정</button><a id="home" href="/ia?view=roles-r3">내 업무 홈</a></header>
+  <section id="account-panel" aria-label="계정 패널" hidden></section>
+  <nav id="role-menu" aria-label="내 역할의 업무"></nav><p role="status" id="status"></p>
+  <main><section class="panel"><h2 id="section-title">지금 할 일</h2><div id="filter-bar" hidden><input id="query" type="search" placeholder="상호·업무·상태 검색" aria-label="업무 검색"><div id="role-search-tags" hidden></div><div id="filters" aria-label="업무 상태"><button data-filter="all">전체</button><button data-filter="todo">내가 처리할 일</button><button data-filter="done">종료</button></div></div>
+  <ul id="queue-list"></ul><ul id="list"></ul><button type="button" hidden id="more">다음 50건</button><button type="button" id="refresh">새로고침</button>
+  <form id="create" hidden></form></section><section class="panel" id="detail" aria-live="polite"></section></main>
+  <section id="publication"></section><section id="r3-practice" hidden></section>
+  <script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)},${browserFunction(createCustomerControls)},${browserFunction(mountAsyncMotion)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
 }

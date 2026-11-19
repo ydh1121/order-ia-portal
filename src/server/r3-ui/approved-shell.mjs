@@ -15,6 +15,14 @@ html,body{overflow:hidden}
 #notes>article p{white-space:pre-wrap;color:#333d4b;margin:8px 0}
 #notes>article small{display:block;font-size:10px;color:#8b95a1}
 #notes button,#other-width-history button,.qa-inline-button,#filters button,.lab-drawer-body .inline-action{border:0;border-radius:7px;background:#f2f4f6;padding:6px 9px;color:#4e5968;font-size:10px;margin:2px}
+#notes .feedback-status{display:flex;gap:4px;margin:10px 0 6px}
+#notes .feedback-status button{flex:1;margin:0;min-height:30px}
+#notes .feedback-status [aria-pressed=true][data-feedback-state=unresolved]{background:#fff0e7;color:#b34e1d}
+#notes .feedback-status [aria-pressed=true][data-feedback-state=recheck]{background:#e9efff;color:#315de6}
+#notes .feedback-status [aria-pressed=true][data-feedback-state=resolved]{background:#dff4eb;color:#087f5b}
+#notes .feedback-status button:focus-visible{outline:2px solid #315de6;outline-offset:2px}
+#notes article[data-feedback-status=resolved]{border-left:3px solid #22a078}
+#notes article[data-feedback-status=recheck]{border-left:3px solid #315de6}
 #filters button[aria-pressed=true]{color:#315de6;background:#eaeefa}
 #filters{display:flex;gap:4px;flex-wrap:wrap}
 .r3-review-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -35,6 +43,9 @@ html,body{overflow:hidden}
 #tiles{margin-top:12px}#tiles .tile{display:flex;gap:6px;align-items:center;border-bottom:1px solid #f2f4f6}#tiles button{background:transparent;border:0;color:#4e5968;font-size:11px;padding:10px 6px;text-align:left}#tiles button:first-child{display:grid;flex:1}#tiles button span{font-size:10px;color:#8b95a1}
 .lab-stage[data-mode=board] .preview-bound .board-pin-target{pointer-events:auto}
 #figma-open[hidden]{display:none}
+#qa-session-notice{position:fixed;left:50%;bottom:36px;transform:translateX(-50%);z-index:90;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 16px;max-width:calc(100vw - 32px);border-radius:12px;background:#fff0df;color:#63360b;box-shadow:0 4px 24px #191f2820;font-size:12px}
+#qa-session-notice[hidden]{display:none}
+#qa-session-notice a,#qa-session-notice button{padding:7px 10px;border:0;border-radius:7px;background:white;color:inherit;white-space:nowrap}
 `;
 
 export const shellStyles = approvedShellStyle+'\n'+additions;
@@ -66,7 +77,7 @@ export function approvedShellBody(){
     <section class="lab-stage" id="surface" data-mode="focus" aria-label="화면 미리보기">
       <div class="lab-stage-heading"><span id="stage-hint">화면에서 직접 조작하거나 위치 코멘트를 남겨 주세요.</span><span class="prototype-pill" id="prototype-badge">디자인 예시</span></div>
       <nav id="quote-candidates" hidden aria-label="실제 견적 입력"><a href="/ia?view=simple-r3#/form" target="_blank" rel="noopener">간편 견적 입력 열기</a> · <a href="/ia?view=detailed-r3#/form" target="_blank" rel="noopener">상세 견적 입력 열기</a></nav>
-      <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><output id="snapshot"></output></section>
+      <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><section id="snapshot" aria-label="선택한 견적"></section></section>
       <div class="preview-list" id="preview-list">
         <section class="preview-unit mobile" id="focus-unit" data-width="390" data-height="844">
           <div class="preview-caption"><strong id="focus-label">모바일</strong><button id="focus-viewport" class="viewport-review active" aria-label="이 화면 크기 검토">390px</button></div>
@@ -88,7 +99,7 @@ export function approvedShellBody(){
         <details id="history-details" hidden><summary>가져온 이전 기록</summary><div id="record-history"></div></details>
         <div id="other-width-history"></div>
         <section class="review-comments"><div class="review-section-head"><h3>코멘트 <span id="comment-count"></span></h3><button id="general" data-lab-action="page-comment">전체 의견 추가</button></div>
-          <div class="comment-filters"><button data-comment-filter="open" class="active">미해결</button><button data-comment-filter="all">전체</button><button data-comment-filter="resolved">해결</button></div>
+          <div class="comment-filters"><button data-comment-filter="open" class="active">미해결</button><button data-comment-filter="recheck">재검토</button><button data-comment-filter="resolved">해결</button><button data-comment-filter="all">전체</button></div>
           <div id="notes"></div>
         </section>
         <details class="figma-details" open><summary>피그마 작업 <span id="figma-status-badge"></span></summary>
@@ -99,6 +110,9 @@ export function approvedShellBody(){
           <button class="drawer-button" id="link-figma">피그마 작업 기록 저장</button><p id="export-record"></p>
         </details>
       </div>
+      <details class="figma-details" id="motion-review"><summary>모션 재생·출처</summary>
+        <p id="motion-build"></p><div id="motion-actions"></div><output id="motion-note" aria-live="polite"></output><div id="motion-sources"></div>
+      </details>
       <div id="authoring" hidden>
         <p id="point-state" class="comment-location"></p><button class="qa-inline-button" id="reposition">위치 다시 선택</button>
         <label for="body-text">코멘트<textarea id="body-text" maxlength="10000" placeholder="수정할 부분을 남겨 주세요."></textarea></label><p id="conflict" hidden></p>
@@ -121,7 +135,7 @@ export function approvedShellBody(){
       <label class="check-setting"><input type="checkbox" id="motion-enabled" checked>모션 재생</label>
       <label class="check-setting"><input type="checkbox" id="show-resolved-pins">해결된 위치 코멘트 표시</label>
       <label class="sr-only" for="width">현재 검토 폭</label><select id="width" hidden><option value="0">원본 폭</option>${widthOptions(approvedWidths)}</select>
-      <label for="version">비교할 화면<select id="version"><option value="current">이번 판</option><option value="previous">이전 화면</option></select></label><span class="sr-only" id="version-mark"></span>
+      <label for="version">비교할 화면<select id="version"><option value="current">이번 판</option><option value="prior-r3">이전 R3 검토판</option><option value="previous">R2 화면</option></select></label><span class="sr-only" id="version-mark"></span>
       <label class="check-setting"><input type="checkbox" id="audit-demo">실행 검증용 기록 포함</label>
       <button id="hide-pins" class="drawer-button" aria-pressed="false">핀 숨기기</button><button class="drawer-button" id="sync">다시 읽기</button>
       <h3>개별 파일</h3><button id="export-editable" class="drawer-button" data-lab-action="export-html">피그마 편집용 HTML</button><button id="export-runnable" class="drawer-button">실행용 HTML</button>

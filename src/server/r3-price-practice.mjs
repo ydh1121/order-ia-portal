@@ -15,6 +15,7 @@ export async function startPractice(db,s) {
   await db.batch([
     db.prepare(grants).bind(s.writer,s.supplier,s.operator,s.supplier,s.buyer,s.business),
     db.prepare("INSERT OR IGNORE INTO r3_price_scope VALUES(?,'practice-origin','practice-item',1)").bind(s.supplier),
+    db.prepare("INSERT OR IGNORE INTO r3_price_catalog(supplier_id,origin_id,product_id,revision,definition,updated_by,updated_at) VALUES(?,'practice-origin','practice-item',1,?,?,?)").bind(s.supplier,JSON.stringify({supplierName:'연습 공급처',originName:'연습 출고장',productName:'연습 계란',shells:['1','2'],packSizes:[12,30],grades:[{id:'large',name:'대란'},{id:'xlarge',name:'특란'}]}),s.operator,new Date().toISOString()),
     db.prepare("INSERT OR IGNORE INTO r3_business_site VALUES(?,'review-site','VERIFIED',1)").bind(s.business),
     db.prepare("INSERT OR IGNORE INTO r3_price_destination VALUES(?,'review-site','1100000000','review-region-v1',NULL)").bind(s.business)
   ]);
