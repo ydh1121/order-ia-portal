@@ -175,6 +175,7 @@ def check_zoomed_pin(page, context, origin, width):
         page.locator("#save").click()
     assert receipt.value.ok
     expect(page.locator('#new')).to_have_attribute('aria-pressed','true')
+    expect(veil).to_be_visible()
     page.locator('#points').click()
     anchor = receipt.value.request.post_data_json["data"]["anchor"]
     saved_x = next(s["x"] for s in anchor["scroll"] if s["id"]=="host-surface")

@@ -4,10 +4,9 @@ import {createRequire} from 'node:module';
 import {webcrypto} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
 import {catalog,frames} from '../src/server/r3-ui/catalog.gen.mjs';
-import {runtimes,frameCode} from '../src/server/r3-ui/runtime.gen.mjs';
+import {runtimes,frameCode,hostCode} from '../src/server/r3-ui/runtime.gen.mjs';
 import {archivedRows,archivedScripts} from '../src/server/r3-ui/interaction-history.gen.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
-import {bootQaHost} from '../src/server/r3-ui/host.mjs';
 import {approvedShellBody} from '../src/server/r3-ui/approved-shell.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const row=(state,variant='email')=>catalog.find(r=>r.id==='login/'+state+'/'+variant);
@@ -109,7 +108,7 @@ async function hostHarness({initialRecords=[],legacyItems=[]}={}){
     throw Error('Unmocked '+url);
   };
   const shell={render(){},focusForPoint(){},setTab(){},historyLinks(){},reviewWidths(){return[];},activeTab(){return'review';}};
-  w.eval('('+bootQaHost.toString()+')')('qa-nonce','function fixtureFrame(){}',()=>shell,null,()=>({clear(){},show(){},gate(){}}),()=>{},{requirements:[]});
+  w.eval('('+hostCode+')')('qa-nonce','function fixtureFrame(){}',()=>shell,null,()=>({clear(){},show(){},gate(){}}),()=>{},{requirements:[]});
   const frame=w.document.getElementById('frame');frame.contentWindow.postMessage=message=>messages.push(message);
   await until(()=>frame.srcdoc.includes('"channel"'));
   const params=JSON.parse(frame.srcdoc.match(/\)\((\{"channel"[\s\S]*?\})\)<\/script>/)[1]);
@@ -142,6 +141,63 @@ test('position comment mode stays active for consecutive saved pins and Escape e
   assert.notEqual(writes[0].body.id,writes[1].body.id);assert.deepEqual(writes.map(r=>r.body.data.body),['첫 번째 위치','두 번째 위치']);
   w.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal($('new').getAttribute('aria-pressed'),'false');
   assert.equal(messages.filter(m=>m.type==='mode').at(-1).payload,false);w.close();
+});
+
+function pauseNextRecordResponse(h){
+  const fetch=h.w.fetch;let release,reached,paused=false;
+  const ready=new Promise(resolve=>reached=resolve),wait=new Promise(resolve=>release=resolve);
+  h.w.fetch=async(raw,options={})=>{
+    const response=await fetch(raw,options);
+    if(!paused&&options.method==='POST'&&new URL(raw,h.w.location.href).pathname.endsWith('/records')){
+      paused=true;reached();await wait;
+    }
+    return response;
+  };
+  return {ready,release};
+}
+
+test('delayed comment saves preserve a closed panel, a new editor and a changed screen',async()=>{
+  for(const next of ['closed','new','screen']){
+    const h=await hostHarness(),{w,emit,records,messages}=h,$=id=>w.document.getElementById(id);
+    try{
+      $('general').click();$('body-text').value='이미 전송한 의견';$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));
+      const delay=pauseNextRecordResponse(h),saving=$('save').onclick();await delay.ready;
+      $('close-drawer').click();
+      if(next==='screen'){
+        emit('localState',{screen:'login',state:'closed'});
+        await until(()=>messages.some(m=>m.type==='componentState'));
+        const request=messages.find(m=>m.type==='componentState');
+        w.dispatchEvent(new w.MessageEvent('message',{origin:'null',source:$('frame').contentWindow,data:{scope:'ORDER_R3_FRAME',channel:request.payload.channel,artifact:request.payload.hash,type:'ready',payload:{}}}));
+      }
+      if(next!=='closed'){
+        $('general').click();$('body-text').value='계속 쓰는 새 의견';$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));
+      }
+      delay.release();await saving;
+      assert.equal(records[0].data.body,'이미 전송한 의견');assert.equal(records[0].data.target.state,'empty');
+      assert.equal($('drawer').hidden,next==='closed');
+      if(next!=='closed'){assert.equal($('authoring').hidden,false);assert.equal($('body-text').value,'계속 쓰는 새 의견');}
+      if(next==='screen')assert.equal(new URL(w.location.href).searchParams.get('screen'),'login/closed/email');
+      const retained=Object.keys(w.sessionStorage).filter(k=>k.startsWith('order.qa.unsent.')).flatMap(k=>JSON.parse(w.sessionStorage.getItem(k)));
+      assert.equal(retained.some(([,draft])=>draft.body==='이미 전송한 의견'),false);
+      assert.equal(retained.some(([,draft])=>draft.body==='계속 쓰는 새 의견'),next!=='closed');
+    }finally{w.close();}
+  }
+});
+
+test('typing while a save response is delayed keeps the extra text and uses the confirmed revision next time',async()=>{
+  const h=await hostHarness(),{w,records,writes}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('general').click();$('body-text').value='먼저 전송한 본문';$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));
+    const delay=pauseNextRecordResponse(h),saving=$('save').onclick();await delay.ready;
+    $('body-text').value='먼저 전송한 본문과 뒤에 추가한 내용';$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));
+    delay.release();await saving;
+    assert.equal(records[0].data.body,'먼저 전송한 본문');assert.equal($('authoring').hidden,false);
+    assert.equal($('body-text').value,'먼저 전송한 본문과 뒤에 추가한 내용');
+    const retained=Object.keys(w.sessionStorage).filter(k=>k.startsWith('order.qa.unsent.')).flatMap(k=>JSON.parse(w.sessionStorage.getItem(k)));
+    assert.equal(retained.length,1);assert.equal(retained[0][1].body,$('body-text').value);assert.equal(retained[0][1].revision,1);
+    await $('save').onclick();assert.equal(writes.at(-1).body.expectedRevision,1);assert.equal(records.at(-1).revision,2);
+    assert.equal(records.at(-1).data.body,'먼저 전송한 본문과 뒤에 추가한 내용');assert.equal($('authoring').hidden,true);
+  }finally{w.close();}
 });
 
 test('session expiry preserves the unsent opinion while a CSRF error never masquerades as logout',async()=>{

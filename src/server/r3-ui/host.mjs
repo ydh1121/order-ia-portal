@@ -409,13 +409,14 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       else if(e.status===403)status('저장 권한을 확인해 주세요. 작성 중인 의견은 남아 있습니다.');
       else status('저장하지 못했습니다. 내 입력을 보관했습니다.');
       if(e.message==='REPLY_PARENT_UNAVAILABLE')status('원래 의견이 해결되었거나 삭제되었습니다. 답글은 초안으로 남아 있습니다.');
-      if(e.current&&editor){
+      if(e.current&&draftEditor&&editor===draftEditor&&target&&match(target,data.target,data.target.viewport)&&target.artifactHash===data.target.artifactHash){
         const current=e.current,box=$('conflict');
         box.replaceChildren(node('span','다른 탭의 내용 · '+(current.data.body||current.data.decision||'')));
         if(['reply','comment','draft'].includes(kind)&&!['delete','resolve'].includes(current.action)){
           box.append(btn('다른 탭의 내용을 확인하고 계속 수정',()=>{
-            if(kind==='draft')editor.draftRevision=current.revision;
-            else editor.revision=current.revision;
+            if(editor!==draftEditor)return;
+            if(kind==='draft')draftEditor.draftRevision=current.revision;
+            else draftEditor.revision=current.revision;
             remember();box.hidden=true;body.focus();
           }));
         }
@@ -425,15 +426,27 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     }finally{storing=false;}
   }
   async function eventReason(r,action){const why=window.prompt('이유를 입력해 주세요.');if(!why?.trim())return;const ok=await write(r.kind,r.id,r.data,r.revision,action,why.trim());if(ok)notes();}
-  async function saveDraft(draft){if(!editor||!target)return;remember();const data={target,body:body.value,anchor:editor.anchor??null};if(editor.sourceKey)data.sourceKey=editor.sourceKey;if(editor.sourceCommentId)data.sourceCommentId=editor.sourceCommentId;
-    if(editor.parent){data.parent=editor.parent;delete data.anchor;}
-    const kind=draft?'draft':editor.parent?'reply':'comment',rev=draft?editor.draftRevision??0:editor.revision;
-    const why=!draft&&editor.action==='relocate'?window.prompt('위치를 바꾼 이유를 입력해 주세요.'):'';
-    if(!draft&&editor.action==='relocate'&&!why?.trim())return;
-    if(await write(kind,editor.id,data,rev,draft?'save':editor.action||'save',why||'')){
-      editor.dirty=false;edits.delete(draftKey(editor.id));persistDrafts();
-      if(draft){editor.draftRevision=rev+1;return;}
-      const again=continuousPoints&&Boolean(editor.anchor)&&!editor.parent&&editor.action!=='relocate';
+  async function saveDraft(draft){if(!editor||!target)return;remember();
+    const submitted=editor,view={...target},key=draftKey(submitted.id);
+    const content=value=>JSON.stringify([value.body,value.anchor,value.parent,value.sourceKey,value.sourceCommentId,value.action]);
+    const sentContent=content(submitted),data={target:view,body:submitted.body,anchor:submitted.anchor??null};
+    if(submitted.sourceKey)data.sourceKey=submitted.sourceKey;if(submitted.sourceCommentId)data.sourceCommentId=submitted.sourceCommentId;
+    if(submitted.parent){data.parent=submitted.parent;delete data.anchor;}
+    const kind=draft?'draft':submitted.parent?'reply':'comment',rev=draft?submitted.draftRevision??0:submitted.revision;
+    const why=!draft&&submitted.action==='relocate'?window.prompt('위치를 바꾼 이유를 입력해 주세요.'):'';
+    if(!draft&&submitted.action==='relocate'&&!why?.trim())return;
+    if(await write(kind,submitted.id,data,rev,draft?'save':submitted.action||'save',why||'')){
+      const changed=content(submitted)!==sentContent;
+      if(draft)submitted.draftRevision=rev+1;else submitted.revision=rev+1;
+      submitted.dirty=changed;
+      // A late response owns only the submitted draft, never a newly opened
+      // editor or its screen. Additional typing stays unsaved at the new revision.
+      if(!edits.has(key)||edits.get(key)===submitted){if(changed)edits.set(key,submitted);else edits.delete(key);}
+      persistDrafts();
+      if(editor!==submitted||!target||!match(target,view,view.viewport)||target.artifactHash!==view.artifactHash)return;
+      if(changed){status('전송한 내용은 저장했습니다. 추가로 입력한 내용은 아직 저장하지 않았습니다.');return;}
+      if(draft)return;
+      const again=continuousPoints&&Boolean(submitted.anchor)&&!submitted.parent&&submitted.action!=='relocate';
       editor=null;
       if(again){edit(null,null,true);status('저장됨 · 다음 위치를 선택하세요.');}
       else notes();
