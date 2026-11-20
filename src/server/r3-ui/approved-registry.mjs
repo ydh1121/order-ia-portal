@@ -129,7 +129,7 @@ export const approvedRegistry = {
     ]
   },
   "onboarding": {
-    "description": "Figma 4단계 소개와 로그인 전후 모드 선택. 3D는 기존 임시 아바타; Pro gradient 유료 원문·OAuth 연결은 포함하지 않음.",
+    "description": "4단계 서비스 소개, 로그인 바텀시트와 회원별 견적 모드 선택.",
     "routeIds": [
       "F00"
     ]

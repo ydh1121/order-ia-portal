@@ -32,12 +32,76 @@ function bindUpload(root,multi,c){
  on(input,'change',()=>select([...input.files]));on(drop,'keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();input.click();}});for(const ev of ['dragenter','dragover'])on(drop,ev,e=>{e.preventDefault();drop.classList.add('is-over');});on(drop,'dragleave',()=>drop.classList.remove('is-over'));on(drop,'drop',e=>{e.preventDefault();drop.classList.remove('is-over');select([...e.dataTransfer.files]);});c.signal.addEventListener('abort',()=>{gen++;accepted=[];input.value='';},{once:true});
 }
 function dateParts(){const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date());return Object.fromEntries(parts.filter(p=>p.type!=='literal').map(p=>[p.type,Number(p.value)]));}
-function mountDate(root,locked,c){
- const slot=root.querySelector('.opening-date'),control=slot.querySelector('button'),panel=slot.querySelector('.opening-wheels');control.disabled=locked;
- const today=dateParts();let {year,month,day}=today;const controls={};const ranges=()=>({year:[1900,today.year],month:[1,year===today.year?today.month:12],day:[1,year===today.year&&month===today.month?today.day:new Date(Date.UTC(year,month,0)).getUTCDate()]});
- for(const [part,label] of [['year','연도'],['month','월'],['day','일']]){const l=document.createElement('label');l.textContent=label;const select=document.createElement('select');l.append(select);panel.append(l);controls[part]=select;select.onchange=()=>{const val=Number(select.value);if(part==='year')year=val;if(part==='month')month=val;if(part==='day')day=val;sync();};}
- function sync(){month=Math.min(month,ranges().month[1]);day=Math.min(day,ranges().day[1]);for(const [p,[lo,hi]] of Object.entries(ranges())){const select=controls[p];if(select.options.length!==hi-lo+1)select.replaceChildren(...Array.from({length:hi-lo+1},(_,i)=>new Option(String(lo+i),String(lo+i))));select.value=String({year,month,day}[p]);}slot.querySelector('output').textContent=year+'/'+String(month).padStart(2,'0')+'/'+String(day).padStart(2,'0');}
- sync();control.addEventListener('click',()=>{panel.hidden=!panel.hidden;control.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)controls.year.focus();},{signal:c.signal});panel.addEventListener('keydown',e=>{if(e.key==='Escape'){panel.hidden=true;control.setAttribute('aria-expanded','false');control.focus();}},{signal:c.signal});
+function openingPicker(){
+ return '<div class="opening-wheels" hidden><div class="drawer-dim opening-date-dim"></div><section class="functional-drawer opening-date-sheet t-panel-slide" data-open="false" role="dialog" aria-modal="true" aria-label="개업일 선택">'+
+  '<button type="button" class="drawer-handle" data-action="opening-date-cancel" aria-label="개업일 선택 닫기"><i></i></button><h2>개업일 [<output class="opening-draft"></output>]</h2>'+
+  '<div class="wheel-picker"><div class="wheel-highlight" aria-hidden="true"></div>'+[['year','연도'],['month','월'],['day','일']].map(([part,label])=>'<div class="wheel-column opening-'+part+'" role="listbox" tabindex="0" aria-label="'+label+'"></div>').join('')+'</div>'+
+  '<div class="opening-date-actions">'+button('취소','opening-date-cancel','secondary')+button('완료','opening-date-apply','primary')+'</div></section></div>';
+}
+function mountDate(root,locked,c,api){
+ const slot=root.querySelector('.opening-date'),control=slot.querySelector('button'),output=slot.querySelector('output'),panel=root.querySelector('.opening-wheels'),sheet=panel.querySelector('.opening-date-sheet');control.disabled=locked;
+ const today=dateParts(),parts=['year','month','day'],units={year:'년',month:'월',day:'일'},columns={},timers=new Map(),background=new Map();
+ const format=value=>value.year+'/'+String(value.month).padStart(2,'0')+'/'+String(value.day).padStart(2,'0');
+ function normalize(value){const year=Math.max(1900,Math.min(today.year,Number(value.year)||today.year)),month=Math.max(1,Math.min(year===today.year?today.month:12,Number(value.month)||1)),max=year===today.year&&month===today.month?today.day:new Date(Date.UTC(year,month,0)).getUTCDate();return {year,month,day:Math.max(1,Math.min(max,Number(value.day)||1))};}
+ const retained=/^(\d{4})[/-](\d{2})[/-](\d{2})$/.exec(output.textContent.trim());
+ let committed=normalize(retained?{year:+retained[1],month:+retained[2],day:+retained[3]}:today),draft={...committed};
+ const ranges=()=>({year:[1900,today.year],month:[1,draft.year===today.year?today.month:12],day:[1,draft.year===today.year&&draft.month===today.month?today.day:new Date(Date.UTC(draft.year,draft.month,0)).getUTCDate()]});
+ const on=(el,type,fn,options={})=>el.addEventListener(type,fn,{...options,signal:c.signal});
+ let dateId='order-opening-date',suffix=1;
+ while(document.getElementById(dateId)&&document.getElementById(dateId)!==panel)dateId='order-opening-date-'+(++suffix);
+ panel.id=dateId;control.setAttribute('aria-controls',panel.id);control.setAttribute('aria-haspopup','dialog');
+ const clearPending=()=>{for(const timer of timers.values())clearTimeout(timer);timers.clear();};
+ function paint(){
+  draft=normalize(draft);const bounds=ranges();
+  for(const part of parts){
+   const col=columns[part],[lo,hi]=bounds[part];
+   if(col.dataset.range!==lo+':'+hi){
+    col.dataset.range=lo+':'+hi;
+    col.innerHTML='<div class="wheel-spacer" aria-hidden="true"></div>'+Array.from({length:hi-lo+1},(_,i)=>'<button type="button" role="option" tabindex="-1" id="'+panel.id+'-'+part+'-'+(lo+i)+'" data-opening-value="'+(lo+i)+'">'+(lo+i)+units[part]+'</button>').join('')+'<div class="wheel-spacer" aria-hidden="true"></div>';
+   }
+   for(const item of col.querySelectorAll('[role=option]')){const selected=Number(item.dataset.openingValue)===draft[part];item.setAttribute('aria-selected',String(selected));if(selected)col.setAttribute('aria-activedescendant',item.id);}
+   col.scrollTop=(draft[part]-lo)*44;
+  }
+  panel.querySelector('.opening-draft').textContent=format(draft);
+ }
+ function read(part){const col=columns[part],items=[...col.querySelectorAll('[role=option]')];return Number(items[Math.max(0,Math.min(items.length-1,Math.round(col.scrollTop/44)))]?.dataset.openingValue)||draft[part];}
+ const visibleDate=()=>Object.fromEntries(parts.map(part=>[part,read(part)]));
+ function settle(){if(panel.hidden||c.signal.aborted)return;clearPending();draft=normalize(visibleDate());paint();}
+ function close({commit=false,focus=true}={}){
+  if(panel.hidden)return;
+  if(commit){draft=normalize(visibleDate());committed={...draft};output.textContent=format(committed);output.dispatchEvent(new Event('change',{bubbles:true}));}
+  clearPending();draft={...committed};gesture?.deactivate();gesture?.reset();
+  try{if(panel.hidePopover&&panel.matches(':popover-open'))panel.hidePopover();}catch{}
+  panel.hidden=true;sheet.dataset.open='false';control.setAttribute('aria-expanded','false');
+  for(const [element,inert] of background)element.inert=inert;background.clear();
+  if(focus&&!c.signal.aborted)control.focus({preventScroll:true});
+ }
+ for(const part of parts){
+  const col=columns[part]=panel.querySelector('.opening-'+part);
+  on(col,'scroll',()=>{clearTimeout(timers.get(part));if(!panel.hidden)timers.set(part,setTimeout(settle,90));},{passive:true});
+  on(col,'scrollend',settle);
+  on(col,'click',e=>{const option=e.target.closest('[role=option]');if(!option)return;clearPending();draft=visibleDate();draft[part]=Number(option.dataset.openingValue);paint();col.focus({preventScroll:true});});
+  on(col,'keydown',e=>{
+   if(!['ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(e.key))return;e.preventDefault();clearPending();
+   draft=normalize(visibleDate());const [lo,hi]=ranges()[part],current=draft[part],amount={ArrowUp:-1,ArrowDown:1,PageUp:-5,PageDown:5}[e.key];
+   draft[part]=e.key==='Home'?lo:e.key==='End'?hi:Math.max(lo,Math.min(hi,current+amount));paint();
+  });
+ }
+ const gesture=w.ORDER_QA_SHEET?.(sheet,[sheet.querySelector('.drawer-handle')],{signal:c.signal,reduced:api.reduced,open:false,surface:panel.querySelector('.opening-date-dim'),close:()=>close()});
+ output.textContent=format(committed);paint();
+ on(control,'click',()=>{
+  if(locked||!panel.hidden)return;draft={...committed};panel.hidden=false;sheet.dataset.open='true';control.setAttribute('aria-expanded','true');panel.setAttribute('popover','manual');
+  try{if(panel.showPopover)panel.showPopover();else panel.removeAttribute('popover');}catch{panel.removeAttribute('popover');}
+  for(const element of root.children)if(element!==panel&&!['STYLE','SCRIPT'].includes(element.tagName)){background.set(element,element.inert);element.inert=true;}
+  gesture?.activate();gesture?.reset();paint();columns.year.focus({preventScroll:true});
+ });
+ on(panel,'click',e=>{const action=e.target.closest('[data-action]')?.dataset.action;if(e.target.classList.contains('opening-date-dim')||action==='opening-date-cancel')close();if(action==='opening-date-apply')close({commit:true});});
+ on(panel,'keydown',e=>{
+  if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();return;}
+  if(e.key!=='Tab')return;const focusable=[...panel.querySelectorAll('button:not([tabindex="-1"]),[role=listbox]')];
+  if(e.shiftKey&&document.activeElement===focusable[0]){e.preventDefault();focusable.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===focusable.at(-1)){e.preventDefault();focusable[0].focus();}
+ });
+ c.signal.addEventListener('abort',()=>{clearPending();close({focus:false});},{once:true});
 }
 function bindSuggest(input,list,c){
  const menu=document.createElement('div');menu.className='business-options';menu.id=U.uid('options');menu.setAttribute('role','listbox');menu.hidden=true;const field=input.closest('.field'),slot=document.createElement('div');slot.className='business-combobox';field.before(slot);slot.append(field,menu);input.setAttribute('role','combobox');input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-controls',menu.id);let index=-1;
@@ -50,8 +114,8 @@ const bStates=states([['empty','입력 전'],['filled','입력됨'],['format','�
 modules.push({id:'business',group:'사업장·증빙',label:'사업자 정보 등록',description:'입력과 서류 보완을 확인합니다.',width:'mobile',states:bStates,render(s,o={}){
  const filled=['filled','checking','mismatch','verified','document'].includes(s);
  const text=(label,name,example,err='')=>field(label,name,label,{value:filled?example:'',required:true,error:err});
- return '<div class="page business-page">'+head('사업자 정보 등록','',o)+(s==='unavailable'?visibleNote('사업자 조회에 연결하지 못했어요. 사업자등록증을 첨부해 확인을 요청해 주세요.','info')+openCaseButton('business'):'<div class="business-fields">'+field('사업자등록번호','business-number','사업자등록번호',{value:filled?'123-45-67890':'',required:true,mode:'numeric',max:12,error:s==='format'?'사업자등록번호 10자리를 확인해 주세요.':s==='mismatch'?'사업자등록번호를 확인해 주세요.':''})+text('상호','business-name','오더 샘플베이커리',s==='mismatch'?'사업자등록증의 상호를 확인해 주세요.':'')+text('대표자명','owner-name','홍길동')+'<div class="opening-date"><button type="button" class="btn secondary" aria-expanded="false">개업일'+required+' <output></output></button><div class="opening-wheels" hidden></div></div>'+text('업태','business-sector','음식점업')+text('업종','business-type','제과점업')+'</div>'+(s==='verified'?'<div class="verification-mark" role="status" aria-label="사업자 정보 확인됨">'+icon('check',24)+'</div>'+openCaseButton('business'):s==='checking'?busy('사업자 정보 조회 중','verify-business'):button('인증하기','verify-business','primary wide')))+'<section class="document-section"><h2>사업자등록증'+required+'</h2>'+uploadBox()+(s==='document'?visibleNote('사업자등록증을 올려주세요.'):'')+'</section><div class="bottom-actions">'+button('다음','business-next','primary')+'</div></div>';},
- mount(root,s,api){const c=new AbortController();linkCase(root,api,c.signal,'business');bindUpload(root,false,c);const n=root.querySelector('[name=business-number]'),locked=['checking','verified'].includes(s);if(n){mountDate(root,locked,c);for(const f of root.querySelectorAll('.business-fields input'))f.disabled=locked;if(!locked){bindSuggest(root.querySelector('[name=business-sector]'),sectors,c);bindSuggest(root.querySelector('[name=business-type]'),industries,c);}n.oninput=()=>{const v=n.value.replace(/\D/g,'').slice(0,10);n.value=v.length>5?v.slice(0,3)+'-'+v.slice(3,5)+'-'+v.slice(5):v.length>3?v.slice(0,3)+'-'+v.slice(3):v;};}
+ return '<div class="page business-page">'+head('사업자 정보 등록','',o)+(s==='unavailable'?visibleNote('사업자 조회에 연결하지 못했어요. 사업자등록증을 첨부해 확인을 요청해 주세요.','info')+openCaseButton('business'):'<div class="business-fields">'+field('사업자등록번호','business-number','사업자등록번호',{value:filled?'123-45-67890':'',required:true,mode:'numeric',max:12,error:s==='format'?'사업자등록번호 10자리를 확인해 주세요.':s==='mismatch'?'사업자등록번호를 확인해 주세요.':''})+text('상호','business-name','오더 샘플베이커리',s==='mismatch'?'사업자등록증의 상호를 확인해 주세요.':'')+text('대표자명','owner-name','홍길동')+'<div class="opening-date"><button type="button" class="btn secondary" aria-expanded="false">개업일'+required+' <output></output></button></div>'+text('업태','business-sector','음식점업')+text('업종','business-type','제과점업')+'</div>'+(s==='verified'?'<div class="verification-mark" role="status" aria-label="사업자 정보 확인됨">'+icon('check',24)+'</div>'+openCaseButton('business'):s==='checking'?busy('사업자 정보 조회 중','verify-business'):button('인증하기','verify-business','primary wide')))+'<section class="document-section"><h2>사업자등록증'+required+'</h2>'+uploadBox()+(s==='document'?visibleNote('사업자등록증을 올려주세요.'):'')+'</section><div class="bottom-actions">'+button('다음','business-next','primary')+'</div></div>'+(s==='unavailable'?'':openingPicker());},
+ mount(root,s,api){const c=new AbortController();linkCase(root,api,c.signal,'business');bindUpload(root,false,c);const n=root.querySelector('[name=business-number]'),locked=['checking','verified'].includes(s);if(n){mountDate(root,locked,c,api);for(const f of root.querySelectorAll('.business-fields input'))f.disabled=locked;if(!locked){bindSuggest(root.querySelector('[name=business-sector]'),sectors,c);bindSuggest(root.querySelector('[name=business-type]'),industries,c);}n.oninput=()=>{const v=n.value.replace(/\D/g,'').slice(0,10);n.value=v.length>5?v.slice(0,3)+'-'+v.slice(3,5)+'-'+v.slice(5):v.length>3?v.slice(0,3)+'-'+v.slice(3):v;};}
  root.addEventListener('click',e=>{const a=e.target.closest('[data-action]')?.dataset.action;if(a==='verify-business'&&!locked){let first=null;for(const f of root.querySelectorAll('.business-fields input')){const bad=f===n?f.value.replace(/\D/g,'').length!==10:!f.value.trim();if(bad){U.setFieldError(f,f===n?'사업자등록번호 10자리를 확인해 주세요.':'필수 정보예요.');U.shake(f.closest('.field'));first??=f;}}if(first)return first.focus();api.select('business','checking');}if(a==='business-next'){if(root.dataset.fileSelected!=='true'){const drop=root.querySelector('.file-drop');drop.setAttribute('aria-invalid','true');U.shake(drop);drop.focus();return;}if(!['unavailable','verified','document'].includes(s)){api.toast('사업자 정보를 먼저 확인해 주세요.');return;}api.select('proof','empty');}},{signal:c.signal});return()=>c.abort();}});
 const proofErrors={oversize:'파일당 10MB 이하로 줄여 다시 선택해 주세요.',format:'PDF, JPG, PNG 파일을 다시 선택해 주세요.',blocked:'이 파일은 차단됐어요. 다른 파일을 다시 올려주세요.',error:'파일을 올리지 못했어요. 다시 올려주세요.'};
 const segmenter=typeof Intl.Segmenter==='function'?new Intl.Segmenter('ko',{granularity:'grapheme'}):null;

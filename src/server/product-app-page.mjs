@@ -6,23 +6,25 @@ import {installProductAdapter} from './product-app-adapter.mjs';
 import {brandMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,commonMotionScript,sharedTemplates} from './r3-ui/qa-assets.gen.mjs';
 import {brandPanelUiCss} from './order-engine/browser/brand-panel-ui.gen.mjs';
 import {getProductPanelBootstrap} from './product-account-panels.mjs';
+import {getProductAuthSheetBootstrap} from './product-auth-sheet.mjs';
 
 const js=value=>JSON.stringify(value).replaceAll('<','\\u003c');
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const inflate=async value=>new Response(new Blob([Uint8Array.from(atob(value),c=>c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 let styles;
-export function productBootstrap(nonce,context,panels){return `<script nonce="${nonce}">${sharedCoreScript}\n${commonMotionScript}\n(${browserFunction(installProductAdapter)})(${js(context)});\n${panels?.script||''}</script>`;}
+export function productBootstrap(nonce,context,panels,authSheet){return `<script nonce="${nonce}">${sharedCoreScript}\n${commonMotionScript}\n(${browserFunction(installProductAdapter)})(${js(context)});\n${panels?.script||''}\n${authSheet?.script||''}</script>`;}
 export function injectProductContext(html,nonce,context,panels){
  return html.replace('</head>','<style>'+brandPanelUiCss+(panels?.css||'')+'</style>'+productBootstrap(nonce,context,panels)+'</head>');
 }
 function bootProductDocument(screen,state,introArtSource){
  const root=document.getElementById('order-single'),adapter=window.ORDER_APP_ADAPTER;
- let currentState=state;
+ let currentState=state,authSheet=null;
  const announce=()=>window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state:currentState,payload:{path:location.pathname+location.search},componentVariant:document.documentElement.dataset.productComponentVariant||null,source:adapter?.context.source},location.origin);
  const status=text=>{let output=document.querySelector('[data-product-status]');if(!output){output=document.createElement('p');output.dataset.productStatus='';output.className='muted';output.setAttribute('role','status');root.append(output);}output.textContent=text;};
  const api={mode:'product',interactive:true,screen,variant:'email',adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
   reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches,
   select(next,nextState,nextOptions={}){
+   if(authSheet?.select(next,nextState,nextOptions))return;
    if(['simple-r3','detailed-r3'].includes(next)){
     const url=new URL(location.href);url.searchParams.set('view',next);url.searchParams.delete('screen');url.searchParams.delete('state');url.searchParams.delete('componentVariant');location.assign(url);return;
    }
@@ -46,6 +48,7 @@ function bootProductDocument(screen,state,introArtSource){
   // It cannot invoke the fixture's completion callback in a product runtime.
   demoSuccess(){status('이 동작은 연결된 서버 기능이 필요해요. 완료 처리하지 않았습니다.');return Promise.resolve({ok:false,error:'PRODUCT_ADAPTER_REQUIRED'});}
  };
+ if(screen==='onboarding')authSheet=window.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>currentState});
  const disposeShared=window.QAUI?.sharedMount?.(root,api);
  const module=window.ORDER_DESIGN_MODULES?.find(m=>m.id===screen);
  const dispose=module?.mount?.(root,state,api);
@@ -55,7 +58,7 @@ function bootProductDocument(screen,state,introArtSource){
   const container=root.querySelector('[data-account-menu-host]');
   if(container){window.ORDER_BRAND_ACCOUNT_CONTEXT.renderPanel({id:state==='notification'?'notifications':'profile.account',container,signal:accountController.signal});const actions=document.createElement('nav');actions.className='mf-actions';actions.innerHTML=window.QAUI.button('회원탈퇴','open-withdraw','secondary');actions.querySelector('button').onclick=()=>api.select('account-settings','withdraw');container.after(actions);}
  }
- window.addEventListener('pagehide',()=>{accountController.abort();dispose?.();disposeShared?.();},{once:true});
+ window.addEventListener('pagehide',()=>{accountController.abort();authSheet?.dispose();dispose?.();disposeShared?.();},{once:true});
  announce();
 }
 export async function renderProductApplication(nonce,context,screen='store-purchase',state='default',variant='email',componentVariant=null){
@@ -81,6 +84,6 @@ export async function renderProductApplication(nonce,context,screen='store-purch
   const fallback={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member','quote-wait':'member'};
   document={body:await inflate(frames[row.current]),mount:runtimes[row.runtimeFamily||fallback[row.screen]]||'',css:'',row};state=row.state;
  }
- styles??=inflate(cssGzip);const [css,panels]=await Promise.all([styles,getProductPanelBootstrap()]);
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandPanelUiCss+brandAccountCss+panels.css+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+');</script></body></html>';
+ styles??=inflate(cssGzip);const [css,panels,authSheet]=await Promise.all([styles,getProductPanelBootstrap(),screen==='onboarding'?getProductAuthSheetBootstrap():null]);
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandPanelUiCss+brandAccountCss+panels.css+(authSheet?.css||'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+');</script></body></html>';
 }

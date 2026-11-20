@@ -1,0 +1,4098 @@
+{
+  "cutoff": 430,
+  "source": "QA D1 read-only target projection; excludes comment bodies and authors",
+  "excluded": [
+    {
+      "release": "r3-provider-audit-0585",
+      "target": {
+        "screen": "SYNTHETIC",
+        "state": "open",
+        "variant": "qa",
+        "viewport": 390,
+        "artifactHash": "afafafafafafafafafafafafafafafafafafafafafafafafafafafafafafafaf"
+      },
+      "first_cursor": 1,
+      "last_cursor": 3,
+      "event_count": 3,
+      "reason": "Separate synthetic provider-audit release, not an MVP artifact"
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "live-price-policy",
+        "state": "running",
+        "variant": "supplier",
+        "viewport": 1440,
+        "artifactHash": "8931faa168ce6695ae391ef13594c16ab0d4fd99d63df7e50244851eb6e7de8b"
+      },
+      "first_cursor": 391,
+      "last_cursor": 391,
+      "event_count": 1
+    }
+  ],
+  "targets": [
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 320,
+        "artifactHash": "bf83c284c019ab7306cb6ca2c75f7344e50e3dae825b414f26d776b02c5de68c"
+      },
+      "first_cursor": 4,
+      "last_cursor": 8,
+      "event_count": 5,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "3ce1e61428ca87c7202fe73272ad0234f0d492cd15bdb81cafaca3b409354f36"
+      },
+      "first_cursor": 9,
+      "last_cursor": 387,
+      "event_count": 22,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "filled",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "a76ef53c464393f654d6d2167e9978130c67711214b485f117744a6f66bb00ca"
+      },
+      "first_cursor": 14,
+      "last_cursor": 14,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "email-error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d1b965bd363b98ef78aeb81a5dae40a17e135849d66e84123b8cdd08b7d2b1ba"
+      },
+      "first_cursor": 15,
+      "last_cursor": 16,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0c768fefefcec6bf769a97b2a3d83aeeda7987086ada5fbf301f56675996f512"
+      },
+      "first_cursor": 17,
+      "last_cursor": 20,
+      "event_count": 4,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "cd21d10921e9b7877edb5fb3223269ef07cf476655acd813c9b19fee28bcced4"
+      },
+      "first_cursor": 21,
+      "last_cursor": 23,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "limited",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "06f56070f9510831117f8e4c3c2e855ab7d448adeb91db22eae589e391d1ab69"
+      },
+      "first_cursor": 24,
+      "last_cursor": 375,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "success",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "27abaac75cf6612b87b240a8c660a42f023b007b07becb8d70ee6b765b29adb3"
+      },
+      "first_cursor": 25,
+      "last_cursor": 27,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "b80e50a0a65d7c9870859ec83ca9906d200db8af75954829e924276ecb351f89"
+      },
+      "first_cursor": 28,
+      "last_cursor": 28,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "bf94e6b6b606599012f4a7490910a427d21e2774dc57e0bedfca4d40d965c2a4"
+      },
+      "first_cursor": 29,
+      "last_cursor": 31,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "filled",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "dd138030a1a48c9e10f59ab880edad3952d5310e5c5752415cc3ea73f26239e9"
+      },
+      "first_cursor": 32,
+      "last_cursor": 33,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "email-error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "83e35f185edffa30775ca76ef9cba1c956b461ed0760a2ad77727079fae96b5b"
+      },
+      "first_cursor": 34,
+      "last_cursor": 34,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "mismatch",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "63ff718ee21fad771047bbce3a3c54cd66e10006960bb1d3656d8fb1325f4574"
+      },
+      "first_cursor": 35,
+      "last_cursor": 36,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "terms",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c43609e83bff37cb82b4208482c617fc6b71b4c4a4c60291bbef5a02e9113c83"
+      },
+      "first_cursor": 37,
+      "last_cursor": 38,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9d6f3d755480cd7ca10c89257806f2554d9b080088b0accdafd4d4aeabfdf9b3"
+      },
+      "first_cursor": 39,
+      "last_cursor": 40,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "success",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5dff557e9da55525df32dec0989f1534d643fba4c176a99c4187a28eee41e9da"
+      },
+      "first_cursor": 41,
+      "last_cursor": 42,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "161c2b8ecf6f31d450e97bbc6082a19a7d5df9d0929a82364382ea92f508a462"
+      },
+      "first_cursor": 43,
+      "last_cursor": 45,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "972b4d25df41f8ac5d0cdd93ec8b1281739f0b15de7762b2afb3060e6ec00e40"
+      },
+      "first_cursor": 46,
+      "last_cursor": 46,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1a8349f4bf010375dd88e93c5b25d8e26d4a54b29b60d1c196cac3a97427a403"
+      },
+      "first_cursor": 47,
+      "last_cursor": 47,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "sending",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9326df6d682ddea11f0162755dc7bd7d3d8343748556fa994bfe24fe881897a1"
+      },
+      "first_cursor": 48,
+      "last_cursor": 48,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "verified",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ff07db00a67473595b0686f2aada71232b178ed2d12235f9640d45c9eb6ae581"
+      },
+      "first_cursor": 49,
+      "last_cursor": 51,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "password",
+        "state": "request",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0d8bee09f5417f30cc7eba1380b0e298c05f26c9d7f13d6142a4a90c405b54ba"
+      },
+      "first_cursor": 52,
+      "last_cursor": 54,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "password",
+        "state": "complete",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "96542722c7721d45044ddd0d08f87ddace1ee8c3ed5f81511de6dcd6754ffd21"
+      },
+      "first_cursor": 55,
+      "last_cursor": 55,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "required",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "3e219a74489c86af3966265404d1d4900f92180e11f204afaf15fc8cb17f3283"
+      },
+      "first_cursor": 56,
+      "last_cursor": 57,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "missing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7c404bc93d9c40558e046ffe14085f28da733c75c6857f1e51c3f5fd685f34ff"
+      },
+      "first_cursor": 58,
+      "last_cursor": 59,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "optional",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d4f333f8d200d8b4bf880803a144babde1a765cb0b1a961c4be0fe44dc3ec79e"
+      },
+      "first_cursor": 60,
+      "last_cursor": 60,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "59082d0929594ce2bc956cd14f9cc99ec218a104b2b4b0c6c004d90254e9bc53"
+      },
+      "first_cursor": 61,
+      "last_cursor": 68,
+      "event_count": 8,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "checking",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "3f325fe8c48cd845f14128b3e184361117497efcf97c3095882ea30d84d75d89"
+      },
+      "first_cursor": 69,
+      "last_cursor": 69,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "mismatch",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ae9fb15f288168ce68055fe02709ed017493710e1859a31540c820ca3f794a5b"
+      },
+      "first_cursor": 70,
+      "last_cursor": 70,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "unavailable",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "07759c20aa3af6946c9c0dc1f9fce2843e0977a2cfb06bd9bff0a1f2a459c86c"
+      },
+      "first_cursor": 71,
+      "last_cursor": 71,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "verified",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c3f149791ab4056f68a79f7beac847d7166c11f8dcb4bb66f25bf25f25da48d7"
+      },
+      "first_cursor": 72,
+      "last_cursor": 73,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "document",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "da16425df696c1ff38926d0588eb9acff7ad3d747b8a2f87db4f8ae40bb0f3f4"
+      },
+      "first_cursor": 74,
+      "last_cursor": 74,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5560d1c45a62526b280ab0441085e64c44f2ca978e9c2dbbfe68f7d36db1d0ae"
+      },
+      "first_cursor": 75,
+      "last_cursor": 79,
+      "event_count": 5,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "oversize",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "05e6a0384ed49305332abfba663ad6efd12cc341524112bd2723770352b34b91"
+      },
+      "first_cursor": 80,
+      "last_cursor": 80,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "format",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "be19f386cfbc6494494e2e16c574c556d6d1ab57acc8f2f1e2e0bf15e052390e"
+      },
+      "first_cursor": 81,
+      "last_cursor": 81,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "blocked",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "616c415fe860735b8c75cc3db3ea8a94c0816017e3cf3aab09c32e2404567737"
+      },
+      "first_cursor": 82,
+      "last_cursor": 82,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1fd6ee97e5ec34411be79f62f2f2d590167281d30f13222cb2319830615dd750"
+      },
+      "first_cursor": 83,
+      "last_cursor": 83,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "97184e3359039ef3a4fd767374b5ba0812547393aab19f28f536b057b30a5bc3"
+      },
+      "first_cursor": 84,
+      "last_cursor": 86,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "missing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "52b2821a1fe96b20f6ef092562a99c6af106ee3e66bd57c161d06b80a50d810e"
+      },
+      "first_cursor": 87,
+      "last_cursor": 87,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "processing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "44e8b4eecd23d30da7efda9e607eb1078063d07659d348752841a066f17b6804"
+      },
+      "first_cursor": 88,
+      "last_cursor": 88,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "done",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d3343740dc9e5b383793972186044cf033cf68dc7b8314ced37a2abba3445e68"
+      },
+      "first_cursor": 89,
+      "last_cursor": 90,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "deck",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c1243e0729533726291eee1c736fc1c72dc0016d5809139c2f852e0b65f309a4"
+      },
+      "first_cursor": 91,
+      "last_cursor": 92,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "grid",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "06d5b60d210e65458347a6367dc2e66af7f36f0d9264ae85e5c5ea964c5ffca6"
+      },
+      "first_cursor": 93,
+      "last_cursor": 96,
+      "event_count": 4,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "b3cbd99cb445c6879952584ba06c56af4f8375ba18072a4150a58eed2a221b3d"
+      },
+      "first_cursor": 97,
+      "last_cursor": 97,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "6ae0446969a4bd2c4063f401431804d69411bb6740df9c8505e10e8d80b9399c"
+      },
+      "first_cursor": 98,
+      "last_cursor": 98,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "2ec90784bb4f94acbf82118292fb110246c4829a44bc61a7eef643a3c780019a"
+      },
+      "first_cursor": 99,
+      "last_cursor": 99,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "suggestions",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "139bd6c643bd40ab79a509b86df89bb6564ff0017806add205610dea2368c5aa"
+      },
+      "first_cursor": 100,
+      "last_cursor": 100,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "2bfebaff3c434111d28d0d4cc88656f024d175e33cc3e23e28afc7986a1d0669"
+      },
+      "first_cursor": 101,
+      "last_cursor": 103,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "results",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "448d2b3d3c033ef7bf8c87293f003273fd4d703c030d9d26e654bb78efcd69f6"
+      },
+      "first_cursor": 104,
+      "last_cursor": 105,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "2b2a08f8718cae2b8eacc817cae8b0e38559a8f5443ce7928154643dbe666eef"
+      },
+      "first_cursor": 106,
+      "last_cursor": 106,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "none",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e1d93cadc7b78da1f32f79bc3df07177f9fdef66623c6d8b9bee93286e0d5bc8"
+      },
+      "first_cursor": 107,
+      "last_cursor": 107,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "cf50f2d8ff7c4263368278978203b9cccc0a3851900ab9acdbc7031067705f30"
+      },
+      "first_cursor": 108,
+      "last_cursor": 110,
+      "event_count": 3,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "menu",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "add0f576e09623479e0d1b57ffd840785b3418b74a7acb17bdb86c08ed27359a"
+      },
+      "first_cursor": 111,
+      "last_cursor": 111,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "notification",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "3fff522001de1200788ed04bd26abbd0da665bbf3dd10acbbdac4b3e64b270a8"
+      },
+      "first_cursor": 112,
+      "last_cursor": 112,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "restricted",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "19e17317e600f181363b8be67d3e078581da5e885be538da288c603994222f16"
+      },
+      "first_cursor": 113,
+      "last_cursor": 113,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "6c61244e7a5ff0e33f5a1d3941c0467d91c4da4d7d2149767de5143838218aa1"
+      },
+      "first_cursor": 114,
+      "last_cursor": 114,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "info",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "aa729a479ce802279b167f96ad2b679c5ac69114764a5b79fc85afd4aec0aafc"
+      },
+      "first_cursor": 115,
+      "last_cursor": 115,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "booking",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ad7fcb775df888deac6ee2c41d850bd94f6c79b103eacf6c6498ee652a21bb1d"
+      },
+      "first_cursor": 116,
+      "last_cursor": 117,
+      "event_count": 2,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "wheel",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4f5ff1183c4bc46c6c4f3ba39ca2108f5d0eb1a8b9f4e5da3e483e37b9a3b747"
+      },
+      "first_cursor": 118,
+      "last_cursor": 118,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "saving",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "bca08859fae1ffc37c582d5df5e9760aa66caefaed12ff3ba1cc0a7eedb8419c"
+      },
+      "first_cursor": 119,
+      "last_cursor": 119,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "done",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "77ea32259021493a9be23ff4e3154cc3ad43fcfc3a4822ebad01bdbdf50d6ee9"
+      },
+      "first_cursor": 120,
+      "last_cursor": 122,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "common",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "335089c32371bb3cd20ab1ad8bda16de1b35d5cfa1aebbf65aea3f68fd161f5c"
+      },
+      "first_cursor": 123,
+      "last_cursor": 123,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "before",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c7346df11e2cfe99df9eff9e0011ca606443e7dccd6e4573865ad5ae318a7590"
+      },
+      "first_cursor": 124,
+      "last_cursor": 130,
+      "event_count": 7,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q3",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0cda7d9e35445330357a9a3080a5319cd2b25c5f0577a617551b056e0dd57124"
+      },
+      "first_cursor": 131,
+      "last_cursor": 133,
+      "event_count": 3,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q3",
+        "state": "open",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e204a0dc6340849a08dc3d7645d63b4caf38a57b8be2f47a32c08b9ac2ae35dd"
+      },
+      "first_cursor": 134,
+      "last_cursor": 139,
+      "event_count": 6,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "edit",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "56c2f2f508c686dbffbc8e024378ecae19a9181f546c0d1ad047fe3e9ced9ff9"
+      },
+      "first_cursor": 140,
+      "last_cursor": 141,
+      "event_count": 2,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "selected",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "b66d20ee264e713168d051d2693d34f42c91b4661069985c5908b4de4cf6b8a1"
+      },
+      "first_cursor": 142,
+      "last_cursor": 142,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "39135a990997954e12ad52bc45c543feee3943c5fed539995123150b1893045c"
+      },
+      "first_cursor": 143,
+      "last_cursor": 143,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q4",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9006740df976817c78f342f7e9583e27c033473666d8843e63cb73175e5247c8"
+      },
+      "first_cursor": 144,
+      "last_cursor": 145,
+      "event_count": 2,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q4",
+        "state": "open",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "fccd2550fc993ee3a3d90cc093ac29acd294a2f958c302dc0ef9a9feba33ef37"
+      },
+      "first_cursor": 146,
+      "last_cursor": 146,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "22e04b9675ac598bfac2065cc946574c90f0412c067cd7b75eadcc8f55b1531c"
+      },
+      "first_cursor": 147,
+      "last_cursor": 147,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-2",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "27e8533c3ee562f0fb8da3dbede75bc65d899dd4a8324c87c16cec117716d175"
+      },
+      "first_cursor": 148,
+      "last_cursor": 148,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-3",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "426e08abdbc2ab61db2f86c7241193a6fea588b9071009a6fd627351179f747c"
+      },
+      "first_cursor": 149,
+      "last_cursor": 149,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-4",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1c1d7ffca44414ad17f1443c539835b874b11d7be890663fcd036492f929722a"
+      },
+      "first_cursor": 150,
+      "last_cursor": 150,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "770e8343935743920923a6266f931d9f5a18eefaddb695ecd8195f5eebdce72c"
+      },
+      "first_cursor": 151,
+      "last_cursor": 151,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-2",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "628a3a24cf1cc5ee80263d157c191ea5269c1f2ae68d8942e630f576ac8cda81"
+      },
+      "first_cursor": 152,
+      "last_cursor": 152,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-3",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "418ef9684cfdfae91e9fbf47924dea7ea5f5bcbf769b2eeb44256d2b423278ff"
+      },
+      "first_cursor": 153,
+      "last_cursor": 153,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-4",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "951db42c4586ea289aee8afd3af2744f4f5b95f87b62bf5a46a8facd5ada765a"
+      },
+      "first_cursor": 154,
+      "last_cursor": 154,
+      "event_count": 1,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "company",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "99c3bb639709d0fcbd471a1c345323d2c73dde16ed55115f1b7da60b48043c5c"
+      },
+      "first_cursor": 155,
+      "last_cursor": 156,
+      "event_count": 2,
+      "baseline": {
+        "valid": false,
+        "status": 404
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q2",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "36d769f9595f90c43ae459d9d649fb6fcaabb6199e218187bc5031d529a31f5a"
+      },
+      "first_cursor": 157,
+      "last_cursor": 219,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-review",
+        "state": "normal",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "debef718a34341aa36f9088a3ca33ccdbb0309b4e7a36bb32f75775f2c7ff88d"
+      },
+      "first_cursor": 158,
+      "last_cursor": 220,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "saving",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9e8f6eb042d825e2184d58ea3a511fc243a8e6f0aa38fad80fb81829570c3510"
+      },
+      "first_cursor": 159,
+      "last_cursor": 221,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "79fbbc5217301363ae530a9b1937514763a5cafb834019a89c3f8b84d607c984"
+      },
+      "first_cursor": 160,
+      "last_cursor": 222,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-only-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0c4f8e02c5daf168a491b042ba612f582c0b4388662c6d78061b9659094f0c7b"
+      },
+      "first_cursor": 161,
+      "last_cursor": 223,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "equal",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9951e248493e8faf61fbb66b86ac8d340c1eb8247d163e65765cd1a3789d8c61"
+      },
+      "first_cursor": 162,
+      "last_cursor": 224,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "current-lower",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ba3d689a6360ff6bcafd10aa656db33940ecda8eb2362a7b20dba4ecf5931ccb"
+      },
+      "first_cursor": 163,
+      "last_cursor": 225,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "no-current",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "a287d0273a007b3422f37d6138ef48bd43a51b8d9bd6166447d1b71cab538702"
+      },
+      "first_cursor": 164,
+      "last_cursor": 226,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "09d416842cc3bcc406b3a257fc5362654f8866ed06387f425bb5a65e3898af3d"
+      },
+      "first_cursor": 165,
+      "last_cursor": 227,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "recompare",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e744dc1877a041bede62aed8d4ec98351e74f05982d60143f557a5fa2a47d6d0"
+      },
+      "first_cursor": 166,
+      "last_cursor": 228,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "no-result",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "914ba00330da1bb0b9132733109580ef4ed8d6210e3ac0ae5a13d8283aad3fb7"
+      },
+      "first_cursor": 167,
+      "last_cursor": 229,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-wait",
+        "state": "entry",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "eec8e82eb216f38fc1538df5dea663ecb9c18ac6ba184308ee0ad6fb7d9a58d3"
+      },
+      "first_cursor": 168,
+      "last_cursor": 170,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "optional",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0252861508569c6ef0993b41c523bf84a6d40f5ecef83a22b0220af44771433d"
+      },
+      "first_cursor": 173,
+      "last_cursor": 173,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d8a09d496d3aecbb7d6e7ef972113586f49c1cc74d31bbc0b083c0c7447e6336"
+      },
+      "first_cursor": 174,
+      "last_cursor": 176,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "menu",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "668b2e0a9729c277241eee8b9d8c918ed80ce3d67578199c9b995b63fd25c8a4"
+      },
+      "first_cursor": 177,
+      "last_cursor": 177,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "notification",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7e58d739b4f07874f34f554aaa4f3f04c3880b71469887000bff686c36d6fec3"
+      },
+      "first_cursor": 178,
+      "last_cursor": 178,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "restricted",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "92d3a32791ece75a158727186f574a1d068d588aaabc293bd1ddc271509fb714"
+      },
+      "first_cursor": 179,
+      "last_cursor": 179,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "401e82d565d3866809a8b1f2f9aa4dc7b3fa707b6f974304dcfe8233406d6a78"
+      },
+      "first_cursor": 180,
+      "last_cursor": 180,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "booking",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "a2a71a209df4013a36e29f6e66b4cad721bfaa94244d9826731c5098dbedaa9b"
+      },
+      "first_cursor": 181,
+      "last_cursor": 182,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "wheel",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1a45ab70b289c755f806c902acef9af39bae0a03066d292f816550bf18c89dcd"
+      },
+      "first_cursor": 183,
+      "last_cursor": 183,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "saving",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "09e9c93dcc421870f5461c3f6d012dfc6a5a06d34409fff7c2d21256fc98c417"
+      },
+      "first_cursor": 184,
+      "last_cursor": 184,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "common",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5f6c6b057dacbf7a974092be889b29bbe0e88d987016d9b9bfc4faa6171eaa85"
+      },
+      "first_cursor": 185,
+      "last_cursor": 185,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "before",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7ea6e446bcb94307ea467d328fb1c118b9550fd9e62c3a6e66fcf128210fa961"
+      },
+      "first_cursor": 186,
+      "last_cursor": 192,
+      "event_count": 7,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q3",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0392eb7a645d2797e302cf0745616c2c5b84fb7890aeabeda6a99e933c9a6369"
+      },
+      "first_cursor": 193,
+      "last_cursor": 195,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q3",
+        "state": "open",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "0958a321b6911243368dd05a4fdeadbf546c4aaffee2169c1c2ac13eb2eb07b5"
+      },
+      "first_cursor": 196,
+      "last_cursor": 201,
+      "event_count": 6,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "edit",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ad61f247e8c6e6998c5680dbcf7984b19601bc1fee5b5490231b942043a58f49"
+      },
+      "first_cursor": 202,
+      "last_cursor": 203,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "selected",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "527d784ebb765176c447791e784f2453d63af8f462628c43556f1b8083f8938b"
+      },
+      "first_cursor": 204,
+      "last_cursor": 204,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "cfc1ef1e219f36aa8ac771618c07fb3e30f2e20ea8a901aedaa59dfb880456d8"
+      },
+      "first_cursor": 205,
+      "last_cursor": 205,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q4",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7dd7e4399f50db08e1966cd2fd58ac35ac70aff1dc1ed26fc14008c7c59e84ef"
+      },
+      "first_cursor": 206,
+      "last_cursor": 207,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q4",
+        "state": "open",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "094c60537769aeec84d68fd29d3154fb9616a429f2a30f7c9d3de92ab4c99a86"
+      },
+      "first_cursor": 208,
+      "last_cursor": 208,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ea85f171dffc20bcfa1ec6d572a611e0c36edd8f39f2fb542d4ac0650753b6eb"
+      },
+      "first_cursor": 209,
+      "last_cursor": 209,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-2",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "058cf6e345b34c985ed980cbe5172cf7d8a86f0dff998afe34c6c76901170dc8"
+      },
+      "first_cursor": 210,
+      "last_cursor": 210,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-3",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "a1e8ae0ec1d68d291e2c287edd0bda3794e7e208eacad86f8d4c43fd79ac743a"
+      },
+      "first_cursor": 211,
+      "last_cursor": 211,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-4",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5275c3d55f6840eb5ee76f8ecd6e32166da0057efdd5ae520b2736ed2f369471"
+      },
+      "first_cursor": 212,
+      "last_cursor": 212,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "83d04a93c3ea9b9d631dd719aad34e81c11365ff00beb6b0af2cced31cc8f65e"
+      },
+      "first_cursor": 213,
+      "last_cursor": 213,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-2",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e5df2099a28872949f886963604e9d008e0d8e88eaf53fa68451aaf4d57ac3bc"
+      },
+      "first_cursor": 214,
+      "last_cursor": 214,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-3",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c39d49b7bc12008180ea3f67bb17ecc74c6eeaf6a4a0b9eb9cad69d3a54de280"
+      },
+      "first_cursor": 215,
+      "last_cursor": 215,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-4",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "aba628295c75454e5ec10fd3b1ad4c34613a5bc36bee450841ce44feac22b713"
+      },
+      "first_cursor": 216,
+      "last_cursor": 380,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "company",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "f96874db6d571f53a445925c43dae619b5d1c1102f1b6ca5d4b6344161ddf342"
+      },
+      "first_cursor": 217,
+      "last_cursor": 378,
+      "event_count": 5,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5f3b2871d06c0d5ac6cefdf08eb6e291b8690207bff95d8b40830c0b7a6e8ee0"
+      },
+      "first_cursor": 230,
+      "last_cursor": 231,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e69fde16c8c58495d92b02f70d8e2e8e3a38a531b6a39e004bd760e18a46f6e4"
+      },
+      "first_cursor": 232,
+      "last_cursor": 232,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e3ce52e2ece4ae599d31c41f7f7b0df2bdbaa43bc4eab5d1d5b7022e00a89ff8"
+      },
+      "first_cursor": 233,
+      "last_cursor": 234,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "limited",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d90cc9f59ef2d0d21eed8e91d2027ab5e32e4575b4565cb43bec39afa6216030"
+      },
+      "first_cursor": 235,
+      "last_cursor": 235,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "success",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "262d7351e664448ccba46bd1e1ae9a71ef7ee3ae9bda171c4fa7c3897b411bfa"
+      },
+      "first_cursor": 236,
+      "last_cursor": 236,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "274acfe0ba2f0c0c7af050ec95691721223bc7deb464ff66484e077156843784"
+      },
+      "first_cursor": 237,
+      "last_cursor": 237,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "12caae4b2ee6b1314ae2e52987722e433ecfa4f43507441f9eac194bd4c23d23"
+      },
+      "first_cursor": 238,
+      "last_cursor": 238,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "filled",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "604bdfd459a3cb634093d90b841b45e265b8f053221a1df4dd0d143395133199"
+      },
+      "first_cursor": 239,
+      "last_cursor": 239,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "dddba261161b1e9294845f039aab7d69d37e01f5eb90e4d22665d298bc6a2d08"
+      },
+      "first_cursor": 240,
+      "last_cursor": 240,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "success",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "062a59fc36b256f8e327a5a83d88025e73709329b486ae8a36aff081a442c9e8"
+      },
+      "first_cursor": 241,
+      "last_cursor": 241,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "f7aa26931fd5327ecfb1ac90bd82094287b81fd6deabc09dc69b1a669a5ff1b8"
+      },
+      "first_cursor": 242,
+      "last_cursor": 242,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "sending",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "b03823f61f04303fd540f8a5941eee06398ae2bf01d7fa22c3601914bcf652ed"
+      },
+      "first_cursor": 243,
+      "last_cursor": 243,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "verified",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "2e002b945b55d8dfa51de375c2a4d0ea614cbaf4fecf48799ac80f672be319a0"
+      },
+      "first_cursor": 244,
+      "last_cursor": 244,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "password",
+        "state": "request",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7349be962d799a1eaa93874f85bc63af2ad69fd2e823e0c6414478b1045264ea"
+      },
+      "first_cursor": 245,
+      "last_cursor": 245,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "missing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c787a65bcea9d46bcb3d72c5a724aa02d0ef7419b1231abe2030622925153df0"
+      },
+      "first_cursor": 246,
+      "last_cursor": 246,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "optional",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "93e0de87c7581174f04d41d519dd3594c44cfd1a1f18cffcf1d3c764cfe8bac5"
+      },
+      "first_cursor": 247,
+      "last_cursor": 247,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4582954b2cd87eb238ddfce9d07d0ac14a0ff24497050c0b1c523e8c1cde9559"
+      },
+      "first_cursor": 248,
+      "last_cursor": 252,
+      "event_count": 5,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "mismatch",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9725458bc0303046ff192b696784b2f40ebe55884aefa9d479d2256977f10937"
+      },
+      "first_cursor": 253,
+      "last_cursor": 253,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "unavailable",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "8e677fb13b4495bf92d9d4d8d179e8cc4fc9e1443adf1a3b287e56d71137a575"
+      },
+      "first_cursor": 254,
+      "last_cursor": 254,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "verified",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "519cc8810f4416a331bccd0a55f47160792a6c9ae4ece7c1e07f418ec2758266"
+      },
+      "first_cursor": 255,
+      "last_cursor": 256,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "business",
+        "state": "document",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d0422122b4c511d93694909ee413ee951c1ba6c77a66b45bd8540bad728fd704"
+      },
+      "first_cursor": 257,
+      "last_cursor": 257,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "48b72485c711907db4a2163de5bf674cc005a5d70261f5ffe34ad5f14511c3da"
+      },
+      "first_cursor": 258,
+      "last_cursor": 259,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "oversize",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "2cf153bab038df3aa0100419ca896601af4bbd4c6fe722502efc53b77f898b92"
+      },
+      "first_cursor": 260,
+      "last_cursor": 260,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "proof",
+        "state": "format",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d1f3d1a56de98d8b9c738ef96b76d3abe5fd40c89605fe0aae7b0a270ae319b3"
+      },
+      "first_cursor": 261,
+      "last_cursor": 261,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "382328ae85a73ae1b58481d519f1e04ed8d42ef5905a848dd2d6fdd1ab97f3c2"
+      },
+      "first_cursor": 262,
+      "last_cursor": 262,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "missing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "8626ec34071984ca315ede4dc47a759b35222763485163f7f3635ff288c3f9fd"
+      },
+      "first_cursor": 263,
+      "last_cursor": 263,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "processing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7aab4bbb23a96a8c92eff6e7103c47394c624fbe5d5075c9eb772a3832972364"
+      },
+      "first_cursor": 264,
+      "last_cursor": 264,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signature",
+        "state": "done",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "17f960da706647266e7a5a5b85484ed41c7335112076e630d80354e7adbae9a2"
+      },
+      "first_cursor": 265,
+      "last_cursor": 265,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "deck",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "84680edf2d0fa4531636ab56414114a410cb2379ac3ac2b9294b050ad0f31045"
+      },
+      "first_cursor": 266,
+      "last_cursor": 266,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "grid",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c162ba762753eb86a1ea7a35f47e06d206f6cda3eae7ec3dc3738c4ac615f877"
+      },
+      "first_cursor": 267,
+      "last_cursor": 268,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ee33826c53e9c8c046e281ee8b19471c57a801c3397372f6ab0f137f5a416125"
+      },
+      "first_cursor": 269,
+      "last_cursor": 269,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "bc91613179c9e4d065b3e07ebacb04909db3428c051b8e33f575512798d9ecc8"
+      },
+      "first_cursor": 270,
+      "last_cursor": 270,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "dedfef50287b1c354b0e6e3c9d17814da526b62c992386a4dc8079717a1c39b8"
+      },
+      "first_cursor": 271,
+      "last_cursor": 271,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5efad79babdf15b5768edae3a67dfedf7ce5abf779c138a4d9c7ba66ba372d43"
+      },
+      "first_cursor": 272,
+      "last_cursor": 272,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "results",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c7f485096f4250c04c20ab23a9cf353ff76a46cf3d0920a17bfc43980446d6a8"
+      },
+      "first_cursor": 273,
+      "last_cursor": 273,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "none",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "31f6b8685868525e1e25fd5ab8bd2096a188654382eafb093bc48b48622d4a6d"
+      },
+      "first_cursor": 274,
+      "last_cursor": 274,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "78fe196183116b3f8f2eae418b0a5828cadd3d94ca9fea14d93ec9adfcafebf5"
+      },
+      "first_cursor": 275,
+      "last_cursor": 275,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "menu",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ee6cdd900b9a69996d658e8047795905e1ddb6b45456f38716bf812e9f50e1a0"
+      },
+      "first_cursor": 276,
+      "last_cursor": 276,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "notification",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "dd3e70e15899bb63940b71705d13eaff95d27610a451f196e852971668f17741"
+      },
+      "first_cursor": 277,
+      "last_cursor": 277,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9cf7e69cb9b0e9529d6677f6af30f1f5835516233f835b3d0c57e4675866dabc"
+      },
+      "first_cursor": 278,
+      "last_cursor": 278,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "info",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "f145ffc58bb55f6cf2342fa1e3db35da4e3cbe020155d6a7f477e5d37537ae01"
+      },
+      "first_cursor": 279,
+      "last_cursor": 279,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "booking",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7e527fe569d53fbdd495000041f6cf82d1829bb69c89d2b7a62585eb21b3db6d"
+      },
+      "first_cursor": 280,
+      "last_cursor": 280,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "common",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1b0b862a123fbe075b0a10a6a93c33504599752902e8aa8aadac12df34a12896"
+      },
+      "first_cursor": 281,
+      "last_cursor": 281,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "before",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "acaca68c84e47ca4e55fd3864315b865fbebe9d7057d8b10ce9a24d559880c59"
+      },
+      "first_cursor": 282,
+      "last_cursor": 343,
+      "event_count": 4,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q3",
+        "state": "open",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "13c8a10730ee8adaf86c367a99529303f2f271def8d1c6524a0f026803fc53ff"
+      },
+      "first_cursor": 285,
+      "last_cursor": 344,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q1",
+        "state": "selected",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4caa635117cdea7898594ad252638fc779fcd48e08622a0462b40976ce2c2a1f"
+      },
+      "first_cursor": 286,
+      "last_cursor": 345,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q4",
+        "state": "open",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ea69dc46e8b0fddf2cf2c4b9bcfef1e7b09572ff2f131fa4f72018e1f2bbbc2f"
+      },
+      "first_cursor": 287,
+      "last_cursor": 346,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "q2",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c6a5c5cd6d4d2584cc8f377f932a131c5b4c96892a313dd88a351cc99fa97d89"
+      },
+      "first_cursor": 288,
+      "last_cursor": 288,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-review",
+        "state": "normal",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "01c9d6478037263c286734a7f57b5a65d0f5e626fbddf8299babb1fa7cd4a5d2"
+      },
+      "first_cursor": 289,
+      "last_cursor": 289,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "saving",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "531b330a1a8a9bd757fda97583195446bb0f09b5ce42a20b9e6288917caabe34"
+      },
+      "first_cursor": 290,
+      "last_cursor": 290,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "64e909483a652e85c7e97d983484095dc0929c3e8224252eb96a98b6029150f7"
+      },
+      "first_cursor": 291,
+      "last_cursor": 291,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-only-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ad5cc2710c50b3baadaf6bc5450b6ee0a3045c169a107d23a2b0d3ef6b35eb30"
+      },
+      "first_cursor": 292,
+      "last_cursor": 292,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "equal",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c4a6518bc45c5f26cc16bc5873d25bfba686c2f7d1fc50d5a248791b942bc404"
+      },
+      "first_cursor": 293,
+      "last_cursor": 293,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "current-lower",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "f707e0212e0beef4a53b8801aeb30546d10a26003e691dba99940e0315e53077"
+      },
+      "first_cursor": 294,
+      "last_cursor": 294,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "no-current",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9a36a4970ec6bbb89a1032cf122f78ecb4a1d31ef24b67d591f2da2944bcc83b"
+      },
+      "first_cursor": 295,
+      "last_cursor": 295,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "78863129d4284c52d5d617c08242a1dc304f6d37714f3ddffbb4257f4faa1213"
+      },
+      "first_cursor": 296,
+      "last_cursor": 296,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "recompare",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "fc77a0c71cbac78122f9fb5000389b3d5469aa111a89094619a236af3c04da1e"
+      },
+      "first_cursor": 297,
+      "last_cursor": 297,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "no-result",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d66fd718661808eb17ce76da5f94c14e74793695486e23d87a24683aa07e1db1"
+      },
+      "first_cursor": 298,
+      "last_cursor": 298,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-wait",
+        "state": "entry",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5c7a98cc1f2bb1ed15f7127ec8b6f7d9bee4c73040e429f49de6c7067e10f1ba"
+      },
+      "first_cursor": 299,
+      "last_cursor": 301,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c2f4f4399cc048f3ba46d1436071835ade0b5492e08d0a73f9f764514c6058a8"
+      },
+      "first_cursor": 310,
+      "last_cursor": 311,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "943e014667e5043463605ee25862d858272eede12fdd13867fd5dc4f15869d31"
+      },
+      "first_cursor": 312,
+      "last_cursor": 312,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "8b03c48778611900496336be3a5af5bcb084dcd8c47f5adaa0bca880102bf8a5"
+      },
+      "first_cursor": 313,
+      "last_cursor": 314,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "limited",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4f09362aa56b88550fa98d1079e270d49b0dc406773b88e1c21df2b0cf68f006"
+      },
+      "first_cursor": 315,
+      "last_cursor": 315,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "success",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "cfa8a83b173e8a6ab762aac1b3404c34f112d23eacdfd84ff1c9e0e990c5f98b"
+      },
+      "first_cursor": 316,
+      "last_cursor": 316,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "bd2aea3cee5887973a897998d06999630c9c81e76cb059bc30dfa7fcd0061b44"
+      },
+      "first_cursor": 317,
+      "last_cursor": 317,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "23c96065c27dbbef266cd91456f7a3cf3ed0511fd6521b3c409947e47df8985d"
+      },
+      "first_cursor": 318,
+      "last_cursor": 318,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "filled",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c6484e08b3386c008e5f24db0131a979a49e4720bfa796c8008c3c7b584ab756"
+      },
+      "first_cursor": 319,
+      "last_cursor": 319,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ac2a3d36467d7a05fc518a2e2545cfebfe523a1bcaef78b1417c2972393f1e7c"
+      },
+      "first_cursor": 320,
+      "last_cursor": 320,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "success",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e1fd839b594ca9b1041ccce17f8e46698bb305379bac731a196d1b8b0e8e4992"
+      },
+      "first_cursor": 321,
+      "last_cursor": 321,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4ca40c0c906a2e3991f057540de2699d41b7464cc5d3c64e082dfe6bad705dcc"
+      },
+      "first_cursor": 322,
+      "last_cursor": 322,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "sending",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ff90caf46e1471b3ea98f7ad5cf83e9790f376c922dc27be8fe8385b0a8942f6"
+      },
+      "first_cursor": 323,
+      "last_cursor": 323,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "verified",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1da5f3e1c7d33a9cce0fb59be0aeedd2eeda5fa997633e13387ebb2571f1e034"
+      },
+      "first_cursor": 324,
+      "last_cursor": 324,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "password",
+        "state": "request",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ce6520e6ce6e1ee53a220c80f75f609a5e3d3b52d121ca1110a2109d1715cdec"
+      },
+      "first_cursor": 325,
+      "last_cursor": 325,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "missing",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "73f9e345b412c1a8b7580d6e1ad8adf1cb854965a9883782f68b3783639e9c2c"
+      },
+      "first_cursor": 326,
+      "last_cursor": 326,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "optional",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5c802983a595e5329563db160c60666258df9e9795feb14eac073af65e64105b"
+      },
+      "first_cursor": 327,
+      "last_cursor": 327,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "deck",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "a46292e53d65afe870c38f057de3f9174f5d6b40439ed41157036ab87264c790"
+      },
+      "first_cursor": 328,
+      "last_cursor": 328,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "grid",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "e5c88fc02ba5f35057948f96fd5411cecc164593c040783af7d5b6094a6169f0"
+      },
+      "first_cursor": 329,
+      "last_cursor": 330,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "3bba19377790eef0af638e859e610ff382d2ed9bb3c96c30eb3534143e1d9284"
+      },
+      "first_cursor": 331,
+      "last_cursor": 331,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "loading",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "92d6bca68886b7f6238277d04ead0de489320bdd8037bad47862429db663ff4d"
+      },
+      "first_cursor": 332,
+      "last_cursor": 332,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "6b8fde968a32b640435d5843ffe5752cd3e22d39ad904419713690deacbfeeec"
+      },
+      "first_cursor": 333,
+      "last_cursor": 333,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "b2e382ac4f4042927c151761a6cbb525377c596a52b8f392aeee74685a1c3e5f"
+      },
+      "first_cursor": 334,
+      "last_cursor": 334,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "results",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1eab6707fcf1ca329be3e0f48b24ab4064520e74c87fbf481d60186557c47655"
+      },
+      "first_cursor": 335,
+      "last_cursor": 335,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "none",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c4b8be5d21f310771638b9af279d1f51a9fde3337c16bfb46daa6a1b08cbb40a"
+      },
+      "first_cursor": 336,
+      "last_cursor": 336,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1f855c30cee4be676ad7c94326f70852f0e81f2928a9d855c87464c180a97ad2"
+      },
+      "first_cursor": 337,
+      "last_cursor": 337,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "menu",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "572991ff0df3c15ec7b992541bcf90b0ba526139768a1836146bd62040ab9d98"
+      },
+      "first_cursor": 338,
+      "last_cursor": 338,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "notification",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "29b790b19e3b863dd308a6e5f5577c9ef4aed9310841e907ab8cc9e4ff6c50db"
+      },
+      "first_cursor": 339,
+      "last_cursor": 339,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "closed",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "6dc232c2c69ad77cfcb2e1eb11b0ac6ae785fda91e2d3e3e2b99265e9a261e0c"
+      },
+      "first_cursor": 340,
+      "last_cursor": 340,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "info",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "abe34674970d087087238ed6b918cfda8c3b6670487638cd0d807b71e74d9b07"
+      },
+      "first_cursor": 341,
+      "last_cursor": 341,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "drawer",
+        "state": "booking",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "786753afe8dc08587eda714736a7b0dd0c5d1650216337ec0dff83f76cd9a8b9"
+      },
+      "first_cursor": 342,
+      "last_cursor": 342,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "saving",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "51521240c3a7469f6e1266d869be62ab8537925a87d49becda3b2f5f4710176d"
+      },
+      "first_cursor": 347,
+      "last_cursor": 347,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5f12c9670b3c66b503be6592ab82de46a1d0d51734c0a3516acaabfe272ff303"
+      },
+      "first_cursor": 348,
+      "last_cursor": 348,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-only-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "eb0f0cd2fa1fc9255afd45a70d90ec28cc2b566a91dee5c5b5215dedfa1b3d4c"
+      },
+      "first_cursor": 349,
+      "last_cursor": 349,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "equal",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "998b2e30d009bda8179a68db5de0ddfe345a47b3712d0aa0b5efdaf6d3fcc544"
+      },
+      "first_cursor": 350,
+      "last_cursor": 350,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "current-lower",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "1ee23433b48c5cf8bc9528debb7be3d735fbcb80049293399c354baa1d896905"
+      },
+      "first_cursor": 351,
+      "last_cursor": 351,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "no-current",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "22255388e20462388db629764b1b6775eeb6b447a77a46761c29efef90e4f6ba"
+      },
+      "first_cursor": 352,
+      "last_cursor": 352,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "expired",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d65a3a5a0faa72ed648422a263aa160d76ab6577ff115eb82ecd81e46b9fd9f2"
+      },
+      "first_cursor": 353,
+      "last_cursor": 353,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "recompare",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4ea389fdcb2eca481e4856f131f26bcd694fd6217e0b56d4c41a298efae5ab81"
+      },
+      "first_cursor": 354,
+      "last_cursor": 354,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "no-result",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "ddbff19b554a26350f248ec6efd9d1916b77806e24d1bc32d7f0efea58ca31c4"
+      },
+      "first_cursor": 355,
+      "last_cursor": 355,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "628f599d22bfb65e5e81afa0e32230f4415fcf52fae4dc1b84155bb6586e3779"
+      },
+      "first_cursor": 356,
+      "last_cursor": 356,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "error",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "7b3bd4de90507e7501ae0ce16fb6cf01e0ece5f279fb3ab05e542cf79a84af72"
+      },
+      "first_cursor": 357,
+      "last_cursor": 357,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "signup",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "cad35035f258cd64eb92e2c3e6fad45352a2c508b4d91ba200c2a1ce6ed543fa"
+      },
+      "first_cursor": 358,
+      "last_cursor": 358,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "otp",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "37b8437c9d84d88c913bd2e61270202c5467a615f8840fde58bcff1387bb858f"
+      },
+      "first_cursor": 359,
+      "last_cursor": 359,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "terms",
+        "state": "optional",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c78d4b1d046294d006035415a3f26a58a124d3ceef014c42334d5f6a669b4d45"
+      },
+      "first_cursor": 360,
+      "last_cursor": 360,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "deck",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "55fc7890da4e21290a187e8d832c3041b816dafe428808e0dd12d2c1d5d9ddaa"
+      },
+      "first_cursor": 361,
+      "last_cursor": 361,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "passes",
+        "state": "grid",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "47535369697f83b08b2174c4ea58243692e945dbdd9a39677655ed61e8931ce0"
+      },
+      "first_cursor": 362,
+      "last_cursor": 362,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "empty",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "3802706737d50f2207d0141360932b6b527ccecebe310a14c1b690e716c6c5e9"
+      },
+      "first_cursor": 363,
+      "last_cursor": 363,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "results",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "4ac831e712fd0aec439b8a6ce9fba25d6db36e89b4ca624bdd9e6e49a839cee6"
+      },
+      "first_cursor": 364,
+      "last_cursor": 364,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "search",
+        "state": "none",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "422b29e5fc88f1592e397fcb2111afc66f44926c8e6b9a9fe5e21a184cda8019"
+      },
+      "first_cursor": 365,
+      "last_cursor": 365,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "9b44ec49156d813f571e01bf778946a17a6545bdc36d1b2826370c332e363319"
+      },
+      "first_cursor": 366,
+      "last_cursor": 366,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "menu",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c65e6e7b32ba91f885f09efa75a029cbd113f7f4f7df57074d65161dfcb7123a"
+      },
+      "first_cursor": 367,
+      "last_cursor": 367,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "profile",
+        "state": "notification",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "f2952912a14938accbc32444f96d20da8592762371fe665e47343d67aaf9e4fc"
+      },
+      "first_cursor": 368,
+      "last_cursor": 368,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "common",
+        "state": "default",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "d5c19a44afbdf842eb6d369de438ba08088628984a71c421304eec1ee6dfe372"
+      },
+      "first_cursor": 369,
+      "last_cursor": 369,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "saving",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "82f058bf96772c8667aed6740583c6d5917abaeee733a37c68fb353e60b900e8"
+      },
+      "first_cursor": 370,
+      "last_cursor": 370,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-result",
+        "state": "new-detail",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "748994e1b7c1456304493bcf4583aee1d03003d94179c7ae31aea986b093c430"
+      },
+      "first_cursor": 371,
+      "last_cursor": 371,
+      "event_count": 1,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "quote-wait",
+        "state": "entry",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "af10643aaae147da8f1a2c020308060dc7367aaedb8898c0dce6b46be6dfd3b8"
+      },
+      "first_cursor": 372,
+      "last_cursor": 373,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "login",
+        "state": "empty",
+        "variant": "compact",
+        "viewport": 390,
+        "artifactHash": "35112651c880eb07f0036dadc49f603d5e74816839a1923530110704b50f91fd"
+      },
+      "first_cursor": 388,
+      "last_cursor": 390,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36"
+      },
+      "first_cursor": 392,
+      "last_cursor": 415,
+      "event_count": 24,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-4",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "c24c0a29283bb90fe34b5ebceed29e9932092444bb033d78f376e18d94effec7"
+      },
+      "first_cursor": 416,
+      "last_cursor": 425,
+      "event_count": 3,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "67b73f64c47f4e8701bd328046f6ac805fe812234e4408febf9f6fc484627e66"
+      },
+      "first_cursor": 418,
+      "last_cursor": 430,
+      "event_count": 6,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "member-4",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "2b98278a5f077dfe564b3d0b01d4de374d112b43a581b7113c20141f6d60adb8"
+      },
+      "first_cursor": 423,
+      "last_cursor": 424,
+      "event_count": 2,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "release": "MSG0585-R3",
+      "target": {
+        "screen": "onboarding",
+        "state": "company",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "de5753e9767628d0a496b271d97fa72b905966133e635a108c56374859b21398"
+      },
+      "first_cursor": 426,
+      "last_cursor": 429,
+      "event_count": 4,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    }
+  ]
+}

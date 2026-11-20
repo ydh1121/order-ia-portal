@@ -15,6 +15,175 @@ from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_m
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def frame_identity(locator):
+    """Read the frozen frame's opaque identity for an actual DOM element."""
+    return locator.evaluate("""el=>{
+        const root=document.getElementById('order-single'),parts=[];
+        const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
+        if(!root.contains(el))throw Error('Review target is outside the screen root');
+        for(let node=el;node!==root;node=node.parentElement)
+            parts.unshift([node.localName,...fields.map(name=>node.getAttribute(name)||'')].join('|'));
+        if(!parts.length)return 'screen';
+        let hash=2166136261;
+        for(const char of 'screen/'+parts.join('/'))hash=Math.imul(hash^char.charCodeAt(0),16777619);
+        return 'a-'+(hash>>>0).toString(36);
+    }""")
+
+
+def pick_panel_point(page, frame, target, marker, *, native_popover=False):
+    """Use the real QA toolbar and physical pointer, stopping before any save."""
+    frame_pointer_position(page, target)
+    expected_id = frame_identity(target)
+    expected_layer = frame_identity(frame.locator(marker))
+    page.evaluate("""()=>{
+        window.__onboardingReviewPoint=null;
+        if(window.__onboardingPointProbe)return;
+        window.__onboardingPointProbe=true;
+        addEventListener('message',event=>{
+            const frame=document.getElementById('frame'),m=event.data;
+            if(event.source===frame?.contentWindow&&event.origin==='null'&&
+               m?.scope==='ORDER_R3_FRAME'&&m.type==='point'&&
+               m.artifact===frame.dataset.testReadyHash)
+                window.__onboardingReviewPoint=m;
+        });
+    }""")
+    page.locator('#new').click()
+    veil = frame.locator('#r3-veil')
+    expect(veil).to_be_visible()
+    expect(target).to_be_visible()
+    if native_popover:
+        expect(frame.locator('#r3-veil:popover-open')).to_have_count(1)
+        expect(frame.locator('.obm-panel:popover-open')).to_have_count(1)
+    # Opening the outer toolbar can move its viewport. Read the target again
+    # after it has opened; frame_click maps this child point to the live canvas.
+    point = target.evaluate("el=>{const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}")
+    frame_click(page, veil, position=point)
+    page.wait_for_function('window.__onboardingReviewPoint!==null')
+    envelope = page.evaluate('window.__onboardingReviewPoint')
+    anchor = envelope['payload']
+    assert anchor['id'] == expected_id and anchor['id'] != 'screen', anchor
+    assert anchor['instance'] == 'onboarding', anchor
+    assert expected_layer in anchor['layers'], anchor
+    expect(page.locator('#point-state')).to_have_text('위치 지정됨')
+    expect(page.locator('#body-text')).to_have_value('')
+    page.locator('#close-drawer').click()
+    expect(veil).to_be_hidden()
+    return envelope
+
+
+def restore_panel_point(page, envelope):
+    # Replay the captured, current-frame protocol without creating a comment.
+    page.evaluate("""m=>document.getElementById('frame').contentWindow.postMessage({
+        scope:'ORDER_R3_HOST',channel:m.channel,artifact:m.artifact,type:'restore',payload:m.payload
+    },'*')""", envelope)
+
+
+def check_auth_overlay(page, frame):
+    url, digest = page.url, page.locator('#frame').get_attribute('data-test-ready-hash')
+    frame.locator('#order-single').evaluate("""root=>{
+        window.__introOverlayBaseline={root,document:window.__qaPointerDocument,
+            main:root.querySelector('.ob-main'),stage:root.querySelector('.ob-stage'),
+            brand:root.querySelector('.ob-brand-common svg')};
+    }""")
+
+    def unchanged():
+        assert page.url == url
+        expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
+        expect(page.locator('#state-buttons [data-state="guest-2"]')).to_have_class('active')
+        expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', '2')
+        assert frame.locator('#order-single').evaluate("""root=>{
+            const before=window.__introOverlayBaseline;
+            return before.document===window.__qaPointerDocument&&root===before.root&&
+                root.querySelector('.ob-main')===before.main&&root.querySelector('.ob-stage')===before.stage&&
+                root.querySelector('.ob-brand-common svg')===before.brand;
+        }"""), 'Opening or closing auth must retain the introduction document, slide and brand'
+
+    overlay = frame.locator('[data-product-auth-sheet]')
+    frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
+    expect(overlay).to_be_visible()
+    expect(overlay).to_have_attribute('data-auth-screen', 'login')
+    expect(overlay).to_have_attribute('data-auth-state', 'empty')
+    expect(overlay).to_have_attribute('data-auth-variant', 'compact')
+    expect(frame.locator('.ob.guest')).to_have_js_property('inert', True)
+    expect(overlay.locator('.auth-background')).to_have_count(0)
+    unchanged()
+    for name in ('카카오 로그인', '네이버 로그인', 'Google 로그인'):
+        expect(overlay.get_by_role('button', name=name).locator('img')).to_be_visible()
+    expect(overlay.locator('[data-action="close-sheet"]')).to_have_count(0)
+    email = overlay.locator('[name=email]')
+    envelope = pick_panel_point(page, frame, email, '#r3-panel-state-auth-login-empty')
+    expect(email).to_have_value('')
+    email.press('Escape')
+    expect(overlay).to_have_count(0)
+    unchanged()
+    restore_panel_point(page, envelope)
+    expect(email).to_be_focused()
+    assert frame_identity(email) == envelope['payload']['id']
+    unchanged()
+    email.press('Escape')
+    expect(overlay).to_have_count(0)
+
+    frame_click(page, frame.get_by_role('button', name='회원가입', exact=True))
+    expect(overlay).to_have_attribute('data-auth-screen', 'signup')
+    frame_click(page, overlay.locator('.sheet-dim'), position={'x':12,'y':8})
+    expect(overlay).to_have_count(0)
+    unchanged()
+
+    frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
+    sheet, grip = overlay.locator('.auth-sheet'), overlay.locator('.sheet-handle')
+    x, y = frame_pointer_position(page, grip)
+    travel = sheet.evaluate('el=>Math.max(120,el.getBoundingClientRect().height)*.5+12')
+    scale = page.locator('#frame').evaluate('el=>el.getBoundingClientRect().height/el.offsetHeight')
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x, y + travel * scale, steps=12)
+    page.mouse.up()
+    expect(overlay).to_have_count(0)
+    unchanged()
+    expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
+    print('PASS canonical auth overlay: original slide/DOM/hash retained, real provider assets, inner QA pin and restore, Escape/scrim/drag close')
+
+
+def drag_intro(page, frame, *, forward, expected_step):
+    title = frame.locator('.ob-copy h1')
+    size = title.evaluate('el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})')
+    left = {'x':size['width']*.15,'y':size['height']/2}
+    right = {'x':size['width']*.85,'y':size['height']/2}
+    start = frame_pointer_position(page, title, right if forward else left)
+    end = frame_pointer_position(page, title, left if forward else right)
+    page.mouse.move(*start)
+    page.mouse.down()
+    page.mouse.move(*end, steps=12)
+    page.mouse.up()
+    expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', str(expected_step))
+    assert frame.locator('#order-single').evaluate("""root=>
+        window.__introOverlayBaseline.document===window.__qaPointerDocument&&
+        window.__introOverlayBaseline.brand===root.querySelector('.ob-brand-common svg')""")
+
+
+def check_notification_pin(page, screens):
+    frame = screens.screen('onboarding', 'member-1')
+    bell, panel = frame.locator('[data-action=quick]'), frame.locator('.obm-panel')
+    expect(bell).to_be_enabled()
+    frame_click(page, bell)
+    expect(panel).to_be_visible()
+    read = panel.get_by_role('button', name='읽음', exact=True)
+    expect(read).to_be_visible()
+    snapshot = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
+    envelope = pick_panel_point(page, frame, read, '#r3-panel-state-account-notifications', native_popover=True)
+    after = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
+    assert after['data']['notifications'] == snapshot['data']['notifications'], 'Selecting the read-button location must not activate it'
+    assert not any(call['method'] == 'POST' for call in after['calls']), after['calls']
+    panel.locator('.obm-heading').press('Escape')
+    expect(panel).to_be_hidden()
+    restore_panel_point(page, envelope)
+    expect(read).to_be_focused()
+    assert frame_identity(read) == envelope['payload']['id']
+    panel.locator('.obm-heading').press('Escape')
+    expect(panel).to_be_hidden()
+    print('PASS real notification popover: inner read-button pin, native top-layer veil, focus retained, restore and zero mutation')
+
+
 def check_archived_entry(page, origin):
     old_hash = "bf83c284c019ab7306cb6ca2c75f7344e50e3dae825b414f26d776b02c5de68c"
     # The private release has an existing 320px email review anchor on this exact document.
@@ -41,6 +210,11 @@ def check_archived_entry(page, origin):
 
 
 def check(page, origin, width):
+    review_writes = []
+    def record_write(request):
+        if '/r3-qa/records' in request.url and request.method not in ('GET','HEAD'):
+            review_writes.append({'method':request.method,'url':request.url})
+    page.on('request', record_write)
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
     illustration = frame.locator(".ob-art")
@@ -48,13 +222,9 @@ def check(page, origin, width):
     expect(frame.get_by_role("button",name="회원가입")).to_be_visible()
     expect(frame.locator(".ob-pages [aria-current]")).to_have_attribute("data-mf-intro","2")
 
-    frame_click(page, frame.get_by_role("button",name="로그인",exact=True))
-    expect(page.locator('#state-buttons [data-variant="compact"]')).to_have_class("active")
-    for name in ("카카오 로그인", "네이버 로그인", "Google 로그인"):
-        expect(frame.get_by_role("button",name=name).locator("img")).to_be_visible()
-    expect(frame.locator('[data-action="close-sheet"]')).to_have_count(0)
-    frame.locator('[name=email]').press('Escape')
-    expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step","2")
+    check_auth_overlay(page, frame)
+    drag_intro(page, frame, forward=False, expected_step=1)
+    drag_intro(page, frame, forward=True, expected_step=2)
     frame_click(page, frame.get_by_role("button",name="소개 3페이지"))
     expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step","3")
     expect(frame.locator(".ob-art")).to_have_count(0)
@@ -83,6 +253,7 @@ def check(page, origin, width):
 
     check_current_brand_menu(page, origin, "onboarding", "member-1")
     screens = ReviewScreens(page, origin, width)
+    check_notification_pin(page, screens)
 
     frame = screens.screen("onboarding", "member-4")
     expect(frame.locator(".ob-pages")).to_have_count(0)
@@ -119,8 +290,12 @@ def check(page, origin, width):
     target_url = urlsplit(page.url)
     assert target_url.netloc == urlsplit(origin).netloc and target_url.path == "/ia"
     assert parse_qs(target_url.query) == {"view":["detailed-r3"]}
+    page.remove_listener('request', record_write)
+    assert not review_writes, review_writes
     print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3",
-                      "oldQuickMenu":"exact brand-history replay","currentBrand":"authenticated three-root menu"}))
+                      "oldQuickMenu":"exact brand-history replay","currentBrand":"authenticated three-root menu",
+                      "authOverlay":"same introduction, Escape/scrim/drag close","horizontalDrag":"2→1→2",
+                      "panelPins":"auth email + real notification read button; restore without comment save","reviewWrites":0}))
 
 
 def main():

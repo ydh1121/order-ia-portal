@@ -65,7 +65,6 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
  // Capturing the existing factory does not replace the host page's modules.
  window.ORDER_DESIGN_MODULES=previous;
  const regions=createRegions();
- let instance=0;
  const known=(screen,state)=>Object.hasOwn(config.documents,screen+'/'+state);
  const destinations={
   'manage.delivery':['admin-shipments','store-purchase'],
@@ -79,12 +78,17 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
   return match&&destinations[match[1]].includes(match[2])&&known(match[2],match[3])?{screen:match[2],state:match[3],title:config.routes[match[1]][2]}:null;
  };
  const canMount=id=>id==='manage.business'||Boolean(resolve(id));
- function namespace(scope){
-  const prefix='account-workflow-'+(++instance)+'-',ids=new Map();
-  for(const element of scope.querySelectorAll('[id]')){const id=element.id;ids.set(id,prefix+id);element.dataset.businessRef=id;element.id=prefix+id;}
+ function namespace(scope,route,container){
+  const elements=[...scope.querySelectorAll('[id]')],base='account-workflow-'+route.replaceAll('.','-');
+  let prefix=base+'-',suffix=1;
+  // The replaced page belongs to this same workflow. Only another live
+  // instance may require a suffix; reopening or refreshing keeps its identity.
+  while(elements.some(element=>{const owner=document.getElementById(prefix+element.id);return owner&&!container.contains(owner);}))prefix=base+'-'+(++suffix)+'-';
+  const ids=new Map();
+  for(const element of elements){const id=element.id;ids.set(id,prefix+id);element.dataset.businessRef=id;element.id=prefix+id;}
   for(const element of scope.querySelectorAll('[for],[aria-labelledby],[aria-describedby],[aria-controls]'))for(const attribute of ['for','aria-labelledby','aria-describedby','aria-controls'])if(element.hasAttribute(attribute))element.setAttribute(attribute,element.getAttribute(attribute).split(/\s+/).map(id=>ids.get(id)||id).join(' '));
  }
- function canonicalBody(row){
+ function canonicalBody(row,route,container){
   const template=document.createElement('template');template.innerHTML=row.body;
   const source=template.content.querySelector('.ops-content,.mf-page');
   if(!source)throw Error('PRODUCT_PANEL_CONTENT_MISSING');
@@ -93,7 +97,7 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
   // Historical-only destinations are retained in review documents, but are not
   // active product actions in this account panel.
   for(const button of root.querySelectorAll('[data-qa-go="admin-analytics"][data-qa-state="normal"]'))button.remove();
-  namespace(root);return root;
+  namespace(root,route,container);return root;
  }
  async function mount({id,container,signal,push,adapter}){
   if(!canMount(id)||signal.aborted)return;
@@ -113,7 +117,7 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
   };
   try{
    if(id==='manage.business'){
-    const root=document.createElement('div');root.className='product-panel-body';root.innerHTML=config.business;namespace(root);container.replaceChildren(root);
+    const root=document.createElement('div');root.className='product-panel-body';root.innerHTML=config.business;namespace(root,id,container);container.replaceChildren(root);
     const controller=mountBusiness(()=>{},regions,{root,adapter,signal:localSignal,ask});disposeRuntime=controller.dispose;
     disposeShared=window.QAUI?.sharedMount?.(root,{mode:'product',reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});
     // This is the same server-provided membership listing as the existing panel.
@@ -139,7 +143,7 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
     };
     const mountCurrent=()=>{
      disposeRuntime?.();disposeShared?.();
-     root=canonicalBody(row);container.replaceChildren(root);
+     root=canonicalBody(row,id,container);container.replaceChildren(root);
      disposeShared=window.QAUI?.sharedMount?.(root,api);disposeRuntime=modules.get(screen)?.mount(root,row.state,api);
      if(typeof disposeRuntime!=='function')throw Error('PRODUCT_PANEL_RUNTIME_MISSING');
      for(const saved of savedFilters){const input=[...root.querySelectorAll('input,select')].find(input=>input.name===saved.name);if(input){input.value=saved.value;window.QAUI?.syncField?.(input);}}
@@ -159,5 +163,11 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
   }catch(error){cleanup();if(!signal.aborted)throw error;}
   return cleanup;
  }
- window.ORDER_PRODUCT_PANELS={canMount,mount};
+ // The QA annotation owner may replay these canonical destinations. It never
+ // invents a workflow or bypasses the menu's existing permission checks.
+ const targets=Object.entries(config.routes).flatMap(([id,[, ,title]])=>[
+  {id,title},...Object.values(config.documents).filter(row=>destinations[id].includes(row.screen)).map(row=>({id:id+'.view.'+row.screen+'.'+row.state,title}))
+ ]);
+ targets.push({id:'manage.business',title:'사업장 정보'},{id:'manage.business.members',title:'구성원과 권한'});
+ window.ORDER_PRODUCT_PANELS={canMount,mount,targets};
 }

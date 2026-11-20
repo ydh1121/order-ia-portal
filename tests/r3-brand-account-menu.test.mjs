@@ -35,6 +35,19 @@ test('the original CODE1 paths remain the only trigger mark; a guest cannot open
   const again=mountBrandAccountMenu(f.brand,{unread:2});assert.equal(again,f.api);
   f.api.destroy();assert.equal(f.brand.querySelector('svg'),f.mark);assert.equal(f.d.querySelector('[data-order-account-panel]'),null);f.w.close();
 });
+test('the account panel stays inside its screen, remounts with stable identity, and anchors at the upper right',()=>{
+  const f=fixture({authenticated:true,beforeMount({d,brand}){const root=d.createElement('main');root.id='order-single';d.body.prepend(root);root.append(brand.closest('header'));}});
+  Object.defineProperty(f.w,'innerWidth',{value:390});Object.defineProperty(f.w,'innerHeight',{value:844});
+  f.api.trigger.getBoundingClientRect=()=>({left:314,top:24,width:52,height:44,right:366,bottom:68});
+  const id=f.api.panel.id;f.api.open();
+  assert.equal(f.api.panel.parentElement.id,'order-single');assert.equal(f.api.panel.style.top,'24px');assert.equal(f.api.panel.style.left,'46px');
+  f.api.destroy();const again=mountBrandAccountMenu(f.brand,{authenticated:true,reducedMotion:true});assert.equal(again.panel.id,id);again.destroy();f.close();
+});
+test('unread changes reach the shared notification button once per actual change',()=>{
+  const notices=[];const f=fixture({authenticated:true,onStateChange:value=>notices.push(value.unread)});
+  notices.length=0;f.api.setUnread(5);f.api.setUnread(5);f.api.setUnread(0);
+  assert.deepEqual(notices,[5,0]);f.close();
+});
 test('Figma geometry applies to the visible logo paths and preserves the original padded SVG',()=>{
   for(const canvas of ['-36 -40 572.045 280','0 0 500.045 200']){
     const f=fixture({beforeMount({mark}){mark.setAttribute('viewBox',canvas);mark.style.width='43px';mark.style.height='22px';}});

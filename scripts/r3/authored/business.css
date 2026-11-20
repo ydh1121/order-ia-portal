@@ -1,6 +1,16 @@
 .ds .business-fields{display:grid;gap:16px}.ds .business-fields .field{margin:0}.ds .required-star{color:var(--blue);font-weight:600}
 .ds .opening-date>button{width:100%;display:flex;gap:4px;align-items:center;justify-content:flex-start}.ds .opening-date output{margin-left:auto;font-variant-numeric:tabular-nums}
-.ds .opening-wheels:not([hidden]){display:flex;gap:8px;margin-top:8px}.ds .opening-wheels label{display:grid;flex:1;gap:3px;font-size:12px;color:var(--muted)}.ds .opening-wheels select{width:100%;min-height:42px;font:inherit;color:var(--ink)}
+.ds .opening-wheels{position:fixed;inset:0;z-index:20;width:auto;height:auto;max-width:none;max-height:none;margin:0;padding:0;border:0;background:transparent;overflow:visible;color:var(--ink)}
+.ds .opening-wheels[hidden]{display:none}
+.ds .opening-date-sheet{position:absolute;left:0;right:0;bottom:0;width:min(100%,540px);max-width:540px;max-height:min(90svh,540px);margin:0 auto;padding:28px 24px 24px;overscroll-behavior:contain}
+.ds .opening-date-sheet h2{margin:8px 0 0;text-align:center;font-size:20px;line-height:28px;font-weight:650;font-variant-numeric:tabular-nums}
+.ds .opening-date-sheet .wheel-picker{gap:8px;margin:18px 0;height:180px}
+.ds .opening-date-sheet .wheel-column{flex:1;min-width:0;width:auto;touch-action:pan-y;-webkit-user-select:none;user-select:none}
+.ds .opening-date-sheet .wheel-column:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:10px}
+.ds .opening-date-sheet .wheel-column button{cursor:default}
+.ds .opening-date-sheet .wheel-column button[aria-selected=true]{color:var(--ink);font-weight:700}
+.ds .opening-date-actions{display:flex;gap:8px}
+.ds .opening-date-actions .btn{flex:1;min-width:0}
 .ds .business-options:not([hidden]){display:grid;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:4px}.ds .business-options button{min-height:36px;text-align:left;padding:4px 10px;background:transparent;border:0;color:inherit;font:inherit}.ds .business-options [aria-selected=true]{color:var(--blue);font-weight:650}
 .ds .document-section,.ds .signature-files{margin:22px 0}.ds .document-section h2,.ds .proof-purpose h2,.ds .signature-files h2{font-size:16px;margin:0 0 12px}
 .ds .file-drop{position:relative;display:grid;justify-items:center;gap:6px;padding:20px 14px;border:1px dashed var(--muted);background:var(--surface);border-radius:16px;text-align:center;cursor:pointer}

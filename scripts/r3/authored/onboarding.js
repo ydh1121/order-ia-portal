@@ -3,13 +3,22 @@
   const {states, icon} = w.QAUI;
   const copy = [
     ['우리 사업장에 맞는<br>계란 최저가를 알아보세요', '초기 창업자, 일반 매장 뿐만 아니라<br>엔터프라이즈급 사업장까지 지원해요'],
-    ['최저가에<br>놀라지 마세요', '가격 거품을 최대한 걷어내고<br>농장에서 직접 배송해요'],
+    ['최저가에<br>놀라지 마세요', '가격 거품을 최대한 걷어내고<br>국내 최대 규모의 농장에서 직접 배송해요'],
     ['다수 사업장도<br>간편하게 견적하세요', '사업장이 많거나 지역이 달라도<br>자동으로 합산해서 견적을 알려드려요'],
     ['견적 모드를<br>선택해 주세요', '']
   ];
   const originalMark = w.ORDER_QA_ASSETS?.brand?.match(/<svg[\s\S]+<\/svg>/)?.[0];
   const brandMark = originalMark ? '<span class="ob-dots-logo" aria-hidden="true">'+originalMark+'</span>' : '<span class="ob-dots-logo" aria-hidden="true"><i></i><i></i><i></i></span>';
   const productIcon = simple => w.ORDER_INTRO_ICON ? w.ORDER_INTRO_ICON(simple) : icon('search',42);
+  // Reuse the retained AnimateIcons Lucide Bell paths; the notification owner supplies behavior.
+  const noticeIcon = '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ob-notice-icon"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>';
+  function illustration(step) {
+    const first=step===1;
+    return '<div class="ob-illustration"><img class="ob-art" alt="" width="287" height="226" data-intro-art>'+
+      '<p class="ob-art-caption"><span>'+(first?'1일 출하량 약 12만 구 이상 규모':'당사 1일 출하량 약 120,000 구 이상')+'</span>'+
+      '<span class="ob-art-detail">난각번호 1번, 2번 합산 기준</span>'+
+      (first?'':'<small>전국 1일 평균 : 약 16,000구</small>')+'</p></div>';
+  }
   function link(text,dest,cls='') {
     return '<button type="button" class="'+cls+'" data-mf-go="'+dest+'">'+text+'</button>';
   }
@@ -40,9 +49,9 @@
     const [title,subtitle]=copy[step-1], inactive=opened?' inert':'';
     const top='<div class="brand ob-brand-common"><strong class="ob-wordmark brand-word">Order<span class="ob-period brand-dot" aria-hidden="true">.</span></strong>'+originalMark+'</div>'+(member?'':link('회원가입','signup/empty','ob-join'));
     const content=step===4?'<div class="ob-mode-grid">'+mode(true,member,true)+mode(false,member,true)+'</div>':
-      step<=2?'<img class="ob-art" alt="" width="287" height="226" data-intro-art>':'';
+      step<=2?illustration(step):'';
     const tray=member ? (step<4?mode(true,true,false)+mode(false,true,false):'') : link('로그인','login/empty','ob-login');
-    const quick=member?'<nav class="ob-quick" aria-label="빠른 메뉴"><div hidden class="ob-quick-items">'+link('계란 시세','price-policy/overview')+link('오더패스','passes/grid')+'</div><button type="button" data-action="quick" aria-expanded="false" aria-label="알림과 빠른 메뉴">'+icon('deck',21)+'<span class="quick-unread" aria-label="읽지 않은 알림" hidden></span></button></nav>':'';
+    const quick=member?'<nav class="ob-quick" aria-label="알림"><button type="button" data-action="quick" aria-haspopup="menu" aria-expanded="false" aria-label="알림">'+noticeIcon+'<span class="quick-unread" aria-label="읽지 않은 알림" hidden></span></button></nav>':'';
     return '<section class="ob '+(member?'member ':'guest ')+(opened?'footer-open':'')+'" data-intro-step="'+step+'">'+
       '<div class="ob-stage"'+inactive+'><header>'+top+'</header><main class="ob-main step-'+step+'" tabindex="-1" aria-label="서비스 소개. 좌우 방향키로 이동할 수 있어요.">'+
       '<div class="ob-copy"><h1>'+title+'</h1>'+(subtitle?'<p>'+subtitle+'</p>':'')+'</div><div class="ob-visual">'+content+'</div>'+
@@ -55,7 +64,12 @@
     const modal=shell.querySelector('.ob-drawer'), shade=shell.querySelector('.ob-shade'), grip=shell.querySelector('.ob-grip');
     const opener=shell.querySelector('[data-company-open]'), quick=shell.querySelector('[data-action=quick]');
     const prefix=shell.classList.contains('member')?'member':'guest';
-    let drag=null,suppressClick=false,exiting=false,modeFlight=null,ghost=null,fromTray=[],stepRequest=0;
+    let drag=null,suppressClick=false,clickReset=null,exiting=false,modeFlight=null,ghost=null,fromTray=[],stepRequest=0;
+    function endDrag(){
+      const last=drag;drag=null;
+      if(last?.capture?.hasPointerCapture?.(last.id))last.capture.releasePointerCapture(last.id);
+      return last;
+    }
     function cancelMode(){modeFlight?.cancel();modeFlight=null;ghost?.remove();ghost=null;}
     function modeMorph(button,reverse,done){
       cancelMode();
@@ -91,21 +105,22 @@
       ctl.signal.addEventListener('abort',()=>fades.forEach(a=>a.cancel()),{once:true});
       Promise.all(fades.map(a=>a.finished)).then(arrive,()=>{});
     };
-    const items=shell.querySelector('.ob-quick-items');
-    const fan=quick&&w.ORDER_CUSTOMER_CONTROLS?.speedDial(quick,items,ctl.signal);
-    function menu(open){if(!quick)return;if(fan){fan(open);return;}quick.setAttribute('aria-expanded',String(open));items.hidden=!open;}
-    if(quick)on(window,'message',e=>{
-      const m=e.data;
-      if(e.source!==parent||m?.scope!=='ORDER_R3_HOST'||m.type!=='noticeCountFixture'||!Number.isInteger(m.payload)||m.payload<0||m.payload>99)return;
-      const badge=quick.querySelector('.quick-unread');if(!badge)return;
-      const text=String(m.payload),changed=badge.textContent!==''&&badge.textContent!==text;
-      badge.textContent=text;badge.hidden=!m.payload;quick.setAttribute('aria-label','알림과 빠른 메뉴'+(m.payload?' · 읽지 않은 알림 '+text+'개':''));
-      if(changed&&m.payload)w.ORDER_CUSTOMER_CONTROLS?.motion(badge,[{scale:'.65'},{scale:'1.2',offset:.66},{scale:'1'}],{duration:230});
-    });
-    if(quick)on(shell,'pointerdown',e=>{if(!e.target.closest('.ob-quick')&&quick.getAttribute('aria-expanded')==='true')menu(false);});
     const brand=shell.querySelector('header .brand');
     const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{};
-    const brandMenu=w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced});
+    function noticeState(snapshot){
+      if(!quick)return;
+      const count=Number.isSafeInteger(snapshot?.unread)&&snapshot.unread>0?snapshot.unread:0,badge=quick.querySelector('.quick-unread');
+      if(badge){badge.textContent=count>99?'99+':String(count);badge.hidden=!count;}
+      quick.setAttribute('aria-label','알림'+(count?' · 읽지 않은 알림 '+count+'개':''));
+      quick.setAttribute('aria-expanded',String(snapshot?.page==='notifications'&&['open','opening'].includes(snapshot?.phase)));
+      quick.disabled=snapshot?.authenticated!==true;
+    }
+    const brandMenu=w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced,
+      onStateChange(snapshot){noticeState(snapshot);context.onStateChange?.(snapshot);}});
+    if(quick){
+      if(brandMenu?.panel)quick.setAttribute('aria-controls',brandMenu.panel.id);
+      noticeState(brandMenu?.inspect());
+    }
     on(window,'message',e=>{
       if(api.mode==='product')return;
       if(e.source!==parent||e.data?.scope!=='ORDER_R3_HOST'||e.data.type!=='memberArrival'||!brandMenu)return;
@@ -130,7 +145,7 @@
       ++stepRequest;
       const restore=main.contains(document.activeElement);
       if(!shade.hidden)show(false);
-      menu(false);magnetic?.destroy();modeIcons?.destroy();
+      brandMenu?.close({focus:false,immediate:true});magnetic?.destroy();modeIcons?.destroy();
       const nextNav=nextMain.querySelector('.ob-pages'),nextStep=Number(next.dataset.introStep);
       if(nav && nextNav){nextNav.replaceWith(nav);}
       else {pill?.destroy();pill=null;nav=nextNav;}
@@ -138,7 +153,7 @@
       stage.querySelector('.ob-tasks').replaceWith(nextTray);
       main=nextMain;step=nextStep;shell.dataset.introStep=String(step);
       if(pill)pill.select(step);else if(nav)pill=w.ORDER_INTRO_PAGINATION?.(nav,api.reduced);
-      exiting=false;drag=null;suppressClick=false;
+      exiting=false;endDrag();
       magnetic=connectPrimary();modeIcons=w.ORDER_INTRO_ICONS?.(main,api.reduced);
       if(fromTray.length && step===4 && !api.reduced?.()){
         const cards=main.querySelectorAll('.ob-mode.card');
@@ -158,6 +173,7 @@
 
     function show(open){
       if(open){
+        endDrag();
         controller?.activate();magnetic?.reset();modeIcons?.pause();brandMenu?.pause();
         paused=stage.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
         for(const a of paused)a.pause();
@@ -167,14 +183,14 @@
         for(const a of paused)a.play();paused=[];
         for(const svg of stage.querySelectorAll('svg'))svg.unpauseAnimations?.();
       }
-      shade.hidden=!open;stage.inert=open;shell.classList.toggle('footer-open',open);menu(false);
+      shade.hidden=!open;stage.inert=open;shell.classList.toggle('footer-open',open);
       if(open)grip.focus({preventScroll:true});else opener.focus({preventScroll:true});
     }
     on(shell,'click',e=>{
+      if(suppressClick){suppressClick=false;e.preventDefault();return;}
       const b=e.target.closest('button');
       if(e.target===shade||b?.hasAttribute('data-company-close')){show(false);return;}
       if(!b)return;
-      if(suppressClick&&b.closest('.ob-pages')){suppressClick=false;return;}
       if(b.hasAttribute('data-company-open')){show(true);return;}
       if(b.dataset.mfGo){
         const [target,s]=b.dataset.mfGo.split('/');
@@ -184,29 +200,49 @@
         return;
       }
       if(b.dataset.mfIntro){go(Number(b.dataset.mfIntro));return;}
-      if(b===quick){menu(quick.getAttribute('aria-expanded')!=='true');return;}
+      if(b===quick){brandMenu?.open('notifications');return;}
       if(b.dataset.action==='delivery-policy'){const note=shell.querySelector('.ob-policy');note.hidden=!note.hidden;b.setAttribute('aria-expanded',String(!note.hidden));return;}
     });
     on(shell,'keydown',e=>{
       if(!shade.hidden){if(e.key==='Escape'){e.preventDefault();show(false);return;}
         if(e.key==='Tab'){const all=[...modal.querySelectorAll('button')].filter(b=>!b.closest('[hidden]'));if(e.shiftKey&&document.activeElement===all[0]){e.preventDefault();all.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===all.at(-1)){e.preventDefault();all[0].focus();}}return;}
-      if(e.key==='Escape'&&quick?.getAttribute('aria-expanded')==='true'){menu(false);quick.focus();return;}
+      if(e.key==='Escape'&&quick?.getAttribute('aria-expanded')==='true'){brandMenu?.close();quick.focus();return;}
       if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();go(step+(e.key==='ArrowRight'?1:-1));}
     });
-    on(shell,'pointerdown',e=>{if(!main.contains(e.target)||e.button!==0||e.target.closest('button:not([data-mf-intro])'))return;drag={x:e.clientX,y:e.clientY,id:e.pointerId,dot:!!e.target.closest('.ob-pages')};
-});
-    on(shell,'pointerup',e=>{if(!drag||drag.id!==e.pointerId)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y,dot=drag.dot;drag=null;
+    on(shell,'dragstart',e=>{if(main.contains(e.target))e.preventDefault();});
+    on(shell,'selectstart',e=>{if(main.contains(e.target))e.preventDefault();});
+    on(shell,'pointerdown',e=>{
+      if(!shade.hidden||!main.contains(e.target)||e.button!==0||e.isPrimary===false||e.target.closest('button:not([data-mf-intro])'))return;
+      endDrag();drag={x:e.clientX,y:e.clientY,id:e.pointerId,dot:!!e.target.closest('.ob-pages'),axis:null,capture:null};
+    });
+    on(w,'pointermove',e=>{
+      if(!drag||drag.id!==e.pointerId)return;
+      const dx=Math.abs(e.clientX-drag.x),dy=Math.abs(e.clientY-drag.y);
+      if(!drag.axis){
+        if(Math.max(dx,dy)<8)return;
+        // Vertical gestures belong to native scrolling. Once yielded, this gesture cannot change pages.
+        if(dy>dx*1.15){endDrag();return;}
+        if(dx<=dy*1.4)return;
+        drag.axis='x';
+        if(main.setPointerCapture){main.setPointerCapture(e.pointerId);drag.capture=main;}
+      }
+      e.preventDefault();
+    });
+    on(w,'pointerup',e=>{if(!drag||drag.id!==e.pointerId)return;const last=endDrag(),dx=e.clientX-last.x,dy=e.clientY-last.y,dot=last.dot;
       if(Math.abs(dx)>(dot?9:45)&&Math.abs(dx)>Math.abs(dy)*1.4){
+        e.preventDefault();suppressClick=true;clearTimeout(clickReset);clickReset=setTimeout(()=>{suppressClick=false;clickReset=null;},0);
         if(dot){
+          if(!nav)return;
           const buttons=[...nav.querySelectorAll('[data-mf-intro]')];
           const distance=b=>{const r=b.getBoundingClientRect();return Math.abs(e.clientX-r.x-r.width/2);};
           const closest=buttons.reduce((best,b)=>distance(b)<distance(best)?b:best);
-          suppressClick=true;setTimeout(()=>{suppressClick=false;},0);go(Number(closest.dataset.mfIntro));
-        }else{suppressClick=true;setTimeout(()=>{suppressClick=false;},0);go(step+(dx<0?1:-1));}
+          go(Number(closest.dataset.mfIntro));
+        }else go(step+(dx<0?1:-1));
       }});
-    on(shell,'pointercancel',()=>{drag=null;});
+    on(w,'pointercancel',e=>{if(drag?.id===e.pointerId)endDrag();});
+    on(shell,'lostpointercapture',e=>{if(drag?.id===e.pointerId)endDrag();});
     if(state==='company')show(true);
-    return ()=>{cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();brandMenu?.destroy();ctl.abort();};
+    return ()=>{endDrag();clearTimeout(clickReset);cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();brandMenu?.destroy();ctl.abort();};
   }
   const positions=['guest','member'].flatMap(type=>[1,2,3,4].map(n=>[type+'-'+n,(type==='guest'?'비회원 ':'회원 ')+n]));
   w.ORDER_DESIGN_MODULES.push({id:'onboarding',label:'소개·견적 모드',group:'매장 고객',role:'customer',width:'mobile',
