@@ -2,7 +2,7 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
   let asyncMotion;
   const controls=createCustomerControls(),signedView={mode:'grid',selected:null,gesture:null,tags:[]};
   const $=id=>document.getElementById(id), name=x=>labels[x]||x;
-  const endpoint='/api/ia/r3-role';
+  const endpoint=window.ORDER_APP_CONTEXT?.endpoints?.role||'/api/ia/r3-role';
   const menus={
     inbox:['지금 할 일',['BUYER','SUPPLIER','OPERATOR']],
     quotes:['내 견적·오더패스',['BUYER']],

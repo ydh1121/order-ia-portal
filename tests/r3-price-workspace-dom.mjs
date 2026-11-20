@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {r3ProductAsset} from '../src/server/r3-product-page.mjs';
 import {renderPriceWorkspace} from '../src/server/r3-price-workspace-page.mjs';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {signedWorkspace,origin} from './r3-business-identities.fixture.mjs';
@@ -15,11 +16,14 @@ const click=s=>{const e=d.querySelector(s);assert.ok(e,'missing '+s);e.click();}
 const set=(s,value,event='input')=>{const e=d.querySelector(s);assert.ok(e,'missing '+s);e.value=value;e.dispatchEvent(new w.Event(event,{bubbles:true}));};
 const submit=()=>d.querySelector('.pw-dialog form').dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
 try{
-  for(const script of d.scripts)w.eval(script.textContent);
+  w.matchMedia=()=>({matches:true});w.scrollTo=()=>{};
+  const common=await r3ProductAsset('/ia/r3-product/web/common-ui.mjs').text();
+  w.eval(common.slice(common.indexOf('window.OrderModalShell='),common.indexOf('/* MSG0465:')));
+  for(const script of d.scripts)w.eval(script.textContent.replace('import "/ia/r3-product/web/common-ui.mjs";',''));
   await wait(()=>d.querySelectorAll('[data-cost]').length===190,'cost table');
   assert.deepEqual(Array.from(d.querySelectorAll('.pw-main-menu>li>button'),b=>b.textContent),['단가표','판매 상품','상품 분류','배송수단 및 운임']);
   assert.equal(d.querySelector('[data-cost=raw]').value,'5980');
-  click('[data-action=add-range]');set('.pw-dialog [name=min]','1000','change');assert.equal(d.querySelector('.pw-dialog [name=max]').value,'1001');click('.pw-dialog [data-close]');
+  click('[data-action=add-range]');assert.equal(d.querySelector('.pw-dialog').dataset.modalRole,'editor');assert.deepEqual([...w.OrderModalShell.activeIds],['pw-workspace-dialog']);set('.pw-dialog [name=min]','1000','change');assert.equal(d.querySelector('.pw-dialog [name=max]').value,'1001');click('.pw-dialog [data-close]');
   click('[data-grade=king]');assert.equal(d.querySelectorAll('[data-cost]').length,38);assert.equal(d.querySelectorAll('.pw-cost-table thead tr:last-child th').length,2);
   set('[data-cost=raw]','7000');set('#pw-pg-rate','3.3');click('[data-action=pg]');assert.equal(d.querySelector('[data-cost=raw]').value,'7231');click('[data-action=pg]');assert.equal(d.querySelector('[data-cost=raw]').value,'7000');
   click('[data-action=draft]');await wait(()=>d.querySelector('#pw-notice').textContent.includes('임시저장했습니다'),'draft');

@@ -10,6 +10,7 @@ from playwright.sync_api import expect, sync_playwright
 
 from r3_auth_motion_browser import check_auth_motion
 from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
+from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -63,18 +64,25 @@ def check(page, origin, width):
     box = frame.locator(".ob-mode-grid button").first.bounding_box()
     assert box and abs(box["width"]-box["height"]) < 1.1, box
 
-    frame = screens.screen("onboarding", "member-1")
+    # Keep the old quick-menu and sample notification behavior tied to its
+    # immutable source. The current account menu is checked on a real document.
+    archived = ArchivedBrandScreens(page, origin, width)
+    frame = archived.screen("onboarding", "member-1")
     frame_click(page, frame.get_by_role("button",name="알림과 빠른 메뉴"))
     expect(frame.get_by_role("button",name="오더패스")).to_be_visible()
     frame.get_by_role("button",name="알림과 빠른 메뉴").press("Escape")
     expect(frame.get_by_role("button",name="오더패스")).to_be_hidden()
-    profile = screens.screen("profile", "notification")
+    profile = archived.screen("profile", "notification")
+    archived.notices()
     for label in ("소식", "혜택"):
         toggle = profile.get_by_role("switch",name=label)
         old = toggle.get_attribute("aria-checked")
         frame_click(page, toggle)
         expect(toggle).to_have_attribute("aria-checked","false" if old=="true" else "true")
     expect(profile.locator(".terms-reading")).to_have_count(0)
+
+    check_current_brand_menu(page, origin, "onboarding", "member-1")
+    screens = ReviewScreens(page, origin, width)
 
     frame = screens.screen("onboarding", "member-4")
     expect(frame.locator(".ob-pages")).to_have_count(0)
@@ -111,7 +119,8 @@ def check(page, origin, width):
     target_url = urlsplit(page.url)
     assert target_url.netloc == urlsplit(origin).netloc and target_url.path == "/ia"
     assert parse_qs(target_url.query) == {"view":["detailed-r3"]}
-    print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3"}))
+    print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3",
+                      "oldQuickMenu":"exact brand-history replay","currentBrand":"authenticated three-root menu"}))
 
 
 def main():
@@ -123,7 +132,7 @@ def main():
             for width in (320,375,1440):
                 context=browser.new_context(viewport={"width":width,"height":844},reduced_motion="reduce")
                 page=context.new_page()
-                page.goto(fixture["url"]+"/ia?view=qa-lab")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()

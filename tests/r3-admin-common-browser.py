@@ -20,7 +20,7 @@ try:
         for width,reduced in [(390,'reduce'),(1440,'no-preference')]:
             ctx=browser.new_context(viewport={'width':width,'height':900},reduced_motion=reduced)
             page=ctx.new_page()
-            page.goto(c['url']+'/ia?view=qa-lab')
+            page.goto(c['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
             page.locator('input[name=email]').fill(c['email'])
             page.locator('input[name=password]').fill(c['pass'])
             page.locator('button[type=submit]').click()

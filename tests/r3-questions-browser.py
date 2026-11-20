@@ -168,7 +168,7 @@ def main():
                 page = context.new_page()
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                page.goto(fixture["url"]+"/ia?view=qa-lab")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()

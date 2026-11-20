@@ -34,8 +34,13 @@ def check_auth_motion(page, origin, width):
     expect(frame.locator(".ob-pages .ob-active-pill")).to_be_visible()
     header.evaluate("""el=>{window.__savedBrand=el.querySelector('svg');window.__jellyMotion=[];
         window.__savedBrand.addEventListener('code1:motionstart',e=>window.__jellyMotion.push(e.detail.kind));}""")
-    frame_click(page, frame.locator("[data-action=animate-brand]"))
+    brand_trigger = frame.locator(".obm-trigger")
+    expect(frame.locator(".obm-brand")).to_have_attribute("data-authenticated", "false")
+    expect(brand_trigger).to_have_accessible_name("Order 로고")
+    assert brand_trigger.get_attribute("aria-haspopup") is None
+    frame_click(page, brand_trigger)
     expect(header).to_be_visible()
+    expect(frame.locator(".obm-panel")).to_be_hidden()
     frame.locator(".ob.guest").evaluate("""el=>new Promise((resolve,reject)=>{
       if(window.__jellyMotion.includes('gather'))return resolve();
       const id=setTimeout(()=>reject(Error('guest logo did not trigger archived CODE1')),2000);
@@ -93,7 +98,7 @@ def check_auth_motion(page, origin, width):
     out = Path(os.getenv("R3_AUTH_MOTION_ARTIFACT_DIR", "artifacts/r3-auth-motion"))
     out.mkdir(parents=True, exist_ok=True)
     evidence = {"width": width, "source": "private signed QA browser fixture",
-                "guestClick": "CODE1 gather", "headerNodeSurvived": True, "pagination": "click 2→3, physical drag 3→1",
+                "guestClick": "shared .obm-trigger → original CODE1 gather; no account dropdown", "headerNodeSurvived": True, "pagination": "click 2→3, physical drag 3→1",
                 "rubberBandUp30": resistance, "peekAndDragClose": True,
                 "otpHeightBeforeAndAfter": [before, otp.bounding_box()["height"]]}
     frame = screens.screen("signup", "empty")

@@ -26,8 +26,17 @@
   function applyPendingFocus(root,api) {
     if(pendingFocus&&interactive(api))root.querySelector(pendingFocus)?.focus({preventScroll:true});
   }
-  function complete(api,btn,callback) {
+  function complete(api,btn,callback,root,signal) {
     if(!btn||btn.disabled)return;
+    if(api.mode==='product'){
+      if(typeof api.performAction!=='function'){api.onUnavailable?.(btn.dataset.action);api.toast?.('아직 연결되지 않은 기능이에요.');return;}
+      btn.disabled=true;btn.setAttribute('aria-busy','true');
+      Promise.resolve().then(()=>api.performAction(btn.dataset.action,{root,button:btn,signal})).then(result=>{
+        if(!signal?.aborted&&result?.confirmed===true)callback?.();
+        else if(!signal?.aborted)api.onUnavailable?.(btn.dataset.action);
+      }).catch(error=>{if(!signal?.aborted)api.onError?.(error);}).finally(()=>{if(!signal?.aborted){btn.disabled=false;btn.removeAttribute('aria-busy');}});
+      return;
+    }
     if(api.demoSuccess)api.demoSuccess(btn,callback);else callback?.();
   }
   // The review frame keeps typed credentials in its own controls only.
@@ -143,6 +152,9 @@
   }
   function commonAuthMount(root,state,api,authenticated=false) {
     const c=new AbortController();
+    const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{},brand=root.querySelector('.auth-background .brand');
+    const brandMenu=brand&&w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,reducedMotion:api.reduced});
+    c.signal.addEventListener('abort',()=>brandMenu?.destroy(),{once:true});
     const handle=root.querySelector('.sheet-handle'),sheet=root.querySelector('.auth-sheet');
     const scene=root.querySelector('.auth-scene'),background=root.querySelector('.auth-background'),dim=root.querySelector('.sheet-dim');
     const ownLogin=api.screen==='login'||Boolean(root.querySelector('.auth-layout'));
@@ -154,6 +166,7 @@
       sheetOpen=open;moving=false;sheet.hidden=!open;sheet.inert=!open;sheet.style.transform='';
       scene?.classList.toggle('is-closed',!open);if(dim)dim.hidden=!open;if(reopen)reopen.hidden=open;
       if(background){background.inert=open;if(open)background.setAttribute('aria-hidden','true');else background.removeAttribute('aria-hidden');}
+      if(open)brandMenu?.pause();else brandMenu?.resume();
       if(open){gesture?.activate();gesture?.reset();sheet.querySelector('input,button')?.focus({preventScroll:true});}else{gesture?.deactivate();reopen?.querySelector('button')?.focus({preventScroll:true});}
       if(announce)notify(open?'empty':'closed');
     }
@@ -173,6 +186,7 @@
       if(!ownLogin||sheetOpen||moving)return false;moving=true;flight?.cancel();
       sheet.hidden=false;sheet.inert=false;scene?.classList.remove('is-closed');if(dim)dim.hidden=false;if(reopen)reopen.hidden=true;
       if(background){background.inert=true;background.setAttribute('aria-hidden','true');}gesture?.activate();gesture?.reset();
+      brandMenu?.pause();
       const finish=()=>{if(!c.signal.aborted){settle(true,announce);done?.();}};
       if(api.reduced?.()||!sheet.animate){finish();return true;}
       flight=sheet.animate([{transform:'translateY(100px)',opacity:0,filter:'blur(2px)'},{transform:'translateY(0)',opacity:1,filter:'blur(0px)'}],{duration:400,easing:'cubic-bezier(.22,1,.36,1)'});
@@ -188,6 +202,7 @@
     root.querySelectorAll('.sheet-close').forEach(el=>el.remove());
     if(dim)dim.addEventListener('click',close,{signal:c.signal});
     if(ownLogin&&state==='closed')settle(false,false);
+    else if(sheetOpen)brandMenu?.pause();
     const eyes='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g class="eye-open"><path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="2.5"/></g><g class="eye-closed"><path d="M3 10c2.2 3.6 5.2 5.2 9 5.2s6.8-1.6 9-5.2M5 13l-1.5 2M9 15l-.5 2M15 15l.5 2M19 13l1.5 2"/></g></svg>';
     for(const toggle of root.querySelectorAll('[data-action=password-visibility]')){
       toggle.innerHTML=eyes;toggle.classList.add('password-eye');
@@ -244,8 +259,8 @@
         const email=root.querySelector('[name=email]'),pass=root.querySelector('[name=password]');
         const validEmail=emailValid(email),validPass=fieldError(pass,pass?.value?'':'비밀번호를 입력해 주세요.');
         if(!validEmail||!validPass){firstInvalid(root);return;}
-        lockSubmittedFields(root);
-        complete(api,btn,()=>navigate(api,'login','success','[data-action="close-sheet"]'));
+        if(api.mode!=='product')lockSubmittedFields(root);
+        complete(api,btn,()=>navigate(api,'login','success','[data-action="close-sheet"]'),root,c.signal);
       }
     },{signal:c.signal});
     return()=>{dispose();c.abort();};
@@ -296,8 +311,8 @@
         if(!root.querySelector('[name=marketing-consent]').checked&&choice.dataset.answered!=='1'){
           choice.hidden=false;choice.querySelector('button').focus();return;
         }
-        lockSubmittedFields(root);
-        complete(api,btn,()=>navigate(api,'signup','success','[data-action="open-otp"]'));
+        if(api.mode!=='product')lockSubmittedFields(root);
+        complete(api,btn,()=>navigate(api,'signup','success','[data-action="open-otp"]'),root,c.signal);
       }
     },{signal:c.signal});
     root.querySelector('[name=required-consent]')?.addEventListener('change',e=>{if(e.target.checked){root.querySelector('.consent-block').classList.remove('consent-error');root.querySelector('[data-consent-feedback]').hidden=true;e.target.setAttribute('aria-invalid','false');}},{signal:c.signal});
@@ -343,6 +358,7 @@
       const btn=e.target.closest('[data-action]'),a=btn?.dataset.action;if(btn?.disabled)return;
       if(a==='resend'){
         if(btn.disabled)return;
+        if(api.mode==='product'){complete(api,btn,()=>navigate(api,'otp','empty','.otp-digit'),root,c.signal);return;}
         btn.disabled=true;btn.setAttribute('aria-busy','true');btn.innerHTML=spinner;
         const finish=()=>{if(!c.signal.aborted)navigate(api,'otp','empty','.otp-digit');};
         if(api.reduced?.()||!btn.animate)finish();
@@ -351,7 +367,7 @@
       if(a==='verify-otp'){
         const missing=fields.find(el=>!/^\d$/.test(el.value));
         if(missing){root.querySelector('.otp-wrap').classList.add('is-error');root.querySelector('[data-otp-feedback]').hidden=false;fields.forEach(el=>el.setAttribute('aria-invalid','true'));U.shake(root.querySelector('.otp-wrap'));missing.focus({preventScroll:true});return;}
-        navigate(api,'otp','verified','[data-action="login"]');
+        complete(api,btn,()=>navigate(api,'otp','verified','[data-action="login"]'),root,c.signal);
       }
       if(a==='login'&&s==='verified'&&consumeAuthReturn(api,true))return;
       if(a==='back'||a==='login')navigate(api,'login','empty','[name=email]');
@@ -366,12 +382,12 @@
     const c=new AbortController(),dispose=commonAuthMount(root,s,api);mountMeter(root,c,api);
     root.addEventListener('click',e=>{
       const btn=e.target.closest('[data-action]'),a=btn?.dataset.action;if(btn?.disabled)return;
-      if(a==='send-reset'){if(!emailValid(root.querySelector('[name=email]'))){firstInvalid(root);return;}navigate(api,'password','sent','[data-action="show-password"]');}
+      if(a==='send-reset'){if(!emailValid(root.querySelector('[name=email]'))){firstInvalid(root);return;}complete(api,btn,()=>navigate(api,'password','sent','[data-action="show-password"]'),root,c.signal);}
       if(a==='show-password')navigate(api,'password','weak','[name=new-password]');
       if(a==='submit-password'){
         const p=root.querySelector('[name=new-password]'),q=root.querySelector('[name=password-confirm]');
         const validPass=fieldError(p,meetsPasswordRule(p.value)?'':passwordRule),validConfirm=fieldError(q,!q.value?'비밀번호를 한 번 더 입력해 주세요.':p.value!==q.value?'입력한 비밀번호가 달라요.':'');
-        if(!validPass||!validConfirm){firstInvalid(root);return;}exitSheet(root,api,()=>navigate(api,'password','complete','[data-action="login"]'),c.signal);
+        if(!validPass||!validConfirm){firstInvalid(root);return;}complete(api,btn,()=>exitSheet(root,api,()=>navigate(api,'password','complete','[data-action="login"]'),c.signal),root,c.signal);
       }
       if(a==='login'||a==='back')navigate(api,'login','empty','[name=email]');
     },{signal:c.signal});

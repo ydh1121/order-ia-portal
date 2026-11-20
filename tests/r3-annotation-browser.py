@@ -227,7 +227,7 @@ def run():
    for width in (390,1440):
     ctx=browser.new_context(viewport={'width':width,'height':870},has_touch=width<600)
     page=ctx.new_page();prepare_frame_pointer(page);page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
-    page.goto(fixture['url']+'/ia?view=qa-lab')
+    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
     page.locator('input[name=email]').fill(fixture['email']);page.locator('input[name=password]').fill(fixture['pass']);page.locator('button[type=submit]').click()
     page.wait_for_url('**/ia?view=qa-lab**')
     frame=page.frame_locator('#frame')

@@ -205,7 +205,17 @@ export async function handleR3Review({request,env,actor,path,checkTarget}) {
     if(request.method==='GET' && ['/records','/events','/legacy','/legacy-source','/backup'].includes(path))return await read(env.ORDER_QA_DB,new URL(request.url),path);
     if(request.method==='POST' && path==='/records'){
       const body=await readJson(request);
-      if(checkTarget && (!validTarget(body?.data?.target)||!await checkTarget(body.data.target,body.release)))return invalid();
+      if(checkTarget){
+        if(!validTarget(body?.data?.target))return invalid();
+        if(!await checkTarget(body.data.target,body.release)){
+          // An already stored live comment keeps its immutable source target
+          // after deployment. This grants no arbitrary historical new target.
+          let source=null;
+          if(body.expectedRevision>0&&kinds.has(body.kind)&&recordId(body.id))source=await env.ORDER_QA_DB.prepare(currentSql).bind(body.release,body.kind,body.id).first();
+          if(!source&&['reply','feedback'].includes(body.kind)&&body.data.parent?.origin==='current'&&recordId(body.data.parent.id))source=await env.ORDER_QA_DB.prepare(currentSql).bind(body.release,'comment',body.data.parent.id).first();
+          if(!source||!body.data.target.screen.startsWith('live-')||JSON.stringify(canonical(JSON.parse(source.data).target))!==JSON.stringify(canonical(body.data.target)))return invalid();
+        }
+      }
       return await write(env.ORDER_QA_DB,actor.id??actor.email,body);
     }
     return json({error:'NOT_FOUND'},404);

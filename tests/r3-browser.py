@@ -30,7 +30,9 @@ def check_qa_menu(page,url,width,dashboard_ready=False):
     with page.expect_popup() as popup:anchor.click()
     qa_tab=popup.value
     qa_tab.wait_for_url('**/ia?view=qa-lab**',wait_until='domcontentloaded')
-    qa_tab.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+    qa_tab.locator('#live-create').wait_for(state='visible')
+    assert qa_tab.locator('#product-frame').count()==1
+    assert qa_tab.locator('#frame').count()==0
     assert qa_tab.evaluate('window.opener===null')
     assert qa_tab.locator('#ia-live-banner').count()==0
     qa_tab.close()

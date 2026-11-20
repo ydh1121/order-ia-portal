@@ -39,7 +39,7 @@ class ReviewScreens:
                 frame.dataset.testReadyHash=event.data.artifact;
             }
         });""")
-        page.goto(f"{origin}/ia?view=qa-lab&width={width}")
+        page.goto(f"{origin}/ia?view=qa-lab&archive=1&width={width}")
         expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", re.compile(r'^[0-9a-f]{64}$'), timeout=30000)
         self.current_module = None
 

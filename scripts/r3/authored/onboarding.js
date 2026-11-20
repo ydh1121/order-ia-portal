@@ -38,8 +38,7 @@
   function render(state) {
     const member=state.startsWith('member-'), opened=state==='company', step=opened?1:Number(state.slice(-1));
     const [title,subtitle]=copy[step-1], inactive=opened?' inert':'';
-    const top=member ? '<strong class="ob-wordmark">Order<span class="ob-period" aria-hidden="true">.</span></strong>'+link(brandMark,'profile/menu','ob-mark-btn') :
-      '<button type="button" class="ob-brand" data-action="animate-brand" aria-label="Order 로고"><strong>Order.</strong>'+brandMark+'</button>'+link('회원가입','signup/empty','ob-join');
+    const top='<div class="brand ob-brand-common"><strong class="ob-wordmark brand-word">Order<span class="ob-period brand-dot" aria-hidden="true">.</span></strong>'+originalMark+'</div>'+(member?'':link('회원가입','signup/empty','ob-join'));
     const content=step===4?'<div class="ob-mode-grid">'+mode(true,member,true)+mode(false,member,true)+'</div>':
       step<=2?'<img class="ob-art" alt="" width="287" height="226" data-intro-art>':'';
     const tray=member ? (step<4?mode(true,true,false)+mode(false,true,false):'') : link('로그인','login/empty','ob-login');
@@ -104,23 +103,14 @@
       if(changed&&m.payload)w.ORDER_CUSTOMER_CONTROLS?.motion(badge,[{scale:'.65'},{scale:'1.2',offset:.66},{scale:'1'}],{duration:230});
     });
     if(quick)on(shell,'pointerdown',e=>{if(!e.target.closest('.ob-quick')&&quick.getAttribute('aria-expanded')==='true')menu(false);});
-    const mark=shell.querySelector('.ob-mark-btn');
+    const brand=shell.querySelector('header .brand');
+    const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{};
+    const brandMenu=w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,reducedMotion:api.reduced});
     on(window,'message',e=>{
-      if(e.source!==parent||e.data?.scope!=='ORDER_R3_HOST'||e.data.type!=='memberArrival'||!mark)return;
+      if(e.source!==parent||e.data?.scope!=='ORDER_R3_HOST'||e.data.type!=='memberArrival'||!brandMenu)return;
       shell.dataset.memberArrival='true';
-      if(api.reduced?.())return;
-      const period=shell.querySelector('.ob-period');
-      period?.animate([{opacity:1},{opacity:0}],{duration:300});
-      const distance=mark.getBoundingClientRect().left-shell.querySelector('.ob-wordmark').getBoundingClientRect().right;
-      mark.animate([{transform:'translateX('+(-Math.max(0,distance))+'px)'},{transform:'translateX(7px)',offset:.7},{transform:'translateX(-3px)',offset:.88},{transform:'translateX(0)'}],{duration:570,easing:'ease-out'});
+      if(context.authenticated===true)brandMenu.arrival();
     });
-    const svg=shell.querySelector('header .ob-dots-logo svg');
-    if(svg?.getAttribute('viewBox')==='-36 -40 572.045 280'){
-      const paths=svg.querySelectorAll('g path');
-      if(paths.length===3)paths.forEach((path,i)=>path.setAttribute('data-jelly',String(i)));
-    }
-    const jelly=svg?.querySelectorAll('[data-jelly]').length===3 && w.Code1Jelly
-      ? w.Code1Jelly.mount(svg,{auto:!api.reduced?.(),interactive:false,minDelay:10000,maxDelay:15000}) : null;
     let paused=[];
     function connectPrimary(){
       const primary=stage.querySelector(prefix==='member'?'.ob-mode.detail':'.ob-mode.simple');
@@ -167,12 +157,12 @@
 
     function show(open){
       if(open){
-        controller?.activate();magnetic?.reset();modeIcons?.pause();jelly?.stopRandom(); jelly?.stop();
+        controller?.activate();magnetic?.reset();modeIcons?.pause();brandMenu?.pause();
         paused=stage.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
         for(const a of paused)a.pause();
         for(const svg of stage.querySelectorAll('svg'))svg.pauseAnimations?.();
       }else{
-        controller?.deactivate();controller?.reset();modeIcons?.resume();if(!api.reduced?.())jelly?.startRandom({minDelay:10000,maxDelay:15000});
+        controller?.deactivate();controller?.reset();modeIcons?.resume();brandMenu?.resume();
         for(const a of paused)a.play();paused=[];
         for(const svg of stage.querySelectorAll('svg'))svg.unpauseAnimations?.();
       }
@@ -195,7 +185,6 @@
       if(b.dataset.mfIntro){go(Number(b.dataset.mfIntro));return;}
       if(b===quick){menu(quick.getAttribute('aria-expanded')!=='true');return;}
       if(b.dataset.action==='delivery-policy'){const note=shell.querySelector('.ob-policy');note.hidden=!note.hidden;b.setAttribute('aria-expanded',String(!note.hidden));return;}
-      if(b.dataset.action==='animate-brand'&&!api.reduced?.())jelly?.gather();
     });
     on(shell,'keydown',e=>{
       if(!shade.hidden){if(e.key==='Escape'){e.preventDefault();show(false);return;}
@@ -216,7 +205,7 @@
       }});
     on(shell,'pointercancel',()=>{drag=null;});
     if(state==='company')show(true);
-    return ()=>{cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();jelly?.destroy();ctl.abort();};
+    return ()=>{cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();brandMenu?.destroy();ctl.abort();};
   }
   const positions=['guest','member'].flatMap(type=>[1,2,3,4].map(n=>[type+'-'+n,(type==='guest'?'비회원 ':'회원 ')+n]));
   w.ORDER_DESIGN_MODULES.push({id:'onboarding',label:'소개·견적 모드',group:'매장 고객',role:'customer',width:'mobile',

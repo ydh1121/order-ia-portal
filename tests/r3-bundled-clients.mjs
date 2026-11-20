@@ -31,7 +31,7 @@ try {
     window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});
     const scripts=[...window.document.scripts].filter(s=>s.type!=='application/json');
     try {
-      for(const script of scripts)window.eval(script.textContent);
+      for(const script of scripts)window.eval(script.textContent.replace('import "/ia/r3-product/web/common-ui.mjs";',''));
       if(view==='qa-lab') {
         assert.ok(requests.includes('/api/ia/r3-qa/artifact'),'QA reaches the artifact catalog request');
         assert.ok(requests.includes('/api/ia/auth/me'),'QA reaches authenticated initialization');

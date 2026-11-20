@@ -28,7 +28,7 @@ export async function mountPortalSession(banner,installSession) {
   document.addEventListener('ia-session-updated',use);
   document.addEventListener('ia-session-expired',()=>{deadline=clock();checkedDeadline=true;reauth=true;logout.textContent='다시 로그인';paint();notice.textContent='로그인이 만료됐습니다.';});
   logout.addEventListener('click',async()=>{
-    if(reauth){location.assign('/login');return;}
+    if(reauth){location.reload();return;}
     if(logout.disabled)return;logout.disabled=true;
     try{
       const response=await fetch('/api/ia/auth/logout',{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'manual',headers:{'X-IA-CSRF':csrf}});

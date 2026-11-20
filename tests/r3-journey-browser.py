@@ -212,7 +212,7 @@ if __name__=='__main__':
             for width in (320,390,1440):
                 context=browser.new_context(viewport={'width':width,'height':852},reduced_motion='reduce')
                 page=context.new_page()
-                page.goto(conf['url']+'/ia?view=qa-lab')
+                page.goto(conf['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
                 page.locator('input[name=email]').fill(conf['email'])
                 page.locator('input[name=password]').fill(conf['pass'])
                 page.locator('button[type=submit]').click()
