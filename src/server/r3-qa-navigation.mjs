@@ -9,7 +9,7 @@ export const mvpScreens = new Set([
   'admin-billing','receipt','admin-orders','admin-payments','admin-shipments','admin-documents',
   'admin-support','admin-settlements','admin-analytics','admin-price-approval','admin-catalog','admin-negotiations','admin-campaigns',
   'admin-policy','admin-audit','supplier-shipments','common','drawer',
-  'component-library','admin-revenue-rules','member-email-templates','store-purchase'
+  'component-library','admin-revenue-rules','member-email-templates','store-purchase','price-workspace'
 ]);
 
 export function defaultQaNavigation(screens) {

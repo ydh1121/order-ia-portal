@@ -25,10 +25,11 @@ import {getQaSupplemental,qaMvpCss} from './r3-qa-assets.mjs';
 import {defaultQaNavigation} from './r3-qa-navigation.mjs';
 import * as supplementalHistory from './r3-ui/supplemental-history.gen.mjs';
 import {isProductLiveTarget} from './product-lab-page.mjs';
+import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-runtime.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
-const reviewFrameCode='function presentReviewFrame(session){('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);('+browserFunction(mountApprovedMarkers)+')(session);}';
+const reviewFrameCode='function presentReviewFrame(session){window.ORDER_QA_REVIEW_RUNTIME?.(session);('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);('+browserFunction(mountApprovedMarkers)+')(session);}';
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cached=new Map();
@@ -55,9 +56,11 @@ export async function isR3ReviewTarget(target,revision=release){
   if(preserved?.hashes[target.viewport]===target.artifactHash)return true;
   const additional=(await getQaSupplemental()).documents.get([target.screen,target.state,target.variant].join('/'));
   if(additional?.hashes[target.viewport]===target.artifactHash)return true;
+  if(additional&&await qaReviewHash(additional.row,additional.hashes[target.viewport])===target.artifactHash)return true;
   const row=catalog.find(f=>f.screen===target.screen&&f.state===target.state&&f.variant===target.variant);
   if(!row)return false;
   const [current,previous]=await Promise.all(['current','previous'].map(version=>approvedHash(row,target.viewport,version)));
+  if(await qaReviewHash(row,current)===target.artifactHash)return true;
   if(current===target.artifactHash||previous===target.artifactHash)return true;
   for(const archive of [beforeLogoCorrection.archivedRows,beforeBrand.archivedRows,beforeInteraction.archivedRows,beforeMotion.publishedRows,archivedRows,beforeRework.archivedRows,beforeMotion.archivedRows,beforeMotion.stageRows]){
     const preserved=archive[row.id];if(preserved&&await approvedHash(preserved,target.viewport,'current')===target.artifactHash)return true;
@@ -83,7 +86,8 @@ export async function serveR3Artifact(request,env){
     const items=await Promise.all(inventory.map(async row=>{
       const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
-      return {hashes:await reviewHashes(row),id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':label,stateLabel,defaultWidth,phase,role,
+      const contentHashes=await reviewHashes(row);
+      return {hashes:await qaReviewHashes(row,contentHashes),contentHashes,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':label,stateLabel,defaultWidth,phase,role,
         description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
         authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
     }));
@@ -102,18 +106,22 @@ export async function serveR3Artifact(request,env){
   const supplement=(await getQaSupplemental()).documents.get(q.get('id'));
   if(supplement&&approvedWidths.includes(Number(q.get('width')))&&['current','recorded'].includes(q.get('version'))&&[...q.keys()].every(k=>['id','width','version','artifactHash'].includes(k))){
     const width=Number(q.get('width')),artifactHash=supplement.hashes[width],pinned=q.get('artifactHash');
-    if((q.get('version')==='current'&&!pinned)||pinned===artifactHash){
-      const css=await styles('current'),title=esc(supplement.row.label+' · '+supplement.row.stateLabel),body=supplement.body;
+    const reviewHash=await qaReviewHash(supplement.row,artifactHash);
+    if((q.get('version')==='current'&&!pinned)||pinned===artifactHash||pinned===reviewHash){
+      const css=await styles('current'),extraCss=supplement.css||qaMvpCss,title=esc(supplement.row.label+' · '+supplement.row.stateLabel),body=supplement.body;
       const common='<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+title+'</title>';
-      const meta=js({release,artifactHash,version:'current',screen:supplement.row.screen,state:supplement.row.state,variant:'email',viewport:width,bodySha256:await sha(body),cssSha256:await sha(css+qaMvpCss)});
-      const html=common+'<!--R3-POLICY--><style>'+css+qaMvpCss+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
-      const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+qaMvpCss+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
-      return json({release,version:'current',hash:artifactHash,html,editable,exportHash:await sha(editable),mount:supplement.mount,file:release+'_'+supplement.row.id.replaceAll('/','_')+'_'+width+'.html'});
+      const meta=js({release,artifactHash,version:'current',screen:supplement.row.screen,state:supplement.row.state,variant:'email',viewport:width,bodySha256:await sha(body),cssSha256:await sha(css+extraCss)});
+      const html=common+'<!--R3-POLICY--><style>'+css+extraCss+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
+      const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+extraCss+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
+      const result={release,version:'current',hash:artifactHash,html,editable,viewport:width,exportHash:await sha(editable),mount:supplement.mount,file:release+'_'+supplement.row.id.replaceAll('/','_')+'_'+width+'.html'};
+      return json(!pinned||pinned===reviewHash?await withQaReviewRuntime(result,supplement.row):result);
     }
   }
   const r=catalog.find(f=>f.id===q.get('id')); const width=Number(q.get('width'));let version=q.get('version');
   if(!r||!approvedWidths.includes(width)||!['current','previous','prior-r3','recorded'].includes(version)||[...q.keys()].some(k=>!['id','width','version','artifactHash'].includes(k)))return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  const pinned=q.get('artifactHash');
+  const requestedHash=q.get('artifactHash'),currentReviewHash=await qaReviewHash(r,await approvedHash(r,width,'current'));
+  const useRuntime=(!requestedHash&&version==='current')||requestedHash===currentReviewHash;
+  const pinned=requestedHash===currentReviewHash?await approvedHash(r,width,'current'):requestedHash;
   const history=[beforeLogoCorrection.archivedRows[r.id],beforeBrand.archivedRows[r.id],beforeInteraction.archivedRows[r.id],beforeMotion.publishedRows[r.id],archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id],beforeMotion.stageRows[r.id]].filter(Boolean);
   let archived=null;
   if(version==='prior-r3'&&!pinned)archived=archivedRows[r.id]||null;
@@ -132,7 +140,7 @@ export async function serveR3Artifact(request,env){
   const sourceVersion=version==='previous'?'previous':'current';
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
-  if(q.has('artifactHash')&&q.get('artifactHash')!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
+  if(pinned&&pinned!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
   // Logo/brand history bodies are byte-identical entries in frames. Keeping
   // their unused fallback references would duplicate them in the Pages bundle.
   const packed=frames[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
@@ -163,7 +171,8 @@ export async function serveR3Artifact(request,env){
   if(interactionArchive)replayFrame=await (interactionBootstrap??=inflate(beforeInteraction.replayFrameGzip));
   if(brandArchive)replayFrame=await (brandBootstrap??=inflate(beforeBrand.replayFrameGzip));
   if(logoCorrectionArchive)replayFrame=await (logoCorrectionBootstrap??=inflate(beforeLogoCorrection.replayFrameGzip));
-  return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
+  const result={release,version,hash:artifactHash,html:page,editable,viewport:width,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'};
+  return json(useRuntime&&!archived&&sourceVersion==='current'?await withQaReviewRuntime(result,r):result);
 }
 export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}

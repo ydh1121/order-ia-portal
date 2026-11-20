@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 from r3_product_browser import check_private_product
 from r3_wait_layout import check_wait_layout
 
@@ -30,9 +30,22 @@ def check_qa_menu(page,url,width,dashboard_ready=False):
     with page.expect_popup() as popup:anchor.click()
     qa_tab=popup.value
     qa_tab.wait_for_url('**/ia?view=qa-lab**',wait_until='domcontentloaded')
-    qa_tab.locator('#live-create').wait_for(state='visible')
-    assert qa_tab.locator('#product-frame').count()==1
-    assert qa_tab.locator('#frame').count()==0
+    expect(qa_tab.locator('#lab')).to_be_visible()
+    expect(qa_tab.locator('#frame')).to_have_count(1)
+    for mode,label in [('focus','집중 보기'),('board','상태 한눈에'),('dual','모바일·PC')]:
+        control=qa_tab.locator('.lab-topbar button[data-mode="'+mode+'"]')
+        expect(control).to_be_visible()
+        expect(control).to_have_text(label)
+    frame=qa_tab.frame_locator('#frame')
+    frame.locator('#r3-veil').wait_for(state='attached')
+    pin=qa_tab.locator('#new[data-lab-action="pin-mode"]')
+    expect(pin).to_have_text('위치 코멘트')
+    pin.click()
+    expect(pin).to_have_attribute('aria-pressed','true')
+    expect(frame.locator('#r3-veil')).to_be_visible()
+    pin.click()
+    expect(pin).to_have_attribute('aria-pressed','false')
+    assert qa_tab.locator('#product-frame, #live-create').count()==0
     assert qa_tab.evaluate('window.opener===null')
     assert qa_tab.locator('#ia-live-banner').count()==0
     qa_tab.close()

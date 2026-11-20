@@ -58,36 +58,57 @@ async function workspace(t){
 }
 const query=values=>new URLSearchParams(values);
 
-test('only explicit archive, recorded version or exact-hash bookmarks enter the historical QA shell',async t=>{
+test('the default QA entry and ordinary screen bookmarks retain the approved review shell',async t=>{
  const f=await workspace(t),screen='account-settings/normal/email';
- for(const extra of [{},{version:'current'},{archive:'0'},{artifactHash:'invalid'}]){
-  const response=await f.page('/ia?'+query({view:'qa-lab',screen,...extra})),html=await response.text();
-  assert.equal(response.status,200);assert.match(html,/id="product-lab"/);assert.match(html,/id="product-frame"/);assert.doesNotMatch(html,/id="frame"/);
+ const cases=[{},{screen},{screen,version:'current'},{screen,archive:'0'},{screen,artifactHash:'invalid'},{page:'store-purchase'},
+  ...['run','labRun'].flatMap(key=>['','a'.repeat(31),'a'.repeat(33),'g'.repeat(32)].map(value=>({screen,[key]:value})))];
+ for(const selection of cases){
+  const response=await f.page('/ia?'+query({view:'qa-lab',...selection})),html=await response.text();
+  assert.equal(response.status,200);assert.match(html,/<div class="lab-app" id="lab">/);assert.match(html,/<iframe id="frame" sandbox="allow-scripts"/);
+  assert.match(html,/id="catalog"/);assert.match(html,/id="state-buttons"/);assert.match(html,/id="new"[^>]*data-lab-action="pin-mode"/);
+  for(const mode of ['focus','board','dual'])assert.ok(html.includes('data-mode="'+mode+'"'));
+  assert.doesNotMatch(html,/id="product-lab"|id="live-run"/);
  }
+ assert.equal(f.review.prepare('SELECT count(*) AS n FROM qa_review_events').get().n,0,'opening the default tool does not change review history');
+});
+
+test('only explicit valid saved-run links retain the isolated product lab',async t=>{
+ const f=await workspace(t),screen='account-settings/normal/email';
+ for(const key of ['run','labRun'])for(const extra of [{},{archive:'0'},{version:'current'}]){
+  const response=await f.page('/ia?'+query({view:'qa-lab',screen,[key]:f.run.id,persona:'buyer',...extra})),html=await response.text();
+  assert.equal(response.status,200);assert.match(html,/id="product-lab"/);assert.match(html,/id="product-frame"/);assert.doesNotMatch(html,/<iframe id="frame"/);
+ }
+ assert.equal(f.review.prepare('SELECT count(*) AS n FROM qa_review_events').get().n,0,'opening an existing run does not change review history');
+});
+
+test('archive, historical versions and exact artifact hashes take precedence over saved-run links',async t=>{
+ const f=await workspace(t),screen='profile/menu/email';
  for(const extra of [{archive:'1'},{version:'previous'},{version:'prior-r3'},{version:'recorded'},{artifactHash:oldBrand.archivedRows['profile/menu/email'].hashes[390]}]){
-  const values=query({view:'qa-lab',screen,...extra});assert.equal(isArchivedQaRequest(values),true);
-  const response=await f.page('/ia?'+values),html=await response.text();
-  assert.equal(response.status,200);assert.match(html,/id="frame"/);assert.doesNotMatch(html,/id="product-lab"/);
+  for(const key of ['run','labRun']){
+   const values=query({view:'qa-lab',screen,[key]:'f'.repeat(32),persona:'buyer',...extra});assert.equal(isArchivedQaRequest(values),true);
+   const response=await f.page('/ia?'+values),html=await response.text();
+   assert.equal(response.status,200);assert.match(html,/<iframe id="frame" sandbox="allow-scripts"/,'historical review does not require a still-active product run');assert.doesNotMatch(html,/id="product-lab"/);
+  }
  }
- const retained=await f.page('/ia?'+query({view:'qa-lab',screen,archive:'1',labRun:'f'.repeat(32),persona:'buyer'}));
- assert.equal(retained.status,200);assert.match(await retained.text(),/id="frame"/,'historical replay does not require a still-active product run');
  assert.equal(f.review.prepare('SELECT count(*) AS n FROM qa_review_events').get().n,0,'route selection never changes review history');
 });
 
-test('a current account bookmark opens the actual run and account API, retaining persona across screen changes',async t=>{
+test('explicit run and labRun account bookmarks read the same saved data and retain persona across screen changes',async t=>{
  const f=await workspace(t),before=await f.scoped('buyer','/account');
  await f.scoped('buyer','/account',{action:'update',expectedRevision:before.revision,requestKey:crypto.randomUUID(),profile:{name:'실제 실행에 저장한 담당자',phone:'010-1234-5678'}});
- const host=await f.mount('/ia?'+query({view:'qa-lab',screen:'account-settings/normal/email',run:f.run.id,persona:'buyer',width:'390'}));
- const frame=host.doc.getElementById('product-frame');await until(()=>frame.src.includes('qaDocument='),'the bookmark selects a canonical product document');
- const target=new URL(frame.src);assert.equal(target.searchParams.get('view'),'product-r3');assert.equal(target.searchParams.get('screen'),'account-settings');assert.equal(target.searchParams.get('state'),'normal');assert.equal(target.searchParams.get('labRun'),f.run.id);assert.equal(target.searchParams.get('persona'),'buyer');
- const account=await f.mount(frame.src);await until(()=>account.doc.querySelector('[data-account-menu-host] [name=name]')?.value==='실제 실행에 저장한 담당자','the canonical account panel reads persisted data');
- assert.ok(account.calls.some(call=>call.path===`/api/ia/lab/runs/${f.run.id}/as/buyer/product/account`));assert.equal(account.calls.some(call=>call.method==='POST'),false);
- assert.equal(account.doc.querySelector('[data-withdraw-form]'),null);assert.equal(new URL(host.w.location.href).searchParams.get('page'),'account-settings');
- const actual=new URL(frame.src);actual.searchParams.set('screen','profile');actual.searchParams.set('state','menu');
- host.w.dispatchEvent(new host.w.MessageEvent('message',{origin,source:frame.contentWindow,data:{scope:'ORDER_PRODUCT_INSPECTION',type:'ready',runId:f.run.id,persona:'buyer',documentId:target.searchParams.get('qaDocument'),payload:{path:actual.pathname+actual.search}}}));
- host.doc.getElementById('live-width').value='1440';host.doc.getElementById('live-width').dispatchEvent(new host.w.Event('change'));
- const reopened=new URL(frame.src);assert.equal(reopened.searchParams.get('screen'),'profile');assert.equal(reopened.searchParams.get('state'),'menu');assert.equal(reopened.searchParams.get('labRun'),f.run.id);assert.equal(reopened.searchParams.get('persona'),'buyer');
- assert.equal((await f.scoped('buyer','/account')).profile.name,'실제 실행에 저장한 담당자');assert.deepEqual(host.errors,[]);assert.deepEqual(account.errors,[]);
+ for(const key of ['run','labRun']){
+  const host=await f.mount('/ia?'+query({view:'qa-lab',screen:'account-settings/normal/email',[key]:f.run.id,persona:'buyer',width:'390'}));
+  const frame=host.doc.getElementById('product-frame');await until(()=>frame.src.includes('qaDocument='),'the bookmark selects a canonical product document');
+  const target=new URL(frame.src);assert.equal(target.searchParams.get('view'),'product-r3');assert.equal(target.searchParams.get('screen'),'account-settings');assert.equal(target.searchParams.get('state'),'normal');assert.equal(target.searchParams.get('labRun'),f.run.id);assert.equal(target.searchParams.get('persona'),'buyer');
+  const account=await f.mount(frame.src);await until(()=>account.doc.querySelector('[data-account-menu-host] [name=name]')?.value==='실제 실행에 저장한 담당자','the canonical account panel reads persisted data');
+  assert.ok(account.calls.some(call=>call.path===`/api/ia/lab/runs/${f.run.id}/as/buyer/product/account`));assert.equal(account.calls.some(call=>call.method==='POST'),false);
+  assert.equal(account.doc.querySelector('[data-withdraw-form]'),null);assert.equal(new URL(host.w.location.href).searchParams.get('page'),'account-settings');
+  const actual=new URL(frame.src);actual.searchParams.set('screen','profile');actual.searchParams.set('state','menu');
+  host.w.dispatchEvent(new host.w.MessageEvent('message',{origin,source:frame.contentWindow,data:{scope:'ORDER_PRODUCT_INSPECTION',type:'ready',runId:f.run.id,persona:'buyer',documentId:target.searchParams.get('qaDocument'),payload:{path:actual.pathname+actual.search}}}));
+  host.doc.getElementById('live-width').value='1440';host.doc.getElementById('live-width').dispatchEvent(new host.w.Event('change'));
+  const reopened=new URL(frame.src);assert.equal(reopened.searchParams.get('screen'),'profile');assert.equal(reopened.searchParams.get('state'),'menu');assert.equal(reopened.searchParams.get('labRun'),f.run.id);assert.equal(reopened.searchParams.get('persona'),'buyer');
+  assert.equal((await f.scoped('buyer','/account')).profile.name,'실제 실행에 저장한 담당자');assert.deepEqual(host.errors,[]);assert.deepEqual(account.errors,[]);
+ }
 });
 
 test('unconnected state bookmarks keep their exact historical link and a missing explicit run never falls into a different run',async t=>{
@@ -127,7 +148,9 @@ async function loginDestination(t,search){
 
 test('expired login and preview return preserve archive hashes and live selection without accepting arbitrary redirect fields',async t=>{
  const hash=oldBrand.archivedRows['profile/menu/email'].hashes[390];
- const cases=[{view:'qa-lab',screen:'account-settings/normal/email',run:'1'.repeat(32),persona:'buyer',width:'390'},
+ const cases=[{view:'qa-lab'},{view:'qa-lab',screen:'account-settings/normal/email',width:'390'},
+  {view:'qa-lab',screen:'account-settings/normal/email',run:'1'.repeat(32),persona:'buyer',width:'390'},
+  {view:'qa-lab',screen:'account-settings/normal/email',labRun:'1'.repeat(32),persona:'buyer',width:'390'},
   {view:'qa-lab',screen:'profile/menu/email',archive:'1',version:'recorded',artifactHash:hash,width:'390'},
   {view:'qa-lab',page:'component-library',screen:'component-library',state:'asset-select',variant:'email',componentVariant:'select-123456789abc',run:'1'.repeat(32),persona:'operator'}];
  for(const expected of cases){

@@ -1,12 +1,18 @@
 /** Reusable workspace: mount inside a standalone page or an administrator route. */
-export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) {
+export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree,settings={}) {
   const $=s=>root.querySelector(s),$$=s=>Array.from(root.querySelectorAll(s));
+  const transport=settings.transport;
+  if(transport!=null&&typeof transport.request!=='function')throw Error('INVALID_WORKSPACE_TRANSPORT');
+  const cleanups=[];let destroyed=false;
+  const listen=(target,type,handler,settings)=>{target.addEventListener(type,handler,settings);cleanups.push(()=>target.removeEventListener(type,handler,settings));};
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const id=prefix=>prefix+'-'+crypto.randomUUID(),pad=n=>String(n).padStart(2,'0');
   const state={doc:null,revision:0,selectedRevision:0,versions:[],effective:null,section:'costs',shell:'1',grade:'all',classTab:'sizes',packRange:'all',carrier:null,folder:null,expanded:new Set(),selection:new Set(),anchor:null,dirty:false,busy:false,loading:0,pending:null,csrf:'',session:false,serverTime:'',step:100,selectedCarrier:null,productAudience:'store',productShell:'all',productSelection:new Set(),productAnchor:null,undo:[],redo:[]};
+  if(['costs','products','classification','carriers'].includes(settings.initialSection))state.section=settings.initialSection;
+  if(['store','consumer'].includes(settings.initialAudience))state.productAudience=settings.initialAudience;
   const errors={REVISION_CONFLICT:'다른 창에서 새 버전을 저장했습니다. 현재 입력은 유지했습니다. 최신 버전과 비교한 뒤 저장해 주세요.',IDEMPOTENCY_CONFLICT:'같은 요청이 다른 내용으로 처리되었습니다. 입력을 유지했습니다.',WORKSPACE_SCHEDULE_INVALID:'예약 시각을 현재보다 나중으로 선택해 주세요.',WORKSPACE_RANGE_OVERLAP:'주문 판수 구간이 겹칩니다. 최소·최대 값을 확인해 주세요.',WORKSPACE_RANGE_INVALID:'주문 판수 구간을 확인해 주세요.',WORKSPACE_PRICE_INVALID:'금액은 0 이상의 숫자로 입력해 주세요.',WORKSPACE_NEGATIVE_PRICE:'변경 후 금액이 0원보다 작아집니다.',WORKSPACE_LAST_ITEM:'분류 항목을 하나 이상 남겨 주세요.',WORKSPACE_PG_INVALID:'PG 수수료율을 확인해 주세요.',WORKSPACE_PACKAGE_INVALID:'포장 구수와 비용을 확인해 주세요.',WORKSPACE_ITEMS_INVALID:'중복된 분류 또는 항목 이름을 확인해 주세요.',WORKSPACE_PRODUCT_INVALID:'판매 상품의 분류와 가격을 확인해 주세요.',WORKSPACE_MARKUP_INVALID:'인상률 또는 인상 금액을 확인해 주세요.',WORKSPACE_CATALOG_LIMIT:'등록된 판매 상품이 2,000개를 넘습니다. 분류를 확인해 주세요.',WORKSPACE_DELIVERY_INVALID:'배송 규격·수량·단위·배송수단을 확인해 주세요.',WORKSPACE_DELIVERY_OVERLAP:'같은 계란 규격의 배송 수량 구간이 겹칩니다. 묶음과 알 단위를 환산해 구간을 확인해 주세요.',WORKSPACE_DELIVERY_EMPTY_RANGE:'이 구간에 해당하는 완전한 포장이 없습니다. 수량을 확인해 주세요.',WORKSPACE_DELIVERY_WHOLE_PACK:'포장 구수에 맞는 수량을 입력해 주세요.',ACCESS_REQUIRED:'계정 권한을 확인해 주세요.',SERVICE_UNAVAILABLE:'저장소에 연결하지 못했습니다. 입력은 유지했습니다.',REQUEST_TOO_LARGE:'가져온 표가 너무 큽니다. 필요한 행만 남겨 다시 올려 주세요.'};
   function notice(message,error=false){$('#pw-notice').textContent=message;$('#pw-notice').dataset.error=String(error);}
-  function report(error){notice(errors[error.message]||error.message||'처리하지 못했습니다. 입력을 유지했습니다.',true);}
+  function report(error){if(!destroyed)notice(errors[error.message]||error.message||'처리하지 못했습니다. 입력을 유지했습니다.',true);}
   function safe(fn){return event=>{try{const p=fn(event);if(p?.catch)p.catch(report);}catch(e){report(e);}};}
   function checkpoint(){state.undo.push(model.clone(state.doc));if(state.undo.length>30)state.undo.shift();state.redo=[];}
   function dirty(){state.dirty=true;state.editSerial=(state.editSerial||0)+1;const out=$('#pw-save-state');if(out)out.textContent='저장하지 않은 변경';}
@@ -21,6 +27,7 @@ export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) 
   const number=(value,attrs='',step=1)=>{const condition=['협의','미판매'].includes(value);if(condition)attrs=attrs.replace(/\s*placeholder="[^"]*"/g,'');return '<input type="number" inputmode="decimal" step="'+step+'" '+(/\bmin=/.test(attrs)?'':'min="0" ')+'value="'+esc(condition?'':value)+'" '+(condition?'placeholder="'+esc(value)+'" ':'')+attrs+'>';};
   const button=(text,attrs='',primary=false)=>'<button type="button" '+attrs+(primary?' class="pw-primary"':'')+'>'+esc(text)+'</button>';
   async function api(path='',body){
+    if(transport)return transport.request('/workspace'+path,body);
     const response=await fetch((window.ORDER_APP_CONTEXT?.endpoints?.price||'/api/ia/r3-price')+'/workspace'+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'manual',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
     if(response.type==='opaqueredirect'||response.redirected){document.dispatchEvent(new CustomEvent('ia-session-invalid'));throw Error('로그인이 필요합니다. 입력을 유지했습니다.');}
     let data;try{data=await response.json();}catch{throw Error('서버 응답을 확인하지 못했습니다. 입력을 유지했습니다.');}
@@ -245,7 +252,7 @@ export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) 
       modal(official?'공식 운임표 가져오기':'엑셀 가져오기 확인','<p>'+esc(file.name)+' · '+esc(official?data.sheets.length+'개 시트':sheet.name)+'</p>'+(data.warnings.length?'<p>'+esc(data.warnings.join(' '))+'</p>':'')+'<div class="pw-table-scroll"><table><tbody>'+sheet.rows.slice(0,8).map((r,i)=>'<tr>'+r.map(v=>'<'+(i===0?'th':'td')+'>'+esc(v)+'</'+(i===0?'th':'td')+'>').join('')+'</tr>').join('')+'</tbody></table></div>'+(section==='costs'&&!official?'<label class="pw-check"><input type="checkbox" name="replace"> 파일에 있는 난각번호의 판수 구간을 통째로 교체</label><p>기본은 같은 최소 판수의 값만 갱신합니다. 통째로 교체하면 파일에 없는 구간과 그 구간의 포장비가 삭제됩니다.</p>':'')+'<p>미리보기에는 처음 8행이 표시됩니다. 가져온 뒤 저장 버튼으로 반영하세요.</p>','가져오기',form=>{const imported=official?null:importWorkbook(model,state.doc,data,section,{replaceRanges:form.has('replace')});change(()=>{if(official){const c=state.doc.carriers.find(x=>x.id===carrierId);if(!c)throw Error('배송수단이 변경되었습니다. 파일을 다시 선택해 주세요.');c.official={name:file.name.slice(0,100),sheets:data.sheets};}else {state.doc=imported.document;if(!state.doc.shells.some(s=>s.id===state.shell))state.shell=state.doc.shells[0].id;}});notice('엑셀을 가져왔습니다. 내용을 확인하고 저장해 주세요.');});
     }finally{state.busy=false;$('#pw-main').inert=false;$('#pw-nav').inert=false;render();}});input.click();
   }
-  root.addEventListener('click',safe(async event=>{
+  listen(root,'click',safe(async event=>{
     const b=event.target.closest('button');if(!b||b.closest('.pw-dialog,.pw-bubble'))return;
     if(b.dataset.section){state.section=b.dataset.section;state.folder=null;state.selection.clear();if(state.section==='products'){const added=model.syncCatalogProducts(state.doc);if(added){dirty();notice('등록된 계란 규격을 판매 상품에 연결했습니다. 저장하면 다음 조회에도 유지됩니다.');}}render();return;}
     if(b.dataset.productAudience){state.productAudience=b.dataset.productAudience;state.productSelection.clear();state.productAnchor=null;render();return;}
@@ -270,13 +277,20 @@ export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) 
       'delete-carrier':()=>removeItem('carriers',state.carrier,'배송수단을 삭제하고 상품 분류의 연결도 해제합니다. 이전 버전은 유지됩니다.'),'delete-official':()=>confirmAction('공식 운임표를 삭제할까요?','현재 버전의 운임표를 삭제합니다.',()=>change(()=>state.doc.carriers.find(c=>c.id===state.carrier).official=null),'삭제')};
     if(actions[b.dataset.action])await actions[b.dataset.action]();
   }));
-  root.addEventListener('dblclick',safe(event=>{const b=event.target.closest('button');if(!b)return;if(b.dataset.shell)rename('shells',b.dataset.shell);else if(b.dataset.carrier)rename('carriers',b.dataset.carrier);else if(b.dataset.gradeEdit)editGrade(b.dataset.gradeEdit);else if(b.dataset.packEdit)editPack(b.dataset.packEdit);}));
-  document.addEventListener('ia-session-updated',event=>{if(event.detail?.csrf)state.csrf=event.detail.csrf;});
-  document.addEventListener('ia-session-restored',event=>{if(event.detail?.csrf)state.csrf=event.detail.csrf;notice('로그인이 확인되었습니다. 이어서 저장할 수 있습니다.');});
-  document.addEventListener('ia-session-expired',()=>{notice('로그인 시간이 만료되었습니다. 작성 중인 내용은 유지됩니다.',true);if(!$('#pw-login')){$('#pw-notice').insertAdjacentHTML('afterend','<a id="pw-login" class="pw-button" href="/ia/" target="_blank" rel="noopener">새 창에서 로그인</a>');}});
-  window.addEventListener('beforeunload',event=>{if(state.dirty){event.preventDefault();event.returnValue='';}});
-  const publicationTimer=setInterval(()=>refreshPublication().catch(()=>{}),60000);window.addEventListener('pagehide',event=>{if(!event.persisted)clearInterval(publicationTimer);});
+  listen(root,'dblclick',safe(event=>{const b=event.target.closest('button');if(!b)return;if(b.dataset.shell)rename('shells',b.dataset.shell);else if(b.dataset.carrier)rename('carriers',b.dataset.carrier);else if(b.dataset.gradeEdit)editGrade(b.dataset.gradeEdit);else if(b.dataset.packEdit)editPack(b.dataset.packEdit);}));
+  listen(document,'ia-session-updated',event=>{if(event.detail?.csrf)state.csrf=event.detail.csrf;});
+  listen(document,'ia-session-restored',event=>{if(event.detail?.csrf)state.csrf=event.detail.csrf;notice('로그인이 확인되었습니다. 이어서 저장할 수 있습니다.');});
+  listen(document,'ia-session-expired',()=>{notice('로그인 시간이 만료되었습니다. 작성 중인 내용은 유지됩니다.',true);if(!$('#pw-login')){$('#pw-notice').insertAdjacentHTML('afterend','<a id="pw-login" class="pw-button" href="/ia/" target="_blank" rel="noopener">새 창에서 로그인</a>');}});
+  listen(window,'beforeunload',event=>{if(state.dirty){event.preventDefault();event.returnValue='';}});
+  const publicationTimer=setInterval(()=>refreshPublication().catch(()=>{}),60000);listen(window,'pagehide',event=>{if(!event.persisted)clearInterval(publicationTimer);});
   root.innerHTML='<div id="pw-notice" role="status" aria-live="polite"></div><div class="pw-layout"><aside id="pw-nav" aria-label="가격 관리 탐색"></aside><main id="pw-main"><div class="pw-empty">가격표를 불러오는 중입니다.</div></main></div>';
-  (async()=>{const res=await fetch((window.ORDER_APP_CONTEXT?.endpoints?.price||'/api/ia/r3-price')+'/session',{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('로그인을 확인해 주세요.');const session=await res.json();state.csrf=session.csrf;state.session=session.practiceAllowed===true;if(state.session)document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:session}));await load();})().catch(report);
-  return {read:()=>model.clone(state.doc),getState:()=>({revision:state.revision,dirty:state.dirty,section:state.section,selection:[...state.selection]}),reload:load};
+  const connect=async()=>{
+    let session;
+    if(transport)session=await transport.request('/session');
+    else{const res=await fetch((window.ORDER_APP_CONTEXT?.endpoints?.price||'/api/ia/r3-price')+'/session',{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('로그인을 확인해 주세요.');session=await res.json();}
+    if(destroyed)return;state.csrf=session.csrf;state.session=session.practiceAllowed===true;if(state.session)document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:session}));notice('');await load();
+  };
+  const reconnect=()=>connect().catch(report),ready=reconnect();
+  return {read:()=>model.clone(state.doc),getState:()=>({revision:state.revision,dirty:state.dirty,section:state.section,selection:[...state.selection]}),reload:load,reconnect,ready,
+    destroy(){if(destroyed)return;destroyed=true;state.loading++;clearInterval(publicationTimer);closeModal(activeModal,{immediate:true});for(const dispose of cleanups.splice(0).reverse())dispose();}};
 }

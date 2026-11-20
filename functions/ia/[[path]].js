@@ -76,10 +76,11 @@ export async function onRequest({request,env}){
  }
  if(r3View==='qa-lab'){
    headers['Content-Security-Policy']+="; frame-src 'self'; object-src 'none'";
-   // A screen ID identifies the requested product entry. Only an explicit
-   // historical request may replay authored frames and their original comments.
+   // Keep the approved review tool as the default. Existing isolated runs remain
+   // reachable through explicit run links; recorded artifacts take precedence.
    const {isArchivedQaRequest,renderProductLab}=await import('../../src/server/product-lab-page.mjs');
-   if(isArchivedQaRequest(url.searchParams)){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
+   const savedRun=['run','labRun'].some(key=>/^[a-f0-9]{32}$/.test(url.searchParams.get(key)||''));
+   if(isArchivedQaRequest(url.searchParams)||!savedRun){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
    else html=renderProductLab(nonce,url.searchParams);
  }else if(r3View==='product-r3'){
    const {renderProductApplication}=await import('../../src/server/product-app-page.mjs');

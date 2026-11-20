@@ -115,7 +115,7 @@ def compare(name, original, candidate, drawer, mode):
     # The user's 2026-11-20 directive replaces the flat menu with two editable
     # accordions. All existing preview geometry and other shell gates remain.
     require(set(original["navModules"]).issubset(candidate["navModules"]),"an approved menu module was lost")
-    require(candidate["navCount"]==101 and len(set(candidate["navModules"]))==101,"MVP inventory missing or duplicated")
+    require(candidate["navCount"]==102 and len(set(candidate["navModules"]))==102 and "price-workspace" in candidate["navModules"],"MVP inventory or the canonical price workspace is missing or duplicated")
     require(candidate["navGroups"]==["mvp","future"],"MVP and future accordions missing")
     require(candidate["bodyOverflow"] <= 1, f"document horizontal overflow {candidate['bodyOverflow']}px")
     def compare_box(what, a, b, axes=range(4), tol=2):
@@ -161,7 +161,7 @@ def check_stage_wheel(page):
 def verify_review_controls(browser, auth, origin):
     ctx=browser.new_context(viewport={"width":1440,"height":900},storage_state=auth)
     page=ctx.new_page()
-    url=origin+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390"
+    url=origin+"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=390"
     page.goto(url)
     frame=page.frame_locator("#frame")
     frame.locator("#r3-veil").wait_for(state="attached")
@@ -210,7 +210,7 @@ def verify_review_controls(browser, auth, origin):
         {"id":"qa-width-fixture","body":legacy_text,"status":"open"}]}}
     page.route("**/api/ia/r3-qa/legacy?**",lambda route:route.fulfill(
         json={"items":[legacy_row],"hasMore":False,"nextCursor":1}))
-    page.goto(origin+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=320")
+    page.goto(origin+"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=320")
     page.frame_locator("#frame").locator("#r3-veil").wait_for(state="attached")
     previous=page.locator('#review-summary [data-metric="previous"] strong')
     expect(previous).to_have_text("1")
@@ -248,7 +248,12 @@ def main():
             auth=browser.new_context()
             login=auth.new_page();login.goto(cfg["url"]+"/ia?view=qa-lab")
             login.locator("input[name=email]").fill(cfg["email"]);login.locator("input[name=password]").fill(cfg["pass"]);login.locator("button[type=submit]").click()
-            login.wait_for_url("**/ia?view=qa-lab**");state=auth.storage_state();auth.close()
+            login.wait_for_url("**/ia?view=qa-lab**")
+            expect(login.locator("#lab")).to_be_visible()
+            expect(login.locator("#product-lab")).to_have_count(0)
+            expect(login.locator(".lab-topbar button[data-mode]")).to_have_count(3)
+            login.frame_locator("#frame").locator("#r3-veil").wait_for(state="attached")
+            state=auth.storage_state();auth.close()
             for name,width,height,preview,mode,panel in SCENES:
                 evidence={"scene":name,"viewport":[width,height],"artifactWidth":preview,"mode":mode,"drawer":panel,"screen":"login/empty/email"}
                 imgs=[]
@@ -260,7 +265,7 @@ def main():
                         # Serve only the verified document via a dedicated loopback origin.
                         context.route("**/*", lambda route:route.fulfill(content_type="text/html;charset=utf-8",body=raw) if route.request.url==REFERENCE_URL else route.abort())
                     page=context.new_page();page.set_default_timeout(12000)
-                    url=(cfg["url"]+f"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width={preview}") if current else REFERENCE_URL+f"#login/empty/email/{preview}"
+                    url=(cfg["url"]+f"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width={preview}") if current else REFERENCE_URL+f"#login/empty/email/{preview}"
                     try:
                         configure(page,url,current,preview,mode,panel)
                         evidence[key]=page.evaluate(MEASURE)

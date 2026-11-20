@@ -43,6 +43,12 @@ test('preview document verifies assigned owner, creates host session, serves the
   const cookie=page.headers.get('Set-Cookie').split(';')[0];
   const desk=await visit(new Request(origin+'/ia?view=qa-lab',{headers:{Cookie:cookie}}));
   assert.equal(desk.status,200);assert.equal(desk.headers.get('Set-Cookie'),null);
+  const reviewHtml=await desk.text();
+  assert.match(reviewHtml,/<div class="lab-app" id="lab">/);
+  assert.match(reviewHtml,/<iframe id="frame" sandbox="allow-scripts"/);
+  for(const mode of ['focus','board','dual'])assert.ok(reviewHtml.includes('data-mode="'+mode+'"'),'the default QA desk retains '+mode+' review');
+  assert.match(reviewHtml,/id="state-buttons"/);assert.match(reviewHtml,/id="new"[^>]*data-lab-action="pin-mode"/);
+  assert.doesNotMatch(reviewHtml,/id="product-lab"|id="live-run"/);
   const me=await handleIaRequest(new Request(origin+'/api/ia/auth/me',{headers:{Cookie:cookie}}),env);
   const identity=await me.json();assert.equal(identity.role,'OWNER');assert.ok(identity.csrf);
   const endpoint=origin+'/api/ia/auth/logout';

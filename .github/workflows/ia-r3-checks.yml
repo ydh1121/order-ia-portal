@@ -23,6 +23,8 @@ jobs:
         run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
       - name: Verify canonical product source manifest
         run: node scripts/build-product-manifest.mjs --check
+      - name: Verify R1 QA and product runtime sources agree
+        run: node scripts/r3/build-qa-review-runtime.mjs --check
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |
@@ -67,6 +69,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-price-workspace-browser.py
+      - name: Check the actual MVP workspace and dummy states inside the R1 review shell
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-qa-workspace-browser.py
       - name: Check saved business accounts and both real quote forms
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -157,6 +164,7 @@ jobs:
           name: r3-private-browser-receipts
           path: |
             artifacts/price-workspace/
+            artifacts/r1-workspace/
             artifacts/saved-businesses/
             artifacts/role-browser/
             artifacts/quote-result/

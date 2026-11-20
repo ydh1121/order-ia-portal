@@ -10,6 +10,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let screens=[],current=null,artifact=null,target=null,csrf='',filter='all',session='',generation=0,cursor=0,editor=null,pending=null,storing=false,missing=new Set(),subset=null;
   let legacyAvailable=false,reviewAvailable=false,displayPins=true,wantsPoint=false,continuousPoints=false;
   let shell, commentFilter='open';
+  let pendingPurchaseFixture=null;
   let navigation=null,navigationPending=false,navigationReady=false;
   // IDs of the recorded two-tab exercise, confirmed by the physical D1 receipts.
   // Text, account identity and date alone are insufficient to classify a user note.
@@ -47,6 +48,16 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     if(publication?.iaCommit&&/^[a-f0-9]{40}$/.test(publication.iaCommit)){
       const link=node('a','검토 중인 IA 코드');link.href='https://github.com/ydh1121/order-ia-portal/commit/'+publication.iaCommit;
       link.rel='noopener noreferrer';link.target='_blank';build.append(document.createTextNode(' '),link);
+    }
+    if(artifact?.source?.mode==='controlled-qa'){
+      const detail=node('details'),summary=node('summary','현재 화면 소스');detail.append(summary,node('p','제품 화면과 같은 코드를 실행하며, 로그인·DB 응답은 QA 더미 상태로 제어합니다.'));
+      for(const path of artifact.source.files||[]){
+        if(typeof path!=='string'||!/^((src\/server)|(scripts\/r3))\/[a-zA-Z0-9_./-]+$/.test(path))continue;
+        const entry=node(publication?.iaCommit?'a':'p',path);
+        if(publication?.iaCommit&&/^[a-f0-9]{40}$/.test(publication.iaCommit)){entry.href='https://github.com/ydh1121/order-ia-portal/blob/'+publication.iaCommit+'/'+path;entry.target='_blank';entry.rel='noopener noreferrer';}
+        detail.append(entry);
+      }
+      detail.append(node('small','위치 의견은 이 화면의 소스 해시와 컴포넌트 위치에 연결됩니다.'));box.append(detail);
     }
     const canSimulate=['quote-wait','common'].includes(current.screen)||current.screen.startsWith('admin-');
     const options=current.screen==='quote-result'?['replay']:canSimulate?Object.keys(motionModes):[];
@@ -503,17 +514,17 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   const sameOriginUrl=(path)=>new URL(path,location.href);
   function download(filename,bytes,mime){const url=URL.createObjectURL(new Blob([bytes],{type:mime}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function frameDocument(a,row,channel){
-      const boot=(a.replayFrame||frameBootstrap).replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant,authOriginStep:authOriginStep||null}).replaceAll('<','\\u003c');
+      const boot=(a.replayFrame||frameBootstrap).replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant,authOriginStep:authOriginStep||null,...(a.fixture?{fixture:a.fixture}:{})}).replaceAll('<','\\u003c');
       const script='<script nonce="'+nonce+'">('+boot+')('+params+')</'+'script>';
       // srcdoc inherits parent CSP; the child further restricts network, forms and images.
       const policy='<meta http-equiv="Content-Security-Policy" content="default-src \'none\';script-src \'nonce-'+nonce+'\';style-src \'unsafe-inline\';img-src data:;connect-src \'none\';form-action \'none\';base-uri \'none\'">';
       const reduced=$('motion-enabled')?.checked===false?'<style>*, *:before, *:after{transition:none!important;animation-play-state:paused!important;scroll-behavior:auto!important}</style>':'';
       const html=reduced?a.html.replace('<html ','<html data-review-reduced '):a.html;
-      return html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
+      return html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+(a.qaRuntime?'<script nonce="'+nonce+'">'+a.qaRuntime.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
   }
   // The source step is short-lived and belongs to this QA tab's guest authentication flow.
   let authOriginStep = null, arrivalScreen = null;
-  async function select(row,version=$('version').value,originStep=null,pinnedHash=null,appliedState=false){
+  async function select(row,version=$('version').value,originStep=null,pinnedHash=null,appliedState=false,purchaseFixture=null){
     if(!row)return;
     clearTimeout(transitionTimeout);exitAnimation?.cancel();
     const previous=displayed;displayed=null;
@@ -529,6 +540,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     try{
       const a=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version+(pinnedHash?'&artifactHash='+encodeURIComponent(pinnedHash):''));
       if(n!==generation)return;
+      if(a.fixture&&purchaseFixture)a.fixture={...a.fixture,data:{purchases:purchaseFixture.purchases},selectedPurchaseId:purchaseFixture.selectedPurchaseId};
       if(version==='recorded'||version!==a.version){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
       artifact=a;session=crypto.randomUUID();if(version==='current'){row.hashes??={};row.hashes[width]=a.hash;}
       target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash};
@@ -536,7 +548,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const onboarding=row.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(row.state)&&row.state.split('-')[0]===previous?.state.split('-')[0];
       const component=['login','signup','password','otp','terms'].includes(row.screen)&&row.runtimeFamily!=='snapshot';
       if((row.screen==='quote-result'||onboarding||component)&&previous?.version==='current'&&row.screen===previous.screen&&row.variant===previous.variant&&version==='current'&&previous.width===width&&previous.motion===$('motion-enabled').checked&&!pinnedHash){
-        const payload={state:row.state,hash:a.hash,channel:session};
+        const payload={state:row.state,hash:a.hash,channel:session,...(a.fixture?{fixture:a.fixture}:{})};
         if(onboarding||component)payload.markup=a.html;if(component)payload.applied=appliedState;
         frame.contentWindow.postMessage({scope:'ORDER_R3_HOST',channel:previous.channel,artifact:previous.hash,type:component?'componentState':onboarding?'onboardingState':'resultState',payload},'*');
         transitionTimeout=setTimeout(documentSwap,component?1400:320);
@@ -619,6 +631,18 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     if(!artifact||e.source!==frame.contentWindow||e.origin!=='null'||m?.scope!=='ORDER_R3_FRAME'||m.channel!==session||m.artifact!==artifact.hash)return;
     if(m.type==='userActivity'){document.dispatchEvent(new Event('ia-session-activity'));return;}
     const isCurrent=$('version').value==='current';
+    if(isCurrent&&!wantsPoint&&m.type==='qaPurchaseFixture'){
+      const data=m.payload,fields=new Set(['id','revision','status','createdAt','updatedAt','offerId','quoteId','product','quantity','trays','unitPrice','total','paid','refunded','cancelledTrays','paymentMethod','channel','date','targetId','target','supplierId','shipmentOrigin','serviceDate','carrier','tracking','receiptId','paymentReference','paymentConfirmedAt']);
+      if(!artifact.qaRuntime||!data||!Array.isArray(data.purchases)||data.purchases.length>100||!(data.selectedPurchaseId===null||typeof data.selectedPurchaseId==='string'&&data.selectedPurchaseId.length<=128))return;
+      const purchases=[];
+      for(const item of data.purchases){
+        if(!item||typeof item!=='object'||Array.isArray(item)||typeof item.id!=='string'||item.id.length>128)return;
+        const clean={};for(const [key,value] of Object.entries(item)){if(!fields.has(key))continue;
+          if(!(value===null||typeof value==='string'&&value.length<=512||typeof value==='number'&&Number.isFinite(value)))return;clean[key]=value;}
+        purchases.push(clean);
+      }
+      pendingPurchaseFixture={channel:session,artifact:artifact.hash,at:Date.now(),purchases,selectedPurchaseId:data.selectedPurchaseId};return;
+    }
     if(isCurrent&&!wantsPoint&&m.type==='downloadReviewDocument'){
       if(['receipt/complete','admin-quotes/list'].includes(current.screen+'/'+current.state))
         download('QA_'+current.screen+'_'+current.state+'.html',artifact.editable,'text/html;charset=utf-8');
@@ -721,7 +745,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
         || screens.find(r=>r.screen===screen && (!state || state===r.state) && r.variant==='email');
       if(row){
         arrivalScreen=authOriginStep&&['login','signup','otp'].includes(current.screen)&&row.screen==='onboarding'&&row.state.startsWith('member-')?row.id:null;
-        select(row,undefined,originStep);
+        const purchaseFixture=pendingPurchaseFixture?.channel===session&&pendingPurchaseFixture?.artifact===artifact.hash&&Date.now()-pendingPurchaseFixture.at<5000?pendingPurchaseFixture:null;
+        pendingPurchaseFixture=null;select(row,undefined,originStep,null,false,purchaseFixture);
       }
     }
   });
@@ -864,7 +889,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       for(const [source,stale] of secondary)if(!stale.frame.isConnected)secondary.delete(source);
       const channel=crypto.randomUUID(),source=unit.contentWindow;
       secondary.set(source,{source,frame:unit,channel,hash:j.hash,row,width,board});
-      unit.srcdoc=frameDocument(board?{...j,mount:null}:j,row,channel);
+      unit.srcdoc=frameDocument(board&&!j.qaRuntime?{...j,mount:null}:j,row,channel);
     }
   });
   for(const b of document.querySelectorAll('[data-review]'))b.onclick=async()=>{if(!target||$('version').value!=='current')return;const val=b.dataset.review,id='verdict/'+reviewKey(target,target.viewport)+'/'+target.artifactHash;const currentReview=records.get(localKey('review',id));if(await write('review',id,{target,decision:val},currentReview?.revision??0))notes();};

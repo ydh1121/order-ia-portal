@@ -11,7 +11,9 @@ test('the QA menu covers the complete pinned state inventory without copying rev
   const list=await read(),original=list.items.filter(row=>!row.supplemental);
   assert.equal(original.length,498);assert.equal(new Set(original.map(r=>r.screen+'/'+r.state)).size,496);
   assert.equal(new Set(original.map(r=>r.screen)).size,97);
-  assert.equal(list.items.filter(row=>row.supplemental).length,39);
+  const {getQaSupplemental}=await import('../src/server/r3-qa-assets.mjs');
+  assert.deepEqual(list.items.filter(row=>row.supplemental).map(row=>row.id).sort(),
+    (await getQaSupplemental()).rows.filter(row=>row.supplemental).map(row=>row.id).sort());
   for(const entry of list.items){assert.equal('approved' in entry,false);assert.equal(typeof entry.hashes['390'],'string');}
 });
 test('stable target is bound to width, variant, release and generated artifact',async()=>{

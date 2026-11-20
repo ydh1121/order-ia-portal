@@ -2,14 +2,15 @@ import {catalog, cssHash, previousCssHash} from './r3-ui/catalog.gen.mjs';
 import {widthIndex} from './r3-ui/approved-widths.gen.mjs';
 import {quoteCommit} from './r3-product-sources.mjs';
 import {getQaSupplemental} from './r3-qa-assets.mjs';
+import {qaReviewRuntimeDigest,qaFixtureForRow} from './r3-qa-review-runtime.mjs';
 
 // Issue a fresh candidate ID before publishing a different IA commit, even with an identical product catalog.
-const candidateId = 'MSG0585-R3-20261120-MVP-PRICE-04';
+const candidateId = 'MSG0585-R3-20261120-R1-SHELL-05';
 let digest;
 
 export async function publicationIdentity() {
   digest ??= getQaSupplemental().then(additions=>crypto.subtle.digest('SHA-256', new TextEncoder().encode(
-    JSON.stringify([catalog, widthIndex, cssHash, previousCssHash,additions.rows])
+    JSON.stringify([catalog, widthIndex, cssHash, previousCssHash,additions.rows,qaReviewRuntimeDigest,[...catalog,...additions.rows].map(row=>[row.id,qaFixtureForRow(row)])])
   ))).then(value => Array.from(new Uint8Array(value), byte => byte.toString(16).padStart(2, '0')).join(''));
   return {candidateId, catalogDigest: await digest, productCommit: quoteCommit};
 }
