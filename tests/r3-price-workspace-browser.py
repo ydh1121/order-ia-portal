@@ -7,6 +7,21 @@ evidence=Path('artifacts/price-workspace');evidence.mkdir(parents=True,exist_ok=
 host=subprocess.Popen(['node','tests/r3-business-browser-host.mjs','--first-price'],stdout=subprocess.PIPE,text=True)
 base=host.stdout.readline().strip();assert base.startswith('http://127.0.0.1:')
 errors=[]
+
+def settled_workspace_dialog(page):
+    dialog=page.get_by_role('dialog')
+    expect(dialog).to_be_visible()
+    # The shell fades the native dialog and backdrop for 200 ms. Visibility
+    # alone can capture transparent content before that opening motion ends.
+    page.wait_for_function("""() => {
+        const dialog=document.querySelector('#pw-workspace-dialog[open]');
+        const panel=dialog?.querySelector(':scope > .q4-regular-panel');
+        return !!panel && getComputedStyle(dialog).opacity==='1'
+            && getComputedStyle(panel).opacity==='1'
+            && !dialog.getAnimations({subtree:true}).some(animation=>animation.pending||animation.playState==='running');
+    }""")
+    return dialog
+
 try:
     with sync_playwright() as p:
         browser=p.chromium.launch(executable_path=os.getenv('R3_BROWSER_BINARY') or shutil.which('chromium') or shutil.which('google-chrome'),args=['--no-sandbox'])
@@ -119,8 +134,8 @@ try:
                         assert box['table']>box['region'],box
                         product_row('1번 특란 30구').locator('[data-consumer-select]').check()
                         page.locator('[data-action=consumer-markup]').click()
-                        expect(page.get_by_role('dialog')).to_be_visible()
-                        bounds=page.get_by_role('dialog').bounding_box()
+                        dialog=settled_workspace_dialog(page)
+                        bounds=dialog.bounding_box()
                         assert bounds['x']>=0 and bounds['x']+bounds['width']<=width+1,bounds
                         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+1'),(width,'consumer dialog')
                         page.screenshot(path=evidence/'consumer-markup-320.png')
@@ -128,8 +143,8 @@ try:
                         page.locator('[data-action=clear-consumer-selection]').click()
                 if menu=='carriers' and width==320:
                     page.locator('[data-edit-delivery-rule]').first.click()
-                    expect(page.get_by_role('dialog')).to_be_visible()
-                    bounds=page.get_by_role('dialog').bounding_box()
+                    dialog=settled_workspace_dialog(page)
+                    bounds=dialog.bounding_box()
                     assert bounds['x']>=0 and bounds['x']+bounds['width']<=width+1,bounds
                     assert page.evaluate('document.documentElement.scrollWidth <= innerWidth+1'),(width,'delivery dialog')
                     page.screenshot(path=evidence/'delivery-rule-320.png')

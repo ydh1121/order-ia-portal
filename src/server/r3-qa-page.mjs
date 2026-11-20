@@ -133,7 +133,9 @@ export async function serveR3Artifact(request,env){
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
   if(q.has('artifactHash')&&q.get('artifactHash')!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  const packed=frames[bodyDigest]||beforeLogoCorrection.archivedBodies[bodyDigest]||beforeBrand.archivedBodies[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
+  // Logo/brand history bodies are byte-identical entries in frames. Keeping
+  // their unused fallback references would duplicate them in the Pages bundle.
+  const packed=frames[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
   const body=packed?await inflate(packed):await historicalBody(bodyDigest);
   const interactionArchive=archived&&archived===beforeInteraction.archivedRows[r.id];
   const brandArchive=archived&&archived===beforeBrand.archivedRows[r.id];

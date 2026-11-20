@@ -34,7 +34,9 @@ jobs:
       - name: Compile Pages Functions with the deployment builder
         env:
           WRANGLER_SEND_METRICS: 'false'
-        run: npx --yes wrangler@3.114.17 pages functions build functions --outdir="$RUNNER_TEMP/order-ia-worker"
+        run: npx --yes wrangler@3.114.17 pages functions build functions --outfile="$RUNNER_TEMP/order-ia-worker.bundle"
+      - name: Check the Pages Functions upload size limit
+        run: node scripts/check-pages-bundle-size.mjs "$RUNNER_TEMP/order-ia-worker.bundle"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
