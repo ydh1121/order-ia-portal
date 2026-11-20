@@ -11,7 +11,7 @@
 
 ## 새 채팅에서 재개하는 순서
 
-1. Drive의 CURRENT와 MASTER BATON에서 최신 지시와 중단 지점을 읽습니다.
+1. Drive의 CURRENT와 MASTER BATON에서 최신 지시와 중단 지점을 읽습니다. 최상단 `LATEST_STATUS`와 가장 최근 이벤트를 먼저 대조하며, 앞부분에 남은 과거 요약을 현재 상태로 간주하지 않습니다.
 2. 관련 원문과 요구 검증표를 읽고, 실제 GitHub main/PR/CI 및 Cloudflare 배포와 대조합니다.
 3. 같은 WO와 MSG0585 기록에 이어 쓰되 기존 원문·ACK·사용자 의견·가격을 보존합니다.
 4. 새 완료 근거와 남은 작업을 CURRENT, BATON, 메시지 원장에 기록하고 재조회합니다.

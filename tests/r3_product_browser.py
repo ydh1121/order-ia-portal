@@ -11,7 +11,7 @@ def check_private_product(context, origin):
             page.goto(origin + '/ia?view=simple-r3#/home')
         assert '__Host-ia_session=' in publication.value.all_headers().get('cookie','')
         assert publication.value.redirected_from is None
-        page.wait_for_function("document.documentElement.dataset.storageReady === 'true'")
+        page.wait_for_function("() => document.documentElement.dataset.storageReady === 'true'")
         assert page.locator('html').get_attribute('data-r3-quote-mode') == 'simple'
         partition = page.locator('html').get_attribute('data-r3-quote-partition')
         key = 'order_ia_r3_quote_v1_' + partition
@@ -22,7 +22,7 @@ def check_private_product(context, origin):
         page.locator('[data-line-price]').fill('8000')
         page.wait_for_function('key => {const s=JSON.parse(localStorage.getItem(key)); return s?.data.lines[0]?.qty==="17" && s.data.lines[0].price==="8000" && document.documentElement.dataset.storagePending!=="true";}', arg=key+'_simple')
         page.reload()
-        page.wait_for_function("document.documentElement.dataset.storageReady === 'true'")
+        page.wait_for_function("() => document.documentElement.dataset.storageReady === 'true'")
         page.locator('#quote-mode-switch').click()
         dialog = page.locator('#quote-mode-dialog[open]')
         assert not dialog.locator('[data-mode-option]').is_checked()
@@ -32,12 +32,12 @@ def check_private_product(context, origin):
         dialog.locator('label').click()
         dialog.locator('[data-mode-confirm]').click()
         page.wait_for_url('**/ia?view=detailed-r3#/form')
-        page.wait_for_function("document.documentElement.dataset.storageReady === 'true'")
+        page.wait_for_function("() => document.documentElement.dataset.storageReady === 'true'")
         assert page.locator('html').get_attribute('data-r3-quote-partition') == partition
         data = page.evaluate('k => JSON.parse(localStorage.getItem(k)).data', key+'_detailed')
         assert data['lines'][0]['price'] == '8000' and 'simpleQuote' not in data
         page.reload()
-        page.wait_for_function("document.documentElement.dataset.storageReady === 'true'")
+        page.wait_for_function("() => document.documentElement.dataset.storageReady === 'true'")
         assert page.evaluate('k => JSON.parse(localStorage.getItem(k)).data.lines[0].qty', key+'_detailed') == '17'
         assert page.evaluate("localStorage.getItem('order_q1_q4_v1')") is None
         assert page.evaluate("localStorage.getItem('order_simple_prework_0581')") is None
@@ -63,12 +63,12 @@ def check_region_overlay(context, origin):
             tab = fixture.new_page()
             tab.set_default_timeout(10000)
             tab.goto(origin + '/ia?view=simple-r3#/home')
-            tab.wait_for_function("document.documentElement.dataset.storageReady === 'true'")
+            tab.wait_for_function("() => document.documentElement.dataset.storageReady === 'true'")
             tab.locator('#start').click()
             tab.locator('[data-open="q3"][aria-controls]').click()
             root = tab.locator('#simple-region-root')
             root.scroll_into_view_if_needed()
-            tab.wait_for_function("!document.querySelector('#body-q3>div').inert")
+            tab.wait_for_function("() => !document.querySelector('#body-q3>div').inert")
             below = tab.locator('#q3-next')
             coordinate = '(el)=>el.getBoundingClientRect().top + window.scrollY'
             before = below.evaluate(coordinate)

@@ -26,7 +26,7 @@ export async function onRequest({request,env}){
      if(/^[a-f0-9]{32}$/.test(run)&&['buyer','supplier','operator','guest'].includes(persona)){next.set('labRun',run);next.set('persona',persona);const documentId=url.searchParams.get('qaDocument');if(documentId&&/^[a-f0-9-]{36}$/.test(documentId))next.set('qaDocument',documentId);}
      else next.set('returnView','qa-lab');
    }
-   if(r3View==='product-r3')for(const name of ['screen','state']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))next.set(name,value);}
+   if(r3View==='product-r3')for(const name of ['screen','state','componentVariant']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))next.set(name,value);}
    if(r3View==='qa-lab'){
      const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
      if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
@@ -74,7 +74,7 @@ export async function onRequest({request,env}){
    else{const {renderProductLab}=await import('../../src/server/product-lab-page.mjs');html=renderProductLab(nonce);}
  }else if(r3View==='product-r3'){
    const {renderProductApplication}=await import('../../src/server/product-app-page.mjs');
-   html=await renderProductApplication(nonce,productContext,url.searchParams.get('screen')||'store-purchase',url.searchParams.get('state')||'default');
+   html=await renderProductApplication(nonce,productContext,url.searchParams.get('screen')||'store-purchase',url.searchParams.get('state')||'default','email',url.searchParams.get('componentVariant')||null);
    if(!html)return new Response('이 화면은 아직 제품 기능에 연결되지 않았습니다. QA랩의 기존 기록에서 설계를 확인해 주세요.',{status:404,headers:{...headers,'Content-Type':'text/plain; charset=utf-8'}});
  }else if(r3View==='simple-r3'||r3View==='detailed-r3'){
    headers['Content-Security-Policy']=headers['Content-Security-Policy']

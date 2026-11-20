@@ -28,7 +28,7 @@ export async function handlePreview(context,fetcher=fetch) {
         if(/^[a-f0-9]{32}$/.test(run)&&['buyer','supplier','operator','guest'].includes(persona)){dest.searchParams.set('labRun',run);dest.searchParams.set('persona',persona);const documentId=url.searchParams.get('qaDocument');if(documentId&&/^[a-f0-9-]{36}$/.test(documentId))dest.searchParams.set('qaDocument',documentId);}
         else dest.searchParams.set('view','qa-lab');
       }
-      if(view==='product-r3')for(const name of ['screen','state']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))dest.searchParams.set(name,value);}
+      if(view==='product-r3')for(const name of ['screen','state','componentVariant']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))dest.searchParams.set(name,value);}
       if(view==='qa-lab'){
         const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))dest.searchParams.set('screen',screen);

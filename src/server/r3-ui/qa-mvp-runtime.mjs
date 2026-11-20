@@ -4,7 +4,8 @@ export function registerQaMvp(montages={}) {
   const previous=new Map((window.ORDER_DESIGN_MODULES||[]).map(module=>[module.id,module]));
   const libraryModule=window.ORDER_LIBRARY_SOURCE?previous.get(window.ORDER_LIBRARY_SOURCE.screen):null;
   function mount(root,state,api){
-    const $=selector=>root.querySelector(selector),all=selector=>[...root.querySelectorAll(selector)];
+    const owned=element=>{const source=element.closest('[data-component-source]');return !source||source===root;};
+    const all=selector=>[...root.querySelectorAll(selector)].filter(owned),$=selector=>all(selector)[0]||null;
     const cleanups=[],pendingKeys=new Map();let alive=true;
     const shared=window.QAUI,adapter=api.adapter||window.ORDER_APP_ADAPTER,context=window.ORDER_APP_CONTEXT||{},brandContext=api.brandAccount||window.ORDER_BRAND_ACCOUNT_CONTEXT||{};
     const connected=Boolean(adapter?.request);let purchaseLoad;
@@ -48,14 +49,13 @@ export function registerQaMvp(montages={}) {
       cleanups.push(()=>{form.removeEventListener('submit',submit);form.removeEventListener('keydown',keydown);});
     }
     const magnetic=new WeakMap();
-    const mountButtons=scope=>{if(!window.OrderMagneticAction)return;for(const button of scope.querySelectorAll('.btn')){if(button.closest('[inert],[data-component-source]')||magnetic.has(button))continue;const instance=window.OrderMagneticAction(button,{reducedMotion:()=>Boolean(api.reduced?.())});magnetic.set(button,instance);cleanups.push(()=>instance?.destroy());}};
-    const applyShared=scope=>{mountButtons(scope);for(const input of scope.querySelectorAll('input,textarea'))shared?.syncField?.(input);};
+    const mountButtons=scope=>{if(!window.OrderMagneticAction)return;for(const button of scope.querySelectorAll('.btn')){if(button.closest('[inert]')||!owned(button)||magnetic.has(button))continue;const instance=window.OrderMagneticAction(button,{reducedMotion:()=>Boolean(api.reduced?.())});magnetic.set(button,instance);cleanups.push(()=>instance?.destroy());}};
+    const applyShared=scope=>{mountButtons(scope);for(const input of scope.querySelectorAll('input,textarea'))if(owned(input))shared?.syncField?.(input);};
     root.dataset.appConnection=connected?'connected':'unconnected';
     // The operations sidebar is hidden by the canonical narrow-layout rule.
     // Move its existing brand into the existing topline; never clone its SVG,
     // authenticated menu or motion owner.
     for(const shell of all('.ops-page')){
-      if(shell.closest('[data-component-source]'))continue;
       const brand=shell.querySelector('.ops-side-brand .brand'),top=shell.querySelector('.ops-topline');if(!brand||!top)continue;
       const parent=brand.parentNode,next=brand.nextSibling,query=window.matchMedia?.('(max-width:760px)');
       const place=()=>{if(query?.matches)top.append(brand);else parent.insertBefore(brand,next?.parentNode===parent?next:null);};
@@ -63,7 +63,7 @@ export function registerQaMvp(montages={}) {
     }
     const brandPlayers=[];
     for(const brand of all('.brand')){
-      if(brand.closest('[inert],[data-component-source]'))continue;
+      if(brand.closest('[inert]'))continue;
       if(window.mountBrandAccountMenu){
         const menu=window.mountBrandAccountMenu(brand,{authenticated:brandContext.authenticated??Boolean(context.authenticated??context.actor),canAccess:brandContext.canAccess,reducedMotion:()=>Boolean(api.reduced?.()),navigate:id=>{
           if(brandContext.navigate)return brandContext.navigate(id);
@@ -85,7 +85,7 @@ export function registerQaMvp(montages={}) {
       }
     }
     for(const button of all('[data-qa-brand-replay]'))button.onclick=()=>{if(!api.reduced?.())for(const player of brandPlayers)player.gather?.();const source=root.querySelector('[data-component-source] .brand');source?.querySelector('button')?.click();};
-    const sourceInfo=window.ORDER_LIBRARY_SOURCE,sourceRoot=$('[data-component-source]');
+    const sourceInfo=window.ORDER_LIBRARY_SOURCE,sourceRoot=root.querySelector('[data-component-source]');
     if(sourceInfo&&sourceRoot){
       const target=sourceRoot.querySelectorAll(sourceInfo.selector)[sourceInfo.index||0];if(target)target.dataset.componentTarget='';
       if(libraryModule?.mount){
@@ -97,11 +97,14 @@ export function registerQaMvp(montages={}) {
       }else setStatus($('[data-component-runtime]'),'이 사용 화면에는 연결된 동작 모듈이 없습니다. 구조와 사용처를 확인할 수 있어요.');
     }
     for(const b of all('[data-qa-go]')){
-      if(b.closest('[data-component-source]'))continue;
-      b.onclick=()=>api.select(b.dataset.qaGo,b.dataset.qaState||'default');
+      if(b.dataset.componentVariant){
+        const selected=sourceInfo?.variantId===b.dataset.componentVariant;
+        b.setAttribute('aria-pressed',String(selected));b.classList.toggle('primary',selected);b.classList.toggle('secondary',!selected);
+        b.onclick=()=>api.select('component-library',state,{componentVariant:b.dataset.componentVariant});
+      }else b.onclick=()=>api.select(b.dataset.qaGo,b.dataset.qaState||'default');
     }
-    for(const b of all('[data-op-route]'))if(!b.closest('[data-component-source]')){b.classList.toggle('active',b.dataset.opRoute===api.screen);b.onclick=()=>api.select(b.dataset.opRoute,'');}
-    for(const b of all('[data-action=collapse]'))if(!b.closest('[data-component-source]'))b.onclick=()=>{const shell=b.closest('.ops-page');shell?.classList.toggle('collapsed');b.setAttribute('aria-expanded',String(!shell?.classList.contains('collapsed')));};
+    for(const b of all('[data-op-route]')){b.classList.toggle('active',b.dataset.opRoute===api.screen);b.onclick=()=>api.select(b.dataset.opRoute,'');}
+    for(const b of all('[data-action=collapse]'))b.onclick=()=>{const shell=b.closest('.ops-page');shell?.classList.toggle('collapsed');b.setAttribute('aria-expanded',String(!shell?.classList.contains('collapsed')));};
     for(const b of all('[data-qa-flip]'))b.onclick=()=>{
       const card=b.closest('[data-pass-card]'),back=card.dataset.face!=='back';card.dataset.face=back?'back':'front';
       for(const control of card.querySelectorAll('[data-qa-flip]')){control.setAttribute('aria-expanded',String(back));control.tabIndex=control.closest('.qa-pass-back')?(back?0:-1):(back?-1:0);}

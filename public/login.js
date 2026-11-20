@@ -46,7 +46,7 @@ form.addEventListener('submit',async event=>{
         if(/^[a-f0-9]{32}$/.test(run)&&['buyer','supplier','operator','guest'].includes(persona)){target.set('labRun',run);target.set('persona',persona);const documentId=incoming.get('qaDocument');if(documentId&&/^[a-f0-9-]{36}$/.test(documentId))target.set('qaDocument',documentId);}
         else target.set('view','qa-lab');
       }
-      if(view==='product-r3')for(const name of ['screen','state']){const value=incoming.get(name);if(value&&/^[-\w]{1,100}$/.test(value))target.set(name,value);}
+      if(view==='product-r3')for(const name of ['screen','state','componentVariant']){const value=incoming.get(name);if(value&&/^[-\w]{1,100}$/.test(value))target.set(name,value);}
       if(view==='qa-lab'){
         const screen=incoming.get('screen'),width=incoming.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);

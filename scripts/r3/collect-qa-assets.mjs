@@ -43,6 +43,19 @@ const specs=[
   ['intro-art','three-d','첫 화면 3D 원본','.ob-art','ob-art',null]
 ];
 const assets=specs.map(([id,board,name,selector,needle,rootSelector])=>({id,board,name,selector,needle,rootSelector,usages:[],variants:[],preview:'',previewContext:null}));
+function sourceControl(el,selector,index,doc){
+  const clean=value=>String(value||'').replace(/\s+/g,' ').trim().slice(0,160);
+  const labelled=(el.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean).map(id=>doc.getElementById(id)?.textContent||'').join(' ');
+  const label=(el.labels?.[0]||el.closest('label'))?.cloneNode(true);
+  if(label)for(const child of label.querySelectorAll('input,select,textarea,button,svg,script,style,.field-error,[data-field-message]'))child.remove();
+  const name=el.getAttribute('name')||'',tag=el.tagName.toLowerCase();
+  const controlLabel=clean(el.getAttribute('aria-label')||labelled||label?.textContent||el.getAttribute('alt')||el.getAttribute('title')||(!el.matches('input,select,textarea')?el.textContent:'')||name||tag);
+  const quote=value=>'"'+String(value).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/[\n\r\f]/g,' ')+'"';
+  const specific=name?tag+'[name='+quote(name)+']':el.id?tag+'[id='+quote(el.id)+']':selector;
+  const selectorIndex=[...doc.querySelectorAll(specific)].indexOf(el);
+  if(selectorIndex<0)throw Error('Component source locator did not resolve: '+specific);
+  return {controlLabel,name,selector:specific,selectorIndex};
+}
 function collect(row,html,{supplemental=false,runtime=null}={}){
   const possible=assets.filter(a=>html.includes(a.needle));if(!possible.length)return;
   const doc=new JSDOM(html).window.document;
@@ -57,6 +70,7 @@ function collect(row,html,{supplemental=false,runtime=null}={}){
     a.usages.push(usage);
     elements.forEach((el,index)=>{
       const component=(a.rootSelector&&el.closest(a.rootSelector))||el;
+      const control=sourceControl(el,selector,index,doc);
       // Preserve labels, ARIA references, errors, controls and original root classes.
       // No hidden/ID rewriting: visual thumbnails are isolated/inert in the index.
       const preview=component.outerHTML;
@@ -67,8 +81,8 @@ function collect(row,html,{supplemental=false,runtime=null}={}){
       }
       const signature=digest(structural.outerHTML.replace(/qa-[a-z0-9_-]+-\d+/g,'qa-field'));
       let variant=a.variants.find(v=>v.signature===signature);
-      if(!variant){variant={id:a.id+'-'+signature.slice(0,12),signature,rootTag:component.tagName.toLowerCase(),rootClass:component.className?.baseVal??component.className??'',label:row.label+' · '+row.stateLabel,index,source:usage.id,uses:[]};a.variants.push(variant);}
-      variant.uses.push({id:usage.id,index});
+      if(!variant){variant={id:a.id+'-'+signature.slice(0,12),signature,rootTag:component.tagName.toLowerCase(),rootClass:component.className?.baseVal??component.className??'',label:row.label+' · '+row.stateLabel,index,source:usage.id,...control,uses:[]};a.variants.push(variant);}
+      variant.uses.push({id:usage.id,index,...control});
       const rank=a.id==='logo-menu'?(row.screen==='onboarding'&&row.state==='member-1'?100:0):['brand-motion','header-logo'].includes(a.id)?(row.screen==='onboarding'&&row.state==='intro-1'?100:0):0;
       if(!a.previewContext||rank>(a.previewRank??-1)){a.previewRank=rank;a.preview=preview.length<22000?preview:'';a.previewContext={...usage,index,selector,rootSelector:a.rootSelector};}
     });

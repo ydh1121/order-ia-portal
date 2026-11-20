@@ -52,11 +52,34 @@ export const qaMvpCss=`
 
 let built;
 export function getQaSupplemental(){return built??=build();}
-export async function getQaApplicationDocument(screen,state='default',variant='email'){
-  const documents=(await getQaSupplemental()).documents;
+export async function getQaApplicationDocument(screen,state='default',variant='email',componentVariant){
+  const collection=await getQaSupplemental(),{documents}=collection;
   const defaultStates={'store-purchase':'select','admin-revenue-rules':'settings','member-email-templates':'welcome','admin-analytics':'business-sales','component-library':'components','admin-shipments':'packing','supplier-shipments':'packing','delivery-request':'ready'};
-  const source=documents.get([screen,state,variant].join('/'))||(state==='default'&&defaultStates[screen]?documents.get([screen,defaultStates[screen],variant].join('/')):null);
+  let source=documents.get([screen,state,variant].join('/'))||(state==='default'&&defaultStates[screen]?documents.get([screen,defaultStates[screen],variant].join('/')):null);
+  if(componentVariant!==undefined&&componentVariant!==null){
+    if(!source||screen!=='component-library')return null;
+    source=await selectedComponentDocument(collection,source,componentVariant);
+  }
   return source?{...source,css:qaMvpCss,source:{kind:'product',sharedUi:sharedUiProvenance}}:null;
+}
+async function selectedComponentDocument(collection,base,variantId){
+  const asset=collection.assets.find(asset=>asset.id===base.libraryContext?.assetId),variant=asset?.variants.find(variant=>variant.id===variantId);
+  if(!variant||!base.libraryContext?.contextMarkup)return null;
+  const point=variant.uses.find(point=>point.id===variant.source&&point.index===variant.index)||variant.uses[0];
+  if(!point?.selector||!Number.isInteger(point.selectorIndex)||point.selectorIndex<0)return null;
+  const source=collection.documents.get(point.id),row=source?.row||catalog.find(row=>row.id===point.id);
+  if(!row||row.screen==='component-library')return null;
+  const fallback={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member','quote-wait':'member'};
+  const originalBody=source?.body||await inflate(frames[row.current]),sourceMount=source?.mount||runtimes[row.runtimeFamily||fallback[row.screen]]||'';
+  const componentSource={rowId:row.id,selector:point.selector,index:point.selectorIndex,label:point.controlLabel||point.name||row.stateLabel};
+  const context={screen:row.screen,state:row.state,variant:row.variant,selector:point.selector,index:point.selectorIndex,variantId,source:source?await sha(originalBody):row.current};
+  const contextMarkup='<section class="qa-component-context" aria-label="원본 컴포넌트 사용 화면">'+originalBody.replace('id="order-single"','id="order-component-source" data-component-source')+'</section>';
+  const heading='<div class="qa-component-controls"><h2>원본 동작 화면</h2><p class="muted">'+esc(row.label+' · '+row.stateLabel+' · '+componentSource.label)+'</p><p class="muted" data-component-runtime role="status" aria-live="polite">원본 런타임을 연결하는 중이에요.</p></div>';
+  const body=base.body.replace(base.libraryContext.contextMarkup,contextMarkup).replace(base.libraryContext.headingMarkup,heading);
+  const dependencies=sharedCoreScript+'\n'+brandMotionScript+'\n'+commonMotionScript+'\n'+brandAccountScript;
+  const mount=sourceMount+'\n'+dependencies+'\nwindow.ORDER_LIBRARY_SOURCE='+js(context)+';\n('+qaMvpRuntimeCode+')();';
+  const hashes=Object.fromEntries(await Promise.all(approvedWidths.map(async width=>[width,await sha([base.row.id,width,body,cssHash,qaMvpCss,mount].join('|'))])));
+  return {...base,body,mount,hashes,row:{...base.row,hashes},componentVariantId:variantId,componentSource};
 }
 async function build(){
   const shared=createSharedUi({ORDER_QA_ASSETS:{brand:sharedTemplates.brand}});
@@ -92,7 +115,7 @@ async function build(){
     rows.push(row);documents.set(id,{body,mount,hashes,row,original});
   };
   const nav=boards.map(([id,label])=>go(label,'component-library',id)).join('');
-  const use=u=>shared.button('<span>'+esc(u.label)+' · '+esc(u.stateLabel)+'<small>'+esc((u.routes||[]).join(' / ')||'/ia?view=qa-lab&screen='+u.id)+'</small></span><small>'+esc(u.id)+'</small>','app-action','secondary',attrs({'data-qa-go':u.screen,'data-qa-state':u.state,'data-source-usage':u.id}));
+  const use=(u,control)=>shared.button('<span>'+esc(u.label)+' · '+esc(u.stateLabel)+(control?' · '+esc(control.controlLabel||control.name||'컴포넌트 '+(control.index+1)):'')+'<small>'+esc((u.routes||[]).join(' / ')||'/ia?view=qa-lab&screen='+u.id)+'</small>'+(control?'<small>'+esc(control.selector||'')+' · '+((control.selectorIndex??control.index)+1)+'번째</small>':'')+'</span><small>'+esc(u.id)+'</small>','app-action','secondary',attrs({'data-qa-go':u.screen,'data-qa-state':u.state,'data-source-usage':u.id,...(control?{'data-component-variant':control.variantId,'data-source-label':control.controlLabel||'','data-source-name':control.name||'','data-source-selector':control.selector||'','data-source-index':control.selectorIndex??control.index,'data-source-collection-index':control.index}:{})}));
   const scopeThumbnail=(html,id)=>{
     const prefix='thumb-'+id+'-',ids=new Map([...html.matchAll(/\bid="([^"]+)"/g)].map(m=>[m[1],prefix+m[1]]));
     return html.replace(/\b(id|for|aria-labelledby|aria-describedby|aria-controls)="([^"]+)"/g,(_,attr,value)=>attr+'="'+value.split(' ').map(v=>ids.get(v)||v).join(' ')+'"');
@@ -109,16 +132,19 @@ async function build(){
     contextBody=contextBody.replace('id="order-single"','id="order-component-source" data-component-source');
     const isArt=asset.board==='three-d';
     const controls=isArt?'<nav class="qa-mvp-toolbar" aria-label="3D 이미지 상태">'+go('원본','component-library','asset-intro-art')+go('부유 변형','component-library','asset-intro-art-float')+go('강조 변형','component-library','asset-intro-art-emphasis')+'</nav>':'';
-    const variants='<details class="ops-panel"><summary>컴포넌트 변형 '+asset.variants.length+'개</summary><div class="qa-asset-uses">'+asset.variants.map(v=>{const u=usages.find(u=>u.id===v.source)||usages.find(u=>v.uses.some(x=>x.id===u.id));return u?use({...u,stateLabel:u.stateLabel+' · '+v.rootTag+(v.rootClass?' .'+String(v.rootClass).trim().split(/\s+/).join('.'):'')}):'';}).join('')+'</div></details>';
+    const variants='<details class="ops-panel"><summary>컴포넌트 변형 '+asset.variants.length+'개</summary><div class="qa-asset-uses">'+asset.variants.map(v=>{const control=v.uses.find(point=>point.id===v.source&&point.index===v.index)||v.uses[0],u=control&&usages.find(u=>u.id===control.id);return u?use(u,{...control,variantId:v.id}):'';}).join('')+'</div></details>';
+    const headingMarkup='<div class="qa-component-controls"><h2>원본 동작 화면</h2><p class="muted">'+esc(source?source.label+' · '+source.stateLabel:'원본 화면 연결 대기')+'</p>'+status('component-runtime','원본 런타임을 연결하는 중이에요.')+'</div>';
+    const contextMarkup='<section class="qa-component-context" aria-label="원본 컴포넌트 사용 화면">'+contextBody+'</section>';
     const preview=asset.motion?'<section class="ops-panel"><p class="muted" data-qa-motion-provenance>원본 3D 이미지의 '+(asset.motion==='float'?'부유':'강조')+' 변형입니다. 원본 화면의 동작과 별도로 검토해 주세요.</p><div class="qa-art-stage" data-qa-art-motion="'+asset.motion+'" data-qa-art-status="idle">'+asset.preview+'</div><div class="qa-mvp-toolbar">'+button('재생',{'data-qa-art-play':''},'primary')+button('일시정지',{'data-qa-art-pause':'',disabled:''})+button('초기화',{'data-qa-art-reset':'',disabled:''})+'</div>'+status('qa-art-status-text','정지 · 재생을 눌러 확인해 주세요.')+'</section>':
-      '<div class="qa-component-controls"><h2>원본 동작 화면</h2><p class="muted">'+esc(source?source.label+' · '+source.stateLabel:'원본 화면 연결 대기')+'</p>'+status('component-runtime','원본 런타임을 연결하는 중이에요.')+'</div><section class="qa-component-context" aria-label="원본 컴포넌트 사용 화면">'+contextBody+'</section>';
+      headingMarkup+contextMarkup;
     const before='<div class="qa-mvp-toolbar">'+go('보드로 돌아가기','component-library',asset.board)+(asset.id==='brand-motion'?button('로고 동작 다시 재생',{'data-qa-brand-replay':''}):'')+'</div>'+controls;
-    const after='<p class="muted">이 자산에 대한 의견과 미해결·재검토·해결 상태는 우측 검토에 기록합니다.</p>'+variants+'<h2>사용처 '+usages.length+'개</h2><div class="qa-asset-uses">'+usages.map(use).join('')+'</div>';
+    const after='<p class="muted">이 자산에 대한 의견과 미해결·재검토·해결 상태는 우측 검토에 기록합니다.</p>'+variants+'<h2>사용처 '+usages.length+'개</h2><div class="qa-asset-uses">'+usages.map(u=>use(u)).join('')+'</div>';
     let body=page(asset.name,before,{library:true,screen:'component-library'}).replace('</main>',preview+'<section class="qa-library-chrome">'+after+'</section></main>');
     // The live source is a sibling of library chrome, so admin/new-page selectors
     // cannot restyle its buttons, fields or dialogs. Its complete root is retained.
     const mount=(context?.runtimeFamily?runtimes[context.runtimeFamily]+'\n':'')+dependencies+'\nwindow.ORDER_LIBRARY_SOURCE='+js(context)+';\n('+qaMvpRuntimeCode+')();';
     await add({screen:'component-library',state:'asset-'+asset.id,label:'컴포넌트 라이브러리',stateLabel:asset.name,body,mount,description:asset.motion?'원본 이미지의 별도 모션 변형입니다.':'전체 원본 문맥과 런타임을 보존한 컴포넌트 · '+asset.name});
+    if(!asset.motion)documents.get('component-library/asset-'+asset.id+'/email').libraryContext={assetId:asset.id,contextMarkup,headingMarkup};
   }
   const montages={...bloubMontages,...waitMontages};
   const resultTemplates=(await Promise.all(['saving','equal','current-lower','no-current'].map(async state=>{

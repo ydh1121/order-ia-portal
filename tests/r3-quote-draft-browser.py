@@ -2,7 +2,7 @@
 No route mocks, injected result states, real credentials or production writes.
 """
 from pathlib import Path
-import json, os, re, shutil, subprocess
+import json, os, re, shutil, subprocess, time
 from playwright.sync_api import expect, sync_playwright
 
 evidence=Path('artifacts/quote-draft');evidence.mkdir(parents=True,exist_ok=True)
@@ -17,13 +17,27 @@ def listen(page):
 
 def ready(page):
     expect(page.locator('html')).to_have_attribute('data-storage-ready','true')
-    page.wait_for_function("window.ORDER_QUOTE_DRAFT_SYNC && ['ready','saved'].includes(window.ORDER_QUOTE_DRAFT_SYNC.inspect().state)")
+    page.wait_for_function("()=>window.ORDER_QUOTE_DRAFT_SYNC && ['ready','saved'].includes(window.ORDER_QUOTE_DRAFT_SYNC.inspect().state)")
 
 def remote(page,mode):
     return page.evaluate("mode=>window.ORDER_APP_ADAPTER.request('/drafts/'+mode)",mode)
 
+def saved_draft(page,mode,matches,description):
+    # wait_for_function treats a returned Promise as truthy before it settles.
+    # evaluate awaits each real API response; poll its data and the synchronous
+    # UI state together instead of resolving on an async predicate's Promise.
+    deadline=time.monotonic()+30
+    last=None;state=None
+    while time.monotonic()<deadline:
+        last=remote(page,mode)
+        state=page.evaluate("()=>window.ORDER_QUOTE_DRAFT_SYNC.inspect()")
+        if state['state']=='saved' and matches(last.get('data')):
+            return last
+        page.wait_for_timeout(100)
+    raise AssertionError({'expected':description,'mode':mode,'sync':state,'remote':last})
+
 def saved_value(page,mode,field,value):
-    page.wait_for_function("async a=>{const d=await window.ORDER_APP_ADAPTER.request('/drafts/'+a.mode);return d.data?.lines?.[0]?.[a.field]===a.value && window.ORDER_QUOTE_DRAFT_SYNC.inspect().state==='saved';}",arg={'mode':mode,'field':field,'value':value})
+    return saved_draft(page,mode,lambda data:bool(data and data.get('lines') and data['lines'][0].get(field)==value),field+'='+value)
 
 try:
     with sync_playwright() as p:
@@ -34,7 +48,7 @@ try:
         home.locator('#live-dialog input').fill('R1 모드별 초안 검사')
         home.get_by_role('button',name='생성',exact=True).click()
         expect(home.locator('#live-dialog')).not_to_be_visible()
-        home.wait_for_function("document.querySelector('#live-run').value!==''")
+        home.wait_for_function("()=>document.querySelector('#live-run').value!==''")
         run=home.locator('#live-run').input_value()
         quote=listen(context.new_page())
         quote.goto(base+'/ia?view=simple-r3&labRun='+run+'&persona=buyer#/home');ready(quote)
@@ -43,8 +57,8 @@ try:
         for field,value in [('housing','4'),('size','특란'),('pack','30')]:
             quote.locator('[data-pick="'+field+'"][data-value="'+value+'"]').click()
         quote.locator('[data-line-qty]').fill('17');quote.locator('[data-line-price]').fill('8000')
-        saved_value(quote,'simple','price','8000')
-        assert remote(quote,'simple')['data']['lines'][0]['qty']=='17'
+        saved=saved_value(quote,'simple','price','8000')
+        assert saved['data']['lines'][0]['qty']=='17'
         quote.screenshot(path=evidence/'simple-autosaved-390.png')
         quote.reload();ready(quote)
         assert remote(quote,'simple')['data']['lines'][0]['price']=='8000'
@@ -85,10 +99,13 @@ try:
         assert remote(separate,'detailed')['data'] is None
 
         directory=listen(context.new_page());directory.goto(base+'/ia?view=businesses-r3&labRun='+run+'&persona=buyer')
-        expect(directory.locator('#business-count')).to_have_text('0개')
+        expect(directory.locator('#business-count')).to_have_text('1개')
+        expect(directory.locator('#business-list')).to_contain_text('실험 매장')
         for field,value in [('name','초안 검사 사업장'),('road','테스트 소재지'),('contactName','검사 담당자')]:directory.locator('#business-'+field).fill(value)
         directory.locator('#region-root').select_option(label='서울특별시');directory.locator('#region-leaf').select_option(label='종로구')
         directory.get_by_role('button',name='저장',exact=True).click();expect(directory.locator('#business-status')).to_have_text('사업장을 저장했습니다.')
+        expect(directory.locator('#business-count')).to_have_text('2개')
+        expect(directory.locator('#business-list')).to_contain_text('실험 매장')
         widths=[]
         for width in [320,390,768,1440]:
             directory.set_viewport_size({'width':width,'height':900})
@@ -102,10 +119,12 @@ try:
         picker=quote.get_by_role('dialog',name='저장된 사업장',exact=True)
         expect(picker).to_have_attribute('data-modal-role','selection')
         assert quote.evaluate("window.OrderModalShell.activeIds.includes('saved-business-picker')")
-        expect(picker).to_contain_text('초안 검사 사업장');picker.get_by_role('checkbox').check();picker.get_by_role('button',name='불러오기',exact=True).click()
+        expect(picker.get_by_role('checkbox')).to_have_count(2)
+        picker.locator('label').filter(has_text='초안 검사 사업장').get_by_role('checkbox').check()
+        expect(picker.locator('label').filter(has_text='실험 매장').get_by_role('checkbox')).not_to_be_checked()
+        picker.get_by_role('button',name='불러오기',exact=True).click()
         expect(picker).not_to_be_visible();expect(quote.locator('#q3-sites')).to_contain_text('초안 검사 사업장')
-        quote.wait_for_function("window.ORDER_QUOTE_DRAFT_SYNC.inspect().state==='saved'")
-        assert remote(quote,'detailed')['data']['locations'][0]['name']=='초안 검사 사업장'
+        saved_draft(quote,'detailed',lambda data:any(site.get('name')=='초안 검사 사업장' for site in (data or {}).get('locations',[])),'selected Q3 business persisted')
         assert not errors,errors
         (evidence/'receipt.json').write_text(json.dumps({'environment':'Actual Pages routes + canonical quote source + isolated SQLite lab; production DB untouched','simpleReload':True,'detailedReload':True,'defaultOptIn':False,'optInCopyPreserved':True,'modeIsolation':True,'accountIsolation':True,'staleRevisionInputPreserved':True,'explicitConflictChoice':True,'sharedQ3Modal':True,'businessLayoutWidths':widths,'dsColorsVerified':True,'pageErrors':errors},ensure_ascii=False,indent=2))
         browser.close()

@@ -19,10 +19,10 @@ function bootProductDocument(screen,state){
  const status=text=>{let output=document.querySelector('[data-product-status]');if(!output){output=document.createElement('p');output.dataset.productStatus='';output.className='muted';output.setAttribute('role','status');root.append(output);}output.textContent=text;};
  const api={mode:'product',interactive:true,screen,variant:'email',adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
   reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches,
-  select(next,nextState){
+  select(next,nextState,nextOptions={}){
    if(['admin-orders','admin-payments','customer-orders','order-detail','receipt','trade-documents'].includes(next)){next='store-purchase';nextState='select';}
    if(!['onboarding','login','signup','otp','password','terms','profile','account-settings','store-purchase','delivery-request','admin-shipments','supplier-shipments','admin-analytics','admin-revenue-rules','member-email-templates','component-library'].includes(next)){status('이 화면은 아직 제품 기능에 연결되지 않았어요. 기존 기록에서 설계를 검토할 수 있습니다.');return;}
-   const url=new URL(location.href);url.searchParams.set('screen',next);url.searchParams.set('state',nextState||'default');location.assign(url);
+   const url=new URL(location.href);url.searchParams.set('screen',next);url.searchParams.set('state',nextState||'default');if(next==='component-library'&&typeof nextOptions?.componentVariant==='string'&&/^[-\w]{1,100}$/.test(nextOptions.componentVariant))url.searchParams.set('componentVariant',nextOptions.componentVariant);else url.searchParams.delete('componentVariant');location.assign(url);
   },
   localState(next){document.documentElement.dataset.productState=next;},toast:status,
   // The original authoring API name is retained for old source compatibility.
@@ -39,9 +39,9 @@ function bootProductDocument(screen,state){
   if(container){window.ORDER_BRAND_ACCOUNT_CONTEXT.renderPanel({id:state==='notification'?'notifications':'profile.account',container,signal:accountController.signal});const actions=document.createElement('nav');actions.className='mf-actions';actions.innerHTML=window.QAUI.button('회원탈퇴','open-withdraw','secondary');actions.querySelector('button').onclick=()=>api.select('account-settings','withdraw');container.after(actions);}
  }
  window.addEventListener('pagehide',()=>{accountController.abort();dispose?.();disposeShared?.();},{once:true});
- window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state,source:adapter?.context.source},location.origin);
+ window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state,componentVariant:document.documentElement.dataset.productComponentVariant||null,source:adapter?.context.source},location.origin);
 }
-export async function renderProductApplication(nonce,context,screen='store-purchase',state='default',variant='email'){
+export async function renderProductApplication(nonce,context,screen='store-purchase',state='default',variant='email',componentVariant=null){
  if(!/^[a-f0-9]{16,128}$/.test(nonce)||!/^[-\w]{1,100}$/.test(screen)||!/^[-\w]{1,100}$/.test(state))throw Error('INVALID_PRODUCT_ROUTE');
  if(context.actor?.authenticated===false&&!['onboarding','login','signup','otp','password','terms','common','drawer'].includes(screen)){screen='login';state='empty';}
  if(screen==='onboarding'){const step=/-([1-4])$/.exec(state)?.[1]||'1';state=(context.actor?.authenticated===false?'guest':'member')+'-'+step;}
@@ -49,7 +49,9 @@ export async function renderProductApplication(nonce,context,screen='store-purch
  if(['login','signup','otp'].includes(screen)&&!['empty','error','closed'].includes(state))state='empty';
  if(screen==='password'&&['success','done','sent','complete'].includes(state))state='request';
  if(screen==='account-settings'&&['default','normal'].includes(state)){screen='profile';state='default';}
- let document=await getQaApplicationDocument(screen,state,variant);
+ if(componentVariant&&(screen!=='component-library'||!/^[-\w]{1,100}$/.test(componentVariant)))return null;
+ let document=await getQaApplicationDocument(screen,state,variant,componentVariant);
+ if(componentVariant&&document?.componentVariantId!==componentVariant)return null;
  if(document)state=document.row.state;
  if(!document){
   // Only these source-only surfaces are safe without a business projection.
@@ -63,5 +65,5 @@ export async function renderProductApplication(nonce,context,screen='store-purch
   document={body:await inflate(frames[row.current]),mount:runtimes[row.runtimeFamily||fallback[row.screen]]||'',css:'',row};state=row.state;
  }
  styles??=inflate(cssGzip);const css=await styles;
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandAccountCss+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+');</script></body></html>';
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandAccountCss+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+');</script></body></html>';
 }

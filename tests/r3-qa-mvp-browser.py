@@ -83,10 +83,34 @@ def record_response(page, suffix, action):
         and (action is None or (r.request.post_data_json or {}).get('action')==action))
 
 
-def check(page, origin, width):
+def diagnostic_text(value, limit=4000):
+    value=re.sub(r'(?i)([\w-]*(?:cookie|csrf|token|authorization|password|secret)[\w-]*["\']?\s*[:=]\s*)(?:"[^"]*"|\'[^\']*\'|[^\s,;}]+)',r'\1[REDACTED]',str(value))
+    value=re.sub(r'\b[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}(?:\.[A-Za-z0-9_-]{20,})?\b','[REDACTED]',value)
+    return value[:limit]
+
+
+def capture_failure(page, width, errors, console_messages, observations):
+    record={'width':width,'observationsBeforeFailure':observations,'pageErrors':errors[-20:],'console':console_messages[-30:],'captureErrors':[]}
+    for label,scope in [('host',page),('product',frame(page))]:
+        try:
+            record[label+'Text']=diagnostic_text(scope.locator('body').inner_text(timeout=2000))
+        except Exception as error:
+            record['captureErrors'].append(diagnostic_text(error,800))
+        try:
+            destination=str(OUT/f'failure-{width}-{label}.png')
+            if label=='host':
+                page.screenshot(path=destination,timeout=5000)
+            else:
+                scope.locator('#order-single').screenshot(path=destination,timeout=5000)
+        except Exception as error:
+            record['captureErrors'].append(diagnostic_text(error,800))
+    (OUT/f'failure-{width}.json').write_text(json.dumps(record,ensure_ascii=False,indent=2))
+
+
+def check(page, origin, width, receipt):
     run=create_run(page,origin,width)
     run_id=run['id']
-    receipt={'width':width,'runId':run_id,'source':run['source'],'checks':{},'geometry':{}}
+    receipt.update({'width':width,'runId':run_id,'source':run['source'],'checks':{},'geometry':{}})
     target=open_screen(page,'store-purchase')
     expect(target.locator('[data-purchase-confirm]')).to_be_enabled()
     receipt['geometry']['purchase']=geometry(target,width)
@@ -255,8 +279,29 @@ def check(page, origin, width):
     receipt['checks']['libraryUsesWholeRootAndRuntime']=True
     target.locator('[data-qa-state=components]').first.click()
     target.locator('.qa-asset-card').filter(has=target.get_by_role('heading',name='선택·휠 피커',exact=True)).get_by_role('button',name='사용처와 동작 보기',exact=True).click()
-    expect(target.locator('[data-source-usage="store-purchase/select/email"]')).to_have_count(1)
-    receipt['checks']['newUsageIndexed']=True
+    usage_selector='[data-source-usage="store-purchase/select/email"]'
+    expect(target.locator('.qa-library-chrome > .qa-asset-uses').locator(usage_selector)).to_have_count(1)
+    variant_links=target.locator('.qa-library-chrome > details .qa-asset-uses').locator(usage_selector)
+    expect(variant_links).to_have_count(2)
+    indexed=variant_links.evaluate_all("nodes=>nodes.map(el=>({id:el.dataset.componentVariant,name:el.dataset.sourceName,label:el.dataset.sourceLabel,selector:el.dataset.sourceSelector,index:Number(el.dataset.sourceIndex),collectionIndex:Number(el.dataset.sourceCollectionIndex)}))")
+    expected_controls=[{'name':'offer-id','label':'상품','selector':'select[name="offer-id"]','index':0,'collectionIndex':0},
+                       {'name':'purchase-order','label':'주문 선택','selector':'select[name="purchase-order"]','index':0,'collectionIndex':1}]
+    assert [{key:entry[key] for key in expected_controls[0]} for entry in indexed]==expected_controls,indexed
+    assert len({entry['id'] for entry in indexed})==2 and all(re.fullmatch(r'select-[a-f0-9]{12}',entry['id']) for entry in indexed),indexed
+    for entry in indexed:
+        details=target.locator('.qa-library-chrome > details').filter(has=target.locator('[data-component-variant="'+entry['id']+'"]'))
+        if not details.evaluate('el=>el.open'):
+            details.locator(':scope > summary').click()
+        target.locator('[data-component-variant="'+entry['id']+'"]').click()
+        selected=target.locator('[data-component-source] [data-component-target]')
+        expect(selected).to_have_count(1)
+        expect(selected).to_have_attribute('name',entry['name'])
+        expect(selected).to_be_visible()
+        selected.scroll_into_view_if_needed()
+        assert selected.evaluate("el=>el.labels[0].querySelector('span').textContent")==entry['label']
+        expect(target.locator('[data-component-variant="'+entry['id']+'"]').first).to_have_attribute('aria-pressed','true')
+        expect(target.locator('[data-component-runtime]')).to_contain_text('원본 화면과 런타임이 연결')
+    receipt['checks']['newUsageIndexed']={'usageCount':1,'variants':indexed,'selectedOriginalTargets':[entry['name'] for entry in indexed]}
 
     # Brand popover behaviour is independently covered by its dedicated test;
     # this verifies the new pages actually consume that same module.
@@ -285,10 +330,19 @@ def main():
             browser=pw.chromium.launch(executable_path=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium'))
             for width in (320,390,768,1440):
                 context=browser.new_context(viewport={'width':max(1280,width+500),'height':1000},reduced_motion='reduce')
-                page=context.new_page();errors=[]
-                page.on('pageerror',lambda error:errors.append(str(error)))
-                receipts.append(check(page,origin,width))
-                assert not errors,errors
+                page=context.new_page();errors=[];console_messages=[]
+                page.on('pageerror',lambda error:errors.append(diagnostic_text(error)))
+                page.on('console',lambda message:console_messages.append({'type':message.type,'text':diagnostic_text(message.text,2000)}) if message.type in ('error','warning') else None)
+                observation={'width':width}
+                try:
+                    receipts.append(check(page,origin,width,observation))
+                    assert not errors,errors
+                except Exception:
+                    try:
+                        capture_failure(page,width,errors,console_messages,observation)
+                    except Exception as diagnostic_error:
+                        print('FAILURE_CAPTURE '+diagnostic_text(diagnostic_error,800),flush=True)
+                    raise
                 context.close()
             browser.close()
         (OUT/'receipt.json').write_text(json.dumps({'result':'PASS','source':'canonical Pages + isolated D1','widths':receipts},ensure_ascii=False,indent=2))
