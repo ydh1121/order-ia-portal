@@ -416,6 +416,9 @@ def main():
             mixed_id = store_pin(page, mixed_anchor, MIXED_BODY)
             page.reload()
             frame = ready(page, current["hash"])
+            # A full reload restores the R1 shell's checked fit-to-space default.
+            # Restore the recorded 1:1 preview scale before comparing its scroll.
+            actual_size(page)
             mixed = frame.locator('.r3-pin.is-mixed[data-previous-count="1"][data-current-count="1"]')
             expect(mixed).to_have_count(1)
             expect(mixed).to_have_attribute("data-cluster", "+1")
@@ -431,6 +434,8 @@ def main():
             page.screenshot(path=str(OUT / "mixed-cluster-comments.png"))
 
             # Restore the recorded real stage scroll through the old comment's UI.
+            maximum_scroll = page.locator("#surface").evaluate("el=>el.scrollWidth-el.clientWidth")
+            assert maximum_scroll >= saved_scroll, {"maximumScroll": maximum_scroll, "savedScroll": saved_scroll}
             page.locator("#surface").evaluate("el=>el.scrollTo(0,0)")
             assert page.locator("#surface").evaluate("el=>el.scrollLeft") == 0
             old_card = page.locator("#notes article").filter(has=page.get_by_text(OLD_BODY, exact=True))
@@ -450,6 +455,7 @@ def main():
             result["checks"] = {"actualArchivedSource": True, "previousPurple": True, "currentBlue": True,
                 "mixedCluster": opened, "originalSourceLink": source_url, "oldRecordUnchanged": True,
                 "priorGeometry": prior_geometry, "restoredGeometry": restored, "savedScrollX": saved_scroll,
+                "restoredPreviewScale": 1, "maximumScrollX": maximum_scroll,
                 "reload": True, "syntheticRecords": 3}
             result["checks"]["legacy"] = check_legacy(context, fixture["url"], result)
             result["checks"]["duplicateOriginal"] = check_duplicate_original(context, fixture["url"], result)
