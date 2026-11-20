@@ -125,11 +125,14 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   function position(){
     if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;
     const x=view?.offsetLeft||0,y=view?.offsetTop||0,width=view?.width||win.innerWidth,height=view?.height||win.innerHeight;
-    const w=Math.max(1,Math.min(320,width-24)),h=Math.min(measure(pages.at(-1).node)+20,Math.max(120,height-24));
+    const w=Math.max(1,Math.min(320,width-24)),bottom=y+height-12;
+    // The morph keeps the trigger's upper-right origin even for a long form.
+    // Give the menu only the space below that origin; its existing scroll
+    // container exposes the remaining controls without moving the header.
+    const top=Math.max(y+12,Math.min(r.top,bottom-1));
+    const h=Math.max(1,Math.min(measure(pages.at(-1).node)+20,bottom-top));
     panel.style.width=w+'px';panel.style.height=h+'px';
     const left=Math.max(x+12,Math.min(r.right-w,x+width-w-12));
-    // Grow from the trigger's upper-right corner, while keeping the panel in view.
-    const top=Math.max(y+12,Math.min(r.top,y+height-h-12));
     panel.style.left=left+'px';panel.style.top=top+'px';
     for(const [key,value] of Object.entries({'--obm-open-w':w,'--obm-open-h':h,'--obm-closed-w':r.width||Math.max(44,markWidth+8),'--obm-closed-h':r.height||44,'--obm-start-x':r.right-left-w,'--obm-start-y':r.top-top}))panel.style.setProperty(key,value+'px');
   }

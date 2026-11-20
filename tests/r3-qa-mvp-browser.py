@@ -311,7 +311,14 @@ def check(page, origin, width, receipt):
     expect(target.locator('[data-obm-item=profile]')).to_be_visible()
     expect(target.locator('[data-obm-item=notifications]')).to_be_visible()
     expect(target.locator('[data-obm-item=manage]')).to_be_visible()
-    target.locator('[data-order-account-trigger]').click()
+    # The requested morph grows from the logo's top-right corner, covering
+    # its old trigger position. Close through the focused menu's real keyboard
+    # route rather than clicking the now-covered original trigger.
+    target.locator('[data-obm-item=profile]').press('Escape')
+    expect(target.locator('[data-order-account-panel]')).to_be_hidden()
+    expect(target.locator('[data-order-account-trigger]')).to_be_focused()
+    expect(target.locator('[data-order-account-trigger]')).to_have_attribute('aria-expanded','false')
+    assert target.locator('[data-order-account-trigger] svg').evaluate('e=>Number(getComputedStyle(e).opacity)') > .99
     receipt['checks']['newHeaderUsesSharedAccountMenu']=True
 
     target.locator('#order-single').screenshot(path=str(OUT/f'common-email-{width}.png'))

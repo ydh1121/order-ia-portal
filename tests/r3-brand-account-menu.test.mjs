@@ -43,6 +43,23 @@ test('the account panel stays inside its screen, remounts with stable identity, 
   assert.equal(f.api.panel.parentElement.id,'order-single');assert.equal(f.api.panel.style.top,'24px');assert.equal(f.api.panel.style.left,'46px');
   f.api.destroy();const again=mountBrandAccountMenu(f.brand,{authenticated:true,reducedMotion:true});assert.equal(again.panel.id,id);again.destroy();f.close();
 });
+test('a long account form keeps the trigger origin and uses the remaining viewport for its scroll container',async()=>{
+  const f=fixture({authenticated:true,renderPanel({container}){
+    Object.defineProperty(container.closest('[data-obm-page]'),'scrollHeight',{value:1500,configurable:true});
+    const last=f.d.createElement('button');last.textContent='마지막 저장';container.append(last);
+  }});
+  Object.defineProperty(f.w,'innerWidth',{value:375});Object.defineProperty(f.w,'innerHeight',{value:828});
+  const triggerTop=20.37389;
+  f.api.trigger.getBoundingClientRect=()=>({left:299,top:triggerTop,width:51.874,height:44,right:350.874,bottom:triggerTop+44});
+  f.api.open();f.api.show('manage');f.api.show('manage.business');await tick();await tick();
+  const panel=f.api.panel,menu=panel.querySelector('.obm-menu'),last=panel.querySelector('.obm-panel-content button');
+  assert.equal(parseFloat(panel.style.top),triggerTop,'a long form must not shift the morph above its trigger');
+  assert.ok(Math.abs(parseFloat(panel.style.height)-(828-12-triggerTop))<.0001,'height is limited by the available space below the trigger');
+  assert.equal(f.w.getComputedStyle(menu).overflow,'auto','long content retains the internal scroll path');
+  assert.equal(last.textContent,'마지막 저장');assert.equal(last.closest('[hidden],[inert]'),null);
+  f.d.querySelector('#outside').dispatchEvent(new f.w.MouseEvent('pointerdown',{bubbles:true}));
+  assert.equal(f.api.inspect().phase,'closed','outside pointer input still closes the morph');f.close();
+});
 test('unread changes reach the shared notification button once per actual change',()=>{
   const notices=[];const f=fixture({authenticated:true,onStateChange:value=>notices.push(value.unread)});
   notices.length=0;f.api.setUnread(5);f.api.setUnread(5);f.api.setUnread(0);

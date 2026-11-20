@@ -436,6 +436,12 @@ def main():
                 menu_settled(product, item)
                 expect(panel.locator(f'[data-obm-page="{item}"] .obm-panel-content')).not_to_have_attribute("aria-busy", "true")
                 assert product.url == stable_url and state(product)["panelNode"] == panel_id
+                controls = panel.locator(".obm-panel-content button:visible,.obm-panel-content input:visible,.obm-panel-content select:visible,.obm-panel-content textarea:visible")
+                if controls.count():
+                    controls.last.scroll_into_view_if_needed()
+                    last_control, panel_bounds = controls.last.bounding_box(), panel.bounding_box()
+                    assert last_control and last_control["y"] >= panel_bounds["y"] - 1 and last_control["y"] + last_control["height"] <= panel_bounds["y"] + panel_bounds["height"] + 1, {"page": item, "lastControl": last_control, "panel": panel_bounds}
+                    near(panel_bounds["y"], state(product)["trigger"]["y"], "scrolling a long form preserves its trigger-top anchor")
                 leaves.append(item)
                 panel.locator(".obm-back").click()
                 menu_settled(product, "manage")
