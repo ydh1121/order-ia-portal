@@ -21,12 +21,19 @@ export async function handlePreview(context,fetcher=fetch) {
     // Deep links normally enter at /ia. Keep the existing login return contract.
     const dest=new URL('/ia/',url.origin);
     const view=url.searchParams.get('returnView');
-    if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3'].includes(view)){
+    if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view)){
       dest.searchParams.set('view',view);
+      if(url.searchParams.has('labRun')){
+        const run=url.searchParams.get('labRun'),persona=url.searchParams.get('persona');
+        if(/^[a-f0-9]{32}$/.test(run)&&['buyer','supplier','operator','guest'].includes(persona)){dest.searchParams.set('labRun',run);dest.searchParams.set('persona',persona);const documentId=url.searchParams.get('qaDocument');if(documentId&&/^[a-f0-9-]{36}$/.test(documentId))dest.searchParams.set('qaDocument',documentId);}
+        else dest.searchParams.set('view','qa-lab');
+      }
+      if(view==='product-r3')for(const name of ['screen','state','componentVariant']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))dest.searchParams.set(name,value);}
       if(view==='qa-lab'){
         const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))dest.searchParams.set('screen',screen);
         if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))dest.searchParams.set('width',width);
+      const run=url.searchParams.get('run'),page=url.searchParams.get('page'),persona=url.searchParams.get('persona');if(run&&/^[a-f0-9]{32}$/.test(run))dest.searchParams.set('run',run);if(page&&/^[-\w]{1,100}$/.test(page))dest.searchParams.set('page',page);if(['buyer','supplier','operator','guest'].includes(persona))dest.searchParams.set('persona',persona);
       }
     }
     return new Response(null,{status:303,headers:{...headers,Location:dest.pathname+dest.search}});

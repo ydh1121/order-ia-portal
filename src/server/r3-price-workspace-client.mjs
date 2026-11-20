@@ -21,7 +21,7 @@ export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) 
   const number=(value,attrs='',step=1)=>{const condition=['협의','미판매'].includes(value);if(condition)attrs=attrs.replace(/\s*placeholder="[^"]*"/g,'');return '<input type="number" inputmode="decimal" step="'+step+'" '+(/\bmin=/.test(attrs)?'':'min="0" ')+'value="'+esc(condition?'':value)+'" '+(condition?'placeholder="'+esc(value)+'" ':'')+attrs+'>';};
   const button=(text,attrs='',primary=false)=>'<button type="button" '+attrs+(primary?' class="pw-primary"':'')+'>'+esc(text)+'</button>';
   async function api(path='',body){
-    const response=await fetch('/api/ia/r3-price/workspace'+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'manual',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
+    const response=await fetch((window.ORDER_APP_CONTEXT?.endpoints?.price||'/api/ia/r3-price')+'/workspace'+path,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',redirect:'manual',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
     if(response.type==='opaqueredirect'||response.redirected){document.dispatchEvent(new CustomEvent('ia-session-invalid'));throw Error('로그인이 필요합니다. 입력을 유지했습니다.');}
     let data;try{data=await response.json();}catch{throw Error('서버 응답을 확인하지 못했습니다. 입력을 유지했습니다.');}
     if(!response.ok){if([401,403].includes(response.status))document.dispatchEvent(new CustomEvent('ia-session-invalid',{detail:{reason:data.error}}));throw Error(data.error||'SERVICE_UNAVAILABLE');}return data;
@@ -30,13 +30,24 @@ export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) 
   async function load(revision=null){const generation=++state.loading,serial=state.editSerial||0;state.busy=true;$('#pw-main').inert=true;$('#pw-nav').inert=true;try{const data=await api(revision?'?revision='+encodeURIComponent(revision):'');if(generation!==state.loading)return;if((state.editSerial||0)!==serial){notice('버전을 불러오는 동안 입력한 변경이 있어 현재 편집 내용을 유지했습니다.');return;}accept(data);render();}finally{if(generation===state.loading){state.busy=false;$('#pw-main').inert=false;$('#pw-nav').inert=false;render();}}}
   function publication(){const active=state.effective,scheduled=state.versions.filter(v=>v.action==='schedule'&&v.effectiveAt>state.serverTime).sort((a,b)=>a.effectiveAt.localeCompare(b.effectiveAt));return '<span>내 단가표 · '+(active?'적용 중 '+esc(active.date)+' · r'+active.revision:'적용 전')+'</span>'+button('현재 적용본 열기','data-action="active"'+(!active?' disabled':''))+(scheduled.length?'<span class="pw-scheduled">예약 '+scheduled.map(v=>'r'+v.revision+' · '+new Date(v.effectiveAt).toLocaleString('ko-KR',{timeZone:'Asia/Seoul'})).map(esc).join(' / ')+'</span>':'')+(state.doc?.legacyArchive?'<a href="/ia?view=pricing-r3&amp;mode=contract" target="_blank" rel="noopener">기존 날짜·포장별 자료 열기</a>':'');}
   async function refreshPublication(){if(!state.doc||state.busy||document.visibilityState==='hidden')return;const data=await api('?metadata=1');if(data.serverTime<state.serverTime)return;state.versions=data.versions;state.effective=data.effective;state.serverTime=data.serverTime;const panel=$('#pw-publication');if(panel)panel.innerHTML=publication();}
-  function closeModal(){const modal=$('.pw-dialog');if(modal){if(modal.close)modal.close();modal.remove();}}
+  let activeModal=null;
+  function closeModal(target=activeModal,{immediate=false}={}){
+    const dialog=target;if(!dialog)return;if(activeModal===dialog)activeModal=null;
+    if(window.OrderModalShell)window.OrderModalShell.close(dialog,{immediate,after:()=>dialog.remove()});
+    else{dialog.close?.();dialog.remove();}
+  }
   function modal(title,body,submit,onSubmit){
-    closeModal();const dialog=document.createElement('dialog');dialog.className='pw-dialog';dialog.setAttribute('aria-labelledby','pw-dialog-title');
-    dialog.innerHTML='<form><header><h2 id="pw-dialog-title">'+esc(title)+'</h2>'+button('닫기','data-close aria-label="창 닫기"')+'</header><div class="pw-dialog-body">'+body+'</div><output class="pw-dialog-error" aria-live="polite"></output><footer>'+button('취소','data-close')+(submit?'<button type="submit" class="pw-primary">'+esc(submit)+'</button>':'')+'</footer></form>';
-    root.append(dialog);dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=closeModal);dialog.querySelector('form').onsubmit=async e=>{e.preventDefault();const go=dialog.querySelector('[type=submit]');if(go.disabled)return;go.disabled=true;try{const done=await onSubmit(new FormData(e.target),dialog);if(done!==false)closeModal();}catch(error){dialog.querySelector('output').textContent=errors[error.message]||error.message;}finally{go.disabled=false;}};
+    closeModal(activeModal,{immediate:true});const dialog=document.createElement('dialog');dialog.id='pw-workspace-dialog';dialog.className='pw-dialog q4-regular-dialog';dialog.setAttribute('aria-labelledby','pw-dialog-title');
+    dialog.innerHTML='<form class="q4-regular-panel"><header class="q4-regular-head"><h2 id="pw-dialog-title">'+esc(title)+'</h2>'+button('닫기','data-close aria-label="창 닫기"')+'</header><div class="pw-dialog-body q4-regular-scroll">'+body+'</div><output class="pw-dialog-error" aria-live="polite"></output><footer class="q4-regular-actions ui-transaction-group">'+button('취소','data-close')+(submit?'<button type="submit" class="pw-primary">'+esc(submit)+'</button>':'')+'</footer></form>';
+    const returnFocus=document.activeElement,shell=window.OrderModalShell;let submitting=false;activeModal=dialog;
+    root.append(dialog);
+    const dismiss=()=>{if(submitting)return;closeModal(dialog);};
+    dialog.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>shell?shell.requestClose(dialog,'cancel'):dismiss());
+    if(shell)shell.bind(dialog,dismiss,{beforeClose:()=>!submitting});else dialog.addEventListener('cancel',event=>{event.preventDefault();dismiss();});
+    dialog.querySelector('form').onsubmit=async e=>{e.preventDefault();const go=dialog.querySelector('[type=submit]');if(!go||go.disabled||submitting)return;submitting=true;go.disabled=true;dialog.querySelectorAll('[data-close]').forEach(b=>b.disabled=true);try{const done=await onSubmit(new FormData(e.target),dialog);if(done!==false)closeModal(dialog);}catch(error){if(dialog.isConnected)dialog.querySelector('output').textContent=errors[error.message]||error.message;}finally{submitting=false;go.disabled=false;dialog.querySelectorAll('[data-close]').forEach(b=>b.disabled=false);}};
     dialog.querySelectorAll('input[type=number]').forEach(input=>input.addEventListener('wheel',e=>{e.preventDefault();input.value=String(Math.min(input.max?Number(input.max):Infinity,Math.max(Number(input.min)||0,Math.round(((Number(input.value)||0)+(e.deltaY<0?1:-1)*(Number(input.step)||1))*10000)/10000)));input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));},{passive:false}));
-    if(dialog.showModal)dialog.showModal();else dialog.setAttribute('open','');return dialog;
+    if(shell)shell.open(dialog,{variant:'compact',role:'editor',history:true,returnFocus,initialFocus:()=>dialog.querySelector('input:not([type=hidden]),select,[data-close]')});
+    else if(dialog.showModal)dialog.showModal();else dialog.setAttribute('open','');return dialog;
   }
   function confirmAction(title,description,fn,label='확인'){modal(title,'<p>'+esc(description)+'</p>',label,fn);}
   function dateFields(date,prefix='date',wheel=false,time=false){
@@ -219,6 +230,6 @@ export function mountPriceWorkspace(root,model,reader,importWorkbook,mountTree) 
   window.addEventListener('beforeunload',event=>{if(state.dirty){event.preventDefault();event.returnValue='';}});
   const publicationTimer=setInterval(()=>refreshPublication().catch(()=>{}),60000);window.addEventListener('pagehide',event=>{if(!event.persisted)clearInterval(publicationTimer);});
   root.innerHTML='<div id="pw-notice" role="status" aria-live="polite"></div><div class="pw-layout"><aside id="pw-nav" aria-label="가격 관리 탐색"></aside><main id="pw-main"><div class="pw-empty">가격표를 불러오는 중입니다.</div></main></div>';
-  (async()=>{const res=await fetch('/api/ia/r3-price/session',{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('로그인을 확인해 주세요.');const session=await res.json();state.csrf=session.csrf;state.session=session.practiceAllowed===true;if(state.session)document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:session}));await load();})().catch(report);
+  (async()=>{const res=await fetch((window.ORDER_APP_CONTEXT?.endpoints?.price||'/api/ia/r3-price')+'/session',{credentials:'same-origin',cache:'no-store'});if(!res.ok)throw Error('로그인을 확인해 주세요.');const session=await res.json();state.csrf=session.csrf;state.session=session.practiceAllowed===true;if(state.session)document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:session}));await load();})().catch(report);
   return {read:()=>model.clone(state.doc),getState:()=>({revision:state.revision,dirty:state.dirty,section:state.section,selection:[...state.selection]}),reload:load};
 }

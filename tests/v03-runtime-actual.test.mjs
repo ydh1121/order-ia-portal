@@ -32,9 +32,10 @@ test('current Google source exclusively controls decisions and provider status; 
  assert.match(actualCode,/alias=aliases\[query\.get\('view'\)\]/);
  assert.doesNotMatch(html,/전체 22개 · 미결정 21개/);
 });
+// Only the shared expired-session control changed: reload preserves the current lab return URL.
 test('QA fixture and full template have verifiable sha256 and nonce bound script',()=>{
- assert.equal(sha256(html),'f1e2223f2111d51fbc3deca82a76726a07d7730f3a81a499df130fb6fa9272ff');
- assert.equal(sha256(actualCode),'763980a5a137679f1d0b4b80c8eebc393a2432bfd22c8939efe8d422016c1fff');
+ assert.equal(sha256(html),'17b81b4cf7fa34c3ce66daef3ef21930ad2c97c79a07909b69824edc4ca89497');
+ assert.equal(sha256(actualCode),'224cc8d0cdf75658f365408151c6ed79c8ad0785cd49c2c934678a6e14b07001');
  assert.equal((html.match(/<script nonce="qa_20261017">/g)||[]).length,1);
 });
 

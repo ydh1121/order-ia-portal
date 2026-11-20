@@ -5,6 +5,12 @@ import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {catalog} from '../src/server/r3-ui/catalog.gen.mjs';
 import {archivedRows,stageRows} from '../src/server/r3-ui/motion-history.gen.mjs';
 import {approvedHash} from '../src/server/r3-ui/approved-width.mjs';
+import {getQaApplicationDocument} from '../src/server/r3-qa-assets.mjs';
+import {supplementalHistoryRows,supplementalHistoryBodies,supplementalHistoryScripts} from '../src/server/r3-ui/supplemental-history.gen.mjs';
+import {gunzipSync} from 'node:zlib';
+import {createRequire} from 'node:module';
+import {createProductUiLab} from './helpers/product-ui-lab.mjs';
+const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const url='https://order-ia-portal.pages.dev/api/ia/r3-qa/artifact';
 async function artifact(row,version='current',hash,width=390){
   const query=new URLSearchParams({id:row.id,width:String(width),version});
@@ -12,10 +18,12 @@ async function artifact(row,version='current',hash,width=390){
   const result=await serveR3Artifact(new Request(url+'?'+query));
   assert.equal(result.status,200,row.id);return result.json();
 }
-test('materialized service resolves all 171 admin and 5 common states to isolated executable controls',async()=>{
+test('the 175 remaining archived-workbench admin/common states retain their isolated authored controls',async()=>{
   const subjects=catalog.filter(r=>r.role==='admin'||r.screen==='common');
   assert.equal(subjects.length,176);
-  for(const row of subjects){
+  const connected=new Set(['admin-shipments/packing/email']);
+  assert.equal(subjects.filter(row=>connected.has(row.id)).length,1);
+  for(const row of subjects.filter(row=>!connected.has(row.id))){
     const result=await artifact(row);
     assert.ok(['adminCommon','adminLoading'].includes(row.runtimeFamily));
     assert.match(result.mount,/function mountReviewControls/);
@@ -23,6 +31,32 @@ test('materialized service resolves all 171 admin and 5 common states to isolate
     assert.doesNotMatch(result.editable,/<iframe|<script(?! type="application\/json")/);
     assert.equal(result.replayFrame,undefined);
   }
+});
+test('the connected shipment state retains its prior review bytes and advances only through the canonical product service',async()=>{
+  const id='admin-shipments/packing/email',row=catalog.find(row=>row.id===id),history=supplementalHistoryRows[id];
+  const recorded=await artifact(row,'recorded',history.hashes[390]);
+  const body=gunzipSync(Buffer.from(supplementalHistoryBodies[history.body],'base64')).toString(),mount=gunzipSync(Buffer.from(supplementalHistoryScripts[history.script],'base64')).toString();
+  assert.equal(recorded.hash,history.hashes[390]);assert.equal(recorded.mount,mount);assert.ok(recorded.html.includes(body),'the old local review remains replayable with its exact controls');
+  const source=await getQaApplicationDocument('admin-shipments','packing');
+  assert.notEqual(source.hashes[390],history.hashes[390]);
+  const lab=await createProductUiLab(),buyer=lab.adapter('buyer'),operator=lab.adapter('operator');let dom,dispose,disposeShared;
+  try{
+    const offer=(await buyer.request('/purchases')).offers[0];
+    const quote=await buyer.request('/purchase-quote',{offerId:offer.id,quantity:10,expectedRevision:0,requestKey:crypto.randomUUID()});
+    const order=(await buyer.request('/purchases',{action:'create',offerId:offer.id,quantity:10,paymentMethod:'cash',channel:'farm',acceptedQuoteId:quote.quoteId,expectedRevision:0,requestKey:crypto.randomUUID()})).item;
+    await operator.request('/purchases',{action:'confirm-cash',id:order.id,expectedRevision:1,reference:'ARCHIVE-MIGRATION-TEST',requestKey:crypto.randomUUID()});
+    operator.selectedPurchaseId=order.id;
+    dom=new JSDOM(source.body,{runScripts:'outside-only',url:'https://lab.test',pretendToBeVisual:true});const w=dom.window;
+    w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});w.HTMLElement.prototype.animate=()=>({finished:Promise.resolve(),cancel(){},pause(){},play(){}});
+    w.ORDER_APP_ADAPTER=operator;w.ORDER_APP_CONTEXT={mode:'lab'};w.eval(source.mount);
+    const root=w.document.querySelector('#order-single'),api={screen:'admin-shipments',reduced:()=>true,select(){assert.fail('dispatch must not be a simulated screen navigation');},toast(){}};
+    disposeShared=w.QAUI.sharedMount(root,api);dispose=w.ORDER_DESIGN_MODULES.find(module=>module.id==='admin-shipments').mount(root,'packing',api);
+    const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setTimeout(resolve,0));};await settle();
+    assert.equal((await buyer.request('/purchases')).items[0].status,'PAID');
+    const status=root.querySelector('[name=shipment-status]');status.value='dispatched';status.dispatchEvent(new w.Event('change'));
+    const button=root.querySelector('[data-shipment-apply]');assert.equal(button.disabled,false);button.click();await settle();
+    const saved=(await buyer.request('/purchases')).items[0];assert.equal(saved.status,'DISPATCHED');assert.equal(saved.carrier,'farm');assert.equal(saved.revision,3);assert.equal(button.disabled,true);
+  }finally{dispose?.();disposeShared?.();dom?.window.close();lab.close();}
 });
 test('the preceding direct loading URLs still replay their own reviewed control',async()=>{
   assert.equal(Object.keys(stageRows).length,4);

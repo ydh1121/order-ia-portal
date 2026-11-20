@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test,{afterEach} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
@@ -11,12 +11,25 @@ import {serveR3Artifact,isR3ReviewTarget} from '../src/server/r3-qa-page.mjs';
 import {bootApprovedShell} from '../src/server/r3-ui/approved-controller.mjs';
 import {approvedShellBody} from '../src/server/r3-ui/approved-shell.mjs';
 import {registerQaMvp} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
+import {sharedCoreScript,commonMotionScript} from '../src/server/r3-ui/qa-assets.gen.mjs';
+import {createProductUiLab} from './helpers/product-ui-lab.mjs';
+import {qaSalesFixture} from '../src/server/r3-qa-sales.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const extras=await getQaSupplemental();
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+const activeDoms=new Set();afterEach(()=>{for(const dom of activeDoms)dom.window.close();activeDoms.clear();});
 const artifact=async(id,options={})=>serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-qa/artifact?'+new URLSearchParams({id,width:'390',version:'current',...options})));
-function setup(body){const dom=new JSDOM(body,{url:'https://order-ia-portal.pages.dev/ia?view=qa-lab',runScripts:'outside-only',pretendToBeVisual:true});dom.window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});return dom;}
-async function mount(id){const source=extras.documents.get(id);assert.ok(source,id);const dom=setup(source.body),w=dom.window,calls=[];w.eval('('+registerQaMvp.toString()+')()');const module=w.ORDER_DESIGN_MODULES.find(m=>m.id===source.row.screen);const cleanup=module.mount(w.document.querySelector('#order-single'),source.row.state,{screen:source.row.screen,reduced:()=>false,select(...args){calls.push(args);}});return {dom,w,root:w.document.querySelector('#order-single'),calls,cleanup};}
+function setup(body){const dom=new JSDOM(body,{url:'https://order-ia-portal.pages.dev/ia?view=qa-lab',runScripts:'outside-only',pretendToBeVisual:true});dom.window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});activeDoms.add(dom);return dom;}
+async function settled(){for(let i=0;i<8;i++)await tick();}
+async function mount(id,{adapter,sourceRuntime=false}={}){
+  const source=extras.documents.get(id);assert.ok(source,id);const dom=setup(source.body),w=dom.window,calls=[];
+  w.ORDER_APP_CONTEXT={mode:'lab',now:'2026-11-20T00:00:00.000Z'};if(adapter)w.ORDER_APP_ADAPTER=adapter;
+  w.HTMLElement.prototype.animate=function(){return {finished:Promise.resolve(),cancel(){},pause(){},play(){}};};
+  w.eval(sourceRuntime?source.mount:sharedCoreScript+'\n'+commonMotionScript+'\n('+registerQaMvp.toString()+')()');
+  const root=w.document.querySelector('#order-single'),api={screen:source.row.screen,reduced:()=>false,select(...args){calls.push(args);},toast(){}};
+  const unmountShared=w.QAUI.sharedMount(root,api),module=w.ORDER_DESIGN_MODULES.find(m=>m.id===source.row.screen),dispose=module.mount(root,source.row.state,api);
+  const cleanup=()=>{dispose?.();unmountShared?.();};await settled();return {dom,w,root,calls,cleanup};
+}
 
 test('MVP classification reuses every original screen exactly once and leaves future expansion separate',()=>{
   const ids=[...new Set(catalog.map(r=>r.screen))],layout=defaultQaNavigation(ids);
@@ -63,7 +76,7 @@ test('navigation accordions support rename, mouse transfer and keyboard transfer
 test('new review assets have independent targets and prior delivery artifacts remain byte-identical',async()=>{
   const list=await(await serveR3Artifact(new Request('https://x/api/ia/r3-qa/artifact'))).json();
   const originals=list.items.filter(r=>!r.supplemental);assert.equal(originals.length,catalog.length);assert.equal(new Set(originals.map(r=>r.screen)).size,97);
-  for(const source of extras.assets)for(const use of source.usages){const original=catalog.find(r=>r.id===use.id);assert.ok(original,use.id);assert.equal(original.current,use.source);assert.equal(original.label,use.label);}
+  for(const source of extras.assets)for(const use of source.usages){const original=catalog.find(r=>r.id===use.id),supplement=extras.documents.get(use.id);assert.ok(original||supplement,use.id);if(!use.supplemental)assert.equal(original.current,use.source);else assert.ok(supplement,use.id);assert.equal((supplement?.row||original).label,use.label);}
   const item=list.items.find(r=>r.id==='component-library/asset-email/email');assert.ok(item);
   const doc=await(await artifact(item.id)).json();assert.equal(doc.hash,item.hashes[390]);assert.equal(await isR3ReviewTarget({screen:item.screen,state:item.state,variant:'email',viewport:390,artifactHash:doc.hash}),true);
   const original=catalog.find(r=>r.id==='delivery-request/ready/email');
@@ -76,35 +89,47 @@ test('new review assets have independent targets and prior delivery artifacts re
   }
 });
 
-test('large Order Pass flips in place and withdrawal requires reason, exact phrase and final confirmation',async()=>{
+test('large Order Pass uses the shared ticket and flips in place; withdrawal waits for the actual account operation',async()=>{
   const pass=await mount('delivery-request/ready/email'),card=pass.root.querySelector('[data-pass-card]');
+  assert.ok(card.querySelector('.order-pass.nav-ticket'));
   pass.root.querySelector('[data-qa-flip]').click();assert.equal(card.dataset.face,'back');assert.equal(pass.calls.length,0);
-  card.querySelector('.mvp-pass-back button').click();assert.equal(card.dataset.face,'front');assert.equal(pass.root.querySelector('[data-pass-card]'),card);pass.w.close();
-  const {w,root,calls}=await mount('account-settings/withdraw/email'),button=root.querySelector('[data-withdraw-start]');
+  card.querySelector('.qa-pass-back button').click();assert.equal(card.dataset.face,'front');assert.equal(pass.root.querySelector('[data-pass-card]'),card);pass.cleanup();pass.w.close();
+  const lab=await createProductUiLab(),adapter=lab.adapter('buyer');
+  const {w,root,calls,cleanup}=await mount('account-settings/withdraw/email',{adapter}),button=root.querySelector('[data-withdraw-start]');
   const fill=(name,value)=>{const el=root.querySelector('[name='+name+']');el.value=value;el.dispatchEvent(new w.Event('input',{bubbles:true}));};
   fill('withdraw-phrase','회원탈퇴');assert.equal(button.disabled,true);fill('withdraw-reason','other');assert.equal(button.disabled,true);
   fill('withdraw-note','필요할 때 다시 가입할게요');assert.equal(button.disabled,false);fill('withdraw-phrase','회원탈퇴 ');assert.equal(button.disabled,true);fill('withdraw-phrase','회원탈퇴');
-  button.click();assert.equal(root.querySelector('[data-withdraw-dialog]').hasAttribute('open'),true);assert.equal(calls.length,0);
-  root.querySelector('[data-withdraw-cancel]').click();assert.equal(calls.length,0);button.click();root.querySelector('[data-withdraw-confirm]').click();assert.deepEqual(calls,[['account-settings','closed']]);w.close();
+  button.click();assert.equal(root.querySelector('[data-withdraw-dialog]').hidden,false);assert.equal(calls.length,0);
+  root.querySelector('[data-withdraw-cancel]').click();assert.equal(calls.length,0);button.click();root.querySelector('[data-withdraw-confirm]').click();assert.equal(calls.length,0,'click alone cannot signal completion');await settled();assert.deepEqual(calls,[['account-settings','closed']]);
+  assert.equal(adapter.calls.find(call=>call.body?.action==='withdraw').body.phrase,'회원탈퇴');cleanup();w.close();lab.close();
 });
 
-test('purchase preserves equal cash/card totals and revenue preview validates the allocation before applying',async()=>{
-  const a=await mount('store-purchase/select/email');
-  const confirm=a.root.querySelector('[data-purchase-confirm]');assert.equal(confirm.type,'button');confirm.click();assert.deepEqual(a.calls,[],'missing price must not advance');
-  a.root.querySelector('[name=unit-price]').value='6000';a.root.querySelector('[name=quantity]').value='0';confirm.click();assert.deepEqual(a.calls,[],'zero quantity must not advance');
-  a.root.querySelector('[name=unit-price]').value='6000';a.root.querySelector('[name=quantity]').value='12';a.root.querySelector('form').dispatchEvent(new a.w.Event('input',{bubbles:true}));
-  assert.deepEqual([...a.root.querySelectorAll('[data-same-price]')].map(el=>el.textContent),['72,000원','72,000원']);
-  a.root.querySelector('[value=card]').checked=true;confirm.click();assert.deepEqual(a.calls,[['store-purchase','card']]);
-  a.root.querySelector('[value=cash]').checked=true;a.root.querySelector('[name=quantity]').dispatchEvent(new a.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.deepEqual(a.calls.at(-1),['store-purchase','cash']);a.w.close();
-  const b=await mount('admin-revenue-rules/settings/email'),apply=b.root.querySelector('[data-revenue-apply]');assert.equal(apply.disabled,true);
-  assert.equal(apply.type,'button');apply.click();assert.equal(b.root.querySelector('[data-revenue-note]').textContent,'');
-  b.root.querySelector('[name=gross]').value='100000';b.root.querySelector('[name=cost]').value='40000';b.root.querySelector('[data-rate]').value='100';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));
-  assert.equal(apply.disabled,false);apply.click();assert.equal(b.root.querySelector('[data-revenue-note]').textContent,'','contributor name is required');
-  b.root.querySelector('[data-name]').value='첫 기여자';b.root.querySelector('[name=cost]').value='';apply.click();assert.equal(b.root.querySelector('[data-revenue-note]').textContent,'','cost is required even when allocation totals 100%');
-  b.root.querySelector('[name=cost]').value='40000';assert.equal(b.root.querySelector('[data-contributors] output').textContent,'60,000원');apply.click();assert.match(b.root.querySelector('[data-revenue-note]').textContent,/이 검토 화면에 설정을 반영/);
-  b.root.querySelector('[data-revenue-note]').textContent='';b.root.querySelector('[data-name]').dispatchEvent(new b.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.match(b.root.querySelector('[data-revenue-note]').textContent,/이 검토 화면에 설정을 반영/);
-  b.root.querySelector('[data-contributor-add]').click();assert.equal(b.root.querySelector('[data-contributors]').children.length,2);
-  b.root.querySelectorAll('[data-rate]')[1].value='10';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(apply.disabled,true);b.w.close();
+test('purchase confirms the canonical quantity-tier quote and card/cash use the same accepted amount',async()=>{
+  const lab=await createProductUiLab(),adapter=lab.adapter('buyer'),a=await mount('store-purchase/select/email',{adapter});
+  const confirm=a.root.querySelector('[data-purchase-confirm]'),quantity=a.root.querySelector('[name=quantity]'),unit=a.root.querySelector('[name=unit-price]');
+  assert.equal(unit.readOnly,true);quantity.value='0';confirm.click();await settled();assert.equal(adapter.calls.filter(call=>call.path==='/purchase-quote').length,0);assert.equal(quantity.getAttribute('aria-invalid'),'true');
+  quantity.value='31';quantity.dispatchEvent(new a.w.Event('input',{bubbles:true}));a.root.querySelector('[value=card]').checked=true;confirm.click();await settled();
+  assert.deepEqual(a.calls,[],'price confirmation must not create an order');
+  const totals=[...a.root.querySelectorAll('[data-same-price]')].map(el=>el.textContent);assert.equal(totals[0],totals[1]);assert.match(confirm.textContent,/주문 확정/);assert.equal(unit.value,'5970','31 trays use the server tier, not the 10-tray offer summary');
+  confirm.click();assert.deepEqual(a.calls,[]);await settled();assert.deepEqual(a.calls,[['store-purchase','card']]);
+  const create=adapter.calls.find(call=>call.body?.action==='create');assert.ok(create.body.acceptedQuoteId);assert.equal(Object.hasOwn(create.body,'unitPrice'),false);assert.equal(Object.hasOwn(create.body,'total'),false);
+  const saved=(await adapter.request('/purchases')).items[0];assert.equal(saved.total,5970*31);assert.equal(saved.paid,0);a.cleanup();a.w.close();
+  const card=await mount('store-purchase/card/email',{adapter});card.root.querySelector('[data-purchase-card]').click();await settled();assert.match(card.root.querySelector('[data-purchase-status]').textContent,/아직 연결되지/);assert.equal((await adapter.request('/purchases')).items[0].status,'AWAITING_CARD');card.cleanup();card.w.close();lab.close();
+});
+
+test('shared fields validate revenue settings, retain failed input and persist only an acknowledged allocation',async()=>{
+  const lab=await createProductUiLab(),adapter=lab.adapter('operator'),b=await mount('admin-revenue-rules/settings/email',{adapter}),apply=b.root.querySelector('[data-revenue-apply]');
+  assert.equal(apply.disabled,true);b.root.querySelector('[name=gross]').value='100000';b.root.querySelector('[name=cost]').value='40000';b.root.querySelector('[data-rate]').value='100';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));
+  assert.equal(apply.disabled,false);apply.click();await settled();assert.equal(b.root.querySelector('[data-name]').getAttribute('aria-invalid'),'true');assert.equal(adapter.calls.filter(call=>call.body).length,0);
+  b.root.querySelector('[data-name]').value='첫 기여자';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(b.root.querySelector('[data-contributors] output').textContent,'60,000원');apply.click();await settled();
+  assert.match(b.root.querySelector('[data-revenue-note]').textContent,/저장했어요/);assert.equal((await adapter.request('/revenue')).data.contributors[0].name,'첫 기여자');
+  b.root.querySelector('[data-contributor-add]').click();assert.equal(b.root.querySelector('[data-contributors]').children.length,2);b.root.querySelectorAll('[data-rate]')[1].value='10';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(apply.disabled,true);b.cleanup();b.w.close();lab.close();
+});
+
+test('an absent product API never activates purchase, revenue or withdrawal completion',async()=>{
+  for(const [id,selector] of [['store-purchase/select/email','[data-purchase-confirm]'],['admin-revenue-rules/settings/email','[data-revenue-apply]'],['account-settings/withdraw/email','[data-withdraw-start]']]){
+    const item=await mount(id);assert.equal(item.root.dataset.appConnection,'unconnected');assert.equal(item.root.querySelector(selector).disabled,true);item.root.querySelector(selector).click();assert.deepEqual(item.calls,[]);item.cleanup();item.w.close();
+  }
 });
 
 test('sales review calculates business and campaign totals, filters dates and targets, and never double subtracts refunds',async()=>{
@@ -112,16 +137,16 @@ test('sales review calculates business and campaign totals, filters dates and ta
     ['business-sales',{orders:'5건',trays:'80판',ordered:'489,000원',paid:'366,000원',cancelled:'42,400원',refunded:'42,400원',net:'323,600원',unpaid:'123,000원'}],
     ['campaign-sales',{orders:'4건',trays:'250판',ordered:'1,460,000원',paid:'1,252,000원',cancelled:'200,200원',refunded:'82,200원',net:'1,169,800원',unpaid:'90,000원'}]
   ]){
-    const {w,root,calls}=await mount('admin-analytics/'+state+'/email');
+    const {w,root,calls,cleanup}=await mount('admin-analytics/'+state+'/email',{adapter:{request:async path=>{assert.equal(path,'/sales');return {items:qaSalesFixture};}}});
     const $=selector=>root.querySelector(selector),total=key=>$('[data-sales-total='+key+']').textContent;
     for(const [key,value] of Object.entries(expected))assert.equal(total(key),value,state+' '+key);
-    assert.equal($('[data-sales-rows]').children.length,2);assert.match($('[data-sales-provenance]').textContent,/검토용.*실제.*연결되지/);
+    assert.equal($('[data-sales-rows]').children.length,2);assert.match($('[data-sales-provenance]').textContent,/QA 실행.*운영 매출과 분리/);
     const search=$('[data-sales-search]'),period=$('[data-sales-period]');
     search.value=state==='business-sales'?'첫 번째':'동네장터';search.dispatchEvent(new w.Event('input'));
     assert.equal(total('net'),state==='business-sales'?'150,000원':'756,800원');assert.equal(total('unpaid'),state==='business-sales'?'30,000원':'90,000원');
-    search.value='';search.dispatchEvent(new w.Event('input'));period.value='2026-10';period.dispatchEvent(new w.Event('change'));
+    search.value='';search.dispatchEvent(new w.Event('input'));period.value='previous';period.dispatchEvent(new w.Event('change'));
     assert.equal(total('orders'),'1건');assert.equal(total('net'),state==='business-sales'?'49,600원':'348,000원');
-    period.value='2026-11';period.dispatchEvent(new w.Event('change'));
+    period.value='month';period.dispatchEvent(new w.Event('change'));
     search.value=state==='business-sales'?'QA-B-1103':'QA-C-1104';search.dispatchEvent(new w.Event('input'));
     assert.equal(total('orders'),'1건');assert.equal(total('net'),'0원');assert.equal(total('unpaid'),'0원','cancelled orders do not become unpaid after refund');
     search.value='no-such-target';search.dispatchEvent(new w.Event('input'));assert.equal($('[data-sales-empty]').hidden,false);assert.equal(total('orders'),'0건');
@@ -165,7 +190,7 @@ test('3D motion variants keep the original image and separate source usage from 
     assert.equal(variant.preview,original.preview);assert.equal(variant.sourceSha256,original.sourceSha256);assert.equal(variant.derivedFrom,original.id);
     assert.deepEqual(variant.usages,[],'new variants must not pretend to be used by original product screens');assert.deepEqual(variant.sourceUsages,original.usages);
     const {w,root,cleanup}=await mount('component-library/asset-'+variant.id+'/email'),stage=root.querySelector('[data-qa-art-motion]');
-    assert.equal(stage.dataset.qaArtMotion,motion);assert.match(root.querySelector('[data-qa-motion-provenance]').textContent,/모션을 적용한 변형/);
+    assert.equal(stage.dataset.qaArtMotion,motion);assert.match(root.querySelector('[data-qa-motion-provenance]').textContent,/원본 3D 이미지.*변형/);
     const play=root.querySelector('[data-qa-art-play]'),pause=root.querySelector('[data-qa-art-pause]'),reset=root.querySelector('[data-qa-art-reset]');
     assert.equal(stage.dataset.qaArtStatus,'idle');assert.equal(pause.disabled,true);play.click();assert.equal(stage.dataset.qaArtStatus,'playing');assert.equal(play.disabled,true);
     pause.click();assert.equal(stage.dataset.qaArtStatus,'paused');assert.equal(play.disabled,false);play.click();assert.equal(stage.dataset.qaArtStatus,'playing');
@@ -183,15 +208,29 @@ test('3D motion respects reduced-motion both at entry and when the preference ch
   quiet=true;onChange();assert.equal(stage.dataset.qaArtStatus,'idle');assert.equal(play.disabled,true);dispose();assert.equal(removed,1);w.close();
 });
 
-test('existing shipment detail accepts a tracking number and status while direct farm delivery may omit a waybill',async()=>{
+test('shipment dispatch validates shared fields and persists through the canonical service',async()=>{
   for(const screen of ['admin-shipments','supplier-shipments']){
-    const {w,root}=await mount(screen+'/packing/email'),form=root.querySelector('[data-shipment-form]'),method=root.querySelector('[name=shipment-method]'),tracking=root.querySelector('[name=tracking-number]'),apply=root.querySelector('[data-shipment-apply]'),summary=root.querySelector('[data-shipment-summary]');
-    assert.equal(apply.type,'button');assert.equal(tracking.required,false);apply.click();assert.match(summary.textContent,/합천 농장.*송장 미사용/);
-    summary.textContent='';method.value='parcel';method.dispatchEvent(new w.Event('change'));assert.equal(tracking.required,true);assert.equal(form.checkValidity(),false);apply.click();assert.equal(summary.textContent,'');
-    tracking.value='1234-5678';root.querySelector('[name=shipment-status]').value='dispatched';apply.click();assert.match(summary.textContent,/배송 중.*1234-5678/);
-    tracking.value='ENTER-1234';const enter=new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});tracking.dispatchEvent(enter);assert.equal(enter.defaultPrevented,true);assert.match(summary.textContent,/ENTER-1234/);
-    summary.textContent='';tracking.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',isComposing:true,bubbles:true,cancelable:true}));assert.equal(summary.textContent,'');root.querySelector('[name=shipment-note]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));assert.equal(summary.textContent,'','textarea Enter keeps its newline behavior');w.close();
+    const lab=await createProductUiLab(),buyer=lab.adapter('buyer'),operator=lab.adapter('operator'),offer=(await buyer.request('/purchases')).offers[0];
+    const quote=await buyer.request('/purchase-quote',{offerId:offer.id,quantity:10,expectedRevision:0,requestKey:crypto.randomUUID()});
+    const order=(await buyer.request('/purchases',{action:'create',offerId:offer.id,quantity:10,paymentMethod:'cash',channel:'farm',acceptedQuoteId:quote.quoteId,expectedRevision:0,requestKey:crypto.randomUUID()})).item;
+    const cashier=await mount('store-purchase/select/email',{adapter:operator});
+    assert.equal(cashier.root.querySelector('[data-purchase-form]').hidden,true,'operator never edits a buyer price');
+    const payment=cashier.root.querySelector('[data-order-action=confirm-cash]');assert.equal(payment.hidden,false);
+    payment.click();await settled();assert.equal(cashier.root.querySelector('[name=cash-reference]').getAttribute('aria-invalid'),'true');
+    cashier.root.querySelector('[name=cash-reference]').value='TEST-BANK-123';payment.click();await settled();assert.equal((await buyer.request('/purchases')).items[0].status,'PAID');cashier.cleanup();cashier.w.close();
+    const adapter=lab.adapter(screen==='admin-shipments'?'operator':'supplier');adapter.selectedPurchaseId=order.id;
+    const {w,root,cleanup}=await mount(screen+'/packing/email',{adapter}),method=root.querySelector('[name=shipment-method]'),tracking=root.querySelector('[name=tracking-number]'),apply=root.querySelector('[data-shipment-apply]'),status=root.querySelector('[name=shipment-status]');
+    assert.equal(apply.disabled,true);status.value='dispatched';status.dispatchEvent(new w.Event('change'));method.value='parcel';method.dispatchEvent(new w.Event('change'));assert.equal(tracking.required,true);apply.click();await settled();assert.equal(tracking.getAttribute('aria-invalid'),'true');assert.equal((await buyer.request('/purchases')).items[0].status,'PAID');
+    tracking.value='1234-5678';apply.click();await settled();const saved=(await buyer.request('/purchases')).items[0];assert.equal(saved.status,'DISPATCHED');assert.equal(saved.tracking,'1234-5678');assert.equal(apply.disabled,true,'a completed dispatch cannot be submitted again');cleanup();w.close();lab.close();
   }
+});
+
+test('library preserves field roots and mounts the source runtime instead of an inert inner control',async()=>{
+  const a=await mount('component-library/asset-email/email',{sourceRuntime:true}),source=a.root.querySelector('[data-component-source]'),target=source.querySelector('[data-component-target]');
+  assert.ok(target.closest('.field.is-floating'));assert.equal(source.closest('[inert]'),null);assert.ok(target.id);assert.ok(source.querySelector('label[for="'+target.id+'"]'));assert.match(a.root.querySelector('[data-component-runtime]').textContent,/원본 화면과 런타임이 연결/);
+  target.focus();assert.equal(target.closest('.field').classList.contains('is-focused'),true);
+  const password=source.querySelector('[data-action=password-visibility]');assert.ok(password);const input=password.parentElement.querySelector('input');assert.equal(input.type,'password');password.click();assert.equal(input.type,'text');
+  const asset=extras.assets.find(asset=>asset.id==='select');assert.ok(asset.usages.some(use=>use.id==='store-purchase/select/email'&&use.supplemental));assert.ok(asset.variants.length>1);a.cleanup();a.w.close();
 });
 
 test('BLOUB repeated sequences reveal each result once without hiding the observed player or remounting the result every tick',async()=>{

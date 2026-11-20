@@ -14,6 +14,18 @@ export async function handleIaRequest(request,env,dependencies={}) {
   try {actor=await (isBusinessSurface(new URL(request.url))?businessActor:requireActor)(request,env,dependencies.fetcher||fetch,dependencies.now)}
   catch(error) {return error?.message==='SESSION_STORE_UNAVAILABLE'?json({error:'SESSION_STORE_UNAVAILABLE'},503):json({error:'IA_ACCESS_DENIED'},403)}
   const url=new URL(request.url);
+  const productRoute=url.pathname.match(/^\/api\/ia\/(lab|product)(\/.*)?$/);
+  if(productRoute){
+    if(productRoute[1]==='lab'&&actor.role!=='OWNER')return json({error:'IA_PERMISSION_DENIED'},403);
+    if(!['GET','POST'].includes(request.method))return json({error:'METHOD_NOT_ALLOWED'},405);
+    let session;
+    try{session=actor.role==='BUSINESS'?actor:await readSession(request,env,dependencies.now);}catch{return json({error:'SESSION_DENIED'},403);}
+    if(request.method==='POST'&&(!sameOrigin(request,env)||session.id!==actor.id||request.headers.get('X-IA-CSRF')!==session.csrf))return json({error:'CSRF_DENIED'},403);
+    const ctx={request,env,actor:{...actor,csrf:session.csrf,expiresAt:session.expiresAt},path:productRoute[2]||'/',csrf:session.csrf};
+    if(productRoute[1]==='lab'){const {handleProductLab}=await import('./product-lab.mjs');return handleProductLab(ctx);}
+    if(ctx.path==='/session'&&request.method==='GET')return json({csrf:session.csrf,expiresAt:session.expiresAt});
+    const {handleProductOperations}=await import('./product-operations.mjs');return handleProductOperations(ctx);
+  }
   const r3=url.pathname.match(/^\/api\/ia\/r3-(qa|price|role)(\/.*)?$/);
   if(r3) {
     if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && r3[1]!=='qa' && !r3[2]?.startsWith('/practice/')))return json({error:'IA_PERMISSION_DENIED'},403);

@@ -7,6 +7,7 @@ import subprocess
 
 from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
+from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -69,7 +70,10 @@ def check(page, origin, width):
     frame_click(page, frame.get_by_role("button",name="태그 지우기"))
     expect(frame.locator(".quote-search-row")).to_have_count(4)
 
-    frame = screen("profile", "default")
+    # Local sample edits belong to the immutable pre-shared-brand document.
+    # They must not be mistaken for the authenticated product's account writes.
+    archived = ArchivedBrandScreens(page, origin, width)
+    frame = archived.screen("profile", "default")
     frame_click(page, frame.locator('[data-action="account-menu"]'))
     frame_click(page, frame.locator('[data-action="panel-alerts"]'))
     toggle = frame.get_by_role("switch", name="시세 변동 알림")
@@ -94,12 +98,18 @@ def check(page, origin, width):
     frame.locator(".account-panel h2").press("Escape")
     expect(frame.locator(".account-panel")).to_be_hidden()
 
-    frame = screen("terms", "optional")
+    frame = archived.screen("terms", "optional")
+    archived.notices()
     consent = frame.locator('[name="terms-check"]')
     expect(frame.locator("html")).to_have_attribute("data-notice-ready", "true")
     frame_click(page, consent)
     expect(consent).to_be_checked()
+    page.wait_for_function("window.__brandArchiveFixture.flags[1] && window.__brandArchiveFixture.flags[2]")
+    assert archived.read_flags() == [False, True, True]
     frame_click(page, frame.get_by_role("button", name="알림 수신 설정"))
+    archived.expect_navigation("profile", "notification")
+    frame = archived.screen("profile", "notification")
+    archived.notices()
     market_alert = page.frame_locator("#frame").get_by_role("switch", name="시세 변동 알림")
     expect(market_alert).to_have_attribute("aria-checked", "false")
     news = page.frame_locator("#frame").locator('[data-action="notice-2"]')
@@ -107,6 +117,14 @@ def check(page, origin, width):
     frame_click(page, news)
     expect(news).to_have_attribute("aria-checked", "false")
     expect(page.frame_locator("#frame").locator('[data-action="notice-3"]')).to_have_attribute("aria-checked", "true")
+    page.wait_for_function("!window.__brandArchiveFixture.flags[1]")
+    assert archived.read_flags() == [False, False, True]
+
+    # The current menu reads the signed account endpoint; no archived sample
+    # profile or notice fixture is supplied to this product document.
+    check_current_brand_menu(page, origin)
+    screens = ReviewScreens(page, origin, width)
+    screen = screens.screen
 
     frame = screen("common", "default")
     library = frame.locator("#r3-component-library")
@@ -153,16 +171,22 @@ def check(page, origin, width):
     frame = screen("drawer", "done")
     expect(frame.get_by_text("상담을 예약했어요", exact=True)).to_be_visible()
     expect(frame.locator(".functional-drawer .empty button")).to_have_count(0)
-    frame = screen("profile", "notification")
+    frame = archived.screen("profile", "notification")
+    archived.notices()
     read = frame.locator('[data-action="read-notice"]')
     frame_click(page,read)
     expect(read).to_be_hidden()
     expect(frame.locator('p[role=status]').first).to_have_text('모두 읽었어요.')
-    # Only the fixed menu is passed. The real page derives grants and cases from the signed-in session.
-    with page.expect_navigation(wait_until="domcontentloaded"):
-        frame_click(page,frame.get_by_role("button",name="내 업무 알림 열기"))
-    assert page.url == origin+"/ia?view=roles-r3&menu=activity"
-    print(json.dumps({"width": width, "screens": ["passes","search","profile","drawer"]}))
+    assert page.evaluate("window.__brandArchiveFixture.read") is True
+    # Preserve the original requested route while the current archive host
+    # intentionally prevents a historical sample from entering live business UI.
+    url = page.url
+    frame_click(page,frame.get_by_role("button",name="내 업무 알림 열기"))
+    archived.expect_navigation("role-work", "activity")
+    assert page.url == url
+    print(json.dumps({"width": width, "screens": ["passes","search","profile","drawer"],
+                      "historicalProfile": "exact brand-history hash; in-memory fixture only",
+                      "currentProfile": "authenticated product account API"}))
 
 
 def main():
@@ -176,7 +200,7 @@ def main():
                 page = context.new_page()
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                page.goto(fixture["url"]+"/ia?view=qa-lab")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()

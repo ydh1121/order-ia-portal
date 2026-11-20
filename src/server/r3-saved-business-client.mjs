@@ -3,6 +3,7 @@
 export function createSavedBusinessBridge(deps){
  const {getState,guard,save,render,blankSite,addressFields,addressStatus,projectSimpleQuote,resetSimple,regionSelection}=deps;
  return Object.freeze({
+  canOpen:()=>guard('saved-business-open'),
   async load(records,{isCurrent=()=>true}={}){
    if(!Array.isArray(records)||records.length<1||records.length>200||new Set(records.map(x=>x.id)).size!==records.length||records.some(x=>!x?.profile||typeof x.id!=='string'))return {ok:false,status:'INVALID_SELECTION'};
    if(!isCurrent()||!guard('saved-business-load'))return {ok:false,status:'EDIT_PENDING'};
@@ -27,29 +28,60 @@ export function createSavedBusinessBridge(deps){
 }
 
 export function mountSavedBusinessPicker(app){
- const anchor=document.getElementById('q3-sites');if(!anchor||!app.savedBusinessBridge)return;
- const row=document.createElement('div');row.className='add-row';row.style.cssText='display:flex;gap:12px;flex-wrap:wrap;margin:12px 0';
+ const anchor=document.getElementById('q3-sites'),shell=window.OrderModalShell,copy=window.OrderCopyDialog;
+ if(!anchor||!app.savedBusinessBridge||!shell||!copy||(window.ORDER_APP_CONTEXT?.authenticated??window.ORDER_APP_CONTEXT?.actor?.authenticated??true)===false)return;
+ const endpoint=(window.ORDER_APP_CONTEXT?.endpoints?.role||'/api/ia/r3-role')+'/businesses';
+ const row=document.createElement('div');row.className='add-row r3-saved-business-actions';
  const trigger=document.createElement('button');trigger.type='button';trigger.className='ui-copy-action';trigger.textContent='저장된 사업장 불러오기';
- const manage=document.createElement('a');manage.className='ui-copy-action';manage.href='/ia?view=businesses-r3';manage.target='_blank';manage.rel='noopener noreferrer';manage.textContent='사업장 관리';
+ const manage=document.createElement('a');manage.className='ui-copy-action';manage.href=window.ORDER_APP_CONTEXT?.pages?.businesses||'/ia?view=businesses-r3';manage.target='_blank';manage.rel='noopener noreferrer';manage.textContent='사업장 관리';
  row.append(trigger,manage);anchor.before(row);
- const dialog=document.createElement('dialog');dialog.setAttribute('aria-labelledby','saved-business-title');dialog.style.cssText='border:0;border-radius:22px;padding:24px;width:min(520px,calc(100vw - 32px));max-height:80dvh;box-sizing:border-box;box-shadow:0 20px 70px #0003';
- const title=document.createElement('h2');title.id='saved-business-title';title.textContent='저장된 사업장';
- const list=document.createElement('div');list.style.cssText='display:grid;gap:10px;max-height:45dvh;overflow:auto';
- const status=document.createElement('p');status.setAttribute('role','status');
- const actions=document.createElement('div');actions.style.cssText='display:flex;gap:12px;justify-content:flex-end;margin-top:18px';
- const close=document.createElement('button');close.type='button';close.className='ui-copy-action';close.textContent='취소';
- const apply=document.createElement('button');apply.type='button';apply.className='ui-copy-action';apply.textContent='불러오기';
- actions.append(close,apply);dialog.append(title,list,status,actions);document.body.append(dialog);
- let records=[],pending=false,generation=0;
- const dismiss=()=>{generation++;dialog.close();trigger.focus();};close.onclick=dismiss;dialog.addEventListener('cancel',event=>{event.preventDefault();dismiss();});
+ // Reuse the production copy presentation and transaction actions. Selection is
+ // not a child-copy editor, so its dialog takes the canonical selection class.
+ const dialog=copy.create({id:'saved-business-picker',title:'저장된 사업장',fields:'',targets:'',applyLabel:'불러오기',presentation:'contact'});
+ dialog.className='q4-regular-dialog r3-saved-business-dialog';
+ dialog.querySelector('.qa-copy-accordion-area').hidden=true;
+ dialog.querySelector('[data-copy-preview]').hidden=true;
+ dialog.querySelector('.qa-copy-target-heading').textContent='견적에 사용할 사업장';
+ const list=dialog.querySelector('.qa-copy-targets'),status=dialog.querySelector('[role=status]');
+ const close=dialog.querySelector('[data-copy-cancel]'),apply=dialog.querySelector('[data-copy-apply]');
+ document.body.append(dialog);
+ let records=[],pending=false,generation=0,active=false;
+ const dismiss=()=>{generation++;active=false;return shell.close(dialog);};
+ close.onclick=()=>shell.requestClose(dialog,'cancel');
+ shell.bind(dialog,dismiss,{onExitIntent:()=>{generation++;active=false;}});
+ const currentSession=id=>active&&id===generation&&dialog.open;
+ const updateSelection=()=>{apply.disabled=pending||!list.querySelector('input:checked');};
+ list.addEventListener('change',updateSelection);
  trigger.onclick=async()=>{
-  const current=++generation;records=[];list.replaceChildren();status.textContent='사업장을 불러오고 있습니다.';apply.disabled=true;dialog.showModal();
-  try{const response=await fetch('/api/ia/r3-role/businesses',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error(response.status===401||response.status===403?'AUTH':'LOAD');const data=await response.json();if(current!==generation||!dialog.open)return;records=data.businesses;
-   for(const record of records){const label=document.createElement('label');label.style.cssText='display:flex;gap:12px;align-items:start;padding:14px;border:1px solid #ddd;border-radius:12px';const check=document.createElement('input');check.type='checkbox';check.value=record.id;const copy=document.createElement('span');const name=document.createElement('strong');name.textContent=record.profile.name;const address=document.createElement('span');address.style.display='block';address.textContent=[record.profile.road,record.profile.detail].filter(Boolean).join(' ')||record.profile.region||'소재지 미입력';copy.append(name,address);label.append(check,copy);list.append(label);}
-   status.textContent=records.length?(document.documentElement.dataset.r3QuoteMode==='simple'?'선택한 사업장의 수와 지역으로 바뀝니다. 기존 주문 방식과 희망일은 유지됩니다.':'견적에 사용할 사업장을 선택해 주세요. 이미 불러온 사업장은 최신 정보로 갱신하며, 납품 수량과 일정은 유지됩니다.'):'저장된 사업장이 없습니다. 사업장 관리에서 먼저 등록해 주세요.';apply.disabled=!records.length;
-  }catch(error){if(current===generation)status.textContent=error.message==='AUTH'?'로그인 후 다시 불러와 주세요.':'사업장을 불러오지 못했습니다. 닫고 다시 시도해 주세요.';}
+  if(pending||!app.savedBusinessBridge.canOpen?.())return;
+  const current=++generation;active=true;records=[];list.replaceChildren();status.textContent='사업장을 불러오고 있습니다.';apply.disabled=true;
+  shell.open(dialog,{variant:'copy',role:'selection',history:true,returnFocus:trigger,initialFocus:()=>close});
+  try{
+   const response=await fetch(endpoint,{credentials:'same-origin',cache:'no-store',redirect:'manual'});
+   if(!response.ok)throw Error(response.status===401||response.status===403||response.type==='opaqueredirect'?'AUTH':'LOAD');
+   const data=await response.json();if(!currentSession(current))return;
+   if(!Array.isArray(data.businesses))throw Error('LOAD');records=data.businesses;
+   for(const record of records){
+    const label=document.createElement('label');label.className='q4-check-row q4-check-row--multiline';
+    const check=document.createElement('input');check.type='checkbox';check.value=record.id;
+    const icon=document.createElement('span');icon.className='q4-check-icon';icon.setAttribute('aria-hidden','true');icon.textContent='✓';
+    const text=document.createElement('span');text.className='q4-check-copy';
+    const name=document.createElement('strong');name.textContent=record.profile.name;
+    const address=document.createElement('span');address.className='q4-regular-muted';address.textContent=[record.profile.road,record.profile.detail].filter(Boolean).join(' ')||record.profile.region||'소재지 미입력';
+    text.append(name,document.createElement('br'),address);label.append(check,icon,text);list.append(label);
+   }
+   status.textContent=records.length?(document.documentElement.dataset.r3QuoteMode==='simple'?'선택한 사업장의 수와 지역으로 바뀝니다. 기존 주문 방식과 희망일은 유지됩니다.':'견적에 사용할 사업장을 선택해 주세요. 이미 불러온 사업장은 최신 정보로 갱신하며, 납품 수량과 일정은 유지됩니다.'):'저장된 사업장이 없습니다. 사업장 관리에서 먼저 등록해 주세요.';
+   updateSelection();
+  }catch(error){if(currentSession(current))status.textContent=error.message==='AUTH'?'로그인 후 다시 불러와 주세요.':'사업장을 불러오지 못했습니다. 닫고 다시 시도해 주세요.';}
  };
- apply.onclick=async()=>{if(pending)return;const ids=new Set([...list.querySelectorAll('input:checked')].map(x=>x.value));if(!ids.size){status.textContent='사업장을 하나 이상 선택해 주세요.';return;}pending=true;apply.disabled=true;trigger.disabled=true;const current=generation,isCurrent=()=>current===generation&&dialog.open;
-  try{const result=await app.savedBusinessBridge.load(records.filter(x=>ids.has(x.id)),{isCurrent});if(!isCurrent())return;if(result.ok)dismiss();else status.textContent=result.status==='EDIT_PENDING'?'작성 중인 입력을 저장하거나 취소한 후 다시 불러와 주세요.':'입력을 반영하지 못했습니다. 기존 입력을 확인한 후 다시 시도해 주세요.';}catch{if(isCurrent())status.textContent='입력을 반영하지 못했습니다. 다시 시도해 주세요.';}finally{pending=false;apply.disabled=false;trigger.disabled=false;}
+ apply.onclick=async()=>{
+  if(pending||!active)return;
+  const ids=new Set([...list.querySelectorAll('input:checked')].map(x=>x.value));if(!ids.size){status.textContent='사업장을 하나 이상 선택해 주세요.';return;}
+  pending=true;apply.disabled=true;trigger.disabled=true;
+  const current=generation,isCurrent=()=>currentSession(current);
+  try{const result=await app.savedBusinessBridge.load(records.filter(x=>ids.has(x.id)),{isCurrent});if(!isCurrent())return;if(result.ok)dismiss();else status.textContent=result.status==='EDIT_PENDING'?'작성 중인 입력을 저장하거나 취소한 후 다시 불러와 주세요.':'입력을 반영하지 못했습니다. 기존 입력을 확인한 후 다시 시도해 주세요.';}
+  catch{if(isCurrent())status.textContent='입력을 반영하지 못했습니다. 다시 시도해 주세요.';}
+  finally{pending=false;trigger.disabled=false;updateSelection();}
  };
+ return {dialog,trigger};
 }

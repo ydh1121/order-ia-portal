@@ -32,15 +32,56 @@ def check_auth_motion(page, origin, width):
     frame = screens.screen("onboarding", "guest-2")
     header = frame.locator(".ob-stage > header")
     expect(frame.locator(".ob-pages .ob-active-pill")).to_be_visible()
-    header.evaluate("""el=>{window.__savedBrand=el.querySelector('svg');window.__jellyMotion=[];
-        window.__savedBrand.addEventListener('code1:motionstart',e=>window.__jellyMotion.push(e.detail.kind));}""")
-    frame_click(page, frame.locator("[data-action=animate-brand]"))
+    # Figma 2009173058 requires random original motion on a guest click. The
+    # shared trigger selects CODE1 idle/play or gather; neither is a fake event
+    # nor an account-menu action. Arm observations before the physical click so
+    # its synchronous event cannot be lost while waiting for an assumed kind.
+    header.evaluate("""el=>{
+        const svg=window.__savedBrand=el.querySelector('svg');
+        const paths=[...svg.querySelectorAll('g > path')],before=paths.map(p=>p.getAttribute('d'));
+        window.__guestMotion={trusted:false,started:[],changed:new Set(),paths};
+        el.querySelector('.obm-trigger').addEventListener('click',event=>{
+            window.__guestMotion.trusted=event.isTrusted;
+        },{capture:true,once:true});
+        svg.addEventListener('code1:motionstart',event=>{
+            if(window.__guestMotion.trusted)window.__guestMotion.started.push({...event.detail});
+        });
+        window.__guestMotionObserver=new MutationObserver(()=>{
+            if(!window.__guestMotion.started.length)return;
+            paths.forEach((path,index)=>{if(path.getAttribute('d')!==before[index])window.__guestMotion.changed.add(index);});
+        });
+        window.__guestMotionObserver.observe(svg,{subtree:true,attributes:true,attributeFilter:['d']});
+    }""")
+    brand_trigger = frame.locator(".obm-trigger")
+    expect(frame.locator(".obm-brand")).to_have_attribute("data-authenticated", "false")
+    expect(brand_trigger).to_have_accessible_name("Order 로고")
+    assert brand_trigger.get_attribute("aria-haspopup") is None
+    frame_click(page, brand_trigger)
     expect(header).to_be_visible()
-    frame.locator(".ob.guest").evaluate("""el=>new Promise((resolve,reject)=>{
-      if(window.__jellyMotion.includes('gather'))return resolve();
-      const id=setTimeout(()=>reject(Error('guest logo did not trigger archived CODE1')),2000);
-      window.__savedBrand.addEventListener('code1:motionstart',()=>{clearTimeout(id);resolve();},{once:true});
+    expect(frame.locator(".obm-panel")).to_be_hidden()
+    guest_motion=frame.locator(".ob.guest").evaluate("""el=>new Promise((resolve,reject)=>{
+        const receipt=window.__guestMotion,start=performance.now();
+        function check(){
+            const motion=receipt.started[0];
+            if(receipt.trusted&&motion&&receipt.changed.size===3){
+                window.__guestMotionObserver.disconnect();
+                return resolve({trustedClick:receipt.trusted,kind:motion.kind,seed:motion.seed,
+                    changedPathCount:receipt.changed.size,pathCount:receipt.paths.length,
+                    samePaths:receipt.paths.every((path,index)=>window.__savedBrand.querySelectorAll('g > path')[index]===path)});
+            }
+            if(performance.now()-start>2000){
+                window.__guestMotionObserver.disconnect();
+                return reject(Error('guest CODE1 did not animate all three original paths after trusted click: '+JSON.stringify({trusted:receipt.trusted,started:receipt.started,changed:[...receipt.changed]})));
+            }
+            requestAnimationFrame(check);
+        }
+        check();
     })""")
+    assert guest_motion['trustedClick'] and guest_motion['samePaths'],guest_motion
+    assert guest_motion['kind'] in ('idle','gather'),guest_motion
+    assert isinstance(guest_motion['seed'],int) and 0<=guest_motion['seed']<=0xffffffff,guest_motion
+    assert guest_motion['pathCount']==guest_motion['changedPathCount']==3,guest_motion
+    expect(frame.locator(".obm-panel")).to_be_hidden()
     frame_click(page, frame.locator("[data-mf-intro='3']"))
     expect(frame.locator(".ob")).to_have_attribute("data-intro-step", "3")
     assert header.evaluate("el=>el.querySelector('svg')===window.__savedBrand")
@@ -93,7 +134,9 @@ def check_auth_motion(page, origin, width):
     out = Path(os.getenv("R3_AUTH_MOTION_ARTIFACT_DIR", "artifacts/r3-auth-motion"))
     out.mkdir(parents=True, exist_ok=True)
     evidence = {"width": width, "source": "private signed QA browser fixture",
-                "guestClick": "CODE1 gather", "headerNodeSurvived": True, "pagination": "click 2→3, physical drag 3→1",
+                "guestClick": "Figma 2009173058: trusted shared trigger → random original CODE1 idle/play or gather, all three original paths change; no account dropdown",
+                "guestMotion":guest_motion,"guestAllowedKinds":["idle","gather"],
+                "headerNodeSurvived": True, "pagination": "click 2→3, physical drag 3→1",
                 "rubberBandUp30": resistance, "peekAndDragClose": True,
                 "otpHeightBeforeAndAfter": [before, otp.bounding_box()["height"]]}
     frame = screens.screen("signup", "empty")

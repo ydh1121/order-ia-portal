@@ -166,7 +166,11 @@ def check_zoomed_pin(page, context, origin, width):
         )
 
     assert fit(False) == 1
+    expect(page.locator('#new')).to_have_attribute('aria-pressed','false')
     page.locator("#new").click()
+    expect(page.locator('#new')).to_have_attribute('aria-pressed','true')
+    expect(page.locator('#drawer')).to_have_js_property('hidden',True)
+    expect(veil).to_be_visible()
     frame_click(page, veil, position={"x":1750, "y":150})
     text = f"배율과 가로 이동 {width}"
     page.locator("#body-text").fill(text)
@@ -227,7 +231,7 @@ def run():
    for width in (390,1440):
     ctx=browser.new_context(viewport={'width':width,'height':870},has_touch=width<600)
     page=ctx.new_page();prepare_frame_pointer(page);page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
-    page.goto(fixture['url']+'/ia?view=qa-lab')
+    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
     page.locator('input[name=email]').fill(fixture['email']);page.locator('input[name=password]').fill(fixture['pass']);page.locator('button[type=submit]').click()
     page.wait_for_url('**/ia?view=qa-lab**')
     frame=page.frame_locator('#frame')
@@ -286,8 +290,15 @@ def run():
     if width==390:
      check_draft_recovery(ctx,page)
      check_screen_memo(ctx,page)
-     check_zoomed_pin(page,ctx,fixture['url'],320)
-    check_zoomed_pin(page,ctx,fixture['url'],width)
+    # Each breakpoint owns a fresh Chrome visual viewport. Keep the same signed
+    # context and SQLite records, while exercising zoom/fit/dual/focus together
+    # within each case rather than carrying CDP emulation into the next case.
+    for zoom_width in ((320,width) if width==390 else (width,)):
+     zoom_page=ctx.new_page();prepare_frame_pointer(zoom_page);zoom_page.set_default_timeout(12000)
+     zoom_page.on('pageerror',lambda e:errors.append(str(e)))
+     try:check_zoomed_pin(zoom_page,ctx,fixture['url'],zoom_width)
+     finally:zoom_page.close()
+    assert not errors,errors
     ctx.close()
    browser.close()
  finally:host.terminate();host.wait(timeout=5)

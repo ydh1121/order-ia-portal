@@ -1,0 +1,75 @@
+{
+  "revision": "R1 production rework 20261120",
+  "sourceKind": "verified recovered original archives and public exact source",
+  "inputs": [
+    {
+      "path": "component_r1_sources/USER_DIRECTIVE_20261117.md",
+      "sha256": "5c6d20aeddb33a3c656f3b5c94c93969d228857b09b5f4ccd74d5cf52b99546b"
+    },
+    {
+      "path": "component_r2_sources/USER_DIRECTIVE_R2_20261117.md",
+      "sha256": "b4dde584b6777d47a2f1972050ad95069fcc8fdadac76e93ee8c80bc2b58926b"
+    },
+    {
+      "path": "component_r1_sources/sources/kokonutui/profile-dropdown/registry-files/components/kokonutui/profile-dropdown.tsx",
+      "sha256": "4fa0a5395d950016f3c0d065af074b674f9fa5d5acced470c609f61f5ff68c8b"
+    },
+    {
+      "path": "component_r1_sources/sources/kokonutui/stack-panel/registry-files/components/kokonutui/stack-panel.tsx",
+      "sha256": "77a45a4b7edba88d08d74c8ce3565afcef13de0aa0548d363db7fd9849eb2e2c"
+    },
+    {
+      "path": "component_r1_sources/sources/transitions/repo/skills/transitions-dev/SKILL.md",
+      "sha256": "8e7ee74377ce03d73fdc1de00c178f63f7a9d2993fd537ce46fd651402d593a5"
+    },
+    {
+      "path": "component_r1_sources/sources/transitions/repo/skills/transitions-dev/08-page-side-by-side.md",
+      "sha256": "535c056bc2029ccf73ba63cfe839a9078c7967b374d2f021dbaa30ef411324f7"
+    },
+    {
+      "path": "component_r1_sources/sources/transitions/repo/skills/transitions-dev/03-notification-badge.md",
+      "sha256": "f8f58844de1acf988f9437e4e1957478c48c6392939ac161ae3b9f6b55ea02f9"
+    },
+    {
+      "path": "component_r1_sources/sources/transitions/repo/skills/transitions-dev/01-card-resize.md",
+      "sha256": "e464e54fd9bc855c96d1dc3a570227fbe9e97857626fd9ba85035d927a918157"
+    },
+    {
+      "path": "exact-dropdown-menu-morph.original.html",
+      "sha256": "60a326c4c1d75b18715f629da8e92df349c623788959e83d576c05225f04b387"
+    },
+    {
+      "path": "exact-dropdown-menu-morph.library.json",
+      "sha256": "5b6194621997136be35eb377618f5655fde159b96da338634c39f5174c3653df"
+    }
+  ],
+  "publicRepository": {
+    "repository": "Jakubantalik/transitions.dev",
+    "commit": "add5b467b13be16664d10fd888330ce2f3288b07",
+    "exactPath": "transitions/dropdown-menu-morph/index.html",
+    "blob": "1e1f0d7e593d71ea2e0d9f4cb1e63e96f88ed606",
+    "libraryPath": "assets/community/library.json",
+    "libraryBlob": "9eb23bdeec200d6b69a2c10d547dd5b8d2eff26b",
+    "slug": "dropdown-menu-morph"
+  },
+  "originalMenuVideoSha256": "9dbb282f3d4c950ba7e53e40bcc78253a14e81b5fd5370730b5e5158e58736d0",
+  "code1SourceSha256": "898187ee1488416cd2a18c205ca8636f5651c53a27eb5986a32a8d61a0f1ddff",
+  "figmaCommentIds": [
+    "2009012434",
+    "2009013511",
+    "2009173058",
+    "2009016192"
+  ],
+  "qaCommentIds": [
+    "140c60ec-278f-43f3-8476-98aa7c57cb03",
+    "fad85e4c-6c98-464d-bab2-90f4993fbe84",
+    "49d4dafe-1673-4e56-9d91-b5bad3bb9681",
+    "c98a7618-389d-4c28-96e7-10c91a7c5a2d"
+  ],
+  "blockedOriginals": [
+    {
+      "id": "pro-gradient-text",
+      "reason": "Exact public page exposes Pro description only; recovered R1 archive has no full source. Existing ORDER gradient is preserved and is not counted as this effect."
+    }
+  ]
+}

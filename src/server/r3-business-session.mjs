@@ -1,9 +1,9 @@
 import {requireActor,verifyAccessIdentity} from './auth.mjs';
 import {hasSessionCookie} from './owner-session.mjs';
 
-const views=new Set(['pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3']);
+const views=new Set(['pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3']);
 export function isBusinessSurface(url) {
-  return /^\/api\/ia\/r3-(role|price)(\/|$)/.test(url.pathname)
+  return /^\/api\/ia\/(r3-(role|price)|product)(\/|$)/.test(url.pathname)
     || (/^\/ia\/?$/.test(url.pathname) && views.has(url.searchParams.get('view')))
     || url.pathname.startsWith('/ia/r3-product/');
 }
@@ -18,9 +18,10 @@ export async function businessActor(request,env,fetcher=fetch,now=Math.floor(Dat
   // A verified member may save personal business input and prepare a quote before
   // organization approval. Commercial reads/writes still require their own grants.
   const url=new URL(request.url);
-  const personalInput=(/^\/ia\/?$/.test(url.pathname)&&['pricing-r3','businesses-r3','simple-r3','detailed-r3'].includes(url.searchParams.get('view')))
+  const personalInput=(/^\/ia\/?$/.test(url.pathname)&&['pricing-r3','businesses-r3','simple-r3','detailed-r3','product-r3'].includes(url.searchParams.get('view')))
     || url.pathname.startsWith('/ia/r3-product/')
     || /^\/api\/ia\/r3-role\/(session|businesses)$/.test(url.pathname)
+    || /^\/api\/ia\/product\/(session|account|notifications|features|drafts\/(simple|detailed))$/.test(url.pathname)
     || /^\/api\/ia\/r3-price\/(registration|personal-draft|session|desk|version|sites|simulate|workspace)$/.test(url.pathname);
   if(!grant&&!personalInput)throw Error('BUSINESS_MEMBERSHIP_REQUIRED');
   // Token-bound synchronizer value is returned only by the same-origin authenticated session endpoint.
