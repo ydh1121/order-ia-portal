@@ -362,30 +362,47 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     for(const button of document.querySelectorAll('[data-pin-jump]'))button.disabled=missing.has(button.dataset.pinJump);
   }
   function hideDrawer(){continuousPoints=false;wantsPoint=false;remember();drawer.hidden=true;$('authoring').hidden=true;editor=null;subset=null;syncPins();send('mode',false);$('points').focus();}
-  function edit(r=null,past=null,picking=false,parent=null,saved=null){
+  function edit(r=null,past=null,picking=false,parent=null,saved=null,intent={}){
     if(!target||$('version').value==='prior-r3')return;
     shell?.setTab('review');$('blocks').hidden=true;drawer.hidden=false;$('authoring').hidden=false;
     $('conflict').hidden=true;editor=saved||((r&&edits.get(draftKey(r.id)))||null);
-    if(!editor)editor=parent?{id:crypto.randomUUID(),body:'',revision:0,parent}:r?{id:r.id,parent:r.data.parent,revision:r.revision,body:r.data.body,anchor:r.data.anchor,sourceKey:r.data.sourceKey,sourceCommentId:r.data.sourceCommentId}:past?{id:crypto.randomUUID(),body:past.body,sourceKey:reviewKey(target,target.viewport),sourceCommentId:past.id,revision:0}:{id:crypto.randomUUID(),body:'',revision:0};
+    if(!editor)editor=parent?{id:crypto.randomUUID(),body:'',revision:0,parent,...intent}:r?{id:r.id,parent:r.data.parent,purpose:r.data.purpose,sourceArtifactHash:r.data.sourceArtifactHash,revision:r.revision,body:r.data.body,anchor:r.data.anchor,sourceKey:r.data.sourceKey,sourceCommentId:r.data.sourceCommentId}:past?{id:crypto.randomUUID(),body:past.body,sourceKey:reviewKey(target,target.viewport),sourceCommentId:past.id,revision:0}:{id:crypto.randomUUID(),body:'',revision:0};
     setEditorFields();syncPins();
     body.readOnly=false;
     if(picking)pick();else body.focus();
   }
   function setEditorFields(){
+    const rework=editor.purpose==='rework';
     body.value=editor.body||'';
     $('reposition').hidden=Boolean(editor.parent);
-    $('point-state').textContent=editor.parent?'답글':editor.anchor?'위치 지정됨':'화면 전체';
-    $('save').textContent=editor.parent?'답글 저장':'의견 저장';
+    $('point-state').textContent=rework?'재작업 지시':editor.parent?'답글':editor.anchor?'위치 지정됨':'화면 전체';
+    $('editor-label').textContent=rework?'재작업 지시사항':'코멘트';
+    $('authoring-help').hidden=!rework;
+    if(rework)body.setAttribute('aria-describedby','authoring-help');else body.removeAttribute('aria-describedby');
+    body.placeholder=rework?'다시 작업할 내용과 확인할 기준을 남겨 주세요.':'수정할 부분을 남겨 주세요.';
+    $('save').textContent=rework?'재작업 지시 저장':editor.parent?'답글 저장':'의견 저장';
   }
-  function thread(card,parent,allowReply){
+  function thread(card,parent,allowReply,{allowRework=false,sourceArtifactHash}={}){
     const replies=[...records.values()].filter(r=>r.kind==='reply'&&r.data.parent?.origin===parent.origin&&
       r.data.parent.id===parent.id&&match(r.data.target,target,target.viewport));
     for(const r of replies){
-      const line=node('div');
-      line.append(node('small','답글 · r'+r.revision),node('p',r.data.body));
-      if(allowReply&&r.data.target.artifactHash===target.artifactHash)line.append(btn('답글 수정',()=>edit(r)));
+      const line=node('div'),rework=r.data.purpose==='rework';
+      line.dataset.replyId=r.id;
+      if(rework){line.className='rework-instruction';line.dataset.replyPurpose='rework';}
+      line.append(node('small',(rework?(r.data.target.artifactHash===target.artifactHash?'재작업 지시':'이전 판 재작업 지시'):'답글')+' · r'+r.revision),node('p',r.data.body));
+      if((rework?allowRework:allowReply)&&r.data.target.artifactHash===target.artifactHash)line.append(btn(rework?'재작업 지시 수정':'답글 수정',()=>edit(r)));
+      if(rework){
+        const history=node('details'),entries=node('div');let loaded=false;
+        history.append(node('summary','재작업 지시 이력'),entries);
+        history.ontoggle=async()=>{if(!history.open||loaded)return;try{
+          const j=await api(base+'/events?release='+release+'&kind=reply&id='+encodeURIComponent(r.id));
+          entries.replaceChildren(...j.items.map(e=>node('p','r'+e.revision+' · '+(e.updatedAt||'')+' · '+(e.reason||e.data.body||''))));loaded=true;
+        }catch(e){announceError(e);}};
+        line.append(history);
+      }
       card.append(line);
     }
+    if(allowRework){const action=btn('재작업 지시',()=>edit(null,null,false,parent,null,{purpose:'rework',...(sourceArtifactHash?{sourceArtifactHash}:{})}));action.className='rework-action';card.append(action);}
     if(allowReply)card.append(btn('답글 작성',()=>edit(null,null,false,parent)));
   }
   function pick(){shell?.focusForPoint();wantsPoint=true;remember();drawer.hidden=true;send('mode',true);frame.focus();$('pick-cancel').hidden=false;status('위치를 선택하세요.');}
@@ -414,10 +431,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     box.append(node('p',[info.previous?'이전 수정 요청':null,info.blocked?'구현 보류':info.verified?'구현 검증':info.untouched?'미착수':info.changed?'이번 판 수정':info.unknown?'구현 확인 전':null,info.approved?'사용자 통과':info.requested?'이번 판 수정 요청':info.needs?'재검토 대기':'이번 판 미검토',info.oldApproval?'이전 판 통과':null].filter(Boolean).join(' · ')));
     if(!ids){
       for(const draft of draftsForScreen()){
-        const label=(draft.parent?'저장하지 않은 답글 이어쓰기':'저장하지 않은 의견 이어쓰기')+' · '+(draft.body||'위치 지정됨').slice(0,40);
+        const label=(draft.purpose==='rework'?'저장하지 않은 재작업 지시 이어쓰기':draft.parent?'저장하지 않은 답글 이어쓰기':'저장하지 않은 의견 이어쓰기')+' · '+(draft.body||'위치 지정됨').slice(0,40);
         box.append(btn(label,()=>edit(null,null,false,null,draft)));
       }
-      for(const d of [...records.values()].filter(r=>r.kind==='draft'&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash&&r.data.body&&records.get(localKey(r.data.parent?'reply':'comment',r.id))?.data.body!==r.data.body)){box.append(btn('임시 의견 이어쓰기',()=>{edit();editor={id:d.id,revision:records.get(localKey(d.data.parent?'reply':'comment',d.id))?.revision??0,body:d.data.body,anchor:d.data.anchor,parent:d.data.parent,draftRevision:d.revision};setEditorFields();}));}
+      for(const d of [...records.values()].filter(r=>r.kind==='draft'&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash&&r.data.body&&records.get(localKey(r.data.parent?'reply':'comment',r.id))?.data.body!==r.data.body)){box.append(btn(d.data.purpose==='rework'?'임시 재작업 지시 이어쓰기':'임시 의견 이어쓰기',()=>{edit();editor={id:d.id,revision:records.get(localKey(d.data.parent?'reply':'comment',d.id))?.revision??0,body:d.data.body,anchor:d.data.anchor,parent:d.data.parent,purpose:d.data.purpose,sourceArtifactHash:d.data.sourceArtifactHash,draftRevision:d.revision};setEditorFields();}));}
       if(past?.note)box.append(node('small','이전 화면 의견'),node('p',past.note));
     }
       for(const c of past?.comments||[]){
@@ -457,7 +474,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
           card.append(history);
         }
         if($('version').value==='current')card.append(btn('이번 판에 위치 연결',()=>edit(null,c,true)));
-        thread(card,{origin:'legacy',id:c.id},$('version').value!=='prior-r3');box.append(card);
+        thread(card,{origin:'legacy',id:c.id},$('version').value!=='prior-r3',{allowRework:$('version').value==='current'&&sourceState!=='resolved'});box.append(card);
       }
     if(!ids){
       if(past?.figma?.url){const t=node('p','이전 Figma 링크 · '+past.figma.url);box.append(t);}
@@ -486,7 +503,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const editable=same&&r.action!=='resolve'&&feedback!=='resolved'&&$('version').value!=='prior-r3';
       if(editable)card.append(btn('수정',()=>edit(r)),btn('위치 다시 연결',()=>{edit(r);editor.action='relocate';body.readOnly=true;pick();}));
       if(same&&$('version').value!=='prior-r3')card.append(btn('삭제',()=>eventReason(r,'delete')));
-      thread(card,{origin:'current',id:r.id},editable);
+      thread(card,{origin:'current',id:r.id},editable,{allowRework:$('version').value==='current'&&feedback!=='resolved',sourceArtifactHash:r.data.target.artifactHash});
       card.append(btn('이력',async()=>{try{const j=await api(base+'/events?release='+release+'&kind=comment&id='+encodeURIComponent(r.id));for(const e of j.items)card.append(node('p','r'+e.revision+' · '+e.action+' · '+(e.reason||e.data.body||'')));}catch(e){announceError(e);}}));box.append(card);
     }
     for(const r of records.values())if((r.kind==='figma'||(r.kind==='change'&&!r.data.sourceCommentId))&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash)box.append(node('small',[r.kind,r.data.status,r.data.evidenceRef,r.data.figmaUrl].filter(Boolean).join(' · ')));
@@ -512,7 +529,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       else if(e.status===401)status('로그인을 다시 연결한 뒤 저장해 주세요. 작성 중인 의견은 남아 있습니다.');
       else if(e.status===403)status('저장 권한을 확인해 주세요. 작성 중인 의견은 남아 있습니다.');
       else status('저장하지 못했습니다. 내 입력을 보관했습니다.');
-      if(e.message==='REPLY_PARENT_UNAVAILABLE')status('원래 의견이 해결되었거나 삭제되었습니다. 답글은 초안으로 남아 있습니다.');
+      if(e.message==='REPLY_PARENT_UNAVAILABLE')status('원래 의견이 해결되었거나 삭제되었습니다. '+(data.purpose==='rework'?'재작업 지시는':'답글은')+' 초안으로 남아 있습니다.');
       if(e.current&&draftEditor&&editor===draftEditor&&target&&match(target,data.target,data.target.viewport)&&target.artifactHash===data.target.artifactHash){
         const current=e.current,box=$('conflict');
         box.replaceChildren(node('span','다른 탭의 내용 · '+(current.data.body||current.data.decision||'')));
@@ -532,10 +549,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   async function eventReason(r,action){const why=window.prompt('이유를 입력해 주세요.');if(!why?.trim())return;const ok=await write(r.kind,r.id,r.data,r.revision,action,why.trim());if(ok)notes();}
   async function saveDraft(draft){if(!editor||!target)return;remember();
     const submitted=editor,view={...target},key=draftKey(submitted.id);
-    const content=value=>JSON.stringify([value.body,value.anchor,value.parent,value.sourceKey,value.sourceCommentId,value.action]);
+    const content=value=>JSON.stringify([value.body,value.anchor,value.parent,value.purpose,value.sourceArtifactHash,value.sourceKey,value.sourceCommentId,value.action]);
     const sentContent=content(submitted),data={target:view,body:submitted.body,anchor:submitted.anchor??null};
     if(submitted.sourceKey)data.sourceKey=submitted.sourceKey;if(submitted.sourceCommentId)data.sourceCommentId=submitted.sourceCommentId;
     if(submitted.parent){data.parent=submitted.parent;delete data.anchor;}
+    if(submitted.purpose==='rework'){data.purpose='rework';if(submitted.sourceArtifactHash)data.sourceArtifactHash=submitted.sourceArtifactHash;}
     const kind=draft?'draft':submitted.parent?'reply':'comment',rev=draft?submitted.draftRevision??0:submitted.revision;
     const why=!draft&&submitted.action==='relocate'?window.prompt('위치를 바꾼 이유를 입력해 주세요.'):'';
     if(!draft&&submitted.action==='relocate'&&!why?.trim())return;

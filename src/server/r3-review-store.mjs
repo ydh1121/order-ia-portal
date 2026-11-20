@@ -37,7 +37,7 @@ function figmaLink(raw) {
 }
 function validData(kind,d) {
   const types = {
-    comment:['body','anchor','sourceKey','sourceCommentId'], reply:['body','parent'], draft:['body','anchor','sourceKey','sourceCommentId','parent'],
+    comment:['body','anchor','sourceKey','sourceCommentId'], reply:['body','parent','purpose','sourceArtifactHash'], draft:['body','anchor','sourceKey','sourceCommentId','parent','purpose','sourceArtifactHash'],
     review:['decision','sourceKey'], change:['status','evidenceRef','body','sourceKey','sourceCommentId'],
     figma:['figmaUrl','status','evidenceRef','sourceKey','note'], artifact:['evidenceRef','status'], screen:['sourceKey','evidenceRef','status','body'],
     feedback:['parent','status']
@@ -50,6 +50,10 @@ function validData(kind,d) {
   if (d.anchor!=null && (!validAnchor(d.anchor) || d.anchor.artifactHash!==d.target.artifactHash)) return false;
   if ('parent' in d && (!keys(d.parent,allowed('origin','id')) ||
       !['current','legacy'].includes(d.parent.origin) || !recordId(d.parent.id))) return false;
+  if ('purpose' in d && (d.purpose!=='rework'||!d.parent)) return false;
+  if (d.purpose==='rework') {
+    if (d.parent.origin==='current' ? !sha(d.sourceArtifactHash) : 'sourceArtifactHash' in d) return false;
+  } else if ('sourceArtifactHash' in d) return false;
   if (kind==='reply' && !d.parent) return false;
   if (kind==='feedback') return Boolean(d.parent) && ['unresolved','recheck','resolved'].includes(d.status);
   if (kind==='reply'||kind==='comment') return typeof d.body==='string' && d.body.trim().length>0;
@@ -61,6 +65,44 @@ function validData(kind,d) {
     (d.note===undefined || text(d.note,10000)) &&
     (d.figmaUrl===undefined || figmaLink(d.figmaUrl)) && (d.status!=='exported'||Boolean(d.evidenceRef));
   return (d.status===undefined || pointId(d.status)) && (kind!=='artifact'||Boolean(d.evidenceRef));
+}
+function reworkParent(b) {
+  const {parent,target,sourceArtifactHash}=b.data;
+  if(parent.origin==='legacy')return {
+    sql:` AND EXISTS (SELECT 1 FROM qa_legacy_records r JOIN qa_legacy_sources s ON s.sha256=r.source_sha AND s.complete=1,
+      json_each(r.payload,'$.comments') c
+      WHERE r.source_sha=? AND r.source_key=? AND json_extract(c.value,'$.id')=?
+      AND coalesce(json_extract(c.value,'$.deleted'),0)=0
+      AND coalesce((SELECT json_extract(f.data,'$.status') FROM qa_review_events f
+        WHERE f.release=? AND f.kind='feedback' AND json_extract(f.data,'$.parent.origin')='legacy'
+        AND json_extract(f.data,'$.parent.id')=json_extract(c.value,'$.id')
+        AND json_extract(f.data,'$.target.screen')=? AND json_extract(f.data,'$.target.state')=?
+        AND json_extract(f.data,'$.target.variant')=? AND json_extract(f.data,'$.target.viewport')=?
+        AND json_extract(f.data,'$.target.artifactHash')=? ORDER BY f.cursor DESC LIMIT 1),
+        CASE WHEN json_extract(c.value,'$.status')='resolved' THEN 'resolved' ELSE 'unresolved' END) IN ('unresolved','recheck'))`,
+    args:[sourceSha,[target.screen,target.state,target.variant,target.viewport].join('/'),parent.id,
+      b.release,target.screen,target.state,target.variant,target.viewport,target.artifactHash]
+  };
+  return {
+    sql:` AND EXISTS (SELECT 1 FROM qa_review_events p LEFT JOIN qa_review_events f ON f.cursor=(
+        SELECT max(v.cursor) FROM qa_review_events v WHERE v.release=p.release AND v.kind='feedback'
+        AND json_extract(v.data,'$.parent.origin')='current' AND json_extract(v.data,'$.parent.id')=p.id
+        AND json_extract(v.data,'$.target.screen')=json_extract(p.data,'$.target.screen')
+        AND json_extract(v.data,'$.target.state')=json_extract(p.data,'$.target.state')
+        AND json_extract(v.data,'$.target.variant')=json_extract(p.data,'$.target.variant')
+        AND json_extract(v.data,'$.target.viewport')=json_extract(p.data,'$.target.viewport')
+        AND json_extract(v.data,'$.target.artifactHash')=?)
+      WHERE p.release=? AND p.kind='comment' AND p.id=? AND p.revision=(
+        SELECT max(n.revision) FROM qa_review_events n WHERE n.release=p.release AND n.kind=p.kind AND n.id=p.id)
+      AND p.action<>'delete' AND json_extract(p.data,'$.target.screen')=? AND json_extract(p.data,'$.target.state')=?
+      AND json_extract(p.data,'$.target.variant')=? AND json_extract(p.data,'$.target.viewport')=?
+      AND json_extract(p.data,'$.target.artifactHash')=?
+      AND CASE WHEN json_extract(p.data,'$.target.artifactHash')=? AND (f.cursor IS NULL OR p.cursor>f.cursor)
+        THEN CASE WHEN p.action='resolve' THEN 'resolved' ELSE 'unresolved' END
+        ELSE coalesce(json_extract(f.data,'$.status'),CASE WHEN p.action='resolve' THEN 'resolved' ELSE 'unresolved' END)
+        END IN ('unresolved','recheck'))`,
+    args:[target.artifactHash,b.release,parent.id,target.screen,target.state,target.variant,target.viewport,sourceArtifactHash,target.artifactHash]
+  };
 }
 async function readJson(request,limit=32768) {
   if (request.headers.get('content-type')?.split(';')[0].trim()!=='application/json' || !request.body) return null;
@@ -99,6 +141,7 @@ async function write(db,actor,b) {
   if(previous){
     const data=JSON.parse(previous.data);
     if (['reply','feedback'].includes(b.kind) && (data.parent.id!==b.data.parent.id || data.parent.origin!==b.data.parent.origin)) return invalid();
+    if(b.kind==='reply'&&(data.purpose!==b.data.purpose||data.sourceArtifactHash!==b.data.sourceArtifactHash))return invalid();
     // A moved point may attach to the next build of the same logical screen. The
     // old target/hash and coordinates remain on their previous immutable event.
     const oldTarget=action==='relocate'?{...data.target,artifactHash:b.data.target.artifactHash}:data.target;
@@ -113,7 +156,12 @@ async function write(db,actor,b) {
   // A new reply must be attached to an existing comment on this exact screen.
   // Evaluate the parent and revision in the insert so a concurrent delete wins cleanly.
   let parentCondition='',parentArgs=[];
-  if((b.kind==='reply' && !previous)||b.kind==='feedback'){
+  const isRework=b.kind==='reply'&&b.data.purpose==='rework';
+  if(isRework){
+    // Rework belongs to the current review of the original comment. Resolve,
+    // delete and relocation races are checked in the same INSERT as its save.
+    const guard=reworkParent(b);parentCondition=guard.sql;parentArgs=guard.args;
+  }else if((b.kind==='reply' && !previous)||b.kind==='feedback'){
     const {parent,target}=b.data;
     if(parent.origin==='legacy'){
       parentCondition=` AND EXISTS (SELECT 1 FROM qa_legacy_records r JOIN qa_legacy_sources s ON s.sha256=r.source_sha AND s.complete=1,
@@ -146,6 +194,7 @@ async function write(db,actor,b) {
       b.expectedRevision,b.release,b.kind,b.id,...parentArgs).run();
   const saved=await replay();
   if(saved)return result(saved,insertion.meta.changes===0);
+  if(isRework&&(await getCurrent())?.revision===b.expectedRevision)return json({error:'REPLY_PARENT_UNAVAILABLE'},409);
   if(parentCondition && !await getCurrent())return json({error:b.kind==='feedback'?'FEEDBACK_SOURCE_UNAVAILABLE':'REPLY_PARENT_UNAVAILABLE'},409);
   return conflict();
 }
