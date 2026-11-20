@@ -207,10 +207,17 @@ jobs:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
           R3_LOGO_EVIDENCE_DIR: artifacts/logo-correction
         run: python tests/product-logo-browser.py
+      - name: Complete account-panel business operations through actual handlers
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/product-account-panels-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: product-logo-correction-browser-receipts
-          path: artifacts/logo-correction/
+          path: |
+            artifacts/logo-correction/
+            artifacts/account-panels/
           if-no-files-found: warn
           retention-days: 7

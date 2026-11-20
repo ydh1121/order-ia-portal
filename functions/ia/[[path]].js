@@ -105,7 +105,9 @@ export async function onRequest({request,env}){
    const {renderR3RolePage}=await import('../../src/server/r3-role-page.mjs');html=renderR3RolePage(nonce);
  }else html=v03OwnerHtml(nonce);
  if(r3View&&r3View!=='qa-lab'&&r3View!=='product-r3'){
-   const {injectProductContext}=await import('../../src/server/product-app-page.mjs');html=injectProductContext(html,nonce,productContext);
+   const {injectProductContext}=await import('../../src/server/product-app-page.mjs');
+   const {getProductPanelBootstrap}=await import('../../src/server/product-account-panels.mjs');
+   html=injectProductContext(html,nonce,productContext,await getProductPanelBootstrap());
  }
  if(productContext.mode==='lab'&&r3View!=='qa-lab'){
    const {installLiveInspection}=await import('../../src/server/product-live-inspection.mjs');

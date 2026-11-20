@@ -31,6 +31,7 @@ export function installProductAdapter(context){
  const formField=(label,name,value)=>{const holder=node('div');const U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');holder.innerHTML=U.field(label,name,'',{value:value||'',type:name==='phone'?'tel':'text',max:name==='name'?80:40,required:name==='name'});return [holder.firstElementChild,holder.querySelector('input')];};
  const button=(label,action,primary=false)=>{const holder=node('div'),U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');holder.innerHTML=U.button(U.esc(label),'product-panel-action',primary?'primary':'secondary');const b=holder.firstElementChild;b.onclick=action;return b;};
  const renderPanel=async({id,container,signal,push,setUnread})=>{
+  if(window.ORDER_PRODUCT_PANELS?.canMount(id))return window.ORDER_PRODUCT_PANELS.mount({id,container,signal,push,adapter});
   const status=node('p','불러오는 중이에요.','muted');status.setAttribute('role','status');container.append(status);
   try{
    if(id==='notifications'){

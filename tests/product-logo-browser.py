@@ -67,7 +67,7 @@ OBSERVER = r"""(() => {
       const timing = animation.effect.getTiming();
       receipt.animations.push({id:animation.id,node:id(target),className:target.getAttribute('class'),at:number(performance.now()),duration:timing.duration,delay:timing.delay,easing:timing.easing,keyframes:animation.effect.getKeyframes().map(f=>Object.fromEntries(Object.entries(f).filter(([k])=>['offset','computedOffset','easing','transform','opacity','filter','width','height','borderRadius'].includes(k))))});
     }
-    return {t:number(performance.now()),visibility:document.visibilityState,svg:id(svg),paths:paths.map(id),pathRects:paths.map(rect),pathShape:paths.map(p=>hash(p.getAttribute('d')||'')),mark:union(paths),markOpacity:number(Math.min(...paths.map(paint))),trigger:rect(trigger),word:rect(brand.querySelector('.obm-wordmark')),arrival:state?.arrival,arrivalCount:state?.arrivalCount,motion:svg.dataset.motionState,authenticated:state?.authenticated,phase:state?.phase,page:current,step:document.querySelector('.ob')?.dataset.introStep,panel:opened?rect(panel):null,panelNode:id(panel),surface:opened?rect(panel.querySelector('.obm-surface')):null,stack:opened?rect(stack):null,pageNode:id(page),labels:page?[...page.querySelectorAll('.obm-label')].map(n=>({text:n.textContent,opacity:number(paint(n))})):[],layers,title:title?{rect:rect(title),text:title.textContent,opacity:number(paint(title))}:null,flights,rootPoints,activeItem:document.activeElement?.dataset.obmItem||null};
+    return {t:number(performance.now()),visibility:document.visibilityState,svg:id(svg),paths:paths.map(id),pathRects:paths.map(rect),pathShape:paths.map(p=>hash(p.getAttribute('d')||'')),mark:union(paths),markOpacity:number(Math.min(...paths.map(paint))),trigger:rect(trigger),word:rect(brand.querySelector('.obm-wordmark')),arrival:state?.arrival,arrivalCount:state?.arrivalCount,motion:svg.dataset.motionState,authenticated:state?.authenticated,phase:state?.phase,page:current,step:document.querySelector('.ob')?.dataset.introStep,panel:opened?rect(panel):null,panelNode:id(panel),surface:opened?rect(panel.querySelector('.obm-surface')):null,stack:opened?rect(stack):null,pageNode:id(page),labels:page?[...page.querySelectorAll('.obm-label')].map(n=>({text:n.textContent,hidden:Boolean(n.closest('[hidden]')),opacity:number(paint(n))})):[],layers,title:title?{rect:rect(title),text:title.textContent,opacity:number(paint(title))}:null,flights,rootPoints,activeItem:document.activeElement?.dataset.obmItem||null};
   };
   receipt.snapshot = snapshot;
   const frame = () => {
@@ -144,7 +144,10 @@ def menu_settled(page, current, phase="open"):
         actual = state(page)
         rect = actual["panel"]
         assert rect and rect["x"] >= 0 and rect["y"] >= 0 and rect["x"] + rect["width"] <= 376 and rect["y"] + rect["height"] <= 829, rect
-        assert all(label["opacity"] > .99 for label in actual["labels"]), actual["labels"]
+        # Permission-denied entries remain in the DOM with hidden=true. They
+        # must stay unpainted; every permitted entry must finish fully visible.
+        assert all(label["opacity"] == 0 if label["hidden"] else label["opacity"] > .99
+                   for label in actual["labels"]), actual["labels"]
 
 
 def change_persona(home, persona):
