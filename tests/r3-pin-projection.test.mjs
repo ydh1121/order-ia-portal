@@ -301,3 +301,48 @@ test('all 20 recorded duplicate-fingerprint legacy anchors appear and restore on
     h.w.close();
   }
 });
+
+test('motion completion coalesces a final geometry resync while preserving the frozen attribute-only identity index',async t=>{
+  const h=harness(t,'<section class="modal"><button>첫 선택</button><button>두 번째 선택</button></section>');
+  const target=h.root.querySelectorAll('button')[1];
+  const legacy={path:'section:nth-of-type(1) > button:nth-of-type(2)',tag:'button',label:'모달 / 버튼',x:.25,y:.75,scrollTop:0,nestedScroll:[]};
+  const pins=freeze([{id:'settled-modal',previous:true,legacyAnchor:legacy,sourceArtifactHash:'legacy',anchor:placeholder(h)}]);
+  h.send('pin-sources',[{artifactHash:'legacy',sourceHash:currentHash,html:h.html}]);
+  const initial=h.send('pins',pins).projected.payload[0].anchor.id;
+  await until(()=>h.w.document.querySelector('.r3-pin'),'initial modal pin');
+  await new Promise(resolve=>setTimeout(resolve,30));
+  let resyncs=0,lastId=null;const post=h.parent.postMessage;
+  h.parent.postMessage=message=>{
+    post(message);
+    if(message.type==='pinProjectionChanged'){
+      resyncs++;assert.equal(message.channel,h.session.channel);assert.equal(message.artifact,h.session.artifact);
+      queueMicrotask(()=>{lastId=h.send('pins',pins).projected.payload[0].anchor.id;});
+    }
+  };
+  target.classList.add('settled');
+  target.getBoundingClientRect=()=>({left:60,top:80,x:60,y:80,width:200,height:100,right:260,bottom:180});
+  for(const type of ['animationend','animationcancel','transitionend','transitioncancel'])target.dispatchEvent(new h.w.Event(type,{bubbles:true}));
+  await until(()=>parseFloat(h.w.document.querySelector('.r3-pin')?.style.left)===110,'settled animation repaints the final actual target geometry');
+  assert.equal(parseFloat(h.w.document.querySelector('.r3-pin').style.top),155);
+  assert.equal(lastId,initial,'a class-only motion change must not reindex ahead of the frozen controller');
+  assert.equal(resyncs,1,'completion/cancel events in one animation frame share one notification');
+});
+
+test('motion resync ignores inactive/outside/stale-session events and cancels queued work on disposal',async t=>{
+  const h=harness(t,'<button data-action="motion">동작</button>');
+  let notifications=0;const post=h.parent.postMessage;
+  h.parent.postMessage=message=>{post(message);if(message.type==='pinProjectionChanged')notifications++;};
+  h.root.querySelector('button').dispatchEvent(new h.w.Event('animationend',{bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,25));assert.equal(notifications,0,'no active pins');
+  const anchor=point(h,'button');
+  h.send('pins',[{id:'motion-pin',anchor,sourceArtifactHash:currentHash}]);
+  h.w.document.body.dispatchEvent(new h.w.Event('animationend',{bubbles:true}));
+  await new Promise(resolve=>setTimeout(resolve,25));assert.equal(notifications,0,'outside review root');
+  h.root.querySelector('button').dispatchEvent(new h.w.Event('transitionend',{bubbles:true}));
+  h.session.channel='33333333-3333-4333-8333-333333333333';
+  await new Promise(resolve=>setTimeout(resolve,25));assert.equal(notifications,0,'queued work belongs to the prior session');
+  h.send('pins',[{id:'new-motion-pin',anchor,sourceArtifactHash:currentHash}]);
+  h.root.querySelector('button').dispatchEvent(new h.w.Event('transitioncancel',{bubbles:true}));
+  h.w.__projection.dispose();
+  await new Promise(resolve=>setTimeout(resolve,25));assert.equal(notifications,0,'dispose cancels queued animation-frame work');
+});

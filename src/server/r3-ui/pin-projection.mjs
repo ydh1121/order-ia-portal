@@ -10,7 +10,7 @@ export function installPinProjection(session) {
   const stable=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','aria-controls','aria-label','data-provider'];
   const sources=new Map();
   const proxies=new Map();
-  let current=null,stamp='',disposed=false,proxyCounter=0,usedProxies=null,notificationFrame=0;
+  let current=null,stamp='',disposed=false,proxyCounter=0,usedProxies=null,notificationFrame=0,activePins=false;
   const text=value=>String(value??'').replace(/\s+/g,' ').trim();
   const tag=value=>typeof value==='string'?value.toLowerCase():'';
   const coordinate=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0&&value<=1;
@@ -20,7 +20,7 @@ export function installPinProjection(session) {
   function clear(){
     if(notificationFrame)cancelAnimationFrame(notificationFrame);notificationFrame=0;
     sources.clear();for(const proxy of proxies.values())proxy.remove();proxies.clear();
-    current=null;stamp=identity();
+    current=null;activePins=false;stamp=identity();
   }
   function fingerprint(el){return [el.localName,...fields.map(name=>el.getAttribute(name)||'')].join('|');}
   function hash(value){let h=2166136261;for(const c of value)h=Math.imul(h^c.charCodeAt(0),16777619);return(h>>>0).toString(36);}
@@ -36,12 +36,22 @@ export function installPinProjection(session) {
     for(const [id,els] of buckets)if(els.length===1){byId.set(id,els[0]);ids.set(els[0],id);}
     return {root:node,byId,ids,paths,elements};
   }
-  function changed(){
-    current=null;if(disposed||notificationFrame)return;
+  function notifyChanged(){
+    if(disposed||notificationFrame)return;
+    const requestedIdentity=identity();
     notificationFrame=requestAnimationFrame(()=>{
-      notificationFrame=0;if(disposed)return;
+      notificationFrame=0;if(disposed||requestedIdentity!==identity())return;
       parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type:'pinProjectionChanged',payload:{}},'*');
     });
+  }
+  function changed(){current=null;notifyChanged();}
+  const motionEvents=['animationend','animationcancel','transitionend','transitioncancel'];
+  function motionSettled(event){
+    if(!activePins||disposed||stamp!==identity()||!root.contains(event.target))return;
+    // A settled transform changes geometry, not the released identity index.
+    // Attribute-only class changes must not create ids absent from the frozen
+    // controller, which also reindexes only on childList/identity resets.
+    notifyChanged();
   }
   const observer=new MutationObserver(changed);
   observer.observe(root,{childList:true,subtree:true});
@@ -240,6 +250,7 @@ export function installPinProjection(session) {
         if(nodes.length===1)sources.set(entry.artifactHash,{...index(nodes[0]),sourceHash:/^[a-f0-9]{64}$/.test(entry.sourceHash||'')?entry.sourceHash:null});
       }
     }else if(message.type==='pins'&&Array.isArray(message.payload)){
+      activePins=message.payload.some(pin=>pin?.anchor?.instance===session.screen&&pin.anchor.artifactHash===session.artifact);
       usedProxies=new Set();
       const pins=message.payload.map(pin=>{
         if(!pin||typeof pin!=='object')return pin;
@@ -254,9 +265,14 @@ export function installPinProjection(session) {
       replacePayload(event,message,project(anchor,anchor.legacyAnchor||anchor.legacy,anchor.sourceArtifactHash,anchor.sameContent));
     }
   }
-  function dispose(){disposed=true;observer.disconnect();clear();removeEventListener('message',onMessage);root.removeEventListener('r3-motion-identity-reset',clear);removeEventListener('pagehide',dispose);}
+  function dispose(){
+    disposed=true;observer.disconnect();clear();removeEventListener('message',onMessage);
+    root.removeEventListener('r3-motion-identity-reset',clear);removeEventListener('pagehide',dispose);
+    for(const type of motionEvents)root.removeEventListener(type,motionSettled,true);
+  }
   clear();addEventListener('message',onMessage);
   root.addEventListener('r3-motion-identity-reset',clear);
+  for(const type of motionEvents)root.addEventListener(type,motionSettled,true);
   addEventListener('pagehide',dispose,{once:true});
   return {dispose};
 }

@@ -131,12 +131,29 @@ def store_pin(page, anchor, body):
 
 
 def geometry(frame, marker, selector, anchor):
-    result = marker.evaluate("""(pin,args)=>{
-      const el=document.querySelector(args.selector),r=el.getBoundingClientRect(),p=pin.getBoundingClientRect();
-      return {expected:[r.left+args.anchor.x*r.width,r.top+args.anchor.y*r.height],
-        actual:[p.left+p.width/2,p.top+p.height/2],background:getComputedStyle(pin).backgroundColor};
+    frame.locator(selector).element_handle().wait_for_element_state("stable")
+    result = marker.evaluate("""async (pin,args)=>{
+      const label=pin.getAttribute('aria-label'),start=performance.now(),deadline=start+1500;
+      let result;
+      do{
+        const el=document.querySelector(args.selector),r=el.getBoundingClientRect();
+        // The frozen frame replaces marker buttons on every paint. Resolve the
+        // same numbered marker again, rather than measuring a detached old node.
+        const candidates=[...document.querySelectorAll('#r3-pins .r3-pin')]
+          .filter(node=>node.getAttribute('aria-label')===label);
+        const current=candidates.length===1?candidates[0]:null,p=current?.getBoundingClientRect();
+        const expected=[r.left+args.anchor.x*r.width,r.top+args.anchor.y*r.height];
+        const actual=p?[p.left+p.width/2,p.top+p.height/2]:null;
+        result={expected,actual,error:actual?Math.hypot(expected[0]-actual[0],expected[1]-actual[1]):null,
+          background:current?getComputedStyle(current).backgroundColor:null,repaintWaitMs:performance.now()-start};
+        if(result.error!==null&&result.error<=3)return result;
+        // Wait only for the real motion-end/host-message/frame repaint chain.
+        // No resize, scroll, geometry stubs or DOM changes force a passing paint.
+        await new Promise(requestAnimationFrame);
+      }while(performance.now()<deadline);
+      return result;
     }""", {"selector": selector, "anchor": anchor})
-    assert sum((a-b)**2 for a, b in zip(result["expected"], result["actual"]))**0.5 <= 3, result
+    assert result["error"] is not None and result["error"] <= 3, result
     return result
 
 
