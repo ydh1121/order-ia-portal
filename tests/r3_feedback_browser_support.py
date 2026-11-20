@@ -2,6 +2,7 @@
 import re
 
 import json
+from pathlib import Path
 from uuid import uuid4
 from playwright.sync_api import expect
 
@@ -10,11 +11,16 @@ def prepare_frame_pointer(page):
     if getattr(page, "_qa_pointer_installed", False):
         return
     page._qa_pointer_installed = True
-    page.add_init_script("""if(window!==top){
+    page.add_init_script("""if(window!==top && !window.__qaPointerProbeInstalled){
         window.__qaPointerProbeInstalled=true;
+        window.__qaPointerDocument=String(performance.timeOrigin)+':'+Math.random().toString(36).slice(2);
         window.__qaPointerReceipts=[];
+        window.__qaPointerTimeline=[];
         for(const type of ['pointerdown','pointerup','pointercancel','click'])window.addEventListener(type,e=>{
             const arm=window.__qaArmedPointer;
+            window.__qaPointerTimeline.push({phase:type,at:performance.now(),trusted:e.isTrusted,
+                armed:arm?.id||null,target:e.target?.id||e.target?.localName});
+            if(window.__qaPointerTimeline.length>30)window.__qaPointerTimeline.shift();
             if(!arm)return;
             const receipt={
                 id:arm.id,phase:type,trusted:e.isTrusted,hit:arm.el.contains(e.target),
@@ -24,6 +30,15 @@ def prepare_frame_pointer(page):
             console.debug('__qa_physical_pointer__'+JSON.stringify(receipt));
             if(type===arm.last)window.__qaArmedPointer=null;
         },true);
+    }else if(window===top){
+        window.__qaFrameTimeline=[];
+        window.addEventListener('message',e=>{
+            if(e.source!==document.getElementById('frame')?.contentWindow ||
+               e.data?.scope!=='ORDER_R3_FRAME' ||
+               !['ready','point','cancelPick','openPins'].includes(e.data.type))return;
+            window.__qaFrameTimeline.push({type:e.data.type,at:performance.now(),artifact:e.data.artifact});
+            if(window.__qaFrameTimeline.length>30)window.__qaFrameTimeline.shift();
+        });
     }""")
 
 
@@ -106,7 +121,7 @@ def frame_pointer_position(page, locator, position=None):
             throw Error('Child hit for '+el.outerHTML.slice(0,130)+' at '+[x,y]+' intercepted by '+(hit?.outerHTML||'outside viewport').slice(0,190));
         return {x,y};
     }""", position)
-    result = page.locator("#frame").evaluate("""(frame, point) => {
+    result = page.locator("#frame").evaluate("""async (frame, point) => {
         function mapped(){
             const b=frame.getBoundingClientRect();
             return {x:b.left+(frame.clientLeft+point.x)*b.width/frame.offsetWidth,
@@ -121,6 +136,20 @@ def frame_pointer_position(page, locator, position=None):
             if(dx&&(topLevel||/auto|scroll/.test(cs.overflowX)))p.scrollLeft+=dx;
             if(dy&&(topLevel||/auto|scroll/.test(cs.overflowY)))p.scrollTop+=dy;
         }
+        // The outer stage can move a 1920px canvas by more than a screen width.
+        // Let that real scroll reach the rendered frame before physical hit testing,
+        // just as we already do for the child document above. Do not retry the tap.
+        const chain=[];for(let p=frame;p;p=p.parentElement)chain.push(p);
+        let previous='',still=0;
+        for(let tick=0;tick<100&&still<5;tick++){
+            await new Promise(requestAnimationFrame);
+            const r=frame.getBoundingClientRect(),v=visualViewport;
+            const now=[r.x,r.y,r.width,r.height,scrollX,scrollY,v?.offsetLeft,v?.offsetTop,v?.scale,
+                ...chain.flatMap(p=>[p.scrollLeft,p.scrollTop])].join(',');
+            still=now===previous?still+1:0;previous=now;
+        }
+        if(still<5)throw Error('Host frame or ancestor scroll is still moving');
+        if(!frame.isConnected||frame.inert)throw Error('Review frame changed before the physical pointer');
         const pointAt=mapped(),hit=document.elementFromPoint(pointAt.x,pointAt.y);
         if(hit!==frame)
             throw Error('Outer hit at '+[pointAt.x,pointAt.y]+' intercepted by '+(hit?.outerHTML||'outside viewport').slice(0,190));
@@ -132,7 +161,12 @@ def frame_pointer_position(page, locator, position=None):
 def frame_click(page, locator, position=None, *, activation="click"):
     x, y = frame_pointer_position(page, locator, position)
     request_id = uuid4().hex
-    locator.evaluate("(el,arg)=>{window.__qaPointerReceipts=[];window.__qaArmedPointer={el,id:arg.id,last:arg.last};}", {"id":request_id,"last":activation})
+    armed = locator.evaluate("""(el,arg)=>{
+        window.__qaPointerReceipts=[];window.__qaArmedPointer={el,id:arg.id,last:arg.last};
+        return {document:window.__qaPointerDocument,at:performance.now(),
+            veilHidden:document.getElementById('r3-veil')?.hidden,
+            recentEvents:window.__qaPointerTimeline||[]};
+    }""", {"id":request_id,"last":activation})
     touch = page.evaluate("navigator.maxTouchPoints>0")
     def is_receipt(message):
         return message.text.startswith('__qa_physical_pointer__') and request_id in message.text
@@ -148,23 +182,35 @@ def frame_click(page, locator, position=None, *, activation="click"):
     except Exception:
         # Report observed trusted phases and both hit surfaces without retrying,
         # synthesizing a click or accepting an incomplete physical interaction.
-        details={"request":request_id,"activation":activation,"touch":touch,"point":[x,y]}
+        details={"request":request_id,"activation":activation,"touch":touch,"point":[x,y],"armed":armed}
         try:
             details["host"]=page.evaluate("""point=>{
                 const frame=document.getElementById('frame'),hit=document.elementFromPoint(point.x,point.y);
                 return {hit:hit?.id||hit?.localName,frameInert:frame?.inert,
                     drawerHidden:document.getElementById('drawer')?.hidden,
-                    pointMode:document.getElementById('new')?.getAttribute('aria-pressed')};
+                    pointMode:document.getElementById('new')?.getAttribute('aria-pressed'),
+                    frameEvents:window.__qaFrameTimeline||[],
+                    viewport:{scale:visualViewport?.scale,x:visualViewport?.offsetLeft,y:visualViewport?.offsetTop}};
             }""",{"x":x,"y":y})
             child=page.locator("#frame").element_handle().content_frame()
             details["child"]=child.evaluate("""()=>({
                 probeInstalled:window.__qaPointerProbeInstalled===true,
+                document:window.__qaPointerDocument,
+                armedRequest:window.__qaArmedPointer?.id||null,
                 receipts:window.__qaPointerReceipts||[],
+                recentEvents:window.__qaPointerTimeline||[],
                 veilHidden:document.getElementById('r3-veil')?.hidden,
                 activeElement:document.activeElement?.id||document.activeElement?.localName
             })""")
         except Exception as diagnostic_error:
             details["inspectionError"]=str(diagnostic_error)
+        try:
+            out=Path(__file__).resolve().parents[1]/'artifacts'/'frame-pointer'
+            out.mkdir(parents=True,exist_ok=True)
+            (out/(request_id+'.json')).write_text(json.dumps(details,ensure_ascii=False,indent=2),encoding='utf-8')
+            page.screenshot(path=str(out/(request_id+'.png')))
+        except Exception as artifact_error:
+            details["artifactError"]=str(artifact_error)
         print('PHYSICAL_POINTER_FAILURE '+json.dumps(details,ensure_ascii=False),flush=True)
         raise
     for captured in (down,result):

@@ -64,11 +64,18 @@ def check_region_overlay(context, origin):
             tab.set_default_timeout(10000)
             tab.goto(origin + '/ia?view=simple-r3#/home')
             tab.wait_for_function("() => document.documentElement.dataset.storageReady === 'true'")
+            # Each viewport is a fresh browser context for the same account.
+            # Its latest server draft also restores the open accordion. Wait
+            # for that real read before deciding whether Q3 needs opening.
+            tab.wait_for_function("() => window.ORDER_QUOTE_DRAFT_SYNC && ['ready','saved'].includes(window.ORDER_QUOTE_DRAFT_SYNC.inspect().state)")
             tab.locator('#start').click()
-            tab.locator('[data-open="q3"][aria-controls]').click()
+            q3 = tab.locator('[data-open="q3"][aria-controls]')
+            if q3.get_attribute('aria-expanded') != 'true':
+                q3.click()
+            expect(q3).to_have_attribute('aria-expanded', 'true')
             root = tab.locator('#simple-region-root')
             root.scroll_into_view_if_needed()
-            tab.wait_for_function("() => !document.querySelector('#body-q3>div').inert")
+            expect(tab.locator('#body-q3>div')).to_have_js_property('inert', False)
             below = tab.locator('#q3-next')
             coordinate = '(el)=>el.getBoundingClientRect().top + window.scrollY'
             before = below.evaluate(coordinate)

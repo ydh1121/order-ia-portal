@@ -166,5 +166,6 @@ jobs:
             artifacts/r3-auth-motion/
             artifacts/qa-mvp/
             artifacts/quote-draft/
+            artifacts/frame-pointer/
           if-no-files-found: ignore
           retention-days: 7

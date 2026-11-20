@@ -14,7 +14,8 @@ const connectedPages=[
  {id:'delivery-request',label:'납품 요청·오더패스',view:'product-r3',screen:'delivery-request',state:'default',kind:'product'},
  {id:'store-settings',label:'사업장 등록·관리',view:'businesses-r3',kind:'product'},
  {id:'account-settings',label:'회원정보·회원탈퇴',view:'product-r3',screen:'account-settings',state:'default',kind:'product'},
- {id:'customer-orders',label:'주문·납품·증빙',view:'roles-r3',menu:'delivery',kind:'product'},
+ {id:'customer-orders',label:'주문·납품·거래 문서',view:'product-r3',screen:'store-purchase',state:'select',kind:'product'},
+ {id:'application-status',label:'납품 신청·증빙 심사',view:'roles-r3',menu:'delivery',kind:'product'},
  {id:'consultation',label:'상담 예약·내역',view:'roles-r3',menu:'consult',kind:'product'},
  {id:'admin-shipments',label:'주문 출고·송장 관리',view:'product-r3',screen:'admin-shipments',state:'default',kind:'product'},
  {id:'supplier-shipments',label:'농장 발송',view:'product-r3',screen:'supplier-shipments',state:'default',kind:'product'},
@@ -105,7 +106,14 @@ export function bootProductLab(pages,buildDigest,mountFeedback){
   if(m.scope==='ORDER_PRODUCT_RUNTIME'&&m.type==='operation'){lastReceipt=m;$('live-receipt').textContent='서버 저장 확인 · '+m.path+' · '+(m.id||'')+' · r'+(m.revision||'?');}
   if(m.scope==='ORDER_PRODUCT_RUNTIME'&&m.type==='ready'||m.scope==='ORDER_PRODUCT_INSPECTION'&&m.type==='ready'){
    if(m.scope==='ORDER_PRODUCT_RUNTIME'&&m.screen==='component-library'&&/^[-\w]{1,100}$/.test(m.state)){const state=m.state+(typeof m.componentVariant==='string'&&/^[-\w]{1,64}$/.test(m.componentVariant)?'--'+m.componentVariant:'');if(state.length<=100)currentState=state;}
-   if(m.payload?.path){const actual=new URL(m.payload.path,location.origin);if(actual.href!==activeFrameUrl)lastReceipt=null;const match=pages.find(p=>p.kind!=='reference'&&p.view===actual.searchParams.get('view')&&(!p.screen||p.screen===actual.searchParams.get('screen'))&&(!p.menu||p.menu===actual.searchParams.get('menu'))&&(!p.mode||p.mode===actual.searchParams.get('mode')));if(match){current=match;drawNav();$('live-title').textContent=current.label;syncUrl();}activeFrameUrl=actual.href;$('live-open').href=actual.href;}
+   if(m.payload?.path){const actual=new URL(m.payload.path,location.origin);if(actual.href!==activeFrameUrl)lastReceipt=null;
+    // Match the actual Pages pricing branch, including direct version/quote
+    // links. An unspecified mode must not absorb the contract price screen.
+    const contractPrice=actual.searchParams.get('practice')==='1'||actual.searchParams.has('priceVersion')||actual.searchParams.has('quote')||actual.searchParams.get('mode')==='contract';
+    const matches=p=>p.kind!=='reference'&&p.view===actual.searchParams.get('view')&&(!p.screen||p.screen===actual.searchParams.get('screen'))&&(!p.menu||p.menu===actual.searchParams.get('menu'))&&(p.view==='pricing-r3'?(p.mode==='contract')===contractPrice:!p.mode||p.mode===actual.searchParams.get('mode'));
+    // Purchase and order menus intentionally share one product document. Keep
+    // the selected entry and its feedback identity when that route still fits.
+    const match=matches(current)?current:pages.find(matches);if(match){current=match;drawNav();$('live-title').textContent=current.label;syncUrl();}activeFrameUrl=actual.href;$('live-open').href=actual.href;}
    $('live-receipt').textContent=lastReceipt?'마지막 서버 저장 · '+lastReceipt.path:'정규 화면 연결됨';if(pin)frame.contentWindow.postMessage({scope:'ORDER_PRODUCT_INSPECTION',runId:run.id,type:'pick',payload:true},location.origin);}
   if(m.scope==='ORDER_PRODUCT_INSPECTION'&&m.type==='point'){anchor=m.payload.anchor;feedback();}
   if(m.scope==='ORDER_PRODUCT_INSPECTION'&&m.type==='cancel'){pin=false;$('live-pin').setAttribute('aria-pressed','false');$('live-pin').classList.remove('live-pin-active');}
