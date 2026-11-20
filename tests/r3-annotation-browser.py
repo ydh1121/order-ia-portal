@@ -5,6 +5,111 @@ from r3_feedback_browser_support import frame_click, prepare_frame_pointer
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
+
+def review_events(page,kind,record_id):
+ # Read through the authenticated browser, like the host's history control.
+ # The loopback fixture forwards the application's Secure session cookie.
+ result=page.evaluate("""async ({kind,id})=>{
+  const query=new URLSearchParams({release:'MSG0585-R3',kind,id});
+  const response=await fetch('/api/ia/r3-qa/events?'+query,{credentials:'same-origin',cache:'no-store',redirect:'error'});
+  let data=null;try{data=await response.json();}catch{}
+  const error=typeof data?.error==='string'&&/^[A-Z0-9_]{1,80}$/.test(data.error)?data.error:'INVALID_EVENT_RESPONSE';
+  return {status:response.status,error,items:data?.items};
+ }""",{'kind':kind,'id':record_id})
+ assert 200<=result['status']<300,{'status':result['status'],'error':result['error']}
+ assert isinstance(result.get('items'),list),{'status':result['status'],'error':'INVALID_EVENT_RESPONSE'}
+ return result['items']
+
+def check_rework_instruction(page,original):
+ # Save through the actual reply endpoint, reload a server draft, and inspect
+ # the append-only source events so a status or anchor mutation cannot hide.
+ parent_id=original['id']
+ card=page.locator('#notes article[data-feedback-id="'+parent_id+'"]')
+ before=review_events(page,'comment',parent_id)
+ first='이 위치의 간격을 다시 맞춰 주세요.'
+ final='이 위치의 간격과 정렬을 함께 확인해 주세요.'
+ expect(card).to_have_attribute('data-feedback-status','unresolved')
+ card.get_by_role('button',name='재작업 지시',exact=True).click()
+ page.get_by_label('재작업 지시사항',exact=True).fill(first)
+ expect(page.locator('#reposition')).to_be_hidden()
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='draft') as drafted:
+  page.locator('#draft').click()
+ assert drafted.value.ok
+ draft_data=drafted.value.request.post_data_json['data']
+ assert draft_data['purpose']=='rework' and draft_data['sourceArtifactHash']==original['data']['target']['artifactHash']
+ assert draft_data['parent']=={'origin':'current','id':parent_id} and 'anchor' not in draft_data
+ page.reload();page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');page.locator('#points').click()
+ page.get_by_role('button',name='임시 재작업 지시 이어쓰기',exact=True).click()
+ expect(page.get_by_label('재작업 지시사항',exact=True)).to_have_value(first)
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='reply') as saved:
+  page.get_by_role('button',name='재작업 지시 저장',exact=True).click()
+ assert saved.value.ok and saved.value.json()['revision']==1
+ assert saved.value.request.post_data_json['data']==draft_data
+ instruction_id=saved.value.json()['id']
+ instruction=card.locator('[data-reply-id="'+instruction_id+'"]')
+ expect(instruction).to_contain_text(first)
+ expect(card).to_have_attribute('data-feedback-status','unresolved')
+ instruction.get_by_role('button',name='재작업 지시 수정',exact=True).click()
+ page.get_by_label('재작업 지시사항',exact=True).fill(final)
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='reply') as updated:
+  page.get_by_role('button',name='재작업 지시 저장',exact=True).click()
+ assert updated.value.ok and updated.value.json()['revision']==2
+ assert updated.value.request.post_data_json['data']['sourceArtifactHash']==draft_data['sourceArtifactHash']
+ expect(instruction).to_contain_text(final)
+ instruction.locator('summary').click()
+ expect(instruction.locator('details')).to_contain_text(first)
+ expect(instruction.locator('details')).to_contain_text(final)
+ page.reload();page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');page.locator('#points').click()
+ expect(instruction).to_contain_text(final)
+ expect(card.get_by_text(original['data']['body'],exact=True)).to_be_visible()
+ expect(card).to_have_attribute('data-feedback-status','unresolved')
+ expect(card.get_by_role('button',name='의견 미해결',exact=True)).to_have_attribute('aria-pressed','true')
+ assert review_events(page,'comment',parent_id)==before
+ events=review_events(page,'reply',instruction_id)
+ assert [event['data']['body'] for event in events]==[first,final]
+ assert all(event['data']['purpose']=='rework' and event['data']['sourceArtifactHash']==draft_data['sourceArtifactHash'] for event in events)
+ print('PASS rework draft reload, reply edit history and final reload; original body/anchor/status unchanged')
+
+def check_previous_rework(page,base,width):
+ current_url=page.url
+ page.goto(base+'/ia?view=qa-lab&archive=1&screen=login/empty/email&width='+str(width)+'&version=previous')
+ page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
+ expect(page.locator('#version')).to_have_value('previous')
+ page.locator('#points').click();page.locator('#general').click()
+ original_body='이전 판에서 남긴 재작업 원문 '+str(width)
+ page.locator('#body-text').fill(original_body)
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='comment') as created:
+  page.locator('#save').click()
+ assert created.value.ok
+ original=created.value.json();original_id=original['id'];original_hash=original['data']['target']['artifactHash']
+ before=review_events(page,'comment',original_id)
+ page.goto(current_url);page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');page.locator('#points').click()
+ card=page.locator('#notes article[data-feedback-id="'+original_id+'"]')
+ expect(card).to_contain_text('이전 판 의견')
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='feedback') as reviewed:
+  card.get_by_role('button',name='의견 재검토',exact=True).click()
+ assert reviewed.value.ok
+ expect(card).to_have_attribute('data-feedback-status','recheck')
+ status_id=reviewed.value.json()['id'];status_before=review_events(page,'feedback',status_id)
+ card.get_by_role('button',name='재작업 지시',exact=True).click()
+ instruction='이전 원문을 유지하고 현재 화면에서 다시 확인해 주세요.'
+ page.get_by_label('재작업 지시사항',exact=True).fill(instruction)
+ with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json['kind']=='reply') as saved:
+  page.get_by_role('button',name='재작업 지시 저장',exact=True).click()
+ assert saved.value.ok
+ data=saved.value.request.post_data_json['data']
+ assert data['purpose']=='rework' and data['parent']=={'origin':'current','id':original_id}
+ assert data['sourceArtifactHash']==original_hash and data['target']['artifactHash']!=original_hash and 'anchor' not in data
+ expect(card.get_by_text(instruction,exact=True)).to_be_visible()
+ page.reload();page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');page.locator('#points').click()
+ expect(card.get_by_text(instruction,exact=True)).to_be_visible()
+ expect(card.get_by_text(original_body,exact=True)).to_be_visible()
+ expect(card).to_have_attribute('data-feedback-status','recheck')
+ assert review_events(page,'comment',original_id)==before
+ assert review_events(page,'feedback',status_id)==status_before
+ print('PASS historical comment accepts current-version rework; source hash, original and recheck status preserved after reload')
+ page.locator('#close-drawer').click()
+
 def check_draft_recovery(context,page):
  # Exercise the real editor, interrupt just the response after one committed POST,
  # and replay from a reloaded document. The SQLite fixture receives actual requests.
@@ -241,7 +346,7 @@ def run():
     page.locator('#new').click()
     frame.locator('#r3-veil').wait_for(state='visible')
     # Same viewport point can hold independent comments; typing alone never submits.
-    anchors=[]
+    anchors=[];source_comments=[]
     for i in range(2):
      veil=frame.locator('#r3-veil');frame_click(page,veil,position={'x':100,'y':120})
      page.locator('#body-text').fill('위치 '+str(i))
@@ -249,6 +354,7 @@ def run():
       page.locator('#save').click()
      assert saved.value.ok
      anchors.append(saved.value.request.post_data_json['data']['anchor'])
+     source_comments.append(saved.value.json())
      page.locator('#live').filter(has_text='저장됨').wait_for()
      expect(page.locator('#new')).to_have_attribute('aria-pressed','true')
      expect(veil).to_be_visible()
@@ -264,6 +370,7 @@ def run():
     parent.get_by_role('button',name='답글 작성').click()
     page.locator('#body-text').fill('저장한 답글');page.get_by_role('button',name='답글 저장').click()
     parent.get_by_text('저장한 답글',exact=True).wait_for()
+    if width==390:check_rework_instruction(page,source_comments[0])
     second=ctx.new_page();second.goto(page.url);second.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached');second.locator('#points').click()
     other=second.locator('#notes article').filter(has=second.get_by_text('위치 0',exact=True));other.get_by_text('저장한 답글',exact=True).wait_for()
     second.close()
@@ -290,6 +397,7 @@ def run():
     if width==390:
      check_draft_recovery(ctx,page)
      check_screen_memo(ctx,page)
+     check_previous_rework(page,fixture['url'],width)
     # Each breakpoint owns a fresh Chrome visual viewport. Keep the same signed
     # context and SQLite records, while exercising zoom/fit/dual/focus together
     # within each case rather than carrying CDP emulation into the next case.

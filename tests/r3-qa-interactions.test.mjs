@@ -322,3 +322,66 @@ test('historical and imported opinions change status individually without mutati
   for(const id of ['earlier-feedback','imported-feedback'])assert.deepEqual(records.filter(r=>r.kind==='feedback'&&r.data.parent.id===id).map(r=>r.data.status),['unresolved','recheck','resolved']);
   w.close();
 });
+
+test('rework instructions attach to current, historical and imported unresolved opinions without changing originals, pins or verdicts',async()=>{
+  const prior=seedComment('prior-rework',{...feedbackTarget(),artifactHash:'a'.repeat(64)}),current=seedComment('current-rework');
+  const resolved={...seedComment('resolved-rework'),action:'resolve'},deleted={...seedComment('deleted-rework'),action:'delete'};
+  const recheck={release:'MSG0585-R3',kind:'feedback',id:'prior-recheck',revision:1,cursor:5,action:'save',data:{target:feedbackTarget(),parent:{origin:'current',id:prior.id},status:'recheck'}};
+  const verdict={release:'MSG0585-R3',kind:'review',id:'independent-review',revision:1,cursor:6,action:'save',data:{target:feedbackTarget(),decision:'changes_requested'}};
+  const imported={sourceKey:'login/empty/email/390',data:{status:'fix',comments:[{id:'legacy-rework',body:'가져온 원문',status:'open',anchor:{tag:'button',label:'원래 버튼',x:.3,y:.4}}]}};
+  const originals=[prior,current,resolved,deleted,recheck,verdict,imported],before=JSON.stringify(originals);
+  const h=await hostHarness({initialRecords:originals.slice(0,-1),legacyItems:[imported]}),{w,records,writes,messages}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();w.document.querySelector('[data-comment-filter=all]').click();
+    const action=id=>[...feedbackCard(w,id).querySelectorAll('button')].find(b=>b.textContent==='재작업 지시');
+    assert.ok(action(current.id));assert.ok(action(prior.id));assert.ok(action('legacy-rework'));assert.equal(action(resolved.id),undefined);
+    assert.equal([...w.document.querySelectorAll('#notes article')].find(card=>card.textContent.includes('삭제된 의견')).querySelector('.rework-action'),null);
+    const pinsBefore=JSON.stringify(messages.filter(m=>m.type==='pins').at(-1).payload);
+    for(const [id,body,origin] of [[prior.id,'이전 의견의 간격을 다시 맞춰 주세요.','current'],[current.id,'이번 판의 원문을 유지해 주세요.','current'],['legacy-rework','가져온 의견도 같은 기준으로 다시 확인해 주세요.','legacy']]){
+      action(id).click();assert.equal($('editor-label').textContent,'재작업 지시사항');assert.equal($('save').textContent,'재작업 지시 저장');assert.equal($('reposition').hidden,true);
+      $('body-text').value=body;$('body-text').dispatchEvent(new w.Event('input'));const count=records.length;$('save').click();
+      await until(()=>records.length===count+1&&feedbackCard(w,id)?.textContent.includes(body));
+      const saved=records.at(-1);assert.equal(saved.kind,'reply');assert.equal(saved.data.purpose,'rework');assert.deepEqual(saved.data.parent,{origin,id});
+      assert.equal(saved.data.target.artifactHash,feedbackTarget().artifactHash);assert.equal(Object.hasOwn(saved.data,'anchor'),false);
+      assert.equal(saved.data.sourceArtifactHash,origin==='legacy'?undefined:(id===prior.id?prior.data.target.artifactHash:current.data.target.artifactHash));
+      assert.equal(feedbackCard(w,id).dataset.feedbackStatus,id===prior.id?'recheck':'unresolved');
+    }
+    const oldInstruction=records.find(r=>r.kind==='reply'&&r.data.parent.id===prior.id);
+    [...feedbackCard(w,prior.id).querySelectorAll('button')].find(b=>b.textContent==='재작업 지시 수정').click();
+    $('body-text').value='간격과 정렬을 함께 확인해 주세요.';$('body-text').dispatchEvent(new w.Event('input'));$('save').click();
+    await until(()=>records.at(-1).id===oldInstruction.id&&records.at(-1).revision===2&&feedbackCard(w,prior.id)?.textContent.includes('간격과 정렬'));
+    assert.equal(records.at(-1).data.sourceArtifactHash,prior.data.target.artifactHash);assert.equal(records.at(-1).data.purpose,'rework');
+    const history=feedbackCard(w,prior.id).querySelector('.rework-instruction details');history.open=true;history.dispatchEvent(new w.Event('toggle'));
+    await until(()=>history.textContent.includes('이전 의견의 간격을 다시 맞춰 주세요.')&&history.textContent.includes('간격과 정렬을 함께 확인해 주세요.'));
+    assert.equal(writes.every(r=>r.body.kind==='reply'),true);assert.equal(JSON.stringify(originals),before);
+    assert.equal(JSON.stringify(messages.filter(m=>m.type==='pins').at(-1).payload),pinsBefore);
+    assert.deepEqual(records.filter(r=>r.kind==='feedback'),[recheck]);assert.deepEqual(records.filter(r=>r.kind==='review'),[verdict]);
+  }finally{w.close();}
+});
+
+test('a historical rework draft survives server reload and rejected save with its purpose and source identity intact',async()=>{
+  const original=seedComment('draft-rework',{...feedbackTarget(),artifactHash:'b'.repeat(64)}),before=JSON.stringify(original);
+  const first=await hostHarness({initialRecords:[original]});let saved;
+  try{
+    const w=first.w,$=id=>w.document.getElementById(id);$('points').click();feedbackCard(w,original.id).querySelector('.rework-action').click();
+    $('body-text').value='원래 위치에서 문구를 다시 확인해 주세요.';$('body-text').dispatchEvent(new w.Event('input'));$('draft').click();
+    await until(()=>first.records.some(r=>r.kind==='draft')&&$('live').textContent==='저장됨 · r1');
+    saved=first.records.at(-1);assert.equal(saved.data.purpose,'rework');assert.equal(saved.data.sourceArtifactHash,original.data.target.artifactHash);
+  }finally{first.w.close();}
+  const h=await hostHarness({initialRecords:[original,saved]}),{w,records,writes}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();[...$('notes').querySelectorAll('button')].find(b=>b.textContent==='임시 재작업 지시 이어쓰기').click();
+    assert.equal($('body-text').value,saved.data.body);assert.equal($('save').textContent,'재작업 지시 저장');
+    h.setFailure({error:'REPLY_PARENT_UNAVAILABLE',status:409});$('save').click();
+    await until(()=>$('live').textContent.includes('재작업 지시는 초안으로'));
+    assert.equal(records.length,2);assert.equal($('body-text').value,saved.data.body);
+    const storageKey=Object.keys(w.sessionStorage).find(k=>k.startsWith('order.qa.unsent.v1.'));
+    const unsent=JSON.parse(w.sessionStorage.getItem(storageKey))[0][1];assert.equal(unsent.purpose,'rework');assert.equal(unsent.sourceArtifactHash,original.data.target.artifactHash);
+    const attempt=writes.at(-1).body;h.setFailure(null);$('save').click();
+    await until(()=>records.length===3&&feedbackCard(w,original.id)?.textContent.includes(saved.data.body));
+    assert.equal(writes.at(-1).body.idempotencyKey,attempt.idempotencyKey);assert.deepEqual(writes.at(-1).body.data,attempt.data);
+    assert.equal(records.at(-1).kind,'reply');assert.equal(records.at(-1).data.purpose,'rework');assert.equal(records.at(-1).data.sourceArtifactHash,original.data.target.artifactHash);
+    assert.equal(feedbackCard(w,original.id).dataset.feedbackStatus,'unresolved');assert.equal(JSON.stringify(original),before);
+    assert.ok(writes.every(r=>r.body.kind==='reply'));
+  }finally{w.close();}
+});
