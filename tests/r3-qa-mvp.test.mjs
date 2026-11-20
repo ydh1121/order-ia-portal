@@ -117,11 +117,16 @@ test('purchase confirms the canonical quantity-tier quote and card/cash use the 
   const card=await mount('store-purchase/card/email',{adapter});card.root.querySelector('[data-purchase-card]').click();await settled();assert.match(card.root.querySelector('[data-purchase-status]').textContent,/아직 연결되지/);assert.equal((await adapter.request('/purchases')).items[0].status,'AWAITING_CARD');card.cleanup();card.w.close();lab.close();
 });
 
-test('shared fields validate revenue settings, retain failed input and persist only an acknowledged allocation',async()=>{
+test('shared fields validate revenue settings, retain failed input and persist only an acknowledged allocation',{timeout:10000},async()=>{
   const lab=await createProductUiLab(),adapter=lab.adapter('operator'),b=await mount('admin-revenue-rules/settings/email',{adapter}),apply=b.root.querySelector('[data-revenue-apply]');
   assert.equal(apply.disabled,true);b.root.querySelector('[name=gross]').value='100000';b.root.querySelector('[name=cost]').value='40000';b.root.querySelector('[data-rate]').value='100';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));
   assert.equal(apply.disabled,false);apply.click();await settled();assert.equal(b.root.querySelector('[data-name]').getAttribute('aria-invalid'),'true');assert.equal(adapter.calls.filter(call=>call.body).length,0);
-  b.root.querySelector('[data-name]').value='첫 기여자';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(b.root.querySelector('[data-contributors] output').textContent,'60,000원');apply.click();await settled();
+  b.root.querySelector('[data-name]').value='첫 기여자';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(b.root.querySelector('[data-contributors] output').textContent,'60,000원');
+  // The real API may finish after any number of event-loop turns. This event
+  // follows both success and failure, so the original result assertions remain
+  // responsible for distinguishing an acknowledged save from a failed one.
+  const completed=new Promise(resolve=>b.root.addEventListener('order-app-operation-end',resolve,{once:true}));
+  apply.click();assert.equal(apply.dataset.busy,'true');await completed;
   assert.match(b.root.querySelector('[data-revenue-note]').textContent,/저장했어요/);assert.equal((await adapter.request('/revenue')).data.contributors[0].name,'첫 기여자');
   b.root.querySelector('[data-contributor-add]').click();assert.equal(b.root.querySelector('[data-contributors]').children.length,2);b.root.querySelectorAll('[data-rate]')[1].value='10';b.root.querySelector('form').dispatchEvent(new b.w.Event('input',{bubbles:true}));assert.equal(apply.disabled,true);b.cleanup();b.w.close();lab.close();
 });

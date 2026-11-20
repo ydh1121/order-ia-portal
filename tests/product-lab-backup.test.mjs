@@ -6,7 +6,9 @@ import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,dirname} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {handleProductLab,namespaceDb} from '../src/server/product-lab.mjs';
+import {createRequire} from 'node:module';
+import {handleProductLab,labContext,namespaceDb} from '../src/server/product-lab.mjs';
+import {createEvidenceEditor} from '../src/server/r3-evidence-client.mjs';
 import {labSchema} from '../src/server/product-lab-schema.gen.mjs';
 import {quoteSourceHashes} from '../src/server/r3-product-sources.mjs';
 import {r3ProductAsset} from '../src/server/r3-product-page.mjs';
@@ -20,13 +22,61 @@ function workspace(t){
  const prepare=(query,params=[])=>({query,params,bind:(...args)=>prepare(query,args),first:async()=>sqlite.prepare(query).get(...params)||null,all:async()=>({results:sqlite.prepare(query).all(...params)}),run:async()=>({meta:{changes:Number(sqlite.prepare(query).run(...params).changes)}})});
  const db={prepare,async batch(statements){sqlite.exec('BEGIN');try{const values=statements.map(item=>{const statement=sqlite.prepare(item.query);return statement.columns().length?{results:statement.all(...item.params),meta:{changes:0}}:{results:[],meta:{changes:Number(statement.run(...item.params).changes)}};});sqlite.exec('COMMIT');return values;}catch(error){sqlite.exec('ROLLBACK');throw error;}}};
  const objects=new Map();let alterPut=null,productionTouches=0;
- const bucket={async put(key,value){let bytes=typeof value==='string'?encode(value):value instanceof ArrayBuffer?new Uint8Array(value):new Uint8Array(value.buffer,value.byteOffset,value.byteLength);bytes=bytes.slice();objects.set(key,alterPut?.(key,bytes)||bytes);},async get(key){const bytes=objects.get(key)?.slice();return bytes?{size:bytes.byteLength,arrayBuffer:async()=>bytes.buffer,text:async()=>new TextDecoder().decode(bytes)}:null;},async delete(key){objects.delete(key);}};
+ const bucket={async put(key,value){let bytes=typeof value==='string'?encode(value):value instanceof ArrayBuffer?new Uint8Array(value):new Uint8Array(value.buffer,value.byteOffset,value.byteLength);bytes=bytes.slice();objects.set(key,alterPut?.(key,bytes)||bytes);},async get(key){const bytes=objects.get(key)?.slice();return bytes?{size:bytes.byteLength,body:bytes,arrayBuffer:async()=>bytes.buffer,text:async()=>new TextDecoder().decode(bytes)}:null;},async delete(key){objects.delete(key);}};
  const env={ORDER_LAB_DB:db,ORDER_QA_DB:{prepare(){productionTouches++;throw Error('production accessed');}},ORDER_LAB_EVIDENCE:bucket,CF_PAGES_COMMIT_SHA:'backup-canonical-source'},owner={id:'backup-owner',role:'OWNER'};
  async function api(path,body,actor=owner){const response=await handleProductLab({request:new Request('https://lab.test/api/ia/lab'+path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}),env,actor,path,csrf:'csrf',clock:()=> '2026-11-20T00:00:00.000Z'});const text=await response.text();return {status:response.status,body:JSON.parse(text),text,headers:response.headers};}
  const create=async(label='백업 검증')=>{const response=await api('/runs',{label,requestKey:crypto.randomUUID()});assert.equal(response.status,200,response.body.error);return response.body.run.id;};
  const save=(run,mode,data,revision=0)=>api('/runs/'+run+'/as/buyer/product/drafts/'+mode,command(data,revision));
  return {sqlite,db,env,owner,api,create,save,objects,bucket,alterPut:value=>{alterPut=value;},productionTouches:()=>productionTouches};
 }
+
+test('the rendered evidence editor uploads and reopens through its actual isolated lab role endpoint',async t=>{
+ const w=workspace(t),run=await w.create('증빙 편집기 격리 경로'),origin='https://lab.test';
+ const {context}=await labContext(w.env,w.owner,run,'buyer','csrf'),base=context.endpoints.role,caseId='browser-evidence-case';
+ const calls=[];
+ const invoke=async(input,init={})=>{
+  const url=new URL(String(input),origin),headers=new Headers(init.headers);if(init.body)headers.set('Origin',origin);
+  calls.push({path:url.pathname,search:url.search,method:init.method||'GET',headers,body:init.body});
+  assert.ok(url.pathname.startsWith('/api/ia/lab/'),'the editor must never call the production role endpoint');
+  return handleProductLab({request:new Request(url,{...init,headers}),env:w.env,actor:w.owner,path:url.pathname.slice('/api/ia/lab'.length),csrf:'csrf'});
+ };
+ const command=async body=>{
+  const response=await invoke(base,{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':'csrf'},body:JSON.stringify({requestKey:crypto.randomUUID(),...body})});
+  assert.equal(response.status,200,await response.clone().text());return response.json();
+ };
+ await command({action:'create',caseId,kind:'business',orgId:'lab-store',siteId:'lab-site',expectedRevision:0});
+ await command({action:'manual',caseId,expectedRevision:1});
+ const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
+ const dom=new JSDOM('<main id="editor"></main>',{url:origin+'/ia?view=roles-r3&labRun='+run+'&persona=buyer',runScripts:'outside-only'}),win=dom.window;
+ t.after(()=>win.close());win.ORDER_APP_CONTEXT=context;win.fetch=invoke;
+ // Only raster decoding/drawing is a small DOM test adapter. Upload, receipt,
+ // linking, scoped object storage and readback use the actual domain handlers.
+ const pixels=new WeakMap(),rgba=Uint8ClampedArray.from([120,80,40,255]);
+ win.createImageBitmap=async()=>({width:1,height:1,close(){}});
+ win.HTMLCanvasElement.prototype.getContext=function(){const canvas=this;return {
+  fillRect(){pixels.set(canvas,Uint8ClampedArray.from([255,255,255,255]));},
+  drawImage(){pixels.set(canvas,rgba.slice());},getImageData(){return {data:pixels.get(canvas)};},
+  createImageData(width,height){return {data:new Uint8ClampedArray(width*height*4)};},putImageData(value){pixels.set(canvas,value.data);}
+ };};
+ const editor=win.eval('('+createEvidenceEditor.toString()+')'),container=win.document.getElementById('editor'),errors=[];let receipt=null;
+ let dispose=editor({container,caseId,kind:'business',csrf:'csrf',onError:value=>errors.push(value),onReceipt:async evidenceId=>{
+  const linked=await command({action:'attach',caseId,expectedRevision:2,evidenceId});assert.equal(linked.case.state,'REVIEW');receipt=evidenceId;return true;
+ }});
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=','base64');
+ const file=container.querySelector('input[type=file]');
+ Object.defineProperty(file,'files',{value:[{type:'image/png',size:png.length,arrayBuffer:async()=>png.buffer.slice(png.byteOffset,png.byteOffset+png.byteLength)}]});
+ await file.onchange();container.querySelector('input[type=checkbox]').checked=true;
+ calls.length=0;await [...container.querySelectorAll('button')].find(button=>button.textContent==='가림 처리본 제출').onclick();
+ assert.equal(calls[0]?.path,base+'/evidence');assert.equal(calls[0]?.method,'POST');assert.equal(calls[0]?.headers.get('X-IA-CSRF'),'csrf');
+ assert.equal(calls[0]?.headers.get('Content-Type'),'application/vnd.order.masked-rasters');assert.deepEqual(errors,[]);assert.ok(receipt);
+ const objectKey='runs/'+run+'/r3/masked/'+receipt;assert.deepEqual([...w.objects.keys()],[objectKey]);
+ const expected=Uint8Array.from([79,82,80,88,1,1,0,1,0,1,88]);assert.deepEqual(w.objects.get(objectKey),expected);
+ dispose();container.replaceChildren();dispose=editor({container,caseId,kind:'business',csrf:'csrf',evidenceId:receipt,readOnly:true,onError:value=>errors.push(value)});
+ calls.length=0;await [...container.querySelectorAll('button')].find(button=>button.textContent==='연결된 증빙 열기').onclick();
+ assert.equal(calls[0]?.path,base+'/evidence');assert.equal(calls[0]?.method,'GET');assert.equal(new URLSearchParams(calls[0].search).get('id'),receipt);
+ assert.deepEqual(errors,[]);assert.deepEqual([...pixels.get(container.querySelector('canvas'))],[88,88,88,255]);assert.equal(w.productionTouches(),0);dispose();
+});
+
 async function storageProjector(t){
  const directory=await mkdtemp(join(tmpdir(),'order-backup-quote-'));t.after(()=>rm(directory,{recursive:true,force:true}));
  for(const key of Object.keys(quoteSourceHashes).filter(path=>path.endsWith('.mjs'))){const destination=join(directory,key);await mkdir(dirname(destination),{recursive:true});await writeFile(destination,await r3ProductAsset('/ia/r3-product/'+key).text());}
