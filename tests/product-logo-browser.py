@@ -131,7 +131,14 @@ def geometry(page, expected, label):
         near(actual["mark"][key], value, label + ": path " + key)
     for key, value in {"x": 24, "y": 29.0234375, "width": 72, "height": 25}.items():
         near(actual["word"][key], value, label + ": word " + key)
-    paint = page.locator(".obm-wordmark").evaluate("e=>{const s=getComputedStyle(e);return {image:s.backgroundImage,color:s.color,animation:s.animationName,duration:s.animationDuration,transform:s.transform};}")
+    paint = page.locator(".obm-wordmark").evaluate("e=>{const s=getComputedStyle(e);return {image:s.backgroundImage,color:s.color,animation:s.animationName,duration:s.animationDuration,transform:s.transform,fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
+    # Check the authored rule in the rendered product, not only its fixed box.
+    # A canonical module can change without reaching this serialized document.
+    typography = {key: paint[key] for key in ("fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing")}
+    assert typography["fontFamily"].split(",")[0].strip().strip("\"'") == "Arial Black", {"label": label, "typography": typography}
+    assert typography["fontSize"] == "25px" and typography["fontWeight"] == "900" and typography["lineHeight"] == "25px", {"label": label, "typography": typography}
+    assert typography["letterSpacing"] in ("0px", "normal"), {"label": label, "typography": typography}
+    actual["wordTypography"] = typography
     if actual["authenticated"]:
         assert "radial-gradient" in paint["image"] and paint["animation"] == "obm-wordmark-wash", paint
         assert paint["duration"] == "24s" and paint["transform"] == "none", paint

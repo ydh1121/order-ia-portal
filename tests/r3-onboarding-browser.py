@@ -15,6 +15,17 @@ from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_m
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def current_wordmark_typography(frame):
+    """Read today's rendered QA wordmark; immutable archived frames keep their own styles."""
+    word = frame.locator(".ob-brand-common > .ob-wordmark")
+    expect(word).to_be_visible()
+    typography = word.evaluate("e=>{const s=getComputedStyle(e);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
+    assert typography["fontFamily"].split(",")[0].strip().strip("\"'") == "Arial Black", typography
+    assert typography["fontSize"] == "25px" and typography["fontWeight"] == "900" and typography["lineHeight"] == "25px", typography
+    assert typography["letterSpacing"] in ("0px", "normal"), typography
+    return typography
+
+
 def frame_identity(locator):
     """Read the frozen frame's opaque identity for an actual DOM element."""
     return locator.evaluate("""el=>{
@@ -163,6 +174,7 @@ def drag_intro(page, frame, *, forward, expected_step):
 
 def check_notification_pin(page, screens):
     frame = screens.screen('onboarding', 'member-1')
+    typography = current_wordmark_typography(frame)
     bell, panel = frame.locator('[data-action=quick]'), frame.locator('.obm-panel')
     expect(bell).to_be_enabled()
     frame_click(page, bell)
@@ -182,6 +194,7 @@ def check_notification_pin(page, screens):
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
     print('PASS real notification popover: inner read-button pin, native top-layer veil, focus retained, restore and zero mutation')
+    return typography
 
 
 def check_archived_entry(page, origin):
@@ -217,6 +230,7 @@ def check(page, origin, width):
     page.on('request', record_write)
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
+    guest_typography = current_wordmark_typography(frame)
     illustration = frame.locator(".ob-art")
     expect(illustration).to_have_js_property("naturalWidth", 287)
     expect(frame.get_by_role("button",name="회원가입")).to_be_visible()
@@ -253,7 +267,7 @@ def check(page, origin, width):
 
     check_current_brand_menu(page, origin, "onboarding", "member-1")
     screens = ReviewScreens(page, origin, width)
-    check_notification_pin(page, screens)
+    member_typography = check_notification_pin(page, screens)
 
     frame = screens.screen("onboarding", "member-4")
     expect(frame.locator(".ob-pages")).to_have_count(0)
@@ -295,6 +309,7 @@ def check(page, origin, width):
     print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3",
                       "oldQuickMenu":"exact brand-history replay","currentBrand":"authenticated three-root menu",
                       "authOverlay":"same introduction, Escape/scrim/drag close","horizontalDrag":"2→1→2",
+                      "wordTypography":{"guest":guest_typography,"member":member_typography},
                       "panelPins":"auth email + real notification read button; restore without comment save","reviewWrites":0}))
 
 
