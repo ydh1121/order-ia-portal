@@ -220,6 +220,48 @@ const feedbackTarget=()=>({screen:'login',state:'empty',variant:'email',viewport
 const seedComment=(id='current-feedback',target=feedbackTarget())=>({release:'MSG0585-R3',kind:'comment',id,revision:1,cursor:1,action:'save',reason:'',data:{target,body:'보존할 원문 의견',anchor:{id:'screen',instance:'login',x:.4,y:.5,viewport:{width:390,height:844},scale:1,scroll:[],layers:[],artifactHash:target.artifactHash}}});
 const feedbackCard=(w,id)=>w.document.querySelector('[data-feedback-id="'+id+'"]');
 
+test('the host restores both imported and prior-version pin sources without rewriting anchors or review states',async()=>{
+  const priorTarget={...feedbackTarget(),artifactHash:'a'.repeat(64)},old=seedComment('prior-pin',priorTarget),current=seedComment('current-pin');
+  old.data.anchor.id='a-original';old.data.anchor.scroll=[{id:'host-surface',x:17,y:31}];
+  const removed={...seedComment('deleted-pin',priorTarget),action:'delete'};
+  const otherWidth=seedComment('other-width',{...priorTarget,viewport:1280});
+  const otherState=seedComment('other-state',{...priorTarget,state:'closed'});
+  const closed={...seedComment('resolved-pin',priorTarget),action:'resolve'};
+  const legacyComment={id:'imported-pin',body:'가져온 위치 원문',status:'open',anchor:{path:'section:nth-of-type(1) > button:nth-of-type(1)',tag:'button',label:'로그인 / 버튼',x:.25,y:.75,pageX:.3,pageY:.4,height:44,contentHeight:844,scrollTop:12,nestedScroll:[]}};
+  const imported={sourceKey:'login/empty/email/390',data:{status:'fix',comments:[legacyComment]}};
+  const original=JSON.stringify([old,current,removed,otherWidth,otherState,closed,imported]);
+  const h=await hostHarness({initialRecords:[old,current,removed,otherWidth,otherState,closed],legacyItems:[imported]}),{w,messages,emit,writes}=h;
+  try{
+    await until(()=>messages.filter(m=>m.type==='pins').at(-1)?.payload.some(p=>p.id==='legacy:imported-pin'));
+    const displayed=()=>messages.filter(m=>m.type==='pins').at(-1).payload;
+    assert.deepEqual(Array.from(displayed(),p=>p.id),['legacy:imported-pin','prior-pin','current-pin']);
+    const prior=displayed().find(p=>p.id==='prior-pin');
+    assert.equal(prior.previous,true);assert.equal(prior.sourceArtifactHash,priorTarget.artifactHash);
+    assert.equal(prior.anchor.artifactHash,feedbackTarget().artifactHash);
+    assert.equal(prior.anchor.id,old.data.anchor.id);assert.equal(prior.anchor.x,old.data.anchor.x);assert.equal(prior.anchor.y,old.data.anchor.y);
+    assert.deepEqual(prior.anchor.scroll,old.data.anchor.scroll);
+    assert.equal(displayed().find(p=>p.id==='current-pin').previous,false);
+    assert.equal(displayed()[0].sourceArtifactHash,'legacy');assert.deepEqual(displayed()[0].legacyAnchor,legacyComment.anchor);
+    emit('openPins',{ids:['legacy:imported-pin']});
+    assert.equal(w.document.querySelectorAll('#notes article.comment-card').length,1);
+    assert.equal(feedbackCard(w,'imported-pin')?.dataset.feedbackOrigin,'legacy');
+    assert.ok(w.document.querySelector('#notes').textContent.includes(legacyComment.body));
+    const importedLink=[...w.document.querySelectorAll('#notes a')].find(a=>a.textContent==='의견을 남긴 화면 열기');
+    assert.equal(new URL(importedLink.href).searchParams.get('version'),'previous');
+    emit('openPins',{ids:['prior-pin']});
+    const oldCard=feedbackCard(w,'prior-pin'),link=[...oldCard.querySelectorAll('a')].find(a=>a.textContent==='의견을 남긴 화면 열기');
+    assert.equal(new URL(link.href).searchParams.get('artifactHash'),priorTarget.artifactHash);
+    [...oldCard.querySelectorAll('button')].find(b=>b.textContent==='위치 보기').click();
+    const restored=messages.filter(m=>m.type==='restore').at(-1).payload;
+    assert.equal(restored.sourceArtifactHash,priorTarget.artifactHash);assert.equal(restored.id,old.data.anchor.id);
+    w.document.querySelector('#show-resolved-pins').checked=true;w.document.querySelector('#show-resolved-pins').onchange();
+    assert.equal(displayed().find(p=>p.id==='resolved-pin').resolved,true);
+    assert.equal(displayed().some(p=>p.id==='deleted-pin'),false);
+    assert.equal(JSON.stringify([old,current,removed,otherWidth,otherState,closed,imported]),original);
+    assert.equal(writes.length,0,'restoration is display-only and never writes comments or review decisions');
+  }finally{w.close();}
+});
+
 test('one three-state control preserves current comment lifecycle reasons, content, pins and independent approval',async()=>{
   const original=seedComment(),h=await hostHarness({initialRecords:[original]}),{w,records,writes,messages}=h;
   const originalBytes=JSON.stringify(original),reasonQueue=['수정 결과를 확인함','추가 검토가 필요함'];w.prompt=()=>reasonQueue.shift();
