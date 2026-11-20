@@ -222,6 +222,35 @@ def check_archived_entry(page, origin):
     print("PASS retained 320px prior email review, exact hash and reload; today's same email frame contains three native provider assets")
 
 
+def check_direct_company_state(page, screens, width):
+    # Choosing the company state directly must carry the same guest identity as
+    # its authored header, rather than moving an authenticated mark into signup.
+    frame = screens.screen('onboarding', 'company')
+    expect(frame.locator('.ob.guest.footer-open')).to_be_visible()
+    modal = frame.get_by_role('dialog', name='사업자 정보')
+    expect(modal).to_be_visible()
+    expect(frame.locator('.ob-stage')).to_have_js_property('inert', True)
+    expect(frame.locator('.ob-stage > header .obm-brand')).to_have_attribute('data-authenticated', 'false')
+    geometry = frame.locator('.ob-stage > header').evaluate("""async header=>{
+        await document.fonts.ready;
+        const rect=selector=>{const r=header.querySelector(selector).getBoundingClientRect();
+            return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
+        return {authenticated:window.ORDER_APP_ADAPTER.fixture.inspect().controls.authenticated,
+            word:rect('.ob-wordmark'),mark:rect('.obm-trigger svg'),signup:rect('.ob-join')};
+    }""")
+    assert geometry['authenticated'] is False, geometry
+    assert all(geometry[key]['width'] > 0 and geometry[key]['height'] > 0 for key in ('word', 'mark', 'signup')), geometry
+    assert max(geometry['word']['right'], geometry['mark']['right']) < geometry['signup']['left'], geometry
+    out = ROOT / 'artifacts' / 'qa-mvp'
+    out.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(out / f'company-direct-{width}.png'))
+    modal.locator('[data-company-close]').press('Escape')
+    expect(modal).to_be_hidden()
+    expect(frame.locator('.ob-stage')).to_have_js_property('inert', False)
+    expect(frame.locator('.ob-stage > header .obm-brand')).to_have_attribute('data-authenticated', 'false')
+    return geometry
+
+
 def check(page, origin, width):
     review_writes = []
     def record_write(request):
@@ -247,6 +276,7 @@ def check(page, origin, width):
     expect(frame.locator(".ob-pages [aria-current]")).to_have_attribute("data-mf-intro","4")
     box = frame.locator(".ob-mode-grid button").first.bounding_box()
     assert box and abs(box["width"]-box["height"]) < 1.1, box
+    company_geometry = check_direct_company_state(page, screens, width)
 
     # Keep the old quick-menu and sample notification behavior tied to its
     # immutable source. The current account menu is checked on a real document.
@@ -310,6 +340,7 @@ def check(page, origin, width):
                       "oldQuickMenu":"exact brand-history replay","currentBrand":"authenticated three-root menu",
                       "authOverlay":"same introduction, Escape/scrim/drag close","horizontalDrag":"2→1→2",
                       "wordTypography":{"guest":guest_typography,"member":member_typography},
+                      "directCompanyHeader":company_geometry,
                       "panelPins":"auth email + real notification read button; restore without comment save","reviewWrites":0}))
 
 

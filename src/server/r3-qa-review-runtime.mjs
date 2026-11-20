@@ -8,7 +8,7 @@ const sha=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA
 export function qaFixtureForRow(row){
   const auth=['login','signup','password','otp','terms'].includes(row.screen);
   const authComplete=row.screen==='login'&&row.state==='success'||row.screen==='otp'&&row.state==='verified';
-  const guest=(auth&&!authComplete)||row.state.startsWith('guest-')||['guest','qa-guest'].includes(row.state)||row.screen==='account-settings'&&row.state==='closed'||
+  const guest=(auth&&!authComplete)||row.screen==='onboarding'&&!row.state.startsWith('member-')||row.state.startsWith('guest-')||['guest','qa-guest'].includes(row.state)||row.screen==='account-settings'&&row.state==='closed'||
     row.screen==='admin-access'||row.screen==='session-access'&&['expired','signed-out','oauth-cancel','unverified','draft'].includes(row.state);
   const scenario=row.state==='qa-loading'?'loading':row.state==='qa-error'?'error':row.state==='qa-empty'?'empty':'normal';
   return {authenticated:!guest,persona:row.role==='admin'?'operator':row.role==='supplier'?'supplier':'buyer',scenario,
