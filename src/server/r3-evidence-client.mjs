@@ -3,7 +3,7 @@ export function createEvidenceEditor({container,caseId,kind,csrf,onReceipt,onErr
   const el=(tag,value)=>{const n=document.createElement(tag);if(value!==undefined)n.textContent=value;return n;};
   const btn=(value,fn)=>{const b=el('button',value);b.type='button';b.onclick=fn;return b;};
   const hint=el('p'),file=el('input'),pages=el('div'),settings=el('fieldset');settings.style.minWidth='0';settings.append(el('legend',kind==='business'?'사업자 정보 등록':'거래내역 증빙'));
-  const endpoint='/api/ia/r3-role/evidence?caseId='+encodeURIComponent(caseId),packetType='application/vnd.order.masked-rasters';
+  const endpoint=(window.ORDER_APP_CONTEXT?.endpoints?.role||'/api/ia/r3-role')+'/evidence?caseId='+encodeURIComponent(caseId),packetType='application/vnd.order.masked-rasters';
   let signOff=null;let disposed=false,generation=0,working=[],sealed=null,uploaded=null,busy=false,docTask=null,renderTask=null,key='';
   const alive=gen=>!disposed&&gen===generation&&container.isConnected;
   function clear(){for(const c of working){c.width=c.height=0;}working=[];pages.replaceChildren();}
