@@ -46,9 +46,17 @@ export function bootBusinessDirectory(installSession,regions,options={}){
  async function save(deleted=false){if(!alive||pending||!form.reportValidity())return;if(deleted&&!await ask('이 사업장을 저장 목록에서 삭제할까요? 기존 견적의 입력은 유지됩니다.'))return;if(!alive||pending)return;
   const data={id:editing?.id||draftId,expectedRevision:editing?.revision||0,deleted,profile:profile()},signature=JSON.stringify(data);
   if(!request||request.signature!==signature)request={signature,body:{...data,requestKey:crypto.randomUUID()}};
+  const focused=form.contains(document.activeElement)?document.activeElement:null;let saved=false;
   pending=true;for(const el of form.elements)el.disabled=true;status.textContent='저장 중입니다.';
-  try{const response=await requestApi(endpoint+'/businesses',{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify(request.body)});if(!response.ok)throw Error(response.status===409?'CONFLICT':response.status===401||response.status===403?'AUTH':'SAVE');const result=await response.json();if(!alive)return;await load();if(!alive)return;edit(deleted?null:records.find(r=>r.id===result.id));status.textContent=deleted?'목록에서 삭제했습니다.':'사업장을 저장했습니다.';
-  }catch(error){if(!alive)return;status.textContent=['CONFLICT','REVISION_CONFLICT'].includes(error.message)?'다른 탭에서 사업장이 변경되었습니다. 입력은 유지했습니다. 목록을 새로 불러온 후 확인해 주세요.':['AUTH','AUTHENTICATION_REQUIRED','CSRF_DENIED'].includes(error.message)?'로그인 후 다시 저장해 주세요. 작성한 내용은 이 화면에 남아 있습니다.':'저장 결과를 확인하지 못했습니다. 같은 내용으로 다시 저장해 주세요.';}finally{pending=false;if(alive)for(const el of form.elements)el.disabled=false;}
+  try{const response=await requestApi(endpoint+'/businesses',{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify(request.body)});if(!response.ok)throw Error(response.status===409?'CONFLICT':response.status===401||response.status===403?'AUTH':'SAVE');const result=await response.json();if(!alive)return;await load();if(!alive)return;edit(deleted?null:records.find(r=>r.id===result.id));saved=true;status.textContent=deleted?'목록에서 삭제했습니다.':'사업장을 저장했습니다.';
+  }catch(error){if(!alive)return;status.textContent=['CONFLICT','REVISION_CONFLICT'].includes(error.message)?'다른 탭에서 사업장이 변경되었습니다. 입력은 유지했습니다. 목록을 새로 불러온 후 확인해 주세요.':['AUTH','AUTHENTICATION_REQUIRED','CSRF_DENIED'].includes(error.message)?'로그인 후 다시 저장해 주세요. 작성한 내용은 이 화면에 남아 있습니다.':'저장 결과를 확인하지 못했습니다. 같은 내용으로 다시 저장해 주세요.';}finally{
+   pending=false;if(alive){
+    for(const el of form.elements)el.disabled=false;
+    // Disabling the active control sends browser focus to body. Restore it
+    // only after re-enabling, without taking focus from another destination.
+    if(focused&&document.activeElement===document.body){const target=saved?$('business-name'):focused;if(target.isConnected&&!target.disabled)target.focus({preventScroll:true});}
+   }
+  }
  }
  form.onsubmit=event=>{event.preventDefault();void save();};$('business-delete').onclick=()=>save(true);
  $('business-add').onclick=async()=>{if(!pending&&(!dirty()||await ask('저장하지 않은 내용을 닫고 새 사업장을 등록할까요?')))edit(null);};

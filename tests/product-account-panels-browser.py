@@ -72,7 +72,9 @@ def main():
         def menu(page, name):
             page.bring_to_front()
             if page.locator('.obm-panel').is_visible():
-                page.keyboard.press('Escape')
+                # Saves disable the focused form control. Target the menu's
+                # heading so Escape reaches its panel-scoped key handler.
+                page.locator('.obm-panel .obm-heading').press('Escape')
                 expect(page.locator('.obm-panel')).to_be_hidden()
             page.locator('.obm-trigger').click()
             settled(page, 'root')
@@ -101,6 +103,8 @@ def main():
             business.get_by_role('button', name='저장', exact=True).click()
         assert saved.value.status == 200
         expect(business.locator('[data-business-ref=business-status]')).to_have_text('사업장을 저장했습니다.')
+        expect(business.locator('[name=name]')).to_be_focused()
+        assert buyer.locator('.obm-panel').evaluate('panel=>panel.contains(document.activeElement)')
         stable(buyer)
         buyer.screenshot(path=EVIDENCE / 'business-saved-320.png')
         business = menu(buyer, 'manage.business')

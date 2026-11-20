@@ -57,17 +57,32 @@ test('business create, reload and conflict stay in the same real account panel a
  const f=await workspace(t),view=await f.mount(),initial=(await(await f.request('buyer','/role/businesses')).json()).businesses;let content=await view.open('manage.business');
  await until(()=>content.querySelector('[data-business-ref=business-count]')?.textContent===initial.length+'개','the actual business directory is read from the real API');
  const field=key=>content.querySelector('[data-business-ref="business-'+key+'"]');
+ const loseDisabledFocus=()=>{const heading=view.panel.querySelector('.obm-heading');heading.focus();heading.blur();};
  field('name').value='패널 사업장';field('road').value='검증 소재지';field('postal').value='08843';
  const region=content.querySelector('[data-business-ref=region-root]');region.value='1100000000';region.dispatchEvent(new view.w.Event('change'));content.querySelector('[data-business-ref=region-leaf]').value='1162000000';
+ const submit=field('form').querySelector('[type=submit]');submit.focus();
  field('form').dispatchEvent(new view.w.Event('submit',{bubbles:true,cancelable:true}));
+ // jsdom cannot blur a disabled control. Moving through the enabled heading
+ // reaches the same body focus Chromium produces while the real request waits.
+ loseDisabledFocus();assert.equal(view.w.document.activeElement,view.w.document.body);
  await until(()=>field('status').textContent==='사업장을 저장했습니다.','server-confirmed business save');
+ assert.equal(view.w.document.activeElement,field('name'),'successful save restores focus inside the re-enabled form');
  const saved=(await(await f.request('buyer','/role/businesses')).json()).businesses.find(record=>record.profile.name==='패널 사업장');assert.ok(saved);assert.equal(saved.profile.regionSelection.leafCode,'1162000000');assert.equal(saved.revision,1);
  assert.equal(view.calls.filter(call=>call.method==='POST'&&call.path.endsWith('/role/businesses')).length,1);view.unchanged();
  content=await view.open('manage.business');await until(()=>content.querySelectorAll('.business-card').length===initial.length+1,'reopened panel reads saved record');[...content.querySelectorAll('.business-card')].find(button=>button.textContent.includes('패널 사업장')).click();await tick();assert.equal(field('name').value,'패널 사업장');
  const newer=await f.request('buyer','/role/businesses',{id:saved.id,expectedRevision:1,requestKey:crypto.randomUUID(),deleted:false,profile:{...saved.profile,name:'다른 창 변경'}});assert.equal(newer.status,200);
- field('name').value='현재 창 입력';field('form').dispatchEvent(new view.w.Event('submit',{bubbles:true,cancelable:true}));
- await until(()=>field('status').textContent.includes('다른 탭'),'stale revision is rejected without leaving the panel');assert.equal(field('name').value,'현재 창 입력');assert.equal((await(await f.request('buyer','/role/businesses')).json()).businesses.find(record=>record.id===saved.id).profile.name,'다른 창 변경');view.unchanged();
+ field('name').value='현재 창 입력';field('road').focus();field('form').dispatchEvent(new view.w.Event('submit',{bubbles:true,cancelable:true}));loseDisabledFocus();
+ await until(()=>field('status').textContent.includes('다른 탭'),'stale revision is rejected without leaving the panel');assert.equal(view.w.document.activeElement,field('road'),'failed save restores the original form control');assert.equal(field('name').value,'현재 창 입력');assert.equal((await(await f.request('buyer','/role/businesses')).json()).businesses.find(record=>record.id===saved.id).profile.name,'다른 창 변경');view.unchanged();
  assert.equal(f.review.prepare('SELECT count(*) n FROM r3_saved_business_revision').get().n,0,'the owner review database receives no product test records');
+});
+
+test('business save does not take focus when it began outside the form or moved during the response',async t=>{
+ const f=await workspace(t),view=await f.mount(),content=await view.open('manage.business'),form=content.querySelector('[data-business-ref=business-form]'),name=content.querySelector('[name=name]'),status=content.querySelector('[data-business-ref=business-status]'),heading=view.panel.querySelector('.obm-heading');
+ heading.focus();heading.blur();assert.equal(view.w.document.activeElement,view.w.document.body);
+ name.value='포커스 보존 사업장';form.dispatchEvent(new view.w.Event('submit',{bubbles:true,cancelable:true}));
+ await until(()=>status.textContent==='사업장을 저장했습니다.','save submitted from outside the form');assert.equal(view.w.document.activeElement,view.w.document.body,'a save without initial form focus does not move it');
+ name.value='포커스 보존 사업장 수정';name.focus();form.dispatchEvent(new view.w.Event('submit',{bubbles:true,cancelable:true}));name.blur();heading.focus();
+ await until(()=>status.textContent==='사업장을 저장했습니다.','save after focus moves to the panel heading');assert.equal(view.w.document.activeElement,heading,'an explicit focus destination during the request is preserved');view.unchanged();
 });
 
 test('purchase, cash confirmation, dispatch, receipt and dashboard reuse actual handlers without document navigation',async t=>{
