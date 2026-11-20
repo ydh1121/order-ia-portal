@@ -125,6 +125,45 @@ test('R1 executes actual delivery rule modal, unit conversion, overlap validatio
   }finally{frame.close();}
 });
 
+test('canonical modal commits directly from click and Enter, respects invalid input, IME and cancel controls',async()=>{
+  const frame=await review('delivery'),{control,click,input,q,d,w}=frame;
+  try{
+    await control.ready;click('[data-action=add-carrier]');
+    const form=q('.pw-dialog form'),name=q('.pw-dialog [name=name]'),go=q('.pw-dialog [type=submit]');
+    let nativeSubmits=0,invalid=0,cancelledClick=false;
+    form.addEventListener('submit',()=>nativeSubmits++);name.addEventListener('invalid',()=>invalid++);
+    go.addEventListener('click',event=>cancelledClick=event.defaultPrevented);
+    go.click();assert.equal(invalid,1);assert.equal(cancelledClick,true);assert.equal(nativeSubmits,0);
+    assert.equal(control.workspace.read().carriers.length,0);assert.ok(d.querySelector('.pw-dialog'));assert.equal(q('.pw-dialog-error').textContent,'');
+    input(name,'QA Enter 화물');
+    for(const extra of [{isComposing:true},{altKey:true},{ctrlKey:true},{metaKey:true},{shiftKey:true}]){
+      const event=new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true,...extra});name.dispatchEvent(event);assert.equal(event.defaultPrevented,false);assert.equal(control.workspace.read().carriers.length,0);
+    }
+    const textarea=d.createElement('textarea');form.append(textarea);
+    for(const element of [textarea,q('.pw-dialog [data-close]'),q('.pw-dialog [name=type]')]){
+      const event=new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});element.dispatchEvent(event);assert.equal(event.defaultPrevented,false);assert.equal(control.workspace.read().carriers.length,0);
+    }
+    const enter=new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});name.dispatchEvent(enter);assert.equal(enter.defaultPrevented,true);await frame.closed();
+    assert.equal(control.workspace.read().carriers.length,1);assert.equal(control.workspace.read().carriers[0].name,'QA Enter 화물');assert.equal(nativeSubmits,0);
+    click('[data-action=add-carrier]');input('.pw-dialog [name=name]','QA 클릭 화물');
+    const next=q('.pw-dialog [type=submit]');next.click();next.click();await frame.closed();
+    assert.equal(control.workspace.read().carriers.length,2,'one commit per activation while the first commit is pending');assert.equal(control.transport.inspect().revision,0,'creating carriers does not fabricate a saved response');
+  }finally{frame.close();}
+});
+
+test('canonical modal keeps one asynchronous save pending across click and native submit paths',async()=>{
+  const frame=await review('costs'),{control,click,q,w}=frame;
+  try{
+    await control.ready;control.transport.setScenario('loading');click('[data-action=save]');
+    const form=q('.pw-dialog form'),go=q('.pw-dialog [type=submit]');
+    go.click();go.click();form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));
+    await wait(()=>control.transport.inspect().pending===1,'one held save');
+    assert.equal(go.disabled,true);assert.equal(control.transport.inspect().calls.filter(call=>call.method==='POST').length,1);
+    assert.equal(control.transport.inspect().revision,0);control.transport.setScenario('normal');await frame.closed();
+    assert.equal(control.transport.inspect().revision,1);assert.match(q('#pw-notice').textContent,/반영했습니다/);
+  }finally{frame.close();}
+});
+
 test('R1 real cost/classification controls update only the QA model',async()=>{
   const frame=await review('classification'),{control,click,input,q}=frame;
   try{

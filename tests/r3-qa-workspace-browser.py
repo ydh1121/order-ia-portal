@@ -64,7 +64,16 @@ def settled_dialog(frame):
 
 def submit_dialog(frame):
     frame.locator(".pw-dialog button[type=submit]").click()
-    expect(frame.locator(".pw-dialog")).to_have_count(0)
+    try:
+        expect(frame.locator(".pw-dialog")).to_have_count(0)
+    except Exception as failure:
+        details = frame.locator(".pw-dialog").evaluate_all("""dialogs=>dialogs.map(dialog=>({
+          title:dialog.querySelector('h2')?.textContent,error:dialog.querySelector('.pw-dialog-error')?.textContent,
+          open:dialog.open,opacity:getComputedStyle(dialog).opacity,
+          submitDisabled:dialog.querySelector('[type=submit]')?.disabled,
+          invalid:[...dialog.querySelectorAll(':invalid')].map(el=>({name:el.name,validation:el.validationMessage}))
+        }))""")
+        raise AssertionError("Price modal remained after click: " + json.dumps(details, ensure_ascii=False)) from failure
 
 
 def memory_state(frame):
@@ -163,9 +172,13 @@ def main():
 
             frame.locator("[data-section=carriers]").click()
             frame.locator("[data-action=add-carrier]").first.click()
+            frame.locator(".pw-dialog button[type=submit]").click()
+            expect(frame.locator(".pw-dialog")).to_be_visible()
+            assert frame.locator(".pw-dialog [name=name]").evaluate("input=>input.validity.valueMissing")
             frame.locator(".pw-dialog [name=name]").fill("QA 검토용 화물")
             frame.locator(".pw-dialog [name=type]").select_option("freight")
-            submit_dialog(frame)
+            frame.locator(".pw-dialog [name=name]").press("Enter")
+            expect(frame.locator(".pw-dialog")).to_have_count(0)
             expect(frame.locator("[data-carrier-field=base]")).to_have_value("")
             frame.locator("[data-action=add-delivery-rule]").click()
             frame.locator(".pw-dialog [name=package]").select_option("pack-30")
@@ -182,7 +195,7 @@ def main():
             submit_dialog(frame)
             expect(frame.locator("#pw-notice")).to_contain_text("반영했습니다")
             assert memory_state(frame)["revision"] == 2
-            result["checks"]["delivery"] = {"eggRange": [360, 660], "packRange": [12, 22], "blankFarePreserved": True}
+            result["checks"]["delivery"] = {"eggRange": [360, 660], "packRange": [12, 22], "blankFarePreserved": True, "invalidInputBlocked": True, "enterCommit": True}
 
             for state in ("loading", "error", "guest", "empty"):
                 frame = choose_state(page, state)
