@@ -27,7 +27,8 @@ def target_url(origin, state="consumer-products", width=1280):
 def ready_frame(page, state="consumer-products"):
     expect(page.locator("#focus-unit")).to_have_attribute("data-state", state)
     frame = page.frame_locator("#frame")
-    expect(frame.locator("title")).to_have_text("단가표 · " + STATES[state])
+    # Playwright's rendered-text matcher skips nodes inside <head>.
+    expect(frame.locator("title")).to_have_js_property("textContent", "단가표 · " + STATES[state])
     frame.locator("#r3-veil").wait_for(state="attached")
     expect(frame.locator("#price-workspace-app")).to_have_attribute("data-workspace-storage", "qa-memory")
     expect(page.locator("#frame")).to_have_js_property("inert", False)

@@ -179,6 +179,34 @@ jobs:
             artifacts/frame-pointer/
           if-no-files-found: ignore
           retention-days: 7
+  r1:
+    name: R1 actual workspace and controlled states
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the browser driver
+        run: python -m pip install playwright==1.56.0
+      - name: Check R1 pricing, state controls and annotations
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-qa-workspace-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r1-canonical-workspace-browser-receipts
+          path: artifacts/r1-workspace/
+          if-no-files-found: warn
+          retention-days: 7
   logo:
     name: Product logo and account motion
     runs-on: ubuntu-latest
