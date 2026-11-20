@@ -23,6 +23,8 @@ jobs:
         run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
       - name: Verify canonical product source manifest
         run: node scripts/build-product-manifest.mjs --check
+      - name: Verify R1 QA and product runtime sources agree
+        run: node scripts/r3/build-qa-review-runtime.mjs --check
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |
@@ -67,6 +69,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-price-workspace-browser.py
+      - name: Check the actual MVP workspace and dummy states inside the R1 review shell
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-qa-workspace-browser.py
       - name: Check saved business accounts and both real quote forms
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -157,6 +164,7 @@ jobs:
           name: r3-private-browser-receipts
           path: |
             artifacts/price-workspace/
+            artifacts/r1-workspace/
             artifacts/saved-businesses/
             artifacts/role-browser/
             artifacts/quote-result/
@@ -170,6 +178,44 @@ jobs:
             artifacts/quote-draft/
             artifacts/frame-pointer/
           if-no-files-found: ignore
+          retention-days: 7
+  r1:
+    name: R1 actual workspace and controlled states
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and verify Korean fonts for rendered QA
+        run: |
+          if ! fc-list ':lang=ko' family | grep -F 'Noto Sans CJK' > /dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends fonts-noto-cjk
+            fc-cache -f
+          fi
+          fc-list ':lang=ko:charset=ac00' family | sort -u
+          fc-list ':lang=ko:charset=ac00' family | grep -F 'Noto Sans CJK' > /dev/null
+          fc-match 'sans-serif:lang=ko' --format '%{family} | %{file}\n'
+      - name: Install the browser driver
+        run: python -m pip install playwright==1.56.0
+      - name: Check R1 pricing, state controls and annotations
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-qa-workspace-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r1-canonical-workspace-browser-receipts
+          path: artifacts/r1-workspace/
+          if-no-files-found: warn
           retention-days: 7
   logo:
     name: Product logo and account motion

@@ -5,8 +5,9 @@ import {bloubScript,bloubMontages} from './r3-bloub.mjs';
 import {waitMontages} from './r3-quote-wait.mjs';
 import {runtimes} from './r3-ui/runtime.gen.mjs';
 import {salesReviewContent} from './r3-qa-sales.mjs';
+import {getPriceWorkspaceQaDocuments} from './r3-price-workspace-qa.mjs';
 
-export const supplementalScreenIds=['component-library','admin-revenue-rules','member-email-templates','store-purchase'];
+export const supplementalScreenIds=['component-library','admin-revenue-rules','member-email-templates','store-purchase','price-workspace'];
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const js=value=>JSON.stringify(value).replaceAll('<','\\u003c');
 const sha=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');
@@ -60,7 +61,7 @@ export async function getQaApplicationDocument(screen,state='default',variant='e
     if(!source||screen!=='component-library')return null;
     source=await selectedComponentDocument(collection,source,componentVariant);
   }
-  return source?{...source,css:qaMvpCss,source:{kind:'product',sharedUi:sharedUiProvenance}}:null;
+  return source&&!source.qaOnly?{...source,css:source.css||qaMvpCss,source:{kind:'product',sharedUi:sharedUiProvenance}}:null;
 }
 async function selectedComponentDocument(collection,base,variantId){
   const asset=collection.assets.find(asset=>asset.id===base.libraryContext?.assetId),variant=asset?.variants.find(variant=>variant.id===variantId);
@@ -108,11 +109,12 @@ async function build(){
   const rows=[],documents=new Map(),boards=[['components','공통·파생 컴포넌트'],['logos','헤더·푸터 로고'],['svg','일반·애니메이션 SVG'],['three-d','3D 일반·애니메이션'],['bloub','BLOUB_EGG 상태 조합']];
   const dependencies=sharedCoreScript+'\n'+brandMotionScript+'\n'+commonMotionScript+'\n'+brandAccountScript;
   const standardMount=dependencies+'\n('+qaMvpRuntimeCode+')();';
-  const add=async({screen,state,label,stateLabel,group='공통 자산',role='common',body,mount=standardMount,original,description=''})=>{
+  const add=async({screen,state,label,stateLabel,group='공통 자산',role='common',body,mount=standardMount,original,description='',css=qaMvpCss,qaOnly=false,provenance,fixture,sourceFiles,defaultWidth})=>{
     const id=screen+'/'+state+'/email';
-    const hashes=Object.fromEntries(await Promise.all(approvedWidths.map(async width=>[width,await sha([id,width,body,cssHash,qaMvpCss,mount].join('|'))])));
-    const row={...(original||{}),id,screen,state,variant:'email',group,label,stateLabel,phase:'current',role,defaultWidth:screen==='component-library'||role==='admin'?1280:390,hashes,previousHashes:original?.previousHashes||{},authoredChange:true,supplemental:!original,description};
-    rows.push(row);documents.set(id,{body,mount,hashes,row,original});
+    const hashes=Object.fromEntries(await Promise.all(approvedWidths.map(async width=>[width,await sha([id,width,body,cssHash,css,mount].join('|'))])));
+    const row={...(original||{}),id,screen,state,variant:'email',group,label,stateLabel,phase:'current',role,defaultWidth:defaultWidth||(screen==='component-library'||role==='admin'?1280:390),hashes,previousHashes:original?.previousHashes||{},authoredChange:true,supplemental:!original,description,
+      ...(fixture?{fixture}:{}),...(provenance?{provenance}:{}),...(sourceFiles?{sourceFiles}:{})};
+    rows.push(row);documents.set(id,{body,mount,css,hashes,row,original,qaOnly,provenance});
   };
   const nav=boards.map(([id,label])=>go(label,'component-library',id)).join('');
   const use=(u,control)=>shared.button('<span>'+esc(u.label)+' · '+esc(u.stateLabel)+(control?' · '+esc(control.controlLabel||control.name||'컴포넌트 '+(control.index+1)):'')+'<small>'+esc((u.routes||[]).join(' / ')||'/ia?view=qa-lab&screen='+u.id)+'</small>'+(control?'<small>'+esc(control.selector||'')+' · '+((control.selectorIndex??control.index)+1)+'번째</small>':'')+'</span><small>'+esc(u.id)+'</small>','app-action','secondary',attrs({'data-qa-go':u.screen,'data-qa-state':u.state,'data-source-usage':u.id,...(control?{'data-component-variant':control.variantId,'data-source-label':control.controlLabel||'','data-source-name':control.name||'','data-source-selector':control.selector||'','data-source-index':control.selectorIndex??control.index,'data-source-collection-index':control.index}:{})}));
@@ -189,5 +191,15 @@ async function build(){
     const body=page('주문 출고·배송 정보',tracking,{admin:true,screen:original.screen});
     await add({...original,original,body,description:'확인된 주문에 배송수단·송장번호·배송 상태를 저장합니다.'});
   }
+  // These chips control only the injected response state. They render the same
+  // purchase form and mount function as the product and preserve all old IDs.
+  const purchase=documents.get('store-purchase/select/email');
+  for(const [state,stateLabel,fixture] of [
+    ['qa-loading','불러오는 중',{scenario:'loading'}],['qa-error','요청 실패',{scenario:'error'}],
+    ['qa-empty','판매 상품 없음',{scenario:'empty'}],['qa-guest','로그인 전',{authenticated:false}]
+  ])await add({...purchase.row,state,stateLabel,body:purchase.body,mount:purchase.mount,qaOnly:true,fixture,
+    description:'실제 구매 화면을 QA 더미 응답으로 제어합니다. 상태를 다시 선택하면 초기 자료로 돌아갑니다.'});
+  for(const document of await getPriceWorkspaceQaDocuments())await add({...document.row,...document,css:qaMvpCss+document.css,
+    screen:document.row.screen,state:document.row.state,label:document.row.label,stateLabel:document.row.stateLabel,qaOnly:true});
   return {rows,documents,assets};
 }

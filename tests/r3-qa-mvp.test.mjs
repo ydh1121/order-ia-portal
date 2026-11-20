@@ -167,7 +167,7 @@ test('sales is the discoverable first analytics state while original analytics a
   assert.deepEqual(analytics.slice(0,2).map(row=>row.state),['business-sales','campaign-sales']);assert.equal(analytics[0].label,'매출 현황');
   assert.deepEqual(analytics.filter(row=>!row.supplemental).map(row=>row.state),['normal','loading','partial','empty','denied']);
   for(const row of catalog.filter(row=>row.screen==='admin-analytics')){
-    const doc=await(await artifact(row.id)).json();assert.equal(doc.hash,row.hashes[390]);assert.equal(doc.html.includes(gunzipSync(Buffer.from(frames[row.current],'base64')).toString()),true);
+    const doc=await(await artifact(row.id)).json();assert.equal(doc.source.contentHash,row.hashes[390]);assert.equal(doc.hash,list.items.find(item=>item.id===row.id).hashes[390]);assert.equal(doc.html.includes(gunzipSync(Buffer.from(frames[row.current],'base64')).toString()),true);
   }
   const shell=setup(approvedShellBody()),link=shell.window.document.querySelector('#consult-candidates a');
   assert.equal(link.getAttribute('href'),'/ia?view=roles-r3&menu=consult');assert.equal(link.closest('iframe'),null);assert.equal(shell.window.document.querySelector('#frame').getAttribute('sandbox'),'allow-scripts');shell.window.close();
