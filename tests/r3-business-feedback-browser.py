@@ -7,13 +7,121 @@ import subprocess
 
 from playwright.sync_api import expect, sync_playwright
 
-from r3_feedback_browser_support import ReviewScreens, frame_click
+from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "artifacts" / "business-date"
+
+
+def check_opening_date(page, frame, width):
+    control = frame.locator(".opening-date>button")
+    value = frame.locator(".opening-date output")
+    panel = frame.locator(".opening-wheels")
+    sheet = panel.get_by_role("dialog", name="개업일 선택")
+    year = sheet.get_by_role("listbox", name="연도", exact=True)
+    month = sheet.get_by_role("listbox", name="월", exact=True)
+    day = sheet.get_by_role("listbox", name="일", exact=True)
+    expect(value).to_have_text("2026/11/20")
+    frame_click(page, control)
+    expect(sheet).to_be_visible()
+    sheet.element_handle().wait_for_element_state("stable")
+    expect(sheet.get_by_role("heading")).to_have_text("개업일 [2026/11/20]")
+    expect(year).to_be_focused()
+    expect(frame.locator(".business-page")).to_have_js_property("inert", True)
+    expect(panel.locator("select")).to_have_count(0)
+    panel_id = panel.get_attribute("id")
+    expect(control).to_have_attribute("aria-controls", panel_id)
+    geometry = sheet.evaluate("""el=>{
+        const r=el.getBoundingClientRect();
+        return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height,
+            viewportWidth:innerWidth,viewportHeight:innerHeight,
+            clientWidth:el.clientWidth,scrollWidth:el.scrollWidth,
+            popover:el.parentElement.matches(':popover-open')};
+    }""")
+    assert geometry["popover"], geometry
+    assert abs(geometry["bottom"] - geometry["viewportHeight"]) <= 1.1, geometry
+    assert geometry["top"] >= -1 and geometry["left"] >= -1, geometry
+    assert geometry["right"] <= geometry["viewportWidth"] + 1, geometry
+    assert abs(geometry["width"] - min(540, geometry["viewportWidth"])) <= 1.1, geometry
+    assert abs(geometry["left"] * 2 + geometry["width"] - geometry["viewportWidth"]) <= 1.1, geometry
+    assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, geometry
+
+    # Use trusted browser wheel input, then wait for native scrolling and the
+    # selected row to settle. Do not substitute scrollTop or synthetic events.
+    year.evaluate("""el=>{
+        el.__openingNative={wheel:0,scroll:0,end:0};
+        for(const [event,key] of [['wheel','wheel'],['scroll','scroll'],['scrollend','end']])
+            el.addEventListener(event,e=>{if(e.isTrusted)el.__openingNative[key]++;},{passive:true});
+    }""")
+    x, y = frame_pointer_position(page, year)
+    page.mouse.move(x, y)
+    page.mouse.wheel(0, -132)
+    expect(year.locator('[aria-selected="true"]')).not_to_have_text("2026년")
+    native = year.evaluate("""async el=>{
+        const deadline=performance.now()+5000;let last=null,stable=0;
+        while(performance.now()<deadline){
+            await new Promise(requestAnimationFrame);
+            const selected=el.querySelector('[aria-selected=true]'),c=el.getBoundingClientRect(),r=selected?.getBoundingClientRect();
+            const now=[el.scrollTop,selected?.id,r?.top].join('|');
+            stable=now===last?stable+1:0;last=now;
+            const offset=r?Math.abs(r.top+r.height/2-c.top-c.height/2):Infinity;
+            if(stable>=4&&offset<=1.1&&el.__openingNative.end>0)
+                return {...el.__openingNative,value:Number(selected.dataset.openingValue),offset};
+        }
+        throw Error('Native opening-date wheel did not settle on one centered option');
+    }""")
+    assert native["wheel"] > 0 and native["scroll"] > 0, native
+    assert 1900 <= native["value"] < 2026, native
+    expect(value).to_have_text("2026/11/20")
+
+    # Keyboard selection must use the same draft and dependent month/day range.
+    year.press("End"); year.press("ArrowUp"); year.press("ArrowUp")
+    month.press("Home"); month.press("ArrowDown"); day.press("End")
+    expect(sheet.get_by_role("heading")).to_have_text("개업일 [2024/02/29]")
+    expect(day.locator('[aria-selected="true"]')).to_have_text("29일")
+    expect(day.locator('[data-opening-value="30"]')).to_have_count(0)
+    expect(value).to_have_text("2026/11/20")
+    done = sheet.get_by_role("button", name="완료", exact=True)
+    done.press("Tab")
+    expect(sheet.get_by_role("button", name="개업일 선택 닫기", exact=True)).to_be_focused()
+    OUT.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(OUT / f"opening-date-{width}.png"))
+    frame_click(page, done)
+    expect(panel).to_be_hidden()
+    expect(value).to_have_text("2024/02/29")
+    expect(control).to_be_focused()
+    expect(frame.locator(".business-page")).to_have_js_property("inert", False)
+
+    frame_click(page, control)
+    expect(panel).to_have_attribute("id", panel_id)
+    expect(sheet.get_by_role("heading")).to_have_text("개업일 [2024/02/29]")
+    year.press("ArrowDown")
+    expect(sheet.get_by_role("heading")).to_have_text("개업일 [2025/02/28]")
+    expect(day.locator('[data-opening-value="29"]')).to_have_count(0)
+    frame_click(page, sheet.get_by_role("button", name="취소", exact=True))
+    expect(value).to_have_text("2024/02/29")
+    frame_click(page, control)
+    expect(panel).to_have_attribute("id", panel_id)
+    expect(sheet.get_by_role("heading")).to_have_text("개업일 [2024/02/29]")
+    year.press("End"); month.press("End"); day.press("End"); day.press("ArrowDown")
+    expect(sheet.get_by_role("heading")).to_have_text("개업일 [2026/11/20]")
+    expect(month.locator('[data-opening-value="12"]')).to_have_count(0)
+    expect(day.locator('[data-opening-value="21"]')).to_have_count(0)
+    day.press("Escape")
+    expect(panel).to_be_hidden()
+    expect(value).to_have_text("2024/02/29")
+    expect(control).to_be_focused()
+    receipt = {"width":width,"panelId":panel_id,"geometry":geometry,"nativeWheel":native,
+               "committed":"2024/02/29","cancelRestored":True,"keyboardLeapAndTodayLimits":True}
+    (OUT / f"opening-date-{width}.json").write_text(json.dumps(receipt,ensure_ascii=False,indent=2),encoding="utf-8")
+    print("PASS opening-date " + json.dumps(receipt,ensure_ascii=False),flush=True)
 
 
 def check(page, origin, width):
     screen = ReviewScreens(page, origin, width).screen
+    # It is already November 20 in Korea at this UTC instant. Only Date is fixed;
+    # timers, animation frames and native scroll settling still run normally.
+    page.clock.set_fixed_time("2026-11-19T15:30:00Z")
 
     frame = screen("business", "empty")
     expect(frame.get_by_role("heading", name="사업자 정보 등록", exact=True)).to_be_visible()
@@ -46,12 +154,18 @@ def check(page, origin, width):
     expect(frame.locator("[name=owner-name]")).to_have_attribute("placeholder", "대표자명")
     expect(frame.locator(".opening-date output")).to_have_text(
         page.evaluate("()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Seoul'}).format(new Date()).replaceAll('-','/')"))
+    check_opening_date(page, frame, width)
+    expect(next_input).to_have_value("직접 입력한 업종")
     assert not frame.locator("[type=file]").evaluate("el=>el.multiple")
     frame = screen("business", "checking")
     expect(frame.get_by_role("button",name="사업자 정보 조회 중")).to_be_disabled()
     expect(frame.locator("[name=business-number]")).to_be_disabled()
+    expect(frame.locator(".opening-date>button")).to_be_disabled()
+    expect(frame.locator(".opening-wheels")).to_be_hidden()
     frame = screen("business", "verified")
     expect(frame.locator("[name=owner-name]")).to_be_disabled()
+    expect(frame.locator(".opening-date>button")).to_be_disabled()
+    expect(frame.locator(".opening-wheels")).to_be_hidden()
     expect(frame.locator(".verification-mark")).to_be_visible()
     expect(frame.get_by_role("button",name="내 사업장 인증·보완")).to_be_visible()
 

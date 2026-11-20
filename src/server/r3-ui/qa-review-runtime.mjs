@@ -12,8 +12,14 @@ export function installQaReviewRuntime(session,installFixture,installAdapter){
   for(const module of window.ORDER_DESIGN_MODULES||[]){
     if(typeof module.mount!=='function')continue;
     const mount=module.mount;
-    module.mount=(root,state,api)=>mount(root,state,{...api,adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
-      select(...args){preservePurchase();return api.select(...args);}});
+    module.mount=(root,state,api)=>{
+      let sheet;
+      const mountedApi={...api,adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
+        select(...args){if(sheet?.select(...args))return;preservePurchase();return api.select(...args);}};
+      if(module.id==='onboarding')sheet=window.ORDER_AUTH_SHEET?.attach(root,mountedApi,{getState:()=>session.state});
+      const dispose=mount(root,state,mountedApi);
+      return()=>{sheet?.dispose();dispose?.();};
+    };
   }
   addEventListener('order-qa-before-navigate',preservePurchase);
   const onMessage=event=>{

@@ -41,9 +41,11 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   const period=word?.querySelector('.brand-dot,.ob-period')||brand.querySelector(':scope > .brand-dot');
   const periodOrigin=period?{parent:period.parentNode,next:period.nextSibling}:null;
   if(period&&word&&!word.contains(period))word.append(period);
-  const unique='order-account-'+(win.crypto?.randomUUID?.()||Math.random().toString(36).slice(2));
+  // A remounted screen retains the same accessible identity and annotation path.
+  let instance=1;while(doc.getElementById('order-account-menu-'+instance))instance++;
+  const unique='order-account-menu-'+instance;
   const create=(tag,className,text)=>{const el=doc.createElement(tag);if(className)el.className=className;if(text!==undefined)el.textContent=text;return el;};
-  const button=(text,id)=>{const el=create('button','obm-row',text);el.type='button';el.dataset.obmItem=id;el.setAttribute('role','menuitem');return el;};
+  const button=(text,id)=>{const el=create('button','obm-row',text);el.id=unique+'-item-'+id.replaceAll('.','-');el.type='button';el.dataset.obmItem=id;el.setAttribute('role','menuitem');return el;};
   brand.classList.add('obm-brand');word?.classList.add('obm-wordmark');
   brand.removeAttribute('role');brand.removeAttribute('tabindex');
   const trigger=create('button','obm-trigger');trigger.type='button';trigger.dataset.orderAccountTrigger='';
@@ -52,7 +54,7 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   panel.setAttribute('popover','manual');panel.setAttribute('role','menu');panel.setAttribute('aria-label','내 계정 메뉴');
   const surface=create('div','obm-surface t-morph');surface.dataset.open='false';
   const contents=create('div','obm-menu t-morph-menu');
-  const slider=create('div','obm-stack t-page-slide t-resize');slider.dataset.page='1';contents.append(slider);surface.append(contents);panel.append(surface);doc.body.append(panel);
+  const slider=create('div','obm-stack t-page-slide t-resize');slider.dataset.page='1';contents.append(slider);surface.append(contents);panel.append(surface);(brand.closest('#order-single')||doc.body).append(panel);
   trigger.setAttribute('aria-controls',unique);
   // Use the installed semantic tokens. Only absent tokens receive the pinned
   // recipe defaults on this surface; the global token block is never duplicated.
@@ -123,10 +125,14 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   function position(){
     if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;
     const x=view?.offsetLeft||0,y=view?.offsetTop||0,width=view?.width||win.innerWidth,height=view?.height||win.innerHeight;
-    const w=Math.max(1,Math.min(320,width-24)),h=Math.min(measure(pages.at(-1).node)+20,Math.max(120,height-24));
+    const w=Math.max(1,Math.min(320,width-24)),bottom=y+height-12;
+    // The morph keeps the trigger's upper-right origin even for a long form.
+    // Give the menu only the space below that origin; its existing scroll
+    // container exposes the remaining controls without moving the header.
+    const top=Math.max(y+12,Math.min(r.top,bottom-1));
+    const h=Math.max(1,Math.min(measure(pages.at(-1).node)+20,bottom-top));
     panel.style.width=w+'px';panel.style.height=h+'px';
     const left=Math.max(x+12,Math.min(r.right-w,x+width-w-12));
-    const below=r.bottom+8,top=below+h<=y+height-12?below:r.top-h-8>=y+12?r.top-h-8:Math.max(y+12,Math.min(below,y+height-h-12));
     panel.style.left=left+'px';panel.style.top=top+'px';
     for(const [key,value] of Object.entries({'--obm-open-w':w,'--obm-open-h':h,'--obm-closed-w':r.width||Math.max(44,markWidth+8),'--obm-closed-h':r.height||44,'--obm-start-x':r.right-left-w,'--obm-start-y':r.top-top}))panel.style.setProperty(key,value+'px');
   }
@@ -217,9 +223,11 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     notify();
   }
   function disposePage(page){page.abort.abort();page.dispose?.();page.node.remove();}
+  function validPage(id,title){
+    return Object.hasOwn(titleById,id)||(typeof title==='string'&&title.trim().length>0&&title.length<=80&&/^(profile|notifications|manage)\.[a-z0-9.-]{1,100}$/.test(id));
+  }
   function push(id,source=null,title=null){
-    const extra=typeof title==='string'&&title.trim().length>0&&title.length<=80&&/^(profile|notifications|manage)\.[a-z0-9.-]{1,100}$/.test(id);
-    if(!authenticated||phase==='closed'||destroyed||!allowed(id)||(!Object.hasOwn(titleById,id)&&!extra)||id==='root')return false;
+    if(!authenticated||phase==='closed'||destroyed||!allowed(id)||!validPage(id,title)||id==='root')return false;
     settlePages();const from=pages.at(-1);if(from.id===id)return true;from.focus=source||doc.activeElement;
     if(source)source.dataset.obmSelected='true';
     const next=makePage(id,title||titleById[id]);pages.push(next);pageTransition(from,next);return true;
@@ -244,9 +252,9 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     pageTimer=win.setTimeout(()=>{if(version===navigation&&!destroyed){settlePages();notify();}},duration+20);
   }
   function resetPages(){++navigation;win.clearTimeout(pageTimer);while(pages.length>1)disposePage(pages.pop());settlePages();}
-  function open(section=null,{last=false}={}){
-    if(!authenticated||destroyed||paused||(section&&!allowed(section)))return false;
-    if(phase==='open'||phase==='opening'){if(section)push(section);return true;}
+  function open(section=null,{last=false,title=null}={}){
+    if(!authenticated||destroyed||paused||(section&&(!allowed(section)||!validPage(section,title))))return false;
+    if(phase==='open'||phase==='opening')return section?push(section,null,title):true;
     const from=points(),version=++generation;cancelArrival();halt();
     phase='opening';brand.dataset.accountOpen='true';trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-label','계정 메뉴 닫기');
     panel.hidden=false;panel.inert=false;try{if(panel.showPopover&&!panel.matches(':popover-open'))panel.showPopover();else if(!panel.showPopover)panel.removeAttribute('popover');}catch{panel.removeAttribute('popover');}
@@ -256,7 +264,7 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     // Measure the final row positions without freezing layout or scaling text.
     lastRootRects=rootPointsAtRest();
     pointTravel(from,lastRootRects,duration);
-    completeMotion(version,duration+2*time('--duration-stagger',40),()=>{phase='open';delete root.node.dataset.pointsMoving;lastRootRects=rootPointsAtRest();if(section)push(section);else{const items=[...root.node.querySelectorAll('[data-obm-item]')].filter(item=>!item.hidden);items[last?items.length-1:0]?.focus({preventScroll:true});}notify();});notify();return true;
+    completeMotion(version,duration+2*time('--duration-stagger',40),()=>{phase='open';delete root.node.dataset.pointsMoving;lastRootRects=rootPointsAtRest();if(section)push(section,null,title);else{const items=[...root.node.querySelectorAll('[data-obm-item]')].filter(item=>!item.hidden);items[last?items.length-1:0]?.focus({preventScroll:true});}notify();});notify();return true;
   }
   function close({focus=true,immediate=false}={}){
     if(phase==='closed'||destroyed)return false;
@@ -306,15 +314,16 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     });
     notify();return true;
   }
-  function pause(){paused=true;cancelArrival();close({focus:false,immediate:true});trigger.disabled=true;player?.stopRandom?.();player?.stop?.();}
-  function resume(){paused=false;trigger.disabled=false;restoreIdle();}
+  function pause(){paused=true;brand.dataset.motionPaused='true';cancelArrival();close({focus:false,immediate:true});trigger.disabled=true;player?.stopRandom?.();player?.stop?.();}
+  function resume(){paused=false;delete brand.dataset.motionPaused;trigger.disabled=false;restoreIdle();}
   function setUnread(value){
     if(!Number.isSafeInteger(value)||value<0)return false;const changed=value!==unread;unread=value;
     for(const badge of badges){badge.firstElementChild.textContent=value>99?'99+':String(value);if(changed&&value>0){badge.dataset.open='false';void badge.offsetWidth;}badge.dataset.open=String(value>0);}
-    root.node.querySelector('[data-obm-item=notifications]')?.setAttribute('aria-label',value?'알림 · 읽지 않은 알림 '+value+'개':'알림');return true;
+    root.node.querySelector('[data-obm-item=notifications]')?.setAttribute('aria-label',value?'알림 · 읽지 않은 알림 '+value+'개':'알림');if(changed)notify();return true;
   }
   function update(next={}){
     Object.assign(options,next);
+    brand.dataset.motionReduced=String(reduced());
     if(Object.hasOwn(next,'authenticated'))setAuthenticated(next.authenticated,{animate:next.animate!==false});
     if(Object.hasOwn(next,'unread'))setUnread(next.unread);
     if(Object.hasOwn(next,'canAccess')){
@@ -325,7 +334,7 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   }
   function destroy(){
     if(destroyed)return;close({focus:false,immediate:true});destroyed=true;++generation;++navigation;halt();cancelArrival();controller.abort();preference?.removeEventListener?.('change',preferenceChanged);win.clearTimeout(pageTimer);win.cancelAnimationFrame?.(frame);observer?.disconnect();for(const page of pages)disposePage(page);player?.destroy?.();panel.remove();
-    original.parent.insertBefore(svg,original.next?.parentNode===original.parent?original.next:null);trigger.remove();svg.style.opacity='';brand.classList.remove('obm-brand');word?.classList.remove('obm-wordmark');delete brand.dataset.authenticated;delete brand.dataset.accountOpen;delete brand.dataset.accountArrivalCount;
+    original.parent.insertBefore(svg,original.next?.parentNode===original.parent?original.next:null);trigger.remove();svg.style.opacity='';brand.classList.remove('obm-brand');word?.classList.remove('obm-wordmark');delete brand.dataset.authenticated;delete brand.dataset.accountOpen;delete brand.dataset.accountArrivalCount;delete brand.dataset.motionPaused;delete brand.dataset.motionReduced;
     if(periodOrigin&&period.parentNode!==periodOrigin.parent)periodOrigin.parent.insertBefore(period,periodOrigin.next?.parentNode===periodOrigin.parent?periodOrigin.next:null);
     for(const [key,value] of Object.entries(original.sizing))if(value)brand.style.setProperty(key,value);else brand.style.removeProperty(key);
     for(const [name,value] of [['role',original.role],['tabindex',original.tabindex],['aria-label',original.label]])if(value===null)brand.removeAttribute(name);else brand.setAttribute(name,value);
@@ -371,10 +380,11 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   const updatePosition=()=>{win.cancelAnimationFrame?.(frame);frame=win.requestAnimationFrame?.(()=>{if(phase!=='closed')position();});};
   on(win,'resize',updatePosition);on(doc,'scroll',updatePosition,{capture:true,passive:true});if(win.visualViewport){on(win.visualViewport,'resize',updatePosition);on(win.visualViewport,'scroll',updatePosition);}
   const observer=win.ResizeObserver?new win.ResizeObserver(()=>resize()):null;observer?.observe(root.node);
-  function preferenceChanged(){if(reduced()){cancelArrival();settlePages();if(phase==='opening'){++generation;halt();phase='open';delete root.node.dataset.pointsMoving;}else if(phase==='closing')close({immediate:true});player?.stopRandom?.();player?.stop?.();}else restoreIdle();}
+  function preferenceChanged(){brand.dataset.motionReduced=String(reduced());if(reduced()){cancelArrival();settlePages();if(phase==='opening'){++generation;halt();phase='open';delete root.node.dataset.pointsMoving;}else if(phase==='closing')close({immediate:true});player?.stopRandom?.();player?.stop?.();}else restoreIdle();}
   preference?.addEventListener?.('change',preferenceChanged);
   const api={setAuthenticated,setUnread,update,open,close,back:pop,show:push,pause,resume,arrival,destroy,inspect,trigger,panel};brand.__orderAccountMenu=api;
   setAuthenticated(options.authenticated===true,{animate:false});setUnread(options.unread||0);
+  brand.dataset.motionReduced=String(reduced());
   if(authenticated&&options.animateInitial===true)arrival(options.arrivalOrigin);
   return api;
 }
@@ -383,11 +393,19 @@ export const brandAccountMenuCss=String.raw`
 .obm-brand{position:relative;display:flex!important;align-items:center!important;gap:8px;min-width:0;flex:1;overflow:visible!important}
 .obm-brand .obm-wordmark{flex:none;line-height:1;white-space:nowrap}
 .obm-brand .obm-wordmark{background:none;color:inherit}
+/* Independently authored from the public pro-gradient-text preview's moving
+   colour washes. The word never moves; ORDER blue and warm orange pass through
+   only once per 24-second cycle, with a long neutral interval. */
+.obm-brand[data-authenticated=true] .obm-wordmark{color:transparent;background-image:radial-gradient(ellipse at center,#315de6 0%,#315de600 58%),radial-gradient(ellipse at center,#b65f12 0%,#b65f1200 58%),linear-gradient(var(--ink,#20272a),var(--ink,#20272a));background-size:160% 180%,180% 160%,100% 100%;background-repeat:no-repeat;background-position:-300% 0%,300% 100%,0 0;background-clip:text;-webkit-background-clip:text;animation:obm-wordmark-wash 24s linear -16s infinite}
+@keyframes obm-wordmark-wash{0%,76%,100%{background-position:-300% 0%,300% 100%,0 0}80%{background-position:-120% 20%,180% 70%,0 0}84%{background-position:0% 100%,100% 0%,0 0}88%{background-position:100% 0%,0% 100%,0 0}92%{background-position:220% 80%,-140% 20%,0 0}96%{background-position:300% 100%,-300% 0%,0 0}}
+.obm-brand[data-motion-paused=true] .obm-wordmark{animation-play-state:paused}
+.obm-brand[data-motion-reduced=true] .obm-wordmark,[data-review-reduced] .obm-brand .obm-wordmark{animation:none;background:none;color:inherit}
+@media(prefers-reduced-motion:reduce){.obm-brand[data-authenticated=true] .obm-wordmark{animation:none;background:none;color:inherit}}
 .obm-brand[data-authenticated=true] :is(.brand-dot,.ob-period){display:inline-block;width:0;overflow:hidden;opacity:0}
 .obm-brand[data-authenticated=false] :is(.brand-dot,.ob-period){opacity:1}
 .obm-brand .obm-trigger{position:relative;display:block;flex:none;width:var(--obm-trigger-w,51.874px);height:44px;min-height:44px;padding:0;border:0;border-radius:22px;background:transparent;box-shadow:none;color:inherit;cursor:pointer;touch-action:manipulation;translate:0 var(--obm-mark-offset-y,0px)}
 .obm-brand[data-authenticated=true] .obm-trigger{margin-inline-start:auto}
-.obm-brand[data-account-open=true] .obm-trigger{background:var(--surface,#f2f4f6)}
+.obm-brand[data-account-open=true] .obm-trigger{background:transparent;box-shadow:none}
 .obm-brand .obm-trigger>svg{display:block!important;width:var(--obm-svg-w,59.343px)!important;height:var(--obm-svg-h,29.047px)!important;max-width:none;margin:0!important;left:var(--obm-svg-x,-3.7346px)!important;top:calc(50% - var(--obm-mark-h,20.7478px)/2 + var(--obm-svg-y,-4.1496px))!important;position:absolute!important;pointer-events:none;overflow:visible}
 .obm-brand .obm-trigger:focus-visible,.obm-panel button:focus-visible{outline:2px solid var(--blue,#315dde);outline-offset:3px}
 .obm-panel.ds{position:fixed;inset:auto;margin:0;padding:0;width:min(320px,calc(100vw - 24px));min-height:0;container-type:normal;box-sizing:border-box;max-height:calc(100dvh - 24px);border:0;background:transparent;color:var(--ink,#20272a);overflow:visible;z-index:1000;isolation:isolate}
@@ -496,9 +514,9 @@ export const brandAccountMenuCss=String.raw`
   .obm-panel .t-morph, .obm-panel .t-morph-plus, .obm-panel .t-morph-menu, .obm-row-point>.obm-point { transition: none !important; }
 }
 /* ORDER geometry and surfaces; all recipe timing/shape/reveal hooks remain. */
-.obm-panel .obm-surface.t-morph{position:absolute;inset:0 0 auto auto;width:var(--obm-closed-w);height:var(--obm-closed-h);transform:translate(var(--obm-start-x),var(--obm-start-y));background:var(--paper,#fff);box-shadow:0 12px 40px #182b4829;transition:width var(--morph-close-dur) var(--morph-close-ease),height var(--morph-close-dur) var(--morph-close-ease),border-radius var(--morph-close-dur) var(--morph-close-ease),transform var(--morph-close-dur) var(--morph-close-ease)}
+.obm-panel .obm-surface.t-morph{position:absolute;inset:0 0 auto auto;width:var(--obm-closed-w);height:var(--obm-closed-h);transform:translate(var(--obm-start-x),var(--obm-start-y));background:transparent;box-shadow:none;transition:width var(--morph-close-dur) var(--morph-close-ease),height var(--morph-close-dur) var(--morph-close-ease),border-radius var(--morph-close-dur) var(--morph-close-ease),transform var(--morph-close-dur) var(--morph-close-ease)}
 .obm-panel .obm-surface.t-morph[data-open="true"]{width:var(--obm-open-w);height:var(--obm-open-h);transform:translate(0,0);transition:width var(--morph-open-dur) var(--morph-ease),height var(--morph-open-dur) var(--morph-ease),border-radius var(--morph-open-dur) var(--morph-ease),transform var(--morph-open-dur) var(--morph-ease)}
-.obm-panel .obm-menu.t-morph-menu{width:var(--obm-open-w);height:var(--obm-open-h);padding:10px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none}.obm-panel .obm-menu::-webkit-scrollbar{display:none}
+.obm-panel .obm-menu.t-morph-menu{width:var(--obm-open-w);height:var(--obm-open-h);padding:10px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;background:var(--paper,#fff);border-radius:var(--morph-r-open);box-shadow:0 8px 24px #182b481a}.obm-panel .obm-menu::-webkit-scrollbar{display:none}
 /* Transitions.dev 08-page-side-by-side.md, scoped to this account panel. */
 .obm-panel .t-page-slide {
   position: relative;

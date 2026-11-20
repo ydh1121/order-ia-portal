@@ -42,22 +42,23 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   function presentMotion(){
     const box=$('motion-sources');if(!box||!current||!target)return;
     const version=artifact?.version;
+    const sourceCommit=artifact?.archivedSource?.commit||publication?.iaCommit;
     box.replaceChildren();$('motion-actions').replaceChildren();$('motion-note').textContent='';
     const build=$('motion-build');
     build.textContent=version==='current'?
-      [('IA '+(publication?.iaCommit?.slice(0,12)||'게시 확인 대기')),'제품 '+(publication?.productCommit||motionReview.product||'미확인').slice(0,12),'화면 '+target.artifactHash.slice(0,12),publication?.deploymentId&&'배포 '+publication.deploymentId].filter(Boolean).join(' · '):
+      [('IA '+(sourceCommit?.slice(0,12)||'게시 확인 대기')),'제품 '+(publication?.productCommit||motionReview.product||'미확인').slice(0,12),'화면 '+target.artifactHash.slice(0,12),!artifact?.archivedSource&&publication?.deploymentId&&'배포 '+publication.deploymentId].filter(Boolean).join(' · '):
       '이전 검토판 · 화면 '+target.artifactHash.slice(0,12);
     if(version!=='current')return;
-    if(publication?.iaCommit&&/^[a-f0-9]{40}$/.test(publication.iaCommit)){
-      const link=node('a','검토 중인 IA 코드');link.href='https://github.com/ydh1121/order-ia-portal/commit/'+publication.iaCommit;
+    if(sourceCommit&&/^[a-f0-9]{40}$/.test(sourceCommit)){
+      const link=node('a','검토 중인 IA 코드');link.href='https://github.com/ydh1121/order-ia-portal/commit/'+sourceCommit;
       link.rel='noopener noreferrer';link.target='_blank';build.append(document.createTextNode(' '),link);
     }
     if(artifact?.source?.mode==='controlled-qa'){
-      const detail=node('details'),summary=node('summary','현재 화면 소스');detail.append(summary,node('p','제품 화면과 같은 코드를 실행하며, 로그인·DB 응답은 QA 더미 상태로 제어합니다.'));
+      const detail=node('details'),summary=node('summary',artifact?.archivedSource?'보존된 화면 소스':'현재 화면 소스');detail.append(summary,node('p','제품 화면과 같은 코드를 실행하며, 로그인·DB 응답은 QA 더미 상태로 제어합니다.'));
       for(const path of artifact.source.files||[]){
         if(typeof path!=='string'||!/^((src\/server)|(scripts\/r3))\/[a-zA-Z0-9_./-]+$/.test(path))continue;
-        const entry=node(publication?.iaCommit?'a':'p',path);
-        if(publication?.iaCommit&&/^[a-f0-9]{40}$/.test(publication.iaCommit)){entry.href='https://github.com/ydh1121/order-ia-portal/blob/'+publication.iaCommit+'/'+path;entry.target='_blank';entry.rel='noopener noreferrer';}
+        const entry=node(sourceCommit?'a':'p',path);
+        if(sourceCommit&&/^[a-f0-9]{40}$/.test(sourceCommit)){entry.href='https://github.com/ydh1121/order-ia-portal/blob/'+sourceCommit+'/'+path;entry.target='_blank';entry.rel='noopener noreferrer';}
         detail.append(entry);
       }
       detail.append(node('small','위치 의견은 이 화면의 소스 해시와 컴포넌트 위치에 연결됩니다.'));box.append(detail);
@@ -618,12 +619,13 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       if(n!==generation)return;
       if(a.fixture&&purchaseFixture)a.fixture={...a.fixture,data:{purchases:purchaseFixture.purchases},selectedPurchaseId:purchaseFixture.selectedPurchaseId};
       if(version==='recorded'||version!==a.version){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
-      artifact=a;session=crypto.randomUUID();if(version==='current'){row.hashes??={};row.hashes[width]=a.hash;}
+      artifact=a;session=crypto.randomUUID();if(version==='current'&&!a.archivedSource){row.hashes??={};row.hashes[width]=a.hash;}
       target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash};
       const documentSwap=()=>{if(n===generation)frame.srcdoc=frameDocument(a,row,session);};
       const onboarding=row.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(row.state)&&row.state.split('-')[0]===previous?.state.split('-')[0];
       const component=['login','signup','password','otp','terms'].includes(row.screen)&&row.runtimeFamily!=='snapshot';
-      if((row.screen==='quote-result'||onboarding||component)&&previous?.version==='current'&&row.screen===previous.screen&&row.variant===previous.variant&&version==='current'&&previous.width===width&&previous.motion===$('motion-enabled').checked&&!pinnedHash){
+      const sameRuntime=previous&&previous.runtimeDigest===(a.source?.runtimeDigest||null)&&previous.epoch===(a.archivedSource?.epoch||null);
+      if((row.screen==='quote-result'||onboarding||component)&&sameRuntime&&previous?.version==='current'&&row.screen===previous.screen&&row.variant===previous.variant&&version==='current'&&previous.width===width&&previous.motion===$('motion-enabled').checked&&!pinnedHash){
         const payload={state:row.state,hash:a.hash,channel:session,...(a.fixture?{fixture:a.fixture}:{})};
         if(onboarding||component)payload.markup=a.html;if(component)payload.applied=appliedState;
         frame.contentWindow.postMessage({scope:'ORDER_R3_HOST',channel:previous.channel,artifact:previous.hash,type:component?'componentState':onboarding?'onboardingState':'resultState',payload},'*');
@@ -772,7 +774,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       journeyDraft={basis:d.basis,qty:d.qty,unit:d.unit,price:d.price,unknown:d.unknown};
       select(screens.find(r=>r.id==='quote-review/normal/email'));return;
     }
-    if(m.type==='ready'){clearTimeout(transitionTimeout);frame.inert=false;displayed={channel:session,hash:artifact.hash,width:target.viewport,version:artifact.version,screen:current.screen,state:current.state,variant:current.variant,motion:$('motion-enabled').checked};
+    if(m.type==='ready'){clearTimeout(transitionTimeout);frame.inert=false;displayed={channel:session,hash:artifact.hash,width:target.viewport,version:artifact.version,screen:current.screen,state:current.state,variant:current.variant,motion:$('motion-enabled').checked,runtimeDigest:artifact.source?.runtimeDigest||null,epoch:artifact.archivedSource?.epoch||null};
       if(isCurrent&&arrivalScreen===current.id){send('memberArrival',true);arrivalScreen=null;}
       if(isCurrent)restoreOnboardingChoice();
       if(isCurrent&&['profile','onboarding'].includes(current.screen))send('noticeCountFixture',sampleUnread);

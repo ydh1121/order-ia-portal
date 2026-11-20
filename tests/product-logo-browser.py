@@ -73,7 +73,11 @@ OBSERVER = r"""(() => {
   receipt.snapshot = snapshot;
   const frame = () => {
     const value = snapshot();
-    if (value) receipt.frames.push(value);
+    if (value) {
+      const word = document.querySelector('.obm-wordmark'), style = getComputedStyle(word);
+      value.wordPaint = {backgroundPosition:style.backgroundPosition,animationName:style.animationName,color:style.color,transform:style.transform};
+      receipt.frames.push(value);
+    }
     // Longer than the complete test sequence; bounded even after a failure.
     if (performance.now() < 120000 && receipt.frames.length < 7200) requestAnimationFrame(frame);
   };
@@ -127,8 +131,19 @@ def geometry(page, expected, label):
         near(actual["mark"][key], value, label + ": path " + key)
     for key, value in {"x": 24, "y": 29.0234375, "width": 72, "height": 25}.items():
         near(actual["word"][key], value, label + ": word " + key)
-    assert page.locator(".obm-wordmark").evaluate("e=>getComputedStyle(e).backgroundImage") == "none"
-    assert page.locator(".obm-wordmark").evaluate("e=>getComputedStyle(e).color") == "rgb(36, 41, 46)"
+    paint = page.locator(".obm-wordmark").evaluate("e=>{const s=getComputedStyle(e);return {image:s.backgroundImage,color:s.color,animation:s.animationName,duration:s.animationDuration,transform:s.transform,fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
+    # Check the authored rule in the rendered product, not only its fixed box.
+    # A canonical module can change without reaching this serialized document.
+    typography = {key: paint[key] for key in ("fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing")}
+    assert typography["fontFamily"].split(",")[0].strip().strip("\"'") == "Arial Black", {"label": label, "typography": typography}
+    assert typography["fontSize"] == "25px" and typography["fontWeight"] == "900" and typography["lineHeight"] == "25px", {"label": label, "typography": typography}
+    assert typography["letterSpacing"] in ("0px", "normal"), {"label": label, "typography": typography}
+    actual["wordTypography"] = typography
+    if actual["authenticated"]:
+        assert "radial-gradient" in paint["image"] and paint["animation"] == "obm-wordmark-wash", paint
+        assert paint["duration"] == "24s" and paint["transform"] == "none", paint
+    else:
+        assert paint["image"] == "none" and paint["color"] == "rgb(36, 41, 46)", paint
     assert page.evaluate("document.documentElement.scrollWidth<=innerWidth+1")
     return actual
 
@@ -145,6 +160,8 @@ def menu_settled(page, current, phase="open"):
         actual = state(page)
         rect = actual["panel"]
         assert rect and rect["x"] >= 0 and rect["y"] >= 0 and rect["x"] + rect["width"] <= 376 and rect["y"] + rect["height"] <= 829, rect
+        near(rect["x"]+rect["width"],actual["trigger"]["x"]+actual["trigger"]["width"],"panel upper-right anchor")
+        near(rect["y"],actual["trigger"]["y"],"panel starts at trigger top")
         # Permission-denied entries remain in the DOM with hidden=true. They
         # must stay unpainted; every permitted entry must finish fully visible.
         assert all(label["opacity"] == 0 if label["hidden"] else label["opacity"] > .99
@@ -317,6 +334,11 @@ def main():
             assert len({tuple(f["pathShape"]) for f in arrival["frames"]}) > 3
             assert all(f["svg"] == member["svg"] and f["paths"] == member["paths"] for f in arrival["frames"])
             product.screenshot(path=EVIDENCE / "member-1-375.png")
+            # Observe actual colour frames, with no animation seeking or CSS overrides.
+            product.wait_for_function("()=>new Set(window.__logoEvidence.frames.filter(f=>f.authenticated&&f.wordPaint?.animationName==='obm-wordmark-wash').map(f=>f.wordPaint.backgroundPosition)).size>=3",timeout=7000)
+            gradient = save_timeline(product,"member-gradient-timeline")
+            assert all(frame["wordPaint"]["transform"] == "none" for frame in gradient["frames"] if frame.get("wordPaint"))
+            product.screenshot(path=EVIDENCE / "member-gradient-375.png")
 
             # The actual intro controls update only content, keeping one header,
             # one original SVG, three original paths and the account panel.
@@ -421,6 +443,12 @@ def main():
                 menu_settled(product, item)
                 expect(panel.locator(f'[data-obm-page="{item}"] .obm-panel-content')).not_to_have_attribute("aria-busy", "true")
                 assert product.url == stable_url and state(product)["panelNode"] == panel_id
+                controls = panel.locator(".obm-panel-content button:visible,.obm-panel-content input:visible,.obm-panel-content select:visible,.obm-panel-content textarea:visible")
+                if controls.count():
+                    controls.last.scroll_into_view_if_needed()
+                    last_control, panel_bounds = controls.last.bounding_box(), panel.bounding_box()
+                    assert last_control and last_control["y"] >= panel_bounds["y"] - 1 and last_control["y"] + last_control["height"] <= panel_bounds["y"] + panel_bounds["height"] + 1, {"page": item, "lastControl": last_control, "panel": panel_bounds}
+                    near(panel_bounds["y"], state(product)["trigger"]["y"], "scrolling a long form preserves its trigger-top anchor")
                 leaves.append(item)
                 panel.locator(".obm-back").click()
                 menu_settled(product, "manage")
@@ -440,14 +468,13 @@ def main():
             expect(panel).to_be_hidden()
             expect(trigger).to_be_focused()
 
-            # Three physical clicks within the morph duration: open, reverse,
-            # reopen. No stale completion may close the latest request.
-            b = trigger.bounding_box()
-            product.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+            # The opened panel replaces the trigger's upper-right footprint.
+            # Native keyboard activation still supports rapid reverse/reopen.
+            trigger.press("Enter")
             product.wait_for_timeout(65)
-            product.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+            trigger.press("Enter")
             product.wait_for_timeout(65)
-            product.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
+            trigger.press("Enter")
             menu_settled(product, "root")
             assert product.locator(".obm-flight").count() == 0
             assert product.url == stable_url

@@ -13,6 +13,7 @@ import {approvedShellBody,shellStyles} from './r3-ui/approved-shell.mjs';
 import {approvedHash,reviewHashes,approvedWidths} from './r3-ui/approved-width.mjs';
 import {installReviewShortcut, mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
 import {installPinProjection} from './r3-ui/pin-projection.mjs';
+import {installReviewPanels} from './r3-ui/review-panels.mjs';
 import {approvedRegistry} from './r3-ui/approved-registry.mjs';
 import {bootApprovedShell} from './r3-ui/approved-controller.mjs';
 import {mountQuoteJourneyBridge} from './r3-ui/quote-journey-bridge.mjs';
@@ -27,20 +28,24 @@ import {defaultQaNavigation} from './r3-qa-navigation.mjs';
 import * as supplementalHistory from './r3-ui/supplemental-history.gen.mjs';
 import {isProductLiveTarget} from './product-lab-page.mjs';
 import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-runtime.mjs';
+import {isReviewedEpochTarget,readReviewedEpochArtifact,readReviewedEpochBody} from './r3-qa-epoch-history.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
 // Pin presentation is part of the review tool, not the preserved product HTML,
 // CSS or released frame identity. Historical replay code is still executed intact.
 const pinPresentationStyle='.r3-pin.is-resolved{background:#315de6;border-style:dashed}.r3-pin.is-previous{background:#7c3aed}.r3-pin.is-mixed{background:linear-gradient(135deg,#7c3aed 0 50%,#315de6 50% 100%)}.r3-pin.is-previous:hover,.r3-pin.is-previous.is-selected{box-shadow:0 0 0 4px #7c3aed33}.r3-pin.is-resolved::before{content:"✓";position:absolute;left:-5px;bottom:-5px;display:grid;place-items:center;width:12px;height:12px;border-radius:50%;background:white;color:#087f5b;font:800 9px/1 system-ui}.r3-pin.is-previous[data-cluster]:not([data-cluster=""])::after{color:#7c3aed}';
-const reviewFrameCode='function presentReviewFrame(session,replay){('+browserFunction(installPinProjection)+')(session);const pinStyle=document.createElement("style");pinStyle.textContent='+JSON.stringify(pinPresentationStyle)+';document.head.append(pinStyle);if(replay){replay(session);}else{window.ORDER_QA_REVIEW_RUNTIME?.(session);('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);}('+browserFunction(mountApprovedMarkers)+')(session);}';
+const reviewPanelAuthStates=[...new Map(catalog.filter(row=>['login','signup','otp','password','terms'].includes(row.screen)).map(row=>[row.screen+'/'+row.state,[row.screen,row.state]])).values()];
+const reviewFrameCode='function presentReviewFrame(session,replay){('+browserFunction(installReviewPanels)+')(session,'+JSON.stringify(reviewPanelAuthStates)+');('+browserFunction(installPinProjection)+')(session);const pinStyle=document.createElement("style");pinStyle.textContent='+JSON.stringify(pinPresentationStyle)+';document.head.append(pinStyle);if(replay){replay(session);}else{window.ORDER_QA_REVIEW_RUNTIME?.(session);('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);}('+browserFunction(mountApprovedMarkers)+')(session);}';
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cached=new Map();
 async function sha(s){const b=await crypto.subtle.digest('SHA-256',utf8.encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function inflate(data){const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();}
 let historicalBodyIndex,publishedBootstrap,interactionBootstrap,brandBootstrap,logoCorrectionBootstrap;
-async function historicalBody(digest){
+export async function resolveR3HistoricalBody(digest){
+  const reviewed=await readReviewedEpochBody(digest);
+  if(reviewed!==null)return reviewed;
   historicalBodyIndex??=inflate(beforeMotion.archivedBodyPack).then(JSON.parse);
   const {fragments,paths}=await historicalBodyIndex;
   return paths[digest].map(index=>fragments[index]).join('');
@@ -56,6 +61,7 @@ const frameStyle=`
 export async function isR3ReviewTarget(target,revision=release){
   if(revision!==release||!target||!approvedWidths.includes(target.viewport))return false;
   if(isProductLiveTarget(target))return true;
+  if(await isReviewedEpochTarget(target,revision))return true;
   const preserved=supplementalHistory.supplementalHistoryRows[[target.screen,target.state,target.variant].join('/')];
   if(preserved?.hashes[target.viewport]===target.artifactHash)return true;
   const additional=(await getQaSupplemental()).documents.get([target.screen,target.state,target.variant].join('/'));
@@ -96,6 +102,12 @@ export async function serveR3Artifact(request,env){
         authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
     }));
     return json({release,items,navigationDefaults:defaultQaNavigation(items.map(row=>row.screen)),publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname)});
+  }
+  // An explicit pinned identity belongs to the captured release, even after
+  // the current HTML, shared QA fixture runtime or source catalogue changes.
+  if(['recorded','current'].includes(q.get('version'))&&q.has('artifactHash')&&[...q.keys()].every(k=>['id','width','version','artifactHash'].includes(k))){
+    const saved=await readReviewedEpochArtifact(q.get('id'),Number(q.get('width')),q.get('artifactHash'));
+    if(saved)return json({...saved.artifact,replayFrame:saved.replayFrame,archivedSource:saved.archivedSource});
   }
   const savedSupplement=supplementalHistory.supplementalHistoryRows[q.get('id')];
   if(savedSupplement&&['recorded','current','prior-r3'].includes(q.get('version'))&&approvedWidths.includes(Number(q.get('width')))&&q.get('artifactHash')===savedSupplement.hashes[Number(q.get('width'))]&&[...q.keys()].every(k=>['id','width','version','artifactHash'].includes(k))){
@@ -145,10 +157,11 @@ export async function serveR3Artifact(request,env){
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
   if(pinned&&pinned!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  // Logo/brand history bodies are byte-identical entries in frames. Keeping
-  // their unused fallback references would duplicate them in the Pages bundle.
+  // Old logo/brand bodies remain in the reviewed epoch fragment pack when the
+  // current/previous catalogue no longer references them. Their original
+  // archive modules are unchanged and need not be duplicated in this bundle.
   const packed=frames[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
-  const body=packed?await inflate(packed):await historicalBody(bodyDigest);
+  const body=packed?await inflate(packed):await resolveR3HistoricalBody(bodyDigest);
   const interactionArchive=archived&&archived===beforeInteraction.archivedRows[r.id];
   const brandArchive=archived&&archived===beforeBrand.archivedRows[r.id];
   const logoCorrectionArchive=archived&&archived===beforeLogoCorrection.archivedRows[r.id];

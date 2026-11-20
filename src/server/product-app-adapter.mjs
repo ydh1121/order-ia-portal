@@ -30,7 +30,16 @@ export function installProductAdapter(context,options={}){
   if(options.navigate)return options.navigate(screen,state);
   const url=new URL(location.href);url.searchParams.set('view','product-r3');url.searchParams.set('screen',screen);url.searchParams.set('state',state);location.assign(url);
  };
- const formField=(label,name,value)=>{const holder=node('div');const U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');holder.innerHTML=U.field(label,name,'',{value:value||'',type:name==='phone'?'tel':'text',max:name==='name'?80:40,required:name==='name'});return [holder.firstElementChild,holder.querySelector('input')];};
+ const formField=(route,label,name,value)=>{
+  const holder=node('div'),U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');
+  holder.innerHTML=U.field(label,name,'',{value:value||'',type:name==='phone'?'tel':'text',max:name==='name'?80:40,required:name==='name'});
+  const input=holder.querySelector('input'),original=input.id,elements=[...holder.querySelectorAll('[id]')],base='account-field-'+route.replaceAll('.','-')+'-'+name;
+  let prefix=base,suffix=1;
+  while(elements.some(element=>document.getElementById(prefix+element.id.slice(original.length))))prefix=base+'-'+(++suffix);
+  const ids=new Map();for(const element of elements){const before=element.id;ids.set(before,prefix+before.slice(original.length));element.id=ids.get(before);}
+  for(const element of holder.querySelectorAll('[for],[aria-labelledby],[aria-describedby],[aria-controls]'))for(const attribute of ['for','aria-labelledby','aria-describedby','aria-controls'])if(element.hasAttribute(attribute))element.setAttribute(attribute,element.getAttribute(attribute).split(/\s+/).map(id=>ids.get(id)||id).join(' '));
+  return [holder.firstElementChild,input];
+ };
  const button=(label,action,primary=false)=>{const holder=node('div'),U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');holder.innerHTML=U.button(U.esc(label),'product-panel-action',primary?'primary':'secondary');const b=holder.firstElementChild;b.onclick=action;return b;};
  const renderPanel=async({id,container,signal,push,setUnread})=>{
   if(window.ORDER_PRODUCT_PANELS?.canMount(id))return window.ORDER_PRODUCT_PANELS.mount({id,container,signal,push,adapter});
@@ -44,7 +53,7 @@ export function installProductAdapter(context,options={}){
    if(id.startsWith('profile')){
     const current=await adapter.request('/account',null,signal);if(signal?.aborted)return;permissions=current.capabilities;container.replaceChildren();
     if(id==='profile.connections'){container.append(node('p',current.profile.connections?.length?'연결된 계정':'연결된 간편 로그인 계정이 없어요.','muted'));return;}
-    const form=node('form'),[nameWrap,name]=formField('이름','name',current.profile.name),[phoneWrap,phone]=formField('전화번호','phone',current.profile.phone);name.required=true;phone.type='tel';
+    const form=node('form'),[nameWrap,name]=formField(id,'이름','name',current.profile.name),[phoneWrap,phone]=formField(id,'전화번호','phone',current.profile.phone);name.required=true;phone.type='tel';
     const email=node('p',current.profile.email,'muted'),save=button('저장',async()=>{window.QAUI.setFieldError(name,name.value.trim()?'':'이름을 입력해 주세요.');window.QAUI.setFieldError(phone,/^[-+() 0-9]*$/.test(phone.value)?'':'전화번호를 확인해 주세요.');if(!name.value.trim()||!/^[-+() 0-9]*$/.test(phone.value))return;save.disabled=true;try{const result=await adapter.request('/account',{action:'update',expectedRevision:current.revision,requestKey:crypto.randomUUID(),profile:{name:name.value,phone:phone.value}});current.revision=result.revision;status.textContent='저장했어요.';}catch(error){status.textContent=adapter.message(error);}finally{save.disabled=false;}},true);
     form.onsubmit=e=>{e.preventDefault();save.click();};form.append(email,nameWrap,phoneWrap,save,status);container.append(form);status.textContent='';return;
    }

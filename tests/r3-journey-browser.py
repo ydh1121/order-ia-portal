@@ -116,11 +116,23 @@ def check_motion(page, origin):
     assert any(item['proposedReels']>0 and item['turn'] for item in animated),animated
     expect(proposed.locator('.oq-price-reel')).to_have_count(0)
     action=view.locator('button[data-action=recompare]')
+    material=action.locator('[data-magnetic-material]')
+    label=action.locator('[data-magnetic-label]')
     x,y=frame_pointer_position(page,action,{'x':105,'y':25})
     fixed=action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')
+    fixed_material=material.evaluate('s=>JSON.stringify(s.getBoundingClientRect().toJSON())')
     page.mouse.move(x,y);expect(action).to_have_attribute('data-magnetic-action','hover')
-    assert action.locator('[data-magnetic-material]').evaluate("s=>s.style.transform!==''")
+    # QA c51be820 keeps the button body still while its contents respond to hover.
+    # Check the rendered surface as well as the hit target; the previous assertion
+    # incorrectly required the rejected material-following-pointer behavior.
+    expect(material).to_have_css('transform','none')
+    expect(label).not_to_have_css('transform','none')
+    assert material.evaluate('s=>JSON.stringify(s.getBoundingClientRect().toJSON())')==fixed_material
+    assert action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')==fixed
     page.mouse.down();expect(action).to_have_attribute('data-magnetic-action','pressed')
+    expect(material).to_have_css('transform','matrix(0.98, 0, 0, 0.98, 0, 0)')
+    assert material.bounding_box()['width']<json.loads(fixed_material)['width']
+    expect(action).to_have_css('border-top-color','rgba(0, 0, 0, 0)')
     assert action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')==fixed
     page.mouse.up();expect(view.locator('dialog[open]')).to_have_count(1)
     frame_click(page,view.get_by_role('button',name='닫기'));expect(view.locator('dialog[open]')).to_have_count(0)
@@ -159,6 +171,8 @@ def check_motion(page, origin):
         (Path(path)/'result-motion.json').write_text(json.dumps({
             'environment':'protected QA frame, Chromium, isolated design amounts',
             'currentStaticAndProposedGrowing':animated, 'sameGraphButtonRetained':True,
+            'magneticAction':{'stationaryHoverMaterial':True,'responsiveHoverContent':True,
+                              'pressedMaterialScale':0.98,'outerBorderTransparent':True,'fixedHitTarget':True},
             'countdownObserved':[before,remaining],'textSwapSelection':'current'
         },ensure_ascii=False,indent=2))
 

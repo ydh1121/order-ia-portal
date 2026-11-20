@@ -5,7 +5,7 @@ import {mountBrandAccountMenu,brandAccountMenuCss} from './brand-account-menu.mj
  * Authentication and account transports are supplied by the server adapter.
  * A URL, storage partition or result state never grants a member menu. */
 export const orderBrandHeaderCss=String.raw`
-.order-product-brand.obm-brand{box-sizing:border-box;width:100%;height:78px;margin:0;padding:0 .1259918213px 0 0;gap:8px;flex:1;--obm-mark-offset-y:2.6406373978px;font:800 26px/1 Arial,sans-serif;letter-spacing:-1.6px;color:var(--ink,#20272b)}
+.order-product-brand.obm-brand{box-sizing:border-box;width:100%;height:78px;margin:0;padding:0 .1259918213px 0 0;gap:8px;flex:1;--obm-mark-offset-y:2.6406373978px;font:900 25px/1 "Arial Black",Arial,sans-serif;letter-spacing:0;color:var(--ink,#20272b)}
 .order-product-brand.obm-brand[data-authenticated=true]{--obm-mark-offset-y:3.3738927841px}
 .order-product-brand.obm-brand>.brand-word{position:relative;top:2.5234375px;display:block;box-sizing:border-box;flex:none;width:72px;height:25px;margin:0;font:inherit;line-height:25px;letter-spacing:inherit}
 .order-product-brand.obm-brand>.brand-word>.brand-dot{position:absolute;left:70.625px;top:0;margin:0;line-height:inherit;letter-spacing:0}

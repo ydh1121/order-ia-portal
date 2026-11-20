@@ -7,7 +7,7 @@ export function mountIntroPagination(nav,reduced){
   active.className='ob-active-pill';active.setAttribute('aria-hidden','true');nav.append(active);
   let frame=null,last=null,selected=Number(nav.querySelector('[aria-current]')?.dataset.mfIntro)||1;
   let a={x:0,v:0,t:0},b={x:0,v:0,t:0},forward=true;
-  const draw=()=>{active.style.transform='translateX('+a.x.toFixed(2)+'px)';active.style.width=Math.max(7,b.x-a.x).toFixed(2)+'px';};
+  const draw=()=>{active.style.transform='translateX('+a.x.toFixed(2)+'px)';active.style.width=Math.max(5,b.x-a.x).toFixed(2)+'px';};
   function tick(now){
     const dt=last===null?1/60:Math.min((now-last)/1000,.032);
     last=now;
@@ -30,7 +30,7 @@ export function mountIntroPagination(nav,reduced){
     dots.forEach(button=>{if(button===dot)button.setAttribute('aria-current','step');else button.removeAttribute('aria-current');});
     if(!dot.offsetWidth)return;
     const mid=dot.offsetLeft+dot.offsetWidth/2;
-    a.t=mid-11;b.t=mid+11;
+    a.t=mid-12.5;b.t=mid+12.5;
     if(snap||reduced?.()||!nav.classList.contains('has-active-pill')){
       if(frame!==null)cancelAnimationFrame(frame);frame=null;last=null;
       a.x=a.t;b.x=b.t;a.v=0;b.v=0;draw();

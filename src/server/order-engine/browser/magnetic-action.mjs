@@ -1,22 +1,28 @@
-/** Figma 2009019251, selected video 2 Magnetic Pull. The pointer target and its
- * native action stay on the stationary button. Only its material and label move. */
+/** Figma 2009019251, revised by QA c51be820 / 9ab0290b.
+ * The material stays still on hover; the contents respond to the pointer.
+ * Press compression includes the material's border, without a second outline. */
 export function mountMagneticAction(button,{reducedMotion=()=>false,fill}={}) {
   const owner=Symbol.for('order.magnetic-action');
   if(button[owner])return button[owner];
   const doc=button.ownerDocument,view=doc.defaultView,media=view.matchMedia('(prefers-reduced-motion: reduce)');
   const surface=doc.createElement('span'),label=doc.createElement('span');
-  const original={position:button.style.position,background:button.style.background};
+  const original={position:button.style.position,background:button.style.background,borderColor:button.style.borderColor};
   const appearance=view.getComputedStyle(button);
   surface.dataset.magneticMaterial='';surface.setAttribute('aria-hidden','true');
-  surface.style.cssText='position:absolute;inset:0;border-radius:inherit;pointer-events:none;';
+  surface.style.cssText='position:absolute;inset:0;box-sizing:border-box;border-radius:inherit;pointer-events:none;';
   surface.style.background=fill||appearance.background;
+  surface.style.border=appearance.border;
+  for(const side of ['Top','Right','Bottom','Left']){
+    surface.style['border'+side]=appearance['border'+side];
+    surface.style[side.toLowerCase()]=-(parseFloat(appearance['border'+side+'Width'])||0)+'px';
+  }
   label.dataset.magneticLabel='';
   label.style.cssText='position:relative;pointer-events:none;transform-origin:center;';
   label.style.display=appearance.display.includes('flex')?'inline-flex':'inline-block';
   if(label.style.display==='inline-flex'){label.style.alignItems='center';label.style.gap='inherit';}
   label.append(...Array.from(button.childNodes));button.append(surface,label);
   if(appearance.position==='static'||!appearance.position)button.style.position='relative';
-  button.style.background='transparent';button.dataset.magneticAction='rest';
+  button.style.background='transparent';button.style.borderColor='transparent';button.dataset.magneticAction='rest';
   const listeners=new view.AbortController();
   let px=0,py=0,surfaceAnim=null,labelAnim=null,pressed=false,pressId=null;
   const quiet=()=>media.matches||reducedMotion()||doc.documentElement.hasAttribute('data-review-reduced');
@@ -30,14 +36,14 @@ export function mountMagneticAction(button,{reducedMotion=()=>false,fill}={}) {
   }
   function lean(e){
     if(button.disabled||pressed||e.pointerType==='touch'||quiet())return;
-    coords(e);stopAnimations();surface.style.transform=shift(px*6,py*6);label.style.transform=shift(px*8,py*8);
+    coords(e);stopAnimations();surface.style.transform='';label.style.transform=shift(px*5,py*5);
     button.dataset.magneticAction='hover';
   }
   function down(e){
     if(button.disabled||quiet()||e.isPrimary===false||e.button!==0)return;
     coords(e);pressed=true;pressId=e.pointerId;stopAnimations();
     const a=surface.style.transform||'none',b=label.style.transform||'none';
-    surface.style.transform=shift(px*7,py*7,.98);label.style.transform=shift(px*13,py*13,.73);
+    surface.style.transform='scale(.98)';label.style.transform=shift(px*8,py*8,.73);
     surfaceAnim=surface.animate?.([{transform:a},{transform:surface.style.transform}],{duration:100,easing:'ease-out'});
     labelAnim=label.animate?.([{transform:b},{transform:label.style.transform}],{duration:110,easing:'ease-out'});
     button.dataset.magneticAction='pressed';
@@ -48,7 +54,7 @@ export function mountMagneticAction(button,{reducedMotion=()=>false,fill}={}) {
     const a=view.getComputedStyle(surface).transform,b=view.getComputedStyle(label).transform;
     stopAnimations();pressed=false;pressId=null;surface.style.transform=label.style.transform='';
     if(!quiet()){
-      surfaceAnim=surface.animate?.([{transform:a||'none'},{transform:shift(-px*1.2,-py*1.2),offset:.72},{transform:'none'}],{duration:215,easing:'ease-out'});
+      surfaceAnim=surface.animate?.([{transform:a||'none'},{transform:'scale(1.005)',offset:.72},{transform:'none'}],{duration:215,easing:'ease-out'});
       labelAnim=label.animate?.([{transform:b||'none'},{transform:shift(-px*1.6,-py*1.6,1.025),offset:.72},{transform:'none'}],{duration:220,easing:'ease-out'});
     }
     button.dataset.magneticAction='rest';
@@ -70,7 +76,7 @@ export function mountMagneticAction(button,{reducedMotion=()=>false,fill}={}) {
   const control={setLabel,reset,destroy(){
     reset();listeners.abort();media.removeEventListener?.('change',reset);
     label.replaceWith(...Array.from(label.childNodes));surface.remove();button.style.position=original.position;
-    button.style.background=original.background;delete button.dataset.magneticAction;delete button[owner];
+    button.style.background=original.background;button.style.borderColor=original.borderColor;delete button.dataset.magneticAction;delete button[owner];
   }};
   button[owner]=control;return control;
 }

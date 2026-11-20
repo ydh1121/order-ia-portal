@@ -180,6 +180,7 @@ jobs:
             artifacts/motion-runtime/
             artifacts/motion-live/
             artifacts/r3-auth-motion/
+            artifacts/business-date/
             artifacts/qa-mvp/
             artifacts/quote-draft/
             artifacts/frame-pointer/
