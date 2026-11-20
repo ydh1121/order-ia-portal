@@ -51,7 +51,7 @@ test('transitive imports stay inside the private inventory and unknown paths ret
  for(const path of ['test/fixtures/qa-lab.mjs','build-identity.json','reference-pricebook.json','__proto__','web/../index.html','web/assets/CODE1_jelly_interactive.svg']){
   assert.equal(r3ProductAsset(prefix+path).status,404);
  }
- assert.equal((await r3ProductAsset(prefix+'assets/iana-reference.json').json()).manifest.version,'2026111800');
+ assert.equal((await r3ProductAsset(prefix+'assets/iana-reference.json').json()).manifest.version,'2026111900');
 });
 
 test('sealed production writer preserves per-mode confirmed data, across new instances, per owner',async t=>{

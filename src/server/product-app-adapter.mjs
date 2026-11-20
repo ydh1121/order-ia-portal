@@ -31,6 +31,7 @@ export function installProductAdapter(context){
  const formField=(label,name,value)=>{const holder=node('div');const U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');holder.innerHTML=U.field(label,name,'',{value:value||'',type:name==='phone'?'tel':'text',max:name==='name'?80:40,required:name==='name'});return [holder.firstElementChild,holder.querySelector('input')];};
  const button=(label,action,primary=false)=>{const holder=node('div'),U=window.QAUI;if(!U)throw Error('COMMON_UI_UNAVAILABLE');holder.innerHTML=U.button(U.esc(label),'product-panel-action',primary?'primary':'secondary');const b=holder.firstElementChild;b.onclick=action;return b;};
  const renderPanel=async({id,container,signal,push,setUnread})=>{
+  if(window.ORDER_PRODUCT_PANELS?.canMount(id))return window.ORDER_PRODUCT_PANELS.mount({id,container,signal,push,adapter});
   const status=node('p','불러오는 중이에요.','muted');status.setAttribute('role','status');container.append(status);
   try{
    if(id==='notifications'){
@@ -62,7 +63,19 @@ export function installProductAdapter(context){
   }catch(error){if(!signal?.aborted){status.textContent=adapter.message(error);if(!status.isConnected)container.append(status);}}
   finally{if(!signal?.aborted){const dispose=window.QAUI?.sharedMount?.(container,{mode:'product',reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches});signal?.addEventListener('abort',()=>dispose?.(),{once:true});}}
  };
- const brandContext={authenticated:context.actor?.authenticated!==false,renderPanel,canAccess:id=>id!=='manage.dashboard'||permissions?.dashboard===true,navigate:id=>{const mapping={'manage.delivery':'admin-shipments','manage.payments':'store-purchase','manage.quotes':'delivery-request','manage.business':'store-settings','manage.dashboard':'admin-analytics'};if(mapping[id])route(mapping[id]);}};
+ // The server context is the only authentication authority. This small tab
+ // history records presentation continuity only: returning from a guest page
+ // to a server-authenticated page plays the arrival once. Reloads and ordinary
+ // member navigation stay at their settled Figma position.
+ const authenticated=context.actor?.authenticated===true;
+ const brandSessionKey='order.brand.auth.v1.'+(context.runId||'product');
+ let arrivalPending=false;
+ try{
+  const previous=JSON.parse(sessionStorage.getItem(brandSessionKey)||'null');
+  arrivalPending=authenticated&&previous?.authenticated===false&&Number.isFinite(previous.at)&&Date.now()-previous.at<12*60*60*1000;
+  sessionStorage.setItem(brandSessionKey,JSON.stringify({authenticated,at:Date.now()}));
+ }catch{}
+ const brandContext={authenticated,consumeArrival(){const play=arrivalPending;arrivalPending=false;return play;},renderPanel,canAccess:id=>id!=='manage.dashboard'||permissions?.dashboard===true,navigate:id=>{const mapping={'manage.delivery':'admin-shipments','manage.payments':'store-purchase','manage.quotes':'delivery-request','manage.business':'store-settings','manage.dashboard':'admin-analytics'};if(mapping[id])route(mapping[id]);}};
  window.ORDER_BRAND_ACCOUNT_CONTEXT=brandContext;
  if(brandContext.authenticated)ready.then(async()=>{
   const [account,notifications]=await Promise.all([adapter.request('/account'),adapter.request('/notifications')]);permissions=account.capabilities;unread=notifications.items.filter(i=>!i.readAt).length;brandContext.unread=unread;

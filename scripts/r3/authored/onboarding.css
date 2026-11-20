@@ -72,7 +72,7 @@
 @media(max-height:720px){.ob .ob-main{grid-template-rows:auto minmax(140px,1fr) 54px}.ob .ob-copy{padding-top:20px}.ob .ob-art{max-height:190px}}
 @media(prefers-reduced-motion:no-preference){.ob .ob-mode.card svg{transition:transform .18s}.ob .ob-mode.card:hover svg,.ob .ob-mode.card:focus-visible svg{transform:translateY(-2px)}.ob .ob-quick-items,.ob .ob-drawer{animation:ob-reveal .18s ease-out}@keyframes ob-reveal{from{opacity:.65;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}}
 
-.ob.member .ob-wordmark{background:linear-gradient(90deg,#131719,#686560 65%,#d58c1b);color:transparent;background-clip:text}
+.ob.member .ob-wordmark{background:none;color:#24292e}
 .ob .ob-period{opacity:0}
 .ob .ob-quick-items{background:transparent;border:0;box-shadow:none;gap:9px;align-items:end}
 .ob .ob-quick-items button{border-radius:999px;min-height:42px;padding:0 17px;background:#292f32;color:white;box-shadow:0 2px 8px #0002}
@@ -105,3 +105,11 @@
 .ob .ob-pages.has-active-pill [aria-current] i{width:7px;background:#d4d9de}
 .ob .ob-active-pill{pointer-events:none;position:absolute;height:7px;top:18.5px;left:0;border-radius:8px;background:var(--ob-blue)}
 .ob .ob-mode.card [data-magnetic-label]{flex-direction:column;justify-content:center}
+
+/* Figma 1063:21997 / 1034:18316. Measure the three paths, not the padded SVG. */
+.ob .ob-stage>header{height:78px;padding-right:.125992px}
+.ob .ob-brand-common{position:relative;display:flex;align-items:center;gap:8px;min-width:0;flex:1;color:#24292e;--obm-mark-offset-y:2.640637px}
+.ob.member .ob-brand-common{--obm-mark-offset-y:3.373893px}
+.ob .ob-brand-common .ob-wordmark{position:relative;top:2.5234375px;width:72px;height:25px;flex:none;font:800 26px/25px Arial,sans-serif;letter-spacing:-1.6px;background:none;color:#24292e}
+.ob .ob-brand-common .ob-period{position:absolute;left:100%;bottom:0}
+.ob.member .ob-brand-common .ob-period{display:none}

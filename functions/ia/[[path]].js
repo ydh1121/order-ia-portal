@@ -31,6 +31,10 @@ export async function onRequest({request,env}){
      const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
      if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
      if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))next.set('width',width);
+     if(url.searchParams.get('archive')==='1')next.set('archive','1');
+     if(['current','previous','prior-r3','recorded'].includes(url.searchParams.get('version')))next.set('version',url.searchParams.get('version'));
+     const artifactHash=url.searchParams.get('artifactHash');if(artifactHash&&/^[a-f0-9]{64}$/.test(artifactHash))next.set('artifactHash',artifactHash);
+     for(const key of ['state','variant','componentVariant']){const value=url.searchParams.get(key);if(value&&/^[-\w]{1,100}$/.test(value))next.set(key,value);}
       const run=url.searchParams.get('run'),page=url.searchParams.get('page'),persona=url.searchParams.get('persona');if(run&&/^[a-f0-9]{32}$/.test(run))next.set('run',run);if(page&&/^[-\w]{1,100}$/.test(page))next.set('page',page);if(['buyer','supplier','operator','guest'].includes(persona))next.set('persona',persona);
    }
    if(r3View==='pricing-r3'){
@@ -57,7 +61,9 @@ export async function onRequest({request,env}){
   'Content-Security-Policy':`default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`};
  let html;
  let productContext={mode:'product',actor:{id:actor.id,authenticated:true},endpoints:{product:'/api/ia/product',role:'/api/ia/r3-role',price:'/api/ia/r3-price'}};
- if(url.searchParams.has('labRun')){
+ // The QA host selects and validates runs through the control-plane API. Its
+ // preserved history must remain readable even when a linked run was archived.
+ if(r3View!=='qa-lab'&&url.searchParams.has('labRun')){
    if(actor.role!=='OWNER')return new Response(null,{status:403,headers:base});
    try{
      const {labContext}=await import('../../src/server/product-lab.mjs');
@@ -70,8 +76,11 @@ export async function onRequest({request,env}){
  }
  if(r3View==='qa-lab'){
    headers['Content-Security-Policy']+="; frame-src 'self'; object-src 'none'";
-   if(url.searchParams.get('archive')==='1'||url.searchParams.has('screen')){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
-   else{const {renderProductLab}=await import('../../src/server/product-lab-page.mjs');html=renderProductLab(nonce);}
+   // A screen ID identifies the requested product entry. Only an explicit
+   // historical request may replay authored frames and their original comments.
+   const {isArchivedQaRequest,renderProductLab}=await import('../../src/server/product-lab-page.mjs');
+   if(isArchivedQaRequest(url.searchParams)){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
+   else html=renderProductLab(nonce,url.searchParams);
  }else if(r3View==='product-r3'){
    const {renderProductApplication}=await import('../../src/server/product-app-page.mjs');
    html=await renderProductApplication(nonce,productContext,url.searchParams.get('screen')||'store-purchase',url.searchParams.get('state')||'default','email',url.searchParams.get('componentVariant')||null);
@@ -96,7 +105,9 @@ export async function onRequest({request,env}){
    const {renderR3RolePage}=await import('../../src/server/r3-role-page.mjs');html=renderR3RolePage(nonce);
  }else html=v03OwnerHtml(nonce);
  if(r3View&&r3View!=='qa-lab'&&r3View!=='product-r3'){
-   const {injectProductContext}=await import('../../src/server/product-app-page.mjs');html=injectProductContext(html,nonce,productContext);
+   const {injectProductContext}=await import('../../src/server/product-app-page.mjs');
+   const {getProductPanelBootstrap}=await import('../../src/server/product-account-panels.mjs');
+   html=injectProductContext(html,nonce,productContext,await getProductPanelBootstrap());
  }
  if(productContext.mode==='lab'&&r3View!=='qa-lab'){
    const {installLiveInspection}=await import('../../src/server/product-live-inspection.mjs');

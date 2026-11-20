@@ -33,6 +33,10 @@ export async function handlePreview(context,fetcher=fetch) {
         const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))dest.searchParams.set('screen',screen);
         if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))dest.searchParams.set('width',width);
+        if(url.searchParams.get('archive')==='1')dest.searchParams.set('archive','1');
+        if(['current','previous','prior-r3','recorded'].includes(url.searchParams.get('version')))dest.searchParams.set('version',url.searchParams.get('version'));
+        const artifactHash=url.searchParams.get('artifactHash');if(artifactHash&&/^[a-f0-9]{64}$/.test(artifactHash))dest.searchParams.set('artifactHash',artifactHash);
+        for(const key of ['state','variant','componentVariant']){const value=url.searchParams.get(key);if(value&&/^[-\w]{1,100}$/.test(value))dest.searchParams.set(key,value);}
       const run=url.searchParams.get('run'),page=url.searchParams.get('page'),persona=url.searchParams.get('persona');if(run&&/^[a-f0-9]{32}$/.test(run))dest.searchParams.set('run',run);if(page&&/^[-\w]{1,100}$/.test(page))dest.searchParams.set('page',page);if(['buyer','supplier','operator','guest'].includes(persona))dest.searchParams.set('persona',persona);
       }
     }

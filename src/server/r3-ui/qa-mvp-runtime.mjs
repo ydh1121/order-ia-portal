@@ -65,7 +65,8 @@ export function registerQaMvp(montages={}) {
     for(const brand of all('.brand')){
       if(brand.closest('[inert]'))continue;
       if(window.mountBrandAccountMenu){
-        const menu=window.mountBrandAccountMenu(brand,{authenticated:brandContext.authenticated??Boolean(context.authenticated??context.actor),canAccess:brandContext.canAccess,reducedMotion:()=>Boolean(api.reduced?.()),navigate:id=>{
+        const authenticated=(brandContext.authenticated??context.actor?.authenticated)===true;
+        const menu=window.mountBrandAccountMenu(brand,{authenticated,animateInitial:!brand.__orderAccountMenu&&authenticated&&brandContext.consumeArrival?.()===true,canAccess:brandContext.canAccess,reducedMotion:()=>Boolean(api.reduced?.()),navigate:id=>{
           if(brandContext.navigate)return brandContext.navigate(id);
           if(adapter?.navigate)return adapter.navigate(id);
           const destinations={'profile.account':['account-settings','normal'],'profile.personal':['profile','menu'],'profile.connections':['account-settings','normal'],'manage.delivery':['customer-orders','list'],'manage.payments':['receipt','before'],'manage.quotes':['quote-history','list'],'manage.business':['business-manage','list'],'manage.dashboard':['admin-overview','normal']};

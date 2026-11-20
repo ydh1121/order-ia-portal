@@ -27,7 +27,7 @@ export function createPriceWorkspaceModel() {
   function normalize(input) {
     if(!input||input.schema!==1||!day(input.date))fail('WORKSPACE_DATE_INVALID');
     const d=clone(input);
-    for(const [key,max] of [['shells',32],['grades',32],['packages',80],['carriers',64],['products',500]]){
+    for(const [key,max] of [['shells',32],['grades',32],['packages',80],['carriers',64],['products',2000]]){
       if(!Array.isArray(d[key])||d[key].length>max||(['shells','grades','packages'].includes(key)&&!d[key].length))fail('WORKSPACE_ITEMS_INVALID');
       if(new Set(d[key].map(x=>x.id)).size!==d[key].length||d[key].some(x=>!token(x.id)||!label(x.name)))fail('WORKSPACE_ITEMS_INVALID');
     }
@@ -61,7 +61,22 @@ export function createPriceWorkspaceModel() {
       if(!(v.enabled==null||typeof v.enabled==='boolean'))fail('WORKSPACE_PACKAGE_INVALID');
       packaging[k]={fee:v.fee,fees,carriers:[...new Set(v.carriers)],...(v.enabled===false?{enabled:false}:{})};
     }d.packaging=packaging;
-    for(const p of d.products)if(!shells.has(p.shell)||!grades.has(p.grade)||!packs.has(p.package)||!['store','consumer'].includes(p.audience)||!money(p.price)||typeof p.enabled!=='boolean'||!(p.auto==null||typeof p.auto==='boolean'))fail('WORKSPACE_PRODUCT_INVALID');
+    for(const p of d.products){
+      if(!shells.has(p.shell)||!grades.has(p.grade)||!packs.has(p.package)||!['store','consumer'].includes(p.audience)||!money(p.price)||typeof p.enabled!=='boolean'||!(p.auto==null||typeof p.auto==='boolean'))fail('WORKSPACE_PRODUCT_INVALID');
+      if(p.storeProduct!=null){const base=d.products.find(x=>x.id===p.storeProduct);if(p.audience!=='consumer'||!base||base.audience!=='store'||!sameSpec(base,p))fail('WORKSPACE_PRODUCT_INVALID');}
+      if(p.markup!=null&&(!['percent','amount'].includes(p.markup.kind)||!num(p.markup.value,p.markup.kind==='percent'?10000:999999999999)||p.audience!=='consumer'||!storeProduct(d,p)))fail('WORKSPACE_MARKUP_INVALID');
+    }
+    if(d.deliveryRules!=null){
+      if(!Array.isArray(d.deliveryRules)||d.deliveryRules.length>2000||new Set(d.deliveryRules.map(r=>r.id)).size!==d.deliveryRules.length)fail('WORKSPACE_DELIVERY_INVALID');
+      for(const r of d.deliveryRules){
+        if(!token(r.id)||!(r.shell===null||shells.has(r.shell))||!(r.grade===null||grades.has(r.grade))||!packs.has(r.package)||!carriers.has(r.carrier)||!['pack','egg'].includes(r.unit)||!Number.isSafeInteger(r.min)||r.min<1||r.min>1e9||!(r.max===null||Number.isSafeInteger(r.max)&&r.max>=r.min&&r.max<=1e9)||!money(r.fee))fail('WORKSPACE_DELIVERY_INVALID');
+        const b=deliveryBounds(d,r);if(b.max!==null&&b.max<b.min)fail('WORKSPACE_DELIVERY_EMPTY_RANGE');
+      }
+      for(let i=0;i<d.deliveryRules.length;i++)for(let j=i+1;j<d.deliveryRules.length;j++){
+        const a=d.deliveryRules[i],b=d.deliveryRules[j];if(a.package!==b.package||a.shell!==null&&b.shell!==null&&a.shell!==b.shell||a.grade!==null&&b.grade!==null&&a.grade!==b.grade)continue;
+        const x=deliveryBounds(d,a),y=deliveryBounds(d,b);if(x.min<=(y.max??Infinity)&&y.min<=(x.max??Infinity))fail('WORKSPACE_DELIVERY_OVERLAP');
+      }
+    }
     return d;
   }
   function calculated(d,shell,row,grade){
@@ -102,10 +117,61 @@ export function createPriceWorkspaceModel() {
       const field={shells:'shell',grades:'grade',packages:'package'}[kind];d.products=d.products.filter(p=>p[field]!==id);
     }
     if(kind==='carriers')for(const v of Object.values(d.packaging))v.carriers=v.carriers.filter(x=>x!==id);
+    const deliveryField={shells:'shell',grades:'grade',packages:'package',carriers:'carrier'}[kind];if(deliveryField&&d.deliveryRules)d.deliveryRules=d.deliveryRules.filter(r=>r[deliveryField]!==id);
+    if(kind==='products')for(const p of d.products)if(p.storeProduct===id){delete p.storeProduct;delete p.markup;}
+
   }
   const order=d=>{d.shells.sort((a,b)=>a.number===0?1:b.number===0?-1:b.number-a.number);d.grades.sort((a,b)=>b.weight-a.weight);return d;};
+  const sameSpec=(a,b)=>a.shell===b.shell&&a.grade===b.grade&&a.package===b.package;
+  function storeProduct(d,p){
+    if(p.audience==='store')return p;
+    if(p.storeProduct)return d.products.find(x=>x.id===p.storeProduct&&x.audience==='store'&&sameSpec(x,p))||null;
+    const matches=d.products.filter(x=>x.audience==='store'&&sameSpec(x,p));return matches.length===1?matches[0]:null;
+  }
+  function syncCatalogProducts(d){
+    const next=[...d.products],ids=new Set(next.map(p=>p.id));let serial=1,added=0;
+    const newId=()=>{while(ids.has('catalog-product-'+serial))serial++;const value='catalog-product-'+serial++;ids.add(value);return value;};
+    for(const s of d.shells)for(const g of d.grades)for(const pack of d.packages){
+      const spec={shell:s.id,grade:g.id,package:pack.id};if(d.packaging[[s.id,g.id,pack.id].join('/')]?.enabled===false)continue;
+      let store=next.find(p=>p.audience==='store'&&sameSpec(p,spec));
+      if(!store){store={...spec,id:newId(),name:[s.name,g.name,pack.name].join(' '),audience:'store',price:'',auto:true,enabled:true,catalog:true};next.push(store);added++;}
+      if(!next.some(p=>p.audience==='consumer'&&sameSpec(p,spec))){next.push({...spec,id:newId(),name:store.name,audience:'consumer',price:'',auto:false,enabled:false,catalog:true,storeProduct:store.id});added++;}
+    }
+    if(next.length>2000)fail('WORKSPACE_CATALOG_LIMIT');d.products=next;return added;
+  }
+  function previewConsumerMarkup(d,ids,kind,value){
+    if(!['percent','amount'].includes(kind)||!num(value,kind==='percent'?10000:999999999999))fail('WORKSPACE_MARKUP_INVALID');
+    const changes=[],skipped=[];
+    for(const id of new Set(ids)){
+      const p=d.products.find(x=>x.id===id);if(!p||p.audience!=='consumer')fail('WORKSPACE_PRODUCT_INVALID');
+      const base=storeProduct(d,p),price=base?productPrice(d,base):null;
+      if(!base||typeof price!=='number'){skipped.push({id,name:p.name,reason:!base?'사업장 상품을 선택해 주세요':price==='미판매'?'사업장 미판매':price==='협의'?'사업장 가격 협의':'사업장 판매가 미입력'});continue;}
+      const after=Math.round(kind==='percent'?price*(1+Number(value)/100):price+Number(value));if(!Number.isSafeInteger(after)||after>999999999999)fail('WORKSPACE_MARKUP_INVALID');
+      changes.push({id,name:p.name,base:price,before:productPrice(d,p),after,storeProduct:base.id});
+    }
+    return {changes,skipped,kind,value};
+  }
+  function applyConsumerMarkup(d,ids,kind,value){
+    const preview=previewConsumerMarkup(d,ids,kind,value);
+    for(const c of preview.changes){const p=d.products.find(p=>p.id===c.id);p.storeProduct=c.storeProduct;p.markup={kind,value};p.auto=false;p.price=String(c.after);}
+    return preview;
+  }
+  function deliveryBounds(d,rule){
+    const eggs=d.packages.find(p=>p.id===rule.package)?.eggs;if(!eggs)fail('WORKSPACE_DELIVERY_INVALID');
+    return {min:rule.unit==='egg'?Math.ceil(rule.min/eggs):rule.min,max:rule.max===null?null:rule.unit==='egg'?Math.floor(rule.max/eggs):rule.max,eggs};
+  }
+  function deliveryFor(d,{shell,grade,package:pack,quantity,unit='pack'}){
+    if(!d.shells.some(s=>s.id===shell)||!d.grades.some(g=>g.id===grade)||!Number.isSafeInteger(quantity)||quantity<1||!['pack','egg'].includes(unit))fail('WORKSPACE_DELIVERY_INVALID');
+    const eggs=d.packages.find(p=>p.id===pack)?.eggs;if(!eggs)fail('WORKSPACE_DELIVERY_INVALID');const packs=unit==='egg'?quantity/eggs:quantity;
+    if(!Number.isSafeInteger(packs)||packs<1)fail('WORKSPACE_DELIVERY_WHOLE_PACK');
+    if(d.packaging[[shell,grade,pack].join('/')]?.enabled===false)return {status:'unavailable',packs,eggs:packs*eggs};
+    const rule=(d.deliveryRules||[]).find(r=>{const b=deliveryBounds(d,r);return r.package===pack&&(r.shell===null||r.shell===shell)&&(r.grade===null||r.grade===grade)&&packs>=b.min&&(b.max===null||packs<=b.max);});
+    if(!rule)return {status:'unconfigured',packs,eggs:packs*eggs};
+    const carrier=d.carriers.find(c=>c.id===rule.carrier);return {status:'matched',ruleId:rule.id,carrier,packs,eggs:packs*eggs,fee:rule.fee!==''?Number(rule.fee):carrier.base!==''?Number(carrier.base):null,feeSource:rule.fee!==''?'rule':'carrier'};
+  }
   function productPrice(d,p,rowId){
     if(d.packaging[[p.shell,p.grade,p.package].join('/')]?.enabled===false)return '미판매';
+    if(p.audience==='consumer'&&p.markup){const base=storeProduct(d,p),amount=base?productPrice(d,base,rowId):null;return typeof amount==='number'?Math.round(p.markup.kind==='percent'?amount*(1+Number(p.markup.value)/100):amount+Number(p.markup.value)):amount;}
     if(!p.auto)return p.price===''?null:Number(p.price);
     const row=d.costs[p.shell]?.find(r=>r.id===rowId)||d.costs[p.shell]?.[0],pack=d.packages.find(x=>x.id===p.package);
     if(!row||!pack)return null;const costs=calculated(d,p.shell,row.id,p.grade);
@@ -131,5 +197,5 @@ export function createPriceWorkspaceModel() {
     const ar=grades.indexOf(a.grade),br=grades.indexOf(b.grade),ac=packages.indexOf(a.pack),bc=packages.indexOf(b.pack);if([ar,br,ac,bc].some(n=>n<0))return [];
     const keys=[];for(let r=Math.min(ar,br);r<=Math.max(ar,br);r++)for(let c=Math.min(ac,bc);c<=Math.max(ac,bc);c++)keys.push(grades[r]+'/'+packages[c]);return keys;
   }
-  return {clone,initial,normalize,calculated,bulk,pg,bound,remove,order,rectangle,productPrice,movePackaging,standard,day,money};
+  return {clone,initial,normalize,calculated,bulk,pg,bound,remove,order,rectangle,productPrice,movePackaging,standard,day,money,syncCatalogProducts,storeProduct,previewConsumerMarkup,applyConsumerMarkup,deliveryBounds,deliveryFor};
 }

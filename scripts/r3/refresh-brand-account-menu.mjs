@@ -12,17 +12,23 @@ import {mountBrandAccountMenu,brandAccountMenuCss} from '../../src/server/order-
 
 if(!process.argv[2])throw Error('Provide the verified pre-change checkout.');
 const baseline=path.resolve(process.argv[2]),directory=new URL('../../src/server/r3-ui/',import.meta.url);
+const archiveName=process.argv[3]||'brand-history.gen.mjs';
+if(!/^[a-z][a-z-]*-history\.gen\.mjs$/.test(archiveName))throw Error('Invalid immutable history name.');
 const old=name=>import(pathToFileURL(path.join(baseline,'src/server/r3-ui',name)).href);
 const [source,engine,quote,markers,motion]=await Promise.all(['catalog.gen.mjs','runtime.gen.mjs','quote-journey-bridge.mjs','approved-markers.mjs','review-motion-bridge.mjs'].map(old));
 const {JSDOM}=createRequire(new URL('../../tests/build-tools/package.json',import.meta.url))('jsdom');
 const sha=value=>createHash('sha256').update(value).digest('hex'),zip=value=>gzipSync(value).toString('base64'),unzip=value=>gunzipSync(Buffer.from(value,'base64')).toString();
 const common='\nwindow.mountBrandAccountMenu=('+browserFunction(mountBrandAccountMenu)+');\n';
+const oldBrand=await import(pathToFileURL(path.join(baseline,'src/server/order-engine/browser/brand-account-menu.mjs')).href).catch(()=>null);
+const priorCommon=oldBrand?'\nwindow.mountBrandAccountMenu=('+browserFunction(oldBrand.mountBrandAccountMenu)+');\n':null;
+const boardCss=await fs.readFile(new URL('./authored/onboarding.css',import.meta.url),'utf8');
 const updated={};
 for(const [file,family] of [['account','accountFeedback'],['navigation','navigation'],['onboarding','onboarding']]){
   const [before,after]=await Promise.all([fs.readFile(path.join(baseline,'scripts/r3/authored',file+'.js'),'utf8'),fs.readFile(new URL('./authored/'+file+'.js',import.meta.url),'utf8')]);
   const script=engine.runtimes[family],at=script.indexOf(before);
   if(at<0||!script.endsWith(before))throw Error('The authored family does not match the verified runtime: '+family);
-  updated[family]=script.slice(0,at)+(script.includes(quoteJellyRuntime)?'':quoteJellyRuntime)+common+after;
+  const prefix=script.slice(0,at);
+  updated[family]=(priorCommon?prefix.replace(priorCommon,''):prefix)+(script.includes(quoteJellyRuntime)?'':quoteJellyRuntime)+common+after;
   for(const [key,value] of Object.entries(engine.runtimes))if(key!==family&&value.startsWith(script+';'))updated[key]=updated[family]+value.slice(script.length);
 }
 // The old profile-only fixture preference bridge cannot override the injected
@@ -39,8 +45,9 @@ for(const row of source.catalog){
 const replay='function presentReviewFrame(session){('+browserFunction(quote.mountQuoteJourneyBridge)+')(session);('+browserFunction(markers.installReviewShortcut)+')(session);('+browserFunction(motion.installReviewMotion)+')(session);('+engine.frameCode+')(session);('+browserFunction(markers.mountApprovedMarkers)+')(session);}';
 const archives={archivedRows,archivedBodies,archivedScripts,replayFrameGzip:zip(replay),cssHash:source.cssHash,cssGzip:source.cssGzip};
 const archiveText='// Immutable pre-shared-brand revision. Preserve original feedback identities.\n'+Object.entries(archives).map(([key,value])=>'export const '+key+'='+JSON.stringify(value)+';').join('\n')+'\n';
-const archiveFile=new URL('brand-history.gen.mjs',directory);
+const archiveFile=new URL(archiveName,directory);
 try{const existing=await fs.readFile(archiveFile,'utf8');if(existing!==archiveText)throw Error('The existing brand history must not be overwritten.');}catch(error){if(error.code!=='ENOENT')throw error;await fs.writeFile(archiveFile,archiveText);}
+if(process.argv.includes('--archive-only')){console.log(JSON.stringify({archiveName,preservedArtifacts:Object.keys(archivedRows).length}));process.exit(0);}
 const frames={...source.frames};let bodyChanges=0;
 const catalog=source.catalog.map(row=>{
   if(!Object.hasOwn(updated,row.runtimeFamily))return row;
@@ -48,6 +55,9 @@ const catalog=source.catalog.map(row=>{
   if(!root)throw Error('Missing canonical frame root: '+row.id);
   root.querySelectorAll('#r3-brand-account-menu').forEach(node=>node.remove());
   if(row.screen==='onboarding'){
+    const introStyle=root.querySelector('#r3-qa-interaction-intro');
+    if(!introStyle)throw Error('Missing authored onboarding styles: '+row.id);
+    introStyle.textContent=boardCss;
     const header=root.querySelector('.ob-stage>header'),mark=header?.querySelector('svg');
     if(!mark||mark.querySelectorAll('g>path').length!==3)throw Error('Missing original CODE1: '+row.id);
     const brand=doc.createElement('div');brand.className='brand ob-brand-common';

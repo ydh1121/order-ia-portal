@@ -51,6 +51,10 @@ form.addEventListener('submit',async event=>{
         const screen=incoming.get('screen'),width=incoming.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);
         if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))target.set('width',width);
+        if(incoming.get('archive')==='1')target.set('archive','1');
+        if(['current','previous','prior-r3','recorded'].includes(incoming.get('version')))target.set('version',incoming.get('version'));
+        const artifactHash=incoming.get('artifactHash');if(artifactHash&&/^[a-f0-9]{64}$/.test(artifactHash))target.set('artifactHash',artifactHash);
+        for(const key of ['state','variant','componentVariant']){const value=incoming.get(key);if(value&&/^[-\w]{1,100}$/.test(value))target.set(key,value);}
       const run=incoming.get('run'),page=incoming.get('page'),persona=incoming.get('persona');if(run&&/^[a-f0-9]{32}$/.test(run))target.set('run',run);if(page&&/^[-\w]{1,100}$/.test(page))target.set('page',page);if(['buyer','supplier','operator','guest'].includes(persona))target.set('persona',persona);
       }
       if(view==='pricing-r3'){

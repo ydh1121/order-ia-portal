@@ -8,6 +8,7 @@ import * as beforeRework from './r3-ui/pre-rework.gen.mjs';
 import * as beforeMotion from './r3-ui/motion-history.gen.mjs';
 import * as beforeInteraction from './r3-ui/interaction-history.gen.mjs';
 import * as beforeBrand from './r3-ui/brand-history.gen.mjs';
+import * as beforeLogoCorrection from './r3-ui/logo-correction-history.gen.mjs';
 import {approvedShellBody,shellStyles} from './r3-ui/approved-shell.mjs';
 import {approvedHash,reviewHashes,approvedWidths} from './r3-ui/approved-width.mjs';
 import {installReviewShortcut, mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
@@ -33,7 +34,7 @@ const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&q
 const cached=new Map();
 async function sha(s){const b=await crypto.subtle.digest('SHA-256',utf8.encode(s));return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
 async function inflate(data){const bytes=Uint8Array.from(atob(data),c=>c.charCodeAt(0));return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();}
-let historicalBodyIndex,publishedBootstrap,interactionBootstrap,brandBootstrap;
+let historicalBodyIndex,publishedBootstrap,interactionBootstrap,brandBootstrap,logoCorrectionBootstrap;
 async function historicalBody(digest){
   historicalBodyIndex??=inflate(beforeMotion.archivedBodyPack).then(JSON.parse);
   const {fragments,paths}=await historicalBodyIndex;
@@ -58,7 +59,7 @@ export async function isR3ReviewTarget(target,revision=release){
   if(!row)return false;
   const [current,previous]=await Promise.all(['current','previous'].map(version=>approvedHash(row,target.viewport,version)));
   if(current===target.artifactHash||previous===target.artifactHash)return true;
-  for(const archive of [beforeBrand.archivedRows,beforeInteraction.archivedRows,beforeMotion.publishedRows,archivedRows,beforeRework.archivedRows,beforeMotion.archivedRows,beforeMotion.stageRows]){
+  for(const archive of [beforeLogoCorrection.archivedRows,beforeBrand.archivedRows,beforeInteraction.archivedRows,beforeMotion.publishedRows,archivedRows,beforeRework.archivedRows,beforeMotion.archivedRows,beforeMotion.stageRows]){
     const preserved=archive[row.id];if(preserved&&await approvedHash(preserved,target.viewport,'current')===target.artifactHash)return true;
   }
   return false;
@@ -113,7 +114,7 @@ export async function serveR3Artifact(request,env){
   const r=catalog.find(f=>f.id===q.get('id')); const width=Number(q.get('width'));let version=q.get('version');
   if(!r||!approvedWidths.includes(width)||!['current','previous','prior-r3','recorded'].includes(version)||[...q.keys()].some(k=>!['id','width','version','artifactHash'].includes(k)))return json({error:'UNKNOWN_REVIEW_TARGET'},404);
   const pinned=q.get('artifactHash');
-  const history=[beforeBrand.archivedRows[r.id],beforeInteraction.archivedRows[r.id],beforeMotion.publishedRows[r.id],archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id],beforeMotion.stageRows[r.id]].filter(Boolean);
+  const history=[beforeLogoCorrection.archivedRows[r.id],beforeBrand.archivedRows[r.id],beforeInteraction.archivedRows[r.id],beforeMotion.publishedRows[r.id],archivedRows[r.id],beforeRework.archivedRows[r.id],beforeMotion.archivedRows[r.id],beforeMotion.stageRows[r.id]].filter(Boolean);
   let archived=null;
   if(version==='prior-r3'&&!pinned)archived=archivedRows[r.id]||null;
   if(pinned){
@@ -132,12 +133,13 @@ export async function serveR3Artifact(request,env){
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
   if(q.has('artifactHash')&&q.get('artifactHash')!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  const packed=frames[bodyDigest]||beforeBrand.archivedBodies[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
+  const packed=frames[bodyDigest]||beforeLogoCorrection.archivedBodies[bodyDigest]||beforeBrand.archivedBodies[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
   const body=packed?await inflate(packed):await historicalBody(bodyDigest);
   const interactionArchive=archived&&archived===beforeInteraction.archivedRows[r.id];
   const brandArchive=archived&&archived===beforeBrand.archivedRows[r.id];
-  const archivedCssHash=brandArchive?beforeBrand.cssHash:interactionArchive?beforeInteraction.cssHash:beforeMotion.cssHash;
-  const css=archived&&cssHash!==archivedCssHash?await inflate(brandArchive?beforeBrand.cssGzip:interactionArchive?beforeInteraction.cssGzip:beforeMotion.cssGzip):await styles(sourceVersion);
+  const logoCorrectionArchive=archived&&archived===beforeLogoCorrection.archivedRows[r.id];
+  const archivedCssHash=logoCorrectionArchive?beforeLogoCorrection.cssHash:brandArchive?beforeBrand.cssHash:interactionArchive?beforeInteraction.cssHash:beforeMotion.cssHash;
+  const css=archived&&cssHash!==archivedCssHash?await inflate(logoCorrectionArchive?beforeLogoCorrection.cssGzip:brandArchive?beforeBrand.cssGzip:interactionArchive?beforeInteraction.cssGzip:beforeMotion.cssGzip):await styles(sourceVersion);
   const title=esc(r.label+' · '+r.stateLabel);
   const common='<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+title+'</title>';
   const meta=js({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:bodyDigest,cssSha256:version==='previous'?previousCssHash:archived?archivedCssHash:cssHash});
@@ -149,7 +151,7 @@ export async function serveR3Artifact(request,env){
   if(archived){
     mount=null;
     if(archived.script){
-      if(!cached.has(archived.script))cached.set(archived.script,inflate(beforeBrand.archivedScripts[archived.script]||beforeInteraction.archivedScripts[archived.script]||archivedScripts[archived.script]||beforeRework.archivedScripts[archived.script]||beforeMotion.archivedScripts[archived.script]));
+      if(!cached.has(archived.script))cached.set(archived.script,inflate(beforeLogoCorrection.archivedScripts[archived.script]||beforeBrand.archivedScripts[archived.script]||beforeInteraction.archivedScripts[archived.script]||archivedScripts[archived.script]||beforeRework.archivedScripts[archived.script]||beforeMotion.archivedScripts[archived.script]));
       mount=await cached.get(archived.script);
     }
   }
@@ -158,6 +160,7 @@ export async function serveR3Artifact(request,env){
   if(archived&&archived===beforeMotion.publishedRows[r.id])replayFrame=await (publishedBootstrap??=inflate(beforeMotion.publishedFrameGzip));
   if(interactionArchive)replayFrame=await (interactionBootstrap??=inflate(beforeInteraction.replayFrameGzip));
   if(brandArchive)replayFrame=await (brandBootstrap??=inflate(beforeBrand.replayFrameGzip));
+  if(logoCorrectionArchive)replayFrame=await (logoCorrectionBootstrap??=inflate(beforeLogoCorrection.replayFrameGzip));
   return json({release,version,hash:artifactHash,html:page,editable,exportHash:await sha(editable),mount,...(archived||sourceVersion==='previous'?{replayFrame}:{}),file:release+'_'+r.id.replaceAll('/','_')+'_'+width+'.html'});
 }
 export function renderR3Qa(nonce){

@@ -36,7 +36,19 @@ export function importPriceWorkbook(model,current,workbook,section,{replaceRange
     for(const r of rows){const name=text(column(r,'배송수단명')),type=types[text(column(r,'종류'))]||text(column(r,'종류'));if(!['parcel','freight','quick','farm'].includes(type))fail('배송 종류는 택배·화물·퀵·농장직배송 중에서 선택해 주세요.');let c=d.carriers.find(x=>x.name===name);if(!c){c={id:'carrier-'+d.carriers.length+'-'+Date.now(),name};d.carriers.push(c);}Object.assign(c,{type,base:numeric(column(r,'기본비용'),true),remote:headers.includes('도서산간비용')?numeric(column(r,'도서산간비용'),true):c.remote??'',regions:text(column(r,'배송가능지역'))});}
   }else if(section==='products'){
     for(const h of ['상품명','난각번호','규격','포장구수','판매대상','판매가격'])ensure(h);
-    for(const r of rows){const name=text(column(r,'상품명')),s=shell(column(r,'난각번호')),g=grade(column(r,'규격')),p=pack(column(r,'포장구수')),audience=text(column(r,'판매대상'))==='매장'?'store':text(column(r,'판매대상'))==='소비자'?'consumer':null;if(!audience)fail('판매대상은 매장 또는 소비자로 입력해 주세요.');let product=d.products.find(x=>x.name===name);if(!product){product={id:'product-'+d.products.length+'-'+Date.now(),name};d.products.push(product);}Object.assign(product,{shell:s.id,grade:g.id,package:p.id,audience,price:numeric(column(r,'판매가격'),true),auto:headers.includes('자동계산')?['예','1','TRUE'].includes(text(column(r,'자동계산'))):product.auto??false,enabled:headers.includes('판매중')?!['아니오','0','FALSE'].includes(text(column(r,'판매중'))):product.enabled??true});}
+    const seen=new Set();
+    for(const r of rows){
+      const name=text(column(r,'상품명')),s=shell(column(r,'난각번호')),g=grade(column(r,'규격')),p=pack(column(r,'포장구수')),audience=text(column(r,'판매대상'))==='매장'?'store':text(column(r,'판매대상'))==='소비자'?'consumer':null;
+      if(!audience)fail('판매대상은 매장 또는 소비자로 입력해 주세요.');
+      const key=JSON.stringify([name,audience,s.id,g.id,p.id]);
+      if(seen.has(key))fail('같은 상품명·판매대상·규격의 행이 중복되었습니다.');seen.add(key);
+      const matches=d.products.filter(x=>x.name===name&&x.audience===audience&&x.shell===s.id&&x.grade===g.id&&x.package===p.id);
+      if(matches.length>1)fail('같은 상품명·판매대상·규격의 상품이 여러 개입니다. 상품명을 구분한 뒤 가져와 주세요.');
+      let product=matches[0];
+      if(!product){product={id:'product-'+d.products.length+'-'+Date.now(),name};d.products.push(product);}
+      Object.assign(product,{shell:s.id,grade:g.id,package:p.id,audience,price:numeric(column(r,'판매가격'),true),auto:headers.includes('자동계산')?['예','1','TRUE'].includes(text(column(r,'자동계산'))):false,enabled:headers.includes('판매중')?!['아니오','0','FALSE'].includes(text(column(r,'판매중'))):product.enabled??true});
+      delete product.markup;
+    }
   }else fail('가져올 메뉴를 선택해 주세요.');
   return {document:model.normalize(model.order(d)),sheet:sheet.name,count:rows.length};
 }

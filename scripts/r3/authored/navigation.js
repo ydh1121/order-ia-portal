@@ -189,7 +189,7 @@ R.push({
   mount(root,s,api){
     const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{},brand=root.querySelector('.brand');
     if(!brand||!w.mountBrandAccountMenu)return ()=>{};
-    const menu=w.mountBrandAccountMenu(brand,{...context,authenticated:context.authenticated===true,reducedMotion:api.reduced});
+    const menu=w.mountBrandAccountMenu(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced});
     if(context.authenticated===true&&s!=='default')menu.open(['notification','empty'].includes(s)?'notifications':s==='restricted'?'profile':null);
     return ()=>menu.destroy();
   }

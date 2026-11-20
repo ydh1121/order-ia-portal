@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def check_archived_entry(page, origin):
     old_hash = "bf83c284c019ab7306cb6ca2c75f7344e50e3dae825b414f26d776b02c5de68c"
     # The private release has an existing 320px email review anchor on this exact document.
-    query = {"view":"qa-lab","screen":"login/empty/email","width":320,
+    query = {"view":"qa-lab","archive":"1","screen":"login/empty/email","width":320,
              "version":"recorded","artifactHash":old_hash}
     page.goto(origin + "/ia?" + urlencode(query))
     frame = page.frame_locator("#frame")
@@ -132,7 +132,7 @@ def main():
             for width in (320,375,1440):
                 context=browser.new_context(viewport={"width":width,"height":844},reduced_motion="reduce")
                 page=context.new_page()
-                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()

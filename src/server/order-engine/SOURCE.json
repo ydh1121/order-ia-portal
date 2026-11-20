@@ -1,6 +1,6 @@
 {
   "repository": "ydh1121/order",
-  "commit": "fe78efdcfdd110e4c772dbf51bfeb38910228a9e",
+  "commit": "fd2ecddf71bf0548099bcc728219eac0d9d7da46",
   "scope": "Existing exact quote, projections and policy source copied byte-for-byte for private IA server bundling. No public assets.",
   "files": [
     {
@@ -34,12 +34,27 @@
     {
       "path": "browser/quote-result-screen.mjs",
       "source": "web/quote-result-screen.mjs",
-      "sha256": "bb6a406733fd81a9e4ad4b336c26920dcfc532754270a7a9863ddb2c6e49eeab"
+      "sha256": "2ae688c82be719d63742fc849c9d29123ffb751b4f445fb5d1d2cb6c02a015fd"
     },
     {
       "path": "browser/magnetic-action.mjs",
       "source": "web/magnetic-action.mjs",
       "sha256": "e42db57c16e32db5ddcba68362d1f738634b371f46623d68affbd0afe3e3db77"
+    },
+    {
+      "path": "browser/brand.mjs",
+      "source": "web/brand.mjs",
+      "sha256": "3d65a3710e86a801777e7b98dbc8fdf354394ac10404f3f4a904a4b84ce1ec02"
+    },
+    {
+      "path": "browser/brand-account-menu.mjs",
+      "source": "web/brand-account-menu.mjs",
+      "sha256": "a009fa5ce843f73f2ed20a458d07ad0ae184aa7228748bbe763460ff7fa0bb4e"
+    },
+    {
+      "path": "browser/code1-jelly.mjs",
+      "source": "web/code1-jelly.mjs",
+      "sha256": "898187ee1488416cd2a18c205ca8636f5651c53a27eb5986a32a8d61a0f1ddff"
     }
   ]
 }

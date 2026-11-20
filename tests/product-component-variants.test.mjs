@@ -156,7 +156,7 @@ async function readyMessage(t,name,context){
   const ready=messages.find(item=>item.message.scope==='ORDER_PRODUCT_RUNTIME'&&item.message.type==='ready');
   assert.ok(ready);assert.equal(ready.destination,origin);
   assert.deepEqual(ready.message,{scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:context.runId,persona:context.persona,
-    documentId:context.documentId,screen,state,componentVariant:variantId,source:context.source});
+    documentId:context.documentId,screen,state,payload:{path:'/ia?view=product-r3'},componentVariant:variantId,source:context.source});
   assert.equal(messages.some(item=>item.message.type==='operation'),false);
   assert.ok(requests.every(item=>item.method==='GET'),'rendering/selecting a component cannot submit a purchase');
   assert.equal(w.ORDER_APP_ADAPTER.context.mode,'lab');

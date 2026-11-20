@@ -1,5 +1,6 @@
 import {mountQuoteResult,quoteResultScreenCss} from './order-engine/browser/quote-result-screen.mjs';
 import {browserFunction} from './browser-source.mjs';
+import * as productSources from './r3-product-sources.mjs';
 // Only the verified buyer response may provide amounts. Pricing drafts, local form
 // entries, issuer diagnostics and practice totals never participate in this view.
 export function projectBuyerResult(snapshot, now = Date.now()) {
@@ -65,5 +66,9 @@ function createBuyerResult(host,project,readDetail,recompare,mount) {
     show(snapshot,selected=null){id=snapshot?.id||null;view.show(project(snapshot),selected);}
   };
 }
-export const buyerResultClient='((mount,controller)=>(...args)=>controller(...args,mount))('+browserFunction(mountQuoteResult)+','+browserFunction(createBuyerResult)+')';
+// The non-module controller receives the same verified brand dependency closure
+// as the normal product's ESM renderer. It does not infer a login from a quote
+// state, nor install a replacement drawing or a second global brand runtime.
+const brandRuntime=typeof productSources.productBrandRuntime==='string'?productSources.productBrandRuntime:'throw new Error("PRODUCT_BRAND_FACTORY_NOT_SEALED");';
+export const buyerResultClient='((mount,controller)=>{'+brandRuntime+'\nreturn (...args)=>controller(...args,(host,options)=>mount(host,{...options,brandFactory:OrderProductBrand}));})('+browserFunction(mountQuoteResult)+','+browserFunction(createBuyerResult)+')';
 export const buyerResultCss=quoteResultScreenCss;

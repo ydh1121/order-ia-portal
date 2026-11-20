@@ -105,8 +105,9 @@
     if(quick)on(shell,'pointerdown',e=>{if(!e.target.closest('.ob-quick')&&quick.getAttribute('aria-expanded')==='true')menu(false);});
     const brand=shell.querySelector('header .brand');
     const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{};
-    const brandMenu=w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,reducedMotion:api.reduced});
+    const brandMenu=w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced});
     on(window,'message',e=>{
+      if(api.mode==='product')return;
       if(e.source!==parent||e.data?.scope!=='ORDER_R3_HOST'||e.data.type!=='memberArrival'||!brandMenu)return;
       shell.dataset.memberArrival='true';
       if(context.authenticated===true)brandMenu.arrival();

@@ -161,7 +161,7 @@ def check_stage_wheel(page):
 def verify_review_controls(browser, auth, origin):
     ctx=browser.new_context(viewport={"width":1440,"height":900},storage_state=auth)
     page=ctx.new_page()
-    url=origin+"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=390"
+    url=origin+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390"
     page.goto(url)
     frame=page.frame_locator("#frame")
     frame.locator("#r3-veil").wait_for(state="attached")
@@ -210,7 +210,7 @@ def verify_review_controls(browser, auth, origin):
         {"id":"qa-width-fixture","body":legacy_text,"status":"open"}]}}
     page.route("**/api/ia/r3-qa/legacy?**",lambda route:route.fulfill(
         json={"items":[legacy_row],"hasMore":False,"nextCursor":1}))
-    page.goto(origin+"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=320")
+    page.goto(origin+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=320")
     page.frame_locator("#frame").locator("#r3-veil").wait_for(state="attached")
     previous=page.locator('#review-summary [data-metric="previous"] strong')
     expect(previous).to_have_text("1")
@@ -260,7 +260,7 @@ def main():
                         # Serve only the verified document via a dedicated loopback origin.
                         context.route("**/*", lambda route:route.fulfill(content_type="text/html;charset=utf-8",body=raw) if route.request.url==REFERENCE_URL else route.abort())
                     page=context.new_page();page.set_default_timeout(12000)
-                    url=(cfg["url"]+f"/ia?view=qa-lab&screen=login%2Fempty%2Femail&width={preview}") if current else REFERENCE_URL+f"#login/empty/email/{preview}"
+                    url=(cfg["url"]+f"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width={preview}") if current else REFERENCE_URL+f"#login/empty/email/{preview}"
                     try:
                         configure(page,url,current,preview,mode,panel)
                         evidence[key]=page.evaluate(MEASURE)

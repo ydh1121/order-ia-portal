@@ -8,6 +8,7 @@ import {importPriceWorkbook} from '../src/server/r3-price-workspace-import.mjs';
 import {defaultPriceRows} from '../src/server/r3-price-workspace-defaults.mjs';
 import {priceWorkspace} from '../src/server/r3-price-workspace-store.mjs';
 import {personalPrice} from '../src/server/r3-personal-price.mjs';
+import {mountPriceWorkspace} from '../src/server/r3-price-workspace-client.mjs';
 import {signedWorkspace} from './r3-business-identities.fixture.mjs';
 const model=createPriceWorkspaceModel(),today='2026-11-19',now=today+'T00:00:00.000Z';
 const actor={id:'supplier',role:'BUSINESS',email:'supplier@example.invalid'};
@@ -116,4 +117,78 @@ test('classification partial import preserves range packing fees and omitted car
   assert.equal(importPriceWorkbook(model,d,book,'costs').document.costs['1'].length,19);assert.equal(importPriceWorkbook(model,d,book,'costs',{replaceRanges:true}).document.costs['1'].length,1);
   d.costs['1'][0].discount='3.3';assert.equal(importPriceWorkbook(model,d,book,'costs').document.costs['1'][0].discount,'3.3');
   const percent=model.clone(book);percent.sheets[0].rows[0].push('할인율');percent.sheets[0].rows[1].push('4.5%');assert.equal(importPriceWorkbook(model,d,percent,'costs').document.costs['1'][0].discount,'4.5');
+});
+
+test('registered catalog fills all active business and consumer rows without inventing prices or replacing custom products',()=>{
+  const d=seed(),original=JSON.stringify(d.costs),custom={id:'owned-price',name:'기존 왕란 가격',shell:'1',grade:'king',package:'pack-30',audience:'store',price:'7777.5',auto:false,enabled:true};d.products=[custom];
+  assert.equal(model.syncCatalogProducts(d),319);assert.equal(d.products.filter(p=>p.audience==='store').length,160);assert.equal(d.products.filter(p=>p.audience==='consumer').length,160);assert.equal(model.syncCatalogProducts(d),0);
+  assert.deepEqual(d.products.find(p=>p.id==='owned-price'),custom);assert.equal(JSON.stringify(d.costs),original);
+  assert.equal(model.productPrice(d,d.products.find(p=>p.audience==='store'&&p.shell==='1'&&p.grade==='king'&&p.package==='pack-6')),null);
+  assert(d.products.filter(p=>p.audience==='consumer').every(p=>p.price===''&&!p.enabled));assert.doesNotThrow(()=>model.normalize(d));
+  const other=seed();other.packaging['1/king/pack-6']={fee:'',fees:{},carriers:[],enabled:false};model.syncCatalogProducts(other);assert.equal(other.products.length,318);assert(!other.products.some(p=>p.shell==='1'&&p.grade==='king'&&p.package==='pack-6'));
+  d.packages.push({id:'pack-12',eggs:12,name:'12구'});assert.equal(model.syncCatalogProducts(d),40);assert.equal(d.products.find(p=>p.id==='owned-price').price,'7777.5');
+});
+test('consumer percentage and fixed markup preview skips missing bases, preserves zero and never compounds or edits business prices',()=>{
+  const d=seed();model.syncCatalogProducts(d);const find=(audience,grade,pack='pack-30')=>d.products.find(p=>p.audience===audience&&p.shell==='1'&&p.grade===grade&&p.package===pack);
+  const a=find('consumer','king'),b=find('consumer','xl'),blank=find('consumer','king','pack-6'),zero=find('consumer','large'),zeroBase=find('store','large');zeroBase.auto=false;zeroBase.price='0';
+  const before=JSON.stringify(d),preview=model.previewConsumerMarkup(d,[a.id,b.id,blank.id,zero.id],'percent','10');assert.equal(JSON.stringify(d),before);assert.equal(preview.changes.length,3);assert.equal(preview.skipped.length,1);assert.equal(preview.skipped[0].id,blank.id);assert.equal(preview.changes[0].after,6809);assert.equal(preview.changes[2].after,0);
+  model.applyConsumerMarkup(d,[a.id,b.id,blank.id,zero.id],'percent','10');assert.equal(model.productPrice(d,a),6809);assert.equal(model.productPrice(d,a,'range-18'),6589);assert.equal(blank.price,'');assert.equal(model.productPrice(d,zero),0);
+  model.applyConsumerMarkup(d,[a.id],'percent','10');assert.equal(model.productPrice(d,a),6809);assert.equal(model.productPrice(d,find('store','king')),6190);
+  model.applyConsumerMarkup(d,[a.id],'amount','250');assert.equal(model.productPrice(d,a),6440);find('store','king').auto=false;find('store','king').price='7000';assert.equal(model.productPrice(d,a),7250);assert.doesNotThrow(()=>model.normalize(d));
+  const unchanged=JSON.stringify(d);assert.throws(()=>model.applyConsumerMarkup(d,[a.id],'percent','-10'),/MARKUP/);assert.equal(JSON.stringify(d),unchanged);
+  a.price='7999';delete a.markup;assert.equal(model.productPrice(d,a),7999);
+});
+const shippingSeed=()=>{const d=seed();d.carriers=[{id:'parcel',name:'택배',type:'parcel',base:'3000',remote:'',regions:''},{id:'freight',name:'화물',type:'freight',base:'',remote:'',regions:''}];d.deliveryRules=[{id:'small-lot',shell:null,grade:null,package:'pack-30',unit:'pack',min:1,max:10,carrier:'parcel',fee:''},{id:'large-lot',shell:null,grade:null,package:'pack-30',unit:'egg',min:360,max:660,carrier:'freight',fee:''}];return d;};
+test('delivery rules distinguish packs and eggs, preserve gaps and missing fare, and reject converted overlaps and partial packs',()=>{
+  const d=shippingSeed(),query=quantity=>model.deliveryFor(d,{shell:'1',grade:'king',package:'pack-30',quantity});assert.doesNotThrow(()=>model.normalize(d));
+  assert.equal(query(1).carrier.id,'parcel');assert.equal(query(10).fee,3000);assert.equal(query(11).status,'unconfigured');assert.equal(query(12).carrier.id,'freight');assert.equal(query(22).fee,null);assert.equal(query(23).status,'unconfigured');
+  assert.equal(model.deliveryFor(d,{shell:'1',grade:'king',package:'pack-30',quantity:360,unit:'egg'}).packs,12);assert.throws(()=>model.deliveryFor(d,{shell:'1',grade:'king',package:'pack-30',quantity:359,unit:'egg'}),/WHOLE_PACK/);
+  d.deliveryRules[1].fee='0';assert.equal(query(12).fee,0);const overlap=model.clone(d);overlap.deliveryRules[1].min=300;assert.throws(()=>model.normalize(overlap),/DELIVERY_OVERLAP/);
+  const empty=model.clone(d);empty.deliveryRules[1].min=601;empty.deliveryRules[1].max=629;assert.throws(()=>model.normalize(empty),/DELIVERY_EMPTY_RANGE/);
+  const independent=model.clone(d);independent.deliveryRules[0].grade='king';independent.deliveryRules[1].grade='xl';independent.deliveryRules[1].min=300;assert.doesNotThrow(()=>model.normalize(independent));
+  model.remove(d,'carriers','parcel');assert.equal(d.deliveryRules.length,1);assert.equal(query(1).status,'unconfigured');assert.doesNotThrow(()=>model.normalize(d));
+});
+test('registered prices, consumer markup and delivery rules round trip through authenticated append-only workspace storage',async()=>{
+  const f=signedWorkspace(),d=shippingSeed();model.syncCatalogProducts(d);const p=d.products.find(p=>p.audience==='consumer'&&p.shell==='1'&&p.grade==='king'&&p.package==='pack-30');model.applyConsumerMarkup(d,[p.id],'percent','12.5');
+  const body={action:'apply',document:d,expectedRevision:0,requestKey:crypto.randomUUID()};const saved=await f.request('supplier','/api/ia/r3-price/workspace',body);assert.equal(saved.status,200);
+  const read=await (await f.request('supplier','/api/ia/r3-price/workspace')).json();assert.deepEqual(read.document,model.normalize(d));assert.equal(read.document.products.filter(p=>p.audience==='store').length,160);assert.equal(model.productPrice(read.document,read.document.products.find(x=>x.id===p.id)),6964);assert.equal(read.document.deliveryRules[1].min,360);
+  const next=model.clone(d);model.applyConsumerMarkup(next,[p.id],'amount','100');assert.equal((await f.request('supplier','/api/ia/r3-price/workspace',{...body,document:next,expectedRevision:1,requestKey:crypto.randomUUID()})).status,200);
+  const historical=await (await f.request('supplier','/api/ia/r3-price/workspace?revision=1')).json();assert.equal(historical.document.products.find(x=>x.id===p.id).markup.kind,'percent');assert.equal(f.db.prepare('SELECT COUNT(*) n FROM r3_price_version').get().n,0);
+});
+
+test('workspace controls register catalog, preview selected markup, edit cells, validate delivery rules and persist through the real authenticated handler',async()=>{
+  const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
+  const f=signedWorkspace(),document=shippingSeed();
+  assert.equal((await f.request('supplier','/api/ia/r3-price/workspace',{action:'draft',document,expectedRevision:0,requestKey:crypto.randomUUID()})).status,200);
+  const dom=new JSDOM('<main id="workspace"></main>',{url:'https://order-ia-portal.pages.dev/ia?view=pricing-r3',runScripts:'outside-only'}),w=dom.window;
+  w.TextEncoder=TextEncoder;
+  w.fetch=(path,init={})=>f.request('supplier',path,init.body?JSON.parse(init.body):undefined,init.body?{csrf:init.headers['X-IA-CSRF']}:{});
+  w.eval('window.priceModel=('+createPriceWorkspaceModel.toString()+')();window.workspace=('+mountPriceWorkspace.toString()+')(document.getElementById("workspace"),window.priceModel,{},()=>{},()=>{});');
+  const app=w.workspace,$=s=>w.document.querySelector(s),until=async predicate=>{for(let i=0;i<200;i++){if(predicate())return;await new Promise(r=>setTimeout(r,5));}assert.fail('workspace operation timed out: '+($('#pw-notice')?.textContent||''));};
+  const click=selector=>{const node=$(selector);assert(node,'missing control '+selector);node.click();};
+  const input=(selector,value,event='input')=>{const node=$(selector);assert(node,'missing field '+selector);node.value=value;node.dispatchEvent(new w.Event(event,{bubbles:true}));};
+  const submit=()=>{const form=$('.pw-dialog form');assert(form,'missing dialog form');form.dispatchEvent(new w.Event('submit',{bubbles:true,cancelable:true}));};
+  try{
+    await until(()=>app.read()!=null&&!$('#pw-main').inert);
+    click('[data-section="products"]');assert.equal(app.read().products.filter(p=>p.audience==='store').length,160);assert.equal($('.pw-product-table tbody').rows.length,160);
+    const find=(audience,grade,pack='pack-30')=>app.read().products.find(p=>p.audience===audience&&p.shell==='1'&&p.grade===grade&&p.package===pack);
+    const business=find('store','king'),consumer=find('consumer','king'),second=find('consumer','xl'),blank=find('consumer','king','pack-6');
+    input('[data-product-price="'+business.id+'"]','7000');
+    click('[data-product-audience="consumer"]');
+    for(const p of [consumer,second,blank])click('[data-consumer-select="'+p.id+'"]');
+    assert.equal($('#pw-consumer-count').textContent,'3개 선택');input('#pw-markup-value','10');
+    const before=JSON.stringify(app.read());click('[data-action="consumer-markup"]');assert.match($('.pw-dialog').textContent,/2개 적용 · 1개 제외/);click('.pw-dialog [data-close]');assert.equal(JSON.stringify(app.read()),before);
+    click('[data-action="consumer-markup"]');submit();await until(()=>!$('.pw-dialog'));
+    assert.equal($('[data-product-price="'+consumer.id+'"]').value,'7700');assert.equal(find('consumer','king','pack-6').price,'');
+    click('[data-product-edit="'+consumer.id+'"]');input('.pw-dialog [name="name"]','소비자 왕란 이름 수정');submit();await until(()=>!$('.pw-dialog'));assert.equal(find('consumer','king').markup.kind,'percent');
+    input('[data-product-price="'+consumer.id+'"]','7900');assert.equal(find('consumer','king').markup,undefined);assert.equal(find('consumer','king').price,'7900');assert.equal(find('store','king').price,'7000');
+    click('[data-product-edit="'+consumer.id+'"]');input('.pw-dialog [name="audience"]','store','change');submit();await until(()=>!$('.pw-dialog'));assert.equal(app.read().products.find(p=>p.id===consumer.id).storeProduct,undefined);assert.doesNotThrow(()=>model.normalize(app.read()));assert.equal($('#pw-consumer-count').textContent,'2개 선택');
+    click('[data-section="carriers"]');click('[data-action="add-delivery-rule"]');
+    input('.pw-dialog [name="package"]','pack-30','change');input('.pw-dialog [name="unit"]','egg','change');input('.pw-dialog [name="min"]','300');input('.pw-dialog [name="max"]','330');
+    submit();await until(()=>$('.pw-dialog-error')?.textContent.includes('겹칩니다'));assert.equal(app.read().deliveryRules.length,2);assert.match($('.pw-delivery-conversion').textContent,/300~330알/);
+    input('.pw-dialog [name="min"]','330');submit();await until(()=>!$('.pw-dialog'));assert.equal(app.read().deliveryRules.length,3);assert.equal(model.deliveryFor(app.read(),{shell:'1',grade:'king',package:'pack-30',quantity:11}).status,'matched');
+    click('[data-action="draft"]');await until(()=>app.getState().revision===2&&!app.getState().dirty&&!$('#pw-main').inert);
+    const saved=JSON.stringify(app.read());await app.reload();assert.equal(JSON.stringify(app.read()),saved);assert.equal(app.getState().revision,2);
+    const read=await (await f.request('supplier','/api/ia/r3-price/workspace?revision=2')).json();assert.equal(read.document.products.find(p=>p.id===consumer.id).price,'7900');assert.equal(read.document.deliveryRules.length,3);
+  }finally{w.dispatchEvent(new w.Event('pagehide'));w.close();f.db.close();}
 });
