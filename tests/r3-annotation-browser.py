@@ -1,17 +1,24 @@
 """Chromium interaction tests of the actual authenticated Pages UI with ephemeral SQLite/actor."""
 from pathlib import Path
 from math import dist
-from urllib.parse import urlsplit
 from r3_feedback_browser_support import frame_click, prepare_frame_pointer
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
 
 def review_events(page,kind,record_id):
- location=urlsplit(page.url)
- response=page.request.get(location.scheme+'://'+location.netloc+'/api/ia/r3-qa/events?release=MSG0585-R3&kind='+kind+'&id='+record_id)
- assert response.ok
- return response.json()['items']
+ # Read through the authenticated browser, like the host's history control.
+ # The loopback fixture forwards the application's Secure session cookie.
+ result=page.evaluate("""async ({kind,id})=>{
+  const query=new URLSearchParams({release:'MSG0585-R3',kind,id});
+  const response=await fetch('/api/ia/r3-qa/events?'+query,{credentials:'same-origin',cache:'no-store',redirect:'error'});
+  let data=null;try{data=await response.json();}catch{}
+  const error=typeof data?.error==='string'&&/^[A-Z0-9_]{1,80}$/.test(data.error)?data.error:'INVALID_EVENT_RESPONSE';
+  return {status:response.status,error,items:data?.items};
+ }""",{'kind':kind,'id':record_id})
+ assert 200<=result['status']<300,{'status':result['status'],'error':result['error']}
+ assert isinstance(result.get('items'),list),{'status':result['status'],'error':'INVALID_EVENT_RESPONSE'}
+ return result['items']
 
 def check_rework_instruction(page,original):
  # Save through the actual reply endpoint, reload a server draft, and inspect
