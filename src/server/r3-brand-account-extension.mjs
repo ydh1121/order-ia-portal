@@ -3,6 +3,20 @@
 export const brandAccountExtensionPaths=['web/brand.mjs','web/order-menu.mjs'];
 export function extendBrandAccountSource(path,source){
   if(path==='web/brand.mjs'){
+    // New verified product builds already use the canonical shared factory.
+    // Preserve the exact sealed bytes, including visible/detached lifecycle and
+    // the server-context arrival receipt; adapting them would create a second
+    // implementation of the same brand.
+    const canonical=[
+      "import {mountBrandAccountMenu,brandAccountMenuCss} from './brand-account-menu.mjs';",
+      'export function createOrderBrand(doc=document){',
+      'export function mountOrderBrandElement(brand,overrides={}){',
+      'export function mountOrderBrand(root=document){',
+      'ORDER_BRAND_ACCOUNT_CONTEXT',
+      'authenticated:context.authenticated===true',
+      'context.consumeArrival()===true'
+    ];
+    if(canonical.every(marker=>source.includes(marker)))return source;
     const marker='export function mountOrderBrand(root=document){';
     if(source.split(marker).length!==2||!source.includes("import {mount} from './code1-jelly.mjs';"))throw Error('BRAND_ACCOUNT_EXTENSION_SOURCE_MISMATCH');
     // Replace the old brand mount, rather than running a second click handler or
@@ -16,7 +30,7 @@ export function mountOrderBrand(root=document){
  for(const svg of root.querySelectorAll('.brand-mark[data-code1-jelly],.brand-mark')){
   const brand=svg.closest('.brand');if(!brand)continue;
   const context=view.ORDER_BRAND_ACCOUNT_CONTEXT||{};
-  const menu=mountBrandAccountMenu(brand,{...context,authenticated:context.authenticated===true,jelly:Code1Jelly,reducedMotion:()=>view.matchMedia('(prefers-reduced-motion: reduce)').matches});
+  const menu=mountBrandAccountMenu(brand,{...context,authenticated:context.authenticated===true,animateInitial:!brand.__orderAccountMenu&&context.authenticated===true&&context.consumeArrival?.()===true,jelly:Code1Jelly,reducedMotion:()=>view.matchMedia('(prefers-reduced-motion: reduce)').matches});
   menus.push(menu);
  }
  return {destroy(){menus.forEach(menu=>menu.destroy());}};

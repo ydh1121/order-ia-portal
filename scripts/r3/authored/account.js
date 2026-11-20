@@ -153,7 +153,7 @@
   function commonAuthMount(root,state,api,authenticated=false) {
     const c=new AbortController();
     const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{},brand=root.querySelector('.auth-background .brand');
-    const brandMenu=brand&&w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,reducedMotion:api.reduced});
+    const brandMenu=brand&&w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced});
     c.signal.addEventListener('abort',()=>brandMenu?.destroy(),{once:true});
     const handle=root.querySelector('.sheet-handle'),sheet=root.querySelector('.auth-sheet');
     const scene=root.querySelector('.auth-scene'),background=root.querySelector('.auth-background'),dim=root.querySelector('.sheet-dim');

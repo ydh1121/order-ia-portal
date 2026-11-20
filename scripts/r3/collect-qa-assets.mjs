@@ -125,7 +125,7 @@ try{
 }catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND')throw error;}
 const data=()=>assets.filter(a=>a.usages.length).map(({needle,previewRank,...a})=>({...a,sourceSha256:digest(a.preview)}));
 async function save(){
-  const values={assetPack:gzipSync(JSON.stringify(data())).toString('base64'),brandMotionScript,commonMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,sharedTemplates:{brand,opsShell,supplierOpsShell,libraryCss},sharedUiProvenance:{coreSha256:digest(sharedCoreScript),shellId:shellRow.id,shellSource:shellRow.current},qaMvpRuntimeCode:browserFunction(registerQaMvp)};
+  const values={assetPack:gzipSync(JSON.stringify(data())).toString('base64'),brandMotionScript,commonMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,sharedTemplates:{brand,opsShell,supplierOpsShell,libraryCss,introArtSource:'data:image/webp;base64,'+art.data},sharedUiProvenance:{coreSha256:digest(sharedCoreScript),shellId:shellRow.id,shellSource:shellRow.current},qaMvpRuntimeCode:browserFunction(registerQaMvp)};
   await writeFile(new URL('../../src/server/r3-ui/qa-assets.gen.mjs',import.meta.url),'// Derived from canonical product components. Regenerate with scripts/r3/collect-qa-assets.mjs.\n'+Object.entries(values).map(([k,v])=>'export const '+k+'='+JSON.stringify(v)+';').join('\n')+'\nexport function createSharedUi(w){'+coreBody+'\nreturn w.QAUI;\n}\n');
 }
 await save();

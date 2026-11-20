@@ -15,7 +15,7 @@ export async function renderR3ProductPage(nonce,mode,actorId){
  return quoteTemplate.replace('<html lang="ko">',`<html lang="ko" data-r3-quote-extension="${quoteExtension}" data-r3-quote-mode="${mode}" data-r3-quote-commit="${quoteCommit}" data-r3-quote-partition="${partition}">`)
    .replace(/<link rel="stylesheet" href="\/([a-z-]+\.css)">/g,(_,name)=>`<link rel="stylesheet" href="${prefix}web/${name}">`)
    .replace('<script type="module" src="/main.mjs">',`<script nonce="${nonce}" type="module" src="${prefix}web/main.mjs">`)
-   .replace('</header>','<a class="ui-copy-action" href="/ia?view=qa-lab">QA LAB으로</a></header>');
+   .replace('</body>','<a class="ui-copy-action" data-product-qa-return href="/ia?view=qa-lab" style="display:block;text-align:center;margin:20px auto">QA LAB으로</a></body>');
 }
 
 export function r3ProductAsset(pathname){

@@ -6,6 +6,7 @@ import {execFileSync} from 'node:child_process';
 import {gzipSync} from 'node:zlib';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {createRequire} from 'node:module';
 
 const productRoot=process.argv[2]&&resolve(process.argv[2]);
 if(!productRoot)throw Error('Usage: node scripts/seal-r3-product.mjs /path/to/verified/order');
@@ -57,19 +58,27 @@ for(const item of identity.files){
  files[publicPath]=gzipSync(text,{level:9}).toString('base64');
 }
 if(!html||!quoteJellyRuntime||!files['web/main.mjs']||!files['assets/iana-reference.json'])throw Error('Incomplete product build');
+const sharedBrowserFiles=['quote-result-screen.mjs','magnetic-action.mjs','brand.mjs','brand-account-menu.mjs','code1-jelly.mjs'];
+for(const name of sharedBrowserFiles){
+ const original=await readFile(resolve(productRoot,'web',name));
+ if(hash(original)!==sourceHashes['web/'+name])throw Error('Uncommitted shared browser dependency '+name);
+}
+// Serialize the canonical ESM closure once for the non-module signed quote
+// consumer. The normal product keeps importing these exact modules directly.
+const {build}=createRequire(new URL('../tests/build-tools/package.json',import.meta.url))('esbuild');
+const bundle=await build({entryPoints:[resolve(productRoot,'web/brand.mjs')],bundle:true,write:false,format:'iife',globalName:'OrderProductBrand',platform:'browser',target:'es2022',minify:false,legalComments:'inline'});
+const productBrandRuntime=bundle.outputFiles[0].text;
 const output=fileURLToPath(new URL('../src/server/r3-product-sources.mjs',import.meta.url));
 const value='// Generated only by scripts/seal-r3-product.mjs from verified production assets.\n'+
  'export const quoteCommit='+JSON.stringify(commit)+';\nexport const quoteTemplate='+JSON.stringify(html)+';\n'+
  'export const quoteJellyRuntime='+JSON.stringify(quoteJellyRuntime)+';\n'+
+ 'export const productBrandRuntime='+JSON.stringify(productBrandRuntime)+';\n'+
  'export const quoteSourceHashes='+JSON.stringify(sourceHashes)+';\nexport const quoteFiles='+JSON.stringify(files)+';\n';
-await writeFile(output,value);
 // The Worker and offline QA generator execute the very same reviewed presentation module.
-const sharedBrowserFiles=['quote-result-screen.mjs','magnetic-action.mjs'];
 const copyDir=new URL('../src/server/order-engine/browser/',import.meta.url);
 await mkdir(copyDir,{recursive:true});
 for(const name of sharedBrowserFiles){
  if(!sourceHashes['web/'+name])throw Error('Missing verified product module '+name);
- await writeFile(new URL(name,copyDir),git('show',commit+':web/'+name));
 }
 const manifestPath=new URL('../src/server/order-engine/SOURCE.json',import.meta.url);
 const manifest=JSON.parse(await readFile(manifestPath,'utf8'));
@@ -81,5 +90,8 @@ for(const file of manifest.files.filter(file=>!file.path.startsWith('browser/'))
 manifest.commit=commit;
 manifest.files=manifest.files.filter(file=>!file.path.startsWith('browser/'));
 for(const name of sharedBrowserFiles)manifest.files.push({path:'browser/'+name,source:'web/'+name,sha256:sourceHashes['web/'+name]});
+// Validate every original source before replacing any of the generated copies.
+await writeFile(output,value);
+for(const name of sharedBrowserFiles)await writeFile(new URL(name,copyDir),git('show',commit+':web/'+name));
 await writeFile(manifestPath,JSON.stringify(manifest,null,2)+'\n');
 console.log(JSON.stringify({commit,files:Object.keys(files).length,bytes:Buffer.byteLength(value),sha256:hash(value)}));

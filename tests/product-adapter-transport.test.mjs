@@ -17,7 +17,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 async function until(predicate,label){for(let i=0;i<200;i++){if(predicate())return;await tick();}assert.ok(predicate(),label);}
 
 // These are transport-only response stubs, not persisted account/order evidence.
-async function browser(t,respond=()=>undefined,markup=''){
+async function browser(t,respond=()=>undefined,markup='',options={}){
   const dom=new JSDOM('<!doctype html><html><body>'+markup+'</body></html>',{
     url:origin+'/ia?'+new URLSearchParams({view:'product-r3',labRun:runId,persona:'buyer',qaDocument:documentId}),
     runScripts:'outside-only'}),w=dom.window,calls=[],messages=[];
@@ -35,10 +35,31 @@ async function browser(t,respond=()=>undefined,markup=''){
     if(call.method==='GET'&&call.path.endsWith('/notifications'))return Response.json({items:[]});
     throw Error('Unexpected transport request: '+call.method+' '+call.path);
   };
-  w.eval('('+installProductAdapter.toString()+')('+JSON.stringify(context)+');');
+  if(options.previousBrand)w.sessionStorage.setItem('order.brand.auth.v1.'+runId,JSON.stringify(options.previousBrand));
+  w.eval('('+installProductAdapter.toString()+')('+JSON.stringify(options.context||context)+');');
   const adapter=w.ORDER_APP_ADAPTER;await adapter.ready;await tick();
   return {w,adapter,calls,messages,get sessionCalls(){return sessionCalls;}};
 }
+
+test('only a server-confirmed guest-to-member transition consumes one logo arrival; member reloads stay settled',async t=>{
+ const arrived=await browser(t,undefined,'',{previousBrand:{authenticated:false,at:Date.now()}});
+ assert.equal(arrived.w.ORDER_BRAND_ACCOUNT_CONTEXT.authenticated,true);
+ assert.equal(arrived.w.ORDER_BRAND_ACCOUNT_CONTEXT.consumeArrival(),true);
+ assert.equal(arrived.w.ORDER_BRAND_ACCOUNT_CONTEXT.consumeArrival(),false,'the result or another header cannot replay a consumed arrival');
+ const reloaded=await browser(t,undefined,'',{previousBrand:{authenticated:true,at:Date.now()}});
+ assert.equal(reloaded.w.ORDER_BRAND_ACCOUNT_CONTEXT.consumeArrival(),false);
+ const initial=await browser(t);assert.equal(initial.w.ORDER_BRAND_ACCOUNT_CONTEXT.consumeArrival(),false);
+});
+
+test('stored presentation history cannot authenticate a guest, a missing actor or an expired transition',async t=>{
+ for(const actor of [{id:'lab-guest',authenticated:false},undefined]){
+  const f=await browser(t,undefined,'',{context:{...context,actor},previousBrand:{authenticated:true,at:Date.now()}});
+  assert.equal(f.w.ORDER_BRAND_ACCOUNT_CONTEXT.authenticated,false);
+  assert.equal(f.w.ORDER_BRAND_ACCOUNT_CONTEXT.consumeArrival(),false);
+ }
+ const expired=await browser(t,undefined,'',{previousBrand:{authenticated:false,at:Date.now()-13*60*60*1000}});
+ assert.equal(expired.w.ORDER_BRAND_ACCOUNT_CONTEXT.consumeArrival(),false);
+});
 
 test('session rotation is applied to product, role and price transports without changing command identity',async t=>{
   const f=await browser(t,call=>call.method==='POST'?Response.json({revision:2,id:'transport-receipt'}):undefined);

@@ -10,7 +10,7 @@ def check_wait_layout(context, origin):
     try:
         for width in (320, 390, 1440):
             page.set_viewport_size({"width": width, "height": 900})
-            query = urlencode({"view": "qa-lab", "screen": "quote-wait/comparing/email", "width": width})
+            query = urlencode({"view": "qa-lab", "archive": "1", "screen": "quote-wait/comparing/email", "width": width})
             page.goto(origin + "/ia?" + query)
             frame = page.frame_locator("#frame")
             art = frame.locator(".mf-wait-avatar")
@@ -26,7 +26,7 @@ def check_wait_layout(context, origin):
             print("BLOUB R4", width, rect)
         page.set_viewport_size({'width':390,'height':844})
         page.emulate_media(reduced_motion='no-preference')
-        query=urlencode({'view':'qa-lab','screen':'quote-wait/entry/email','width':390})
+        query=urlencode({'view':'qa-lab','archive':'1','screen':'quote-wait/entry/email','width':390})
         page.goto(origin+'/ia?'+query)
         frame=page.frame_locator('#frame')
         root=frame.locator('#order-single');scene=root.locator('[data-wait-scene]')

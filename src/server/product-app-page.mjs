@@ -3,7 +3,7 @@ import {runtimes} from './r3-ui/runtime.gen.mjs';
 import {getQaApplicationDocument} from './r3-qa-assets.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {installProductAdapter} from './product-app-adapter.mjs';
-import {brandMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,commonMotionScript} from './r3-ui/qa-assets.gen.mjs';
+import {brandMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,commonMotionScript,sharedTemplates} from './r3-ui/qa-assets.gen.mjs';
 import {brandPanelUiCss} from './order-engine/browser/brand-panel-ui.gen.mjs';
 
 const js=value=>JSON.stringify(value).replaceAll('<','\\u003c');
@@ -14,12 +14,28 @@ export function productBootstrap(nonce,context){return `<script nonce="${nonce}"
 export function injectProductContext(html,nonce,context){
  return html.replace('</head>','<style>'+brandPanelUiCss+'</style>'+productBootstrap(nonce,context)+'</head>');
 }
-function bootProductDocument(screen,state){
+function bootProductDocument(screen,state,introArtSource){
  const root=document.getElementById('order-single'),adapter=window.ORDER_APP_ADAPTER;
+ let currentState=state;
+ const announce=()=>window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state:currentState,payload:{path:location.pathname+location.search},componentVariant:document.documentElement.dataset.productComponentVariant||null,source:adapter?.context.source},location.origin);
  const status=text=>{let output=document.querySelector('[data-product-status]');if(!output){output=document.createElement('p');output.dataset.productStatus='';output.className='muted';output.setAttribute('role','status');root.append(output);}output.textContent=text;};
  const api={mode:'product',interactive:true,screen,variant:'email',adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
   reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches,
   select(next,nextState,nextOptions={}){
+   if(['simple-r3','detailed-r3'].includes(next)){
+    const url=new URL(location.href);url.searchParams.set('view',next);url.searchParams.delete('screen');url.searchParams.delete('state');url.searchParams.delete('componentVariant');location.assign(url);return;
+   }
+   // Moving between the four introduction steps must keep the same header,
+   // original CODE1 paths and account panel. Only the authored main/tray change.
+   if(screen==='onboarding'&&next===screen&&/^(guest|member)-[1-4]$/.test(nextState||'')&&nextState.split('-')[0]===currentState.split('-')[0]){
+    const module=window.ORDER_DESIGN_MODULES?.find(m=>m.id===screen);
+    const next=document.createElement('template');next.innerHTML=module.render(nextState);
+    const art=next.content.querySelector('[data-intro-art]');
+    if(art&&typeof introArtSource==='string'&&introArtSource.startsWith('data:image/webp;base64,'))art.src=introArtSource;
+    const event=new CustomEvent('r3-onboarding-state',{cancelable:true,detail:{state:nextState,markup:next.innerHTML}});
+    root.dispatchEvent(event);
+    if(event.defaultPrevented){currentState=nextState;api.localState(nextState);const url=new URL(location.href);url.searchParams.set('state',nextState);history.replaceState(null,'',url);announce();return;}
+   }
    if(['admin-orders','admin-payments','customer-orders','order-detail','receipt','trade-documents'].includes(next)){next='store-purchase';nextState='select';}
    if(!['onboarding','login','signup','otp','password','terms','profile','account-settings','store-purchase','delivery-request','admin-shipments','supplier-shipments','admin-analytics','admin-revenue-rules','member-email-templates','component-library'].includes(next)){status('이 화면은 아직 제품 기능에 연결되지 않았어요. 기존 기록에서 설계를 검토할 수 있습니다.');return;}
    const url=new URL(location.href);url.searchParams.set('screen',next);url.searchParams.set('state',nextState||'default');if(next==='component-library'&&typeof nextOptions?.componentVariant==='string'&&/^[-\w]{1,100}$/.test(nextOptions.componentVariant))url.searchParams.set('componentVariant',nextOptions.componentVariant);else url.searchParams.delete('componentVariant');location.assign(url);
@@ -39,7 +55,7 @@ function bootProductDocument(screen,state){
   if(container){window.ORDER_BRAND_ACCOUNT_CONTEXT.renderPanel({id:state==='notification'?'notifications':'profile.account',container,signal:accountController.signal});const actions=document.createElement('nav');actions.className='mf-actions';actions.innerHTML=window.QAUI.button('회원탈퇴','open-withdraw','secondary');actions.querySelector('button').onclick=()=>api.select('account-settings','withdraw');container.after(actions);}
  }
  window.addEventListener('pagehide',()=>{accountController.abort();dispose?.();disposeShared?.();},{once:true});
- window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state,componentVariant:document.documentElement.dataset.productComponentVariant||null,source:adapter?.context.source},location.origin);
+ announce();
 }
 export async function renderProductApplication(nonce,context,screen='store-purchase',state='default',variant='email',componentVariant=null){
  if(!/^[a-f0-9]{16,128}$/.test(nonce)||!/^[-\w]{1,100}$/.test(screen)||!/^[-\w]{1,100}$/.test(state))throw Error('INVALID_PRODUCT_ROUTE');
@@ -65,5 +81,5 @@ export async function renderProductApplication(nonce,context,screen='store-purch
   document={body:await inflate(frames[row.current]),mount:runtimes[row.runtimeFamily||fallback[row.screen]]||'',css:'',row};state=row.state;
  }
  styles??=inflate(cssGzip);const css=await styles;
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandAccountCss+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+');</script></body></html>';
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandAccountCss+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+');</script></body></html>';
 }

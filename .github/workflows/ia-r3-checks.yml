@@ -169,3 +169,48 @@ jobs:
             artifacts/frame-pointer/
           if-no-files-found: ignore
           retention-days: 7
+  logo:
+    name: Product logo and account motion
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install DOM and bundler test dependencies
+        run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
+      - name: Verify canonical product source manifest
+        run: node scripts/build-product-manifest.mjs --check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and verify Korean fonts for rendered QA
+        run: |
+          if ! fc-list ':lang=ko' family | grep -F 'Noto Sans CJK' > /dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends fonts-noto-cjk
+            fc-cache -f
+          fi
+          fc-list ':lang=ko:charset=ac00' family | sort -u
+          fc-list ':lang=ko:charset=ac00' family | grep -F 'Noto Sans CJK' > /dev/null
+          fc-match 'sans-serif:lang=ko' --format '%{family} | %{file}\n'
+      - name: Install browser test driver
+        run: python -m pip install playwright==1.56.0
+        id: browser-deps
+      - name: Check original logo arrival and account stack on real product routes
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+          R3_LOGO_EVIDENCE_DIR: artifacts/logo-correction
+        run: python tests/product-logo-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: product-logo-correction-browser-receipts
+          path: artifacts/logo-correction/
+          if-no-files-found: warn
+          retention-days: 7

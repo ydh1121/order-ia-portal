@@ -82,7 +82,7 @@ test('the immediately preceding artifact hashes keep their exact body and execut
 });
 
 async function hostHarness({initialRecords=[],legacyItems=[]}={}){
-  const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&screen=login%2Fempty%2Femail&width=390');
+  const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390');
   const screens=['empty','closed'].map(state=>({...row(state),hashes:{390:row(state).hashes[390]}})),screen=screens[0];
   const artifact={hash:screen.hashes[390],version:'current',html:'<!doctype html><html><head><!--R3-POLICY--></head><body><main id="order-single"></main><!--R3-FRAME--></body></html>',editable:'',file:'test.html'};
   const writes=[],records=[...initialRecords],messages=[];let failure=null;

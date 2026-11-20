@@ -151,7 +151,7 @@ def check_zoomed_pin(page, context, origin, width):
     """Save a real pin on a wide canvas. Preserve its DOM attachment across view changes."""
     state = {320:"empty", 390:"filled", 1440:"email-error"}[width]
     page.set_viewport_size({"width":width, "height":870})
-    page.goto(f"{origin}/ia?view=qa-lab&screen=login/{state}/email&width=1920")
+    page.goto(f"{origin}/ia?view=qa-lab&archive=1&screen=login/{state}/email&width=1920")
     frame = page.frame_locator("#frame")
     veil = frame.locator("#r3-veil")
     veil.wait_for(state="attached")
@@ -231,12 +231,12 @@ def run():
    for width in (390,1440):
     ctx=browser.new_context(viewport={'width':width,'height':870},has_touch=width<600)
     page=ctx.new_page();prepare_frame_pointer(page);page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
-    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
+    page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
     page.locator('input[name=email]').fill(fixture['email']);page.locator('input[name=password]').fill(fixture['pass']);page.locator('button[type=submit]').click()
     page.wait_for_url('**/ia?view=qa-lab**')
     frame=page.frame_locator('#frame')
     frame.locator('#r3-veil').wait_for(state='attached')
-    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login/empty/email&width='+str(width))
+    page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login/empty/email&width='+str(width))
     frame.locator('#r3-veil').wait_for(state='attached')
     page.locator('#new').click()
     frame.locator('#r3-veil').wait_for(state='visible')
