@@ -92,14 +92,28 @@ test('explicit initial login arrival is opt-in and a same-account refresh does n
     f.api.pause();assert.equal(f.api.inspect().arrival,'rest');assert.ok(animations.every(a=>a.cancelled));f.close();
   }
 });
-test('guest interaction runs the original CODE1 simulation while keeping the panel closed',()=>{
-  const f=fixture({reducedMotion:false}),before=f.paths.map(path=>path.getAttribute('d')),queue=[];
-  f.w.requestAnimationFrame=callback=>{queue.push(callback);return queue.length;};
-  f.w.cancelAnimationFrame=()=>{};
-  f.api.trigger.click();
-  for(let time=0;time<10;time++){const work=queue.splice(0);for(const callback of work)callback(f.w.performance.now()+16*time);}
-  assert.notDeepEqual(f.paths.map(path=>path.getAttribute('d')),before);
-  assert.equal(f.api.panel.hidden,true);assert.equal(f.api.inspect().authenticated,false);f.close();
+test('guest interaction runs the original CODE1 simulation while keeping the panel closed',t=>{
+  let choice=0;t.mock.method(Math,'random',()=>choice);
+  for(const [random,kind] of [[.25,'gather'],[.75,'idle']]){
+    choice=random;let now=0,sequence=0;const queue=new Map(),starts=[];
+    const f=fixture({reducedMotion:false,beforeMount({w,mark}){
+      // Idle profiles may legitimately delay every circle for up to 180ms.
+      // Fix both branch and seed, and drive one clock, so the same ten frames
+      // exercise real deformation without depending on wall time or chance.
+      w.crypto.getRandomValues=values=>{values.fill(0);return values;};
+      w.performance.now=()=>now;
+      w.requestAnimationFrame=callback=>{const id=++sequence;queue.set(id,callback);return id;};
+      w.cancelAnimationFrame=id=>queue.delete(id);
+      mark.addEventListener('code1:motionstart',event=>starts.push(event.detail));
+    }});
+    try{
+      const before=f.paths.map(path=>path.getAttribute('d'));f.api.trigger.click();
+      assert.equal(starts.length,1);assert.equal(starts[0].kind,kind);assert.equal(starts[0].seed,0);
+      for(let frame=0;frame<10;frame++){now=frame*16;const work=[...queue.values()];queue.clear();for(const callback of work)callback(now);}
+      assert.notDeepEqual(f.paths.map(path=>path.getAttribute('d')),before,kind+' changes the original paths');
+      assert.equal(f.api.panel.hidden,true);assert.equal(f.api.inspect().authenticated,false);
+    }finally{f.close();}
+  }
 });
 test('a member opens the original three roots and all specified children inside the same panel',async()=>{
   const calls=[],f=fixture({authenticated:true,renderPanel({id,container}){calls.push(id);container.textContent='서버에서 받은 '+id;}});
