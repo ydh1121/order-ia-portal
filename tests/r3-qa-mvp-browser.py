@@ -7,8 +7,8 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from urllib.parse import urlencode
 from playwright.sync_api import expect, sync_playwright
+from r3_feedback_browser_support import ReviewScreens
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/qa-mvp'
@@ -35,10 +35,6 @@ def open_screen(page, screen, persona='buyer'):
     target = frame(page)
     expect(target.locator('#order-single[data-app-screen="'+screen+'"]')).to_be_visible()
     return target
-
-
-def exact_product_url(origin, run_id, screen, state, persona='buyer'):
-    return origin+'/ia?'+urlencode({'view':'product-r3','labRun':run_id,'persona':persona,'screen':screen,'state':state})
 
 
 def create_run(page, origin, width):
@@ -232,9 +228,11 @@ def check(page, origin, width):
     # invented numeric token snapshot. This page is read only in the test.
     baseline=page.context.new_page()
     baseline.set_viewport_size({'width':width,'height':900})
-    baseline.goto(exact_product_url(origin,run_id,'admin-settlements','summary','operator'))
-    expected=button_design(baseline,'.ops-page .btn.primary')
+    archived=ReviewScreens(baseline,origin,width)
+    reference=archived.screen('admin-settlements','summary')
+    expected=button_design(reference,'.ops-page .btn.primary')
     assert shared_button==expected,{'new':shared_button,'canonical':expected}
+    receipt['checks']['canonicalAdminArtifactHash']=baseline.locator('#frame').get_attribute('data-test-ready-hash')
     baseline.close()
     receipt['checks']['canonicalAdminButtonDesign']=shared_button
 

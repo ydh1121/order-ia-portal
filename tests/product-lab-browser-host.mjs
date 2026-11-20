@@ -26,7 +26,12 @@ const server=createServer(async(req,res)=>{
   const url=new URL(req.url,origin);
   if(url.pathname==='/__lab-test-session'){res.writeHead(303,{'Set-Cookie':session.cookie,'Location':'/ia?view=qa-lab'});return res.end();}
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
-  const request=new Request(url,{method:req.method,headers:req.headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})});
+  // Normalize only this bound loopback transport to the canonical deployment
+  // origin. The real same-origin/CSRF gates remain enabled and reject any other
+  // incoming Origin; no HTTP request is sent to the production deployment.
+  const canonicalOrigin='https://order-ia-portal.pages.dev',headers=new Headers(req.headers);
+  if(headers.get('Origin')===origin)headers.set('Origin',canonicalOrigin);
+  const request=new Request(canonicalOrigin+url.pathname+url.search,{method:req.method,headers,...(chunks.length?{body:Buffer.concat(chunks)}:{})});
   let result;
   if(url.pathname.startsWith('/api/ia/'))result=await handleIaRequest(request,env);
   else if(url.pathname==='/api/order/features')result=await features({request,env});
