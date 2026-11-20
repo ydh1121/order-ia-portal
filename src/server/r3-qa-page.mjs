@@ -12,6 +12,7 @@ import * as beforeLogoCorrection from './r3-ui/logo-correction-history.gen.mjs';
 import {approvedShellBody,shellStyles} from './r3-ui/approved-shell.mjs';
 import {approvedHash,reviewHashes,approvedWidths} from './r3-ui/approved-width.mjs';
 import {installReviewShortcut, mountApprovedMarkers} from './r3-ui/approved-markers.mjs';
+import {installPinProjection} from './r3-ui/pin-projection.mjs';
 import {approvedRegistry} from './r3-ui/approved-registry.mjs';
 import {bootApprovedShell} from './r3-ui/approved-controller.mjs';
 import {mountQuoteJourneyBridge} from './r3-ui/quote-journey-bridge.mjs';
@@ -29,7 +30,10 @@ import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-ru
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
-const reviewFrameCode='function presentReviewFrame(session){window.ORDER_QA_REVIEW_RUNTIME?.(session);('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);('+browserFunction(mountApprovedMarkers)+')(session);}';
+// Pin presentation is part of the review tool, not the preserved product HTML,
+// CSS or released frame identity. Historical replay code is still executed intact.
+const pinPresentationStyle='.r3-pin.is-resolved{background:#315de6;border-style:dashed}.r3-pin.is-previous{background:#7c3aed}.r3-pin.is-mixed{background:linear-gradient(135deg,#7c3aed 0 50%,#315de6 50% 100%)}.r3-pin.is-previous:hover,.r3-pin.is-previous.is-selected{box-shadow:0 0 0 4px #7c3aed33}.r3-pin.is-resolved::before{content:"✓";position:absolute;left:-5px;bottom:-5px;display:grid;place-items:center;width:12px;height:12px;border-radius:50%;background:white;color:#087f5b;font:800 9px/1 system-ui}.r3-pin.is-previous[data-cluster]:not([data-cluster=""])::after{color:#7c3aed}';
+const reviewFrameCode='function presentReviewFrame(session,replay){('+browserFunction(installPinProjection)+')(session);const pinStyle=document.createElement("style");pinStyle.textContent='+JSON.stringify(pinPresentationStyle)+';document.head.append(pinStyle);if(replay){replay(session);}else{window.ORDER_QA_REVIEW_RUNTIME?.(session);('+browserFunction(mountQuoteJourneyBridge)+')(session);('+browserFunction(installReviewShortcut)+')(session);('+browserFunction(installReviewMotion)+')(session);('+frameCode+')(session);}('+browserFunction(mountApprovedMarkers)+')(session);}';
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
 const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cached=new Map();

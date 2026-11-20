@@ -95,6 +95,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-annotation-browser.py
+      - name: Restore previous feedback pins and distinguish their provenance
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-pin-restoration-browser.py
       - name: Check onboarding source art, member menus, auth returns and footer
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -165,6 +170,7 @@ jobs:
           path: |
             artifacts/price-workspace/
             artifacts/r1-workspace/
+            artifacts/r1-pin-restoration/
             artifacts/saved-businesses/
             artifacts/role-browser/
             artifacts/quote-result/
@@ -210,11 +216,17 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-qa-workspace-browser.py
+      - name: Restore previous feedback pins and distinguish their provenance
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-pin-restoration-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: r1-canonical-workspace-browser-receipts
-          path: artifacts/r1-workspace/
+          path: |
+            artifacts/r1-workspace/
+            artifacts/r1-pin-restoration/
           if-no-files-found: warn
           retention-days: 7
   logo:

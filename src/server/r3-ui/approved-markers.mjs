@@ -17,6 +17,9 @@ export function mountApprovedMarkers(session) {
   if (window===parent) return;
   const root=document.querySelector('#order-single'), markers=document.querySelector('#r3-pins');
   if (!root||!markers) return;
+  // Archived replay code may already have installed its frozen decoration.
+  // Keep one visible draft while the current review layer owns presentation.
+  document.querySelectorAll('.approval-draft-pin').forEach(pin=>pin.remove());
   const draft=document.createElement('span');
   draft.className='approval-draft-pin';
   draft.textContent='+';
@@ -66,11 +69,18 @@ export function mountApprovedMarkers(session) {
       const group=groups.get(groupKey(parseFloat(el.style.left),parseFloat(el.style.top)));
       if(!group?.length)continue;
       const nums=group.map(p=>Number.isSafeInteger(p.ordinal)&&p.ordinal>0?p.ordinal:order.get(p.id));
+      const previous=group.filter(p=>p.previous===true).length,current=group.length-previous;
+      const resolved=group.every(p=>p.resolved);
       el.textContent=String(nums[0]);
       el.dataset.cluster=group.length>1?'+'+(group.length-1):'';
-      el.setAttribute('aria-label','위치 코멘트 '+nums.join(', ')+'번 열기');
+      el.dataset.previousCount=String(previous);
+      el.dataset.currentCount=String(current);
+      el.classList.toggle('is-previous',previous===group.length);
+      el.classList.toggle('is-mixed',previous>0&&current>0);
+      el.setAttribute('aria-label',(previous===group.length?'이전 ':'')+'위치 코멘트 '+nums.join(', ')+'번 열기'+
+        (previous>0&&current>0?' · 이전 '+previous+'개, 현재 '+current+'개':'')+(resolved?' · 해결됨':''));
       el.classList.toggle('is-selected',group.some(p=>selection.includes(p.id)));
-      el.classList.toggle('is-resolved',group.every(p=>p.resolved));
+      el.classList.toggle('is-resolved',resolved);
     }
     const p=shown&&!picking?position(draftAnchor):null;
     draft.hidden=!p;

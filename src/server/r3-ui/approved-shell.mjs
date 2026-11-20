@@ -23,6 +23,7 @@ html,body{overflow:hidden}
 #notes .feedback-status button:focus-visible{outline:2px solid #315de6;outline-offset:2px}
 #notes article[data-feedback-status=resolved]{border-left:3px solid #22a078}
 #notes article[data-feedback-status=recheck]{border-left:3px solid #315de6}
+.pin-legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;color:#6b7684;font-size:10px}.pin-legend span{display:inline-flex;align-items:center;gap:5px}.pin-legend span::before{content:'';width:9px;height:9px;border-radius:50%;background:#315de6}.pin-legend .previous::before{background:#7c3aed}
 #filters button[aria-pressed=true]{color:#315de6;background:#eaeefa}
 #filters{display:flex;gap:4px;flex-wrap:wrap}
 .r3-review-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -110,6 +111,7 @@ export function approvedShellBody(){
         <div id="other-width-history"></div>
         <section class="review-comments"><div class="review-section-head"><h3>코멘트 <span id="comment-count"></span></h3><button id="general" data-lab-action="page-comment">전체 의견 추가</button></div>
           <div class="comment-filters"><button data-comment-filter="open" class="active">미해결</button><button data-comment-filter="recheck">재검토</button><button data-comment-filter="resolved">해결</button><button data-comment-filter="all">전체</button></div>
+          <div class="pin-legend" aria-label="위치 핀 색상"><span class="previous">이전 핀 · 보라</span><span>이번 판 핀 · 파랑</span></div>
           <div id="notes"></div>
         </section>
         <details class="figma-details" open><summary>피그마 작업 <span id="figma-status-badge"></span></summary>
