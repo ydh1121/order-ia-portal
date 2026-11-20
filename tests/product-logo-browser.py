@@ -100,7 +100,18 @@ def product_ready(page, persona):
     expect(page.locator("html")).to_have_attribute("data-product-runtime", "canonical")
     expect(page.locator("html")).to_have_attribute("data-product-screen", "onboarding")
     page.wait_for_function("p=>window.ORDER_APP_CONTEXT?.persona===p&&document.querySelector('.obm-brand')?.__orderAccountMenu", arg=persona)
-    page.evaluate("async()=>{await window.ORDER_APP_ADAPTER.ready;await document.fonts.ready;}")
+    # The guest product deliberately cannot obtain a member session. Its
+    # introduction and logo mount without one; a denied session must not be
+    # mistaken for a failed guest page or silently accepted for a member.
+    readiness = page.evaluate("""async()=>{
+      try { await window.ORDER_APP_ADAPTER.ready; return {status:'fulfilled'}; }
+      catch(error) { return {status:'rejected',error:error.message}; }
+    }""")
+    if persona == "guest":
+        assert readiness == {"status": "rejected", "error": "AUTHENTICATION_REQUIRED"}, readiness
+    else:
+        assert readiness == {"status": "fulfilled"}, readiness
+    page.evaluate("async()=>{await document.fonts.ready;}")
     context = page.evaluate("window.ORDER_APP_CONTEXT")
     assert context["mode"] == "lab" and context["actor"]["authenticated"] is (persona != "guest"), context
     assert f"/as/{persona}/product" in context["endpoints"]["product"], context
