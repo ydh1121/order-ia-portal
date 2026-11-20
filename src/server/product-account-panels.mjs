@@ -36,6 +36,9 @@ export function getProductPanelBootstrap(){
 }
 
 export const productPanelCss=String.raw`
+/* The scoped UI primitives add .ds specificity to inset:0. Preserve the
+   canonical menu's natural page height so Back can shrink the same panel. */
+.obm-panel.ds .obm-stack .obm-page{bottom:auto;height:auto}
 .obm-panel .product-panel-body{min-width:0;max-width:100%;overflow-wrap:anywhere;container-type:inline-size}
 .obm-panel .product-panel-body .ops-form-grid,.obm-panel .product-panel-body .ops-form-grid.four,.obm-panel .product-panel-body .ops-metrics{grid-template-columns:minmax(0,1fr)}
 .obm-panel .product-panel-body .ops-panel{padding:14px;margin-block:12px;min-width:0}

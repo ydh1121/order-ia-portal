@@ -8,6 +8,7 @@ import {onRequest} from '../functions/ia/[[path]].js';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {deriveVerifier,issueSession} from '../src/server/owner-session.mjs';
 import {getProductPanelBootstrap} from '../src/server/product-account-panels.mjs';
+import {brandPanelUiCss} from '../src/server/order-engine/browser/brand-panel-ui.gen.mjs';
 
 const require=createRequire(new URL('./build-tools/package.json',import.meta.url));
 const {JSDOM,VirtualConsole}=require('jsdom'),{parse}=require('rrweb-cssom');
@@ -107,4 +108,17 @@ test('panel bootstrap style additions do not introduce document-wide body, page 
  const {css}=await getProductPanelBootstrap();
  const walk=rules=>{for(const rule of rules){if(rule.selectorText)for(const selector of rule.selectorText.split(','))assert.doesNotMatch(selector.trim(),/^(?:html|body|:root|\.page\b|\.btn\b)(?![\w-])/);if(rule.cssRules)walk(rule.cssRules);}};
  walk(parse(css).cssRules);
+});
+
+test('the scoped UI inset primitive cannot stretch an account page to its previous stack height',async()=>{
+ const {css}=await getProductPanelBootstrap(),rules=[...parse(brandPanelUiCss+css).cssRules].filter(rule=>rule.type===1);
+ // These two selectors are class-only. Compare their actual cascade priority,
+ // including source order, instead of relying on jsdom's layout-free metrics.
+ const primitive=rules.findLastIndex(rule=>rule.selectorText==='.obm-panel.ds .t-page-slide .t-page'&&rule.style.getPropertyValue('inset')==='0');
+ const intrinsic=rules.findLastIndex(rule=>rule.selectorText==='.obm-panel.ds .obm-stack .obm-page'&&rule.style.getPropertyValue('bottom')==='auto');
+ assert.ok(primitive>=0,'the real scoped transition primitive is included');
+ assert.ok(intrinsic>primitive,'the account override follows every scoped transition primitive');
+ const specificity=selector=>(selector.match(/\.[\w-]+/g)||[]).length;
+ assert.ok(specificity(rules[intrinsic].selectorText)>=specificity(rules[primitive].selectorText),'the inset override wins even after UI scoping adds .ds');
+ assert.equal(rules[intrinsic].style.getPropertyValue('height'),'auto','the current page retains its natural content height');
 });

@@ -7,6 +7,7 @@ responses, animation clocks, application state or DOM geometry.
 """
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -226,10 +227,33 @@ def main():
         page.on("response", lambda response: responses.append({"url": response.url, "method": response.request.method, "status": response.status}) if "/api/ia/" in response.url else None)
         return page
 
+    @contextmanager
+    def preserve_failure_evidence():
+        # Exit this guard before sync_playwright stops its connection, so an
+        # assertion failure still retains the live rendered frame and trace.
+        try:
+            yield
+        except Exception:
+            if product and not product.is_closed():
+                try:
+                    save_timeline(product, "failure-timeline")
+                except Exception:
+                    pass
+                try:
+                    product.screenshot(path=EVIDENCE / "failure.png")
+                except Exception:
+                    pass
+            if context:
+                try:
+                    context.tracing.stop(path=EVIDENCE / "product-logo-trace.zip")
+                except Exception:
+                    pass
+            raise
+
     try:
         base = host.stdout.readline().strip()
         assert base.startswith("http://127.0.0.1:"), base
-        with sync_playwright() as pw:
+        with sync_playwright() as pw, preserve_failure_evidence():
             receipt["checkpoint"] = "browser-launch"
             browser = pw.chromium.launch(executable_path=os.getenv("R3_BROWSER_BINARY") or shutil.which("google-chrome") or shutil.which("chromium"), args=["--no-sandbox"])
             # Screenshots and frame JSON work without an optional ffmpeg binary.
@@ -468,17 +492,6 @@ def main():
         receipt.update(status="FAIL", failure=traceback.format_exc(), pageErrors=errors)
         write_json("receipt.json", receipt)
         write_json("network.json", responses)
-        if product and not product.is_closed():
-            try:
-                product.screenshot(path=EVIDENCE / "failure.png")
-                save_timeline(product, "failure-timeline")
-            except Exception:
-                pass
-        if context:
-            try:
-                context.tracing.stop(path=EVIDENCE / "product-logo-trace.zip")
-            except Exception:
-                pass
         raise
     finally:
         if browser:
