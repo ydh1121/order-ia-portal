@@ -33,13 +33,14 @@ test('QA authentication follows the screen semantics without confusing quote exp
  for(const [screen,state,authenticated] of [
   ['login','success',true],['signup','success',false],['password','complete',false],['otp','verified',true],
   ['session-access','expired',false],['admin-access','expired',false],['delivery-request','expired',true],
-  ['saved-quote','expired',true],['admin-price-approval','expired',true],['account-settings','closed',false]
+  ['saved-quote','expired',true],['admin-price-approval','expired',true],['account-settings','closed',false],
+  ['onboarding','company',false],['onboarding','guest-1',false],['onboarding','member-1',true],['onboarding','member-4',true]
  ])assert.equal(qaFixtureForRow({screen,state,role:'customer'}).authenticated,authenticated,screen+'/'+state);
 });
 
 test('current review identities join the catalog and source content while retaining width and fixture boundaries',async()=>{
  const index=await read(),supplemental=await getQaSupplemental();
- for(const id of ['login/empty/email','store-purchase/select/email']){
+ for(const id of ['login/empty/email','store-purchase/select/email','onboarding/company/email']){
   const entry=index.items.find(row=>row.id===id),original=supplemental.documents.get(id)||catalog.find(row=>row.id===id);
   assert.ok(entry&&original,id);
   const document=await read(id);
@@ -48,6 +49,10 @@ test('current review identities join the catalog and source content while retain
   assert.equal(document.source.contentHash,entry.contentHashes[390]);
   assert.notEqual(document.hash,document.source.contentHash);
   assert.equal(document.source.runtimeDigest,qaReviewRuntimeDigest);
+  if(id==='onboarding/company/email'){
+   assert.equal(document.fixture.authenticated,false,'the direct company state renders a guest header with signup');
+   assert.match(document.html,/class="ob guest footer-open"/);
+  }
   const target={screen:entry.screen,state:entry.state,variant:entry.variant,viewport:390,artifactHash:document.hash};
   assert.equal(await isR3ReviewTarget(target),true);
   assert.equal(await isR3ReviewTarget({...target,viewport:1440}),false);
