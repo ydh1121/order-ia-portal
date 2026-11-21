@@ -242,6 +242,28 @@ def check_auth_overlay_motion(page, origin, width):
         assert samples[-1]['focused'], str(trace)
         overlay = frame.locator('[data-product-auth-sheet]')
         expect(overlay).to_have_attribute('data-auth-screen', screen)
+        root.evaluate('''root=>{
+            const holder=root.querySelector('[data-product-auth-sheet]'),dim=holder.querySelector('.sheet-dim');
+            const record=window.__authBackdropExit={done:false,closeAt:null,trusted:false,samples:[]},start=performance.now();
+            const controller=new AbortController();let missingAt=null;
+            for(const type of ['keydown','pointerup'])holder.addEventListener(type,event=>{
+                if(event.type==='keydown'&&event.key!=='Escape')return;
+                if(record.closeAt===null){record.closeAt=performance.now()-start;record.trusted=event.isTrusted;}
+            },{capture:true,signal:controller.signal});
+            function sample(){
+                const current=root.querySelector('[data-product-auth-sheet]'),shade=current?.querySelector('.sheet-dim'),sheet=current?.querySelector('.auth-sheet');
+                const style=shade&&getComputedStyle(shade),box=shade?.getBoundingClientRect(),now=performance.now()-start;
+                record.samples.push({t:now,holder:current===holder,present:Boolean(shade),sameDim:shade===dim,
+                    count:root.querySelectorAll('[data-product-auth-sheet] .sheet-dim').length,
+                    sheetPresent:Boolean(sheet),opacity:style?Number(style.opacity):null,hidden:shade?.hidden??true,
+                    display:style?.display||null,rect:box?{left:box.left,top:box.top,width:box.width,height:box.height}:null,
+                    viewport:{width:innerWidth,height:innerHeight},
+                    opacityOwners:shade?[...shade.getAnimations()].filter(a=>a.playState==='running'&&a.effect.getKeyframes().some(k=>'opacity'in k)).length:0});
+                if(!current&&missingAt===null)missingAt=now;
+                if(missingAt!==null&&now-missingAt>100||now>3000){controller.abort();record.done=true;return;}
+                requestAnimationFrame(sample);
+            }requestAnimationFrame(sample);
+        }''')
         if screen == 'login':
             overlay.locator('[name=email]').press('Escape')
         else:
@@ -253,13 +275,27 @@ def check_auth_overlay_motion(page, origin, width):
             page.mouse.down()
             page.mouse.move(x, y + travel * scale, steps=12)
             page.mouse.up()
+        backdrop = root.evaluate('''async()=>{while(!window.__authBackdropExit.done)await new Promise(requestAnimationFrame);return window.__authBackdropExit;}''')
+        backdrop.update({'width':width,'screen':screen,'artifactHash':digest,'source':'canonical deployed artifact with trusted Escape/drag; RAF observes live dim and sheet'})
+        dim_trace = out / f'auth-backdrop-exit-{screen}-{width}.json'
+        dim_trace.write_text(json.dumps(backdrop,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        assert backdrop['trusted'] and backdrop['closeAt'] is not None, str(dim_trace)
+        closing = [s for s in backdrop['samples'] if s['t'] >= backdrop['closeAt']]
+        painted = [s for s in closing if s['present'] and not s['hidden'] and s['display'] != 'none']
+        assert len(painted) >= 3 and any(not s['present'] for s in closing), str(dim_trace)
+        assert all(s['count'] <= 1 and (not s['present'] or s['sameDim'] and s['holder']) and s['opacityOwners'] <= 1 for s in closing), str(dim_trace)
+        assert any(s['sheetPresent'] and s['opacity'] <= .02 for s in painted), str(dim_trace)
+        assert all(current['opacity'] <= previous['opacity'] + .02 for previous,current in zip(painted,painted[1:])), str(dim_trace)
+        for sample in painted:
+            box, viewport = sample['rect'], sample['viewport']
+            assert abs(box['left']) <= 1 and abs(box['top']) <= 1 and abs(box['width']-viewport['width']) <= 1 and abs(box['height']-viewport['height']) <= 1, str(dim_trace)
         expect(overlay).to_have_count(0)
         expect(opener).to_be_focused()
         expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
         expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', '1')
         expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
         assert page.url == url
-    print('PASS auth entrance RAF trace: one stable canonical sheet, monotonic slide without opacity flicker or CSS transition, preserved focus and normal-motion Escape/drag close')
+    print('PASS auth entrance and backdrop RAF: one stable canonical sheet and dim, monotonic opacity through the complete exit, preserved focus and normal-motion Escape/drag close')
 
 
 def drag_intro(page, frame, *, forward, expected_step):
@@ -457,7 +493,7 @@ def main():
         fixture=json.loads(host.stdout.readline())
         with sync_playwright() as pw:
             browser=pw.chromium.launch(executable_path=os.environ.get("R3_BROWSER_BINARY") or shutil.which("chromium"))
-            for width in (320,375,1440):
+            for width in (320,375,390,1440):
                 context=browser.new_context(viewport={"width":width,"height":844},reduced_motion="reduce")
                 page=context.new_page()
                 page.goto(fixture["url"]+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail")
@@ -465,6 +501,11 @@ def main():
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()
                 page.wait_for_url("**/ia?view=qa-lab**")
+                if width == 390:
+                    page.emulate_media(reduced_motion="no-preference")
+                    check_auth_overlay_motion(page,fixture["url"],width)
+                    context.close()
+                    continue
                 if width == 320:
                     check_archived_entry(page,fixture["url"])
                 check(page,fixture["url"],width)

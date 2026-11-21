@@ -99,6 +99,24 @@ test('bottom panel preserves its native form and restores background, scroll and
  }finally{f.close();}
 });
 
+test('a backdrop holds zero until its longer sheet exit and reverses from the painted opacity',async()=>{
+ const f=fixture('<div id="dim" style="opacity:1;transition:opacity 90ms"></div>');
+ try{
+  const dim=f.d.querySelector('#dim'),shade=f.common.backdrop(dim),nativeStyle=f.w.getComputedStyle.bind(f.w);let painted=null;
+  f.w.getComputedStyle=el=>{const value=nativeStyle(el);if(el===dim&&painted!==null)return new Proxy(value,{get(target,key){return key==='opacity'?String(painted):Reflect.get(target,key);}});return value;};
+  shade.set(false,{duration:280});const closing=f.captures.at(-1);
+  assert.equal(dim.style.opacity,'0','the nonanimated backing style must already retain the fade destination');
+  closing.finish();await tick();
+  assert.equal(dim.hidden,false,'the sheet owns when the scrim leaves the document');
+  assert.equal(f.w.getComputedStyle(dim).opacity,'0','there is no opaque tail during the remaining sheet exit');
+  shade.set(true,{duration:400});painted=.43;shade.set(false,{duration:280});
+  const reversed=f.captures.at(-1);assert.equal(reversed.frames[0].opacity,.43);assert.equal(reversed.frames.at(-1).opacity,0);
+  assert.equal(f.common.backdrop(dim),shade,'reusing a dim cannot create a second opacity owner');
+  painted=null;reversed.finish();await tick();shade.hide();assert.equal(dim.hidden,true);
+  shade.destroy();assert.equal(dim.style.opacity,'1');assert.equal(dim.style.transition,'opacity 90ms');
+ }finally{f.close();}
+});
+
 test('reservation wheel enhances the existing select and preserves its original form payload',async()=>{
  const f=fixture('<form><label>일<select name="reserve-day" class="pw-wheel" size="5"><option value="28">28일</option><option value="29" selected>29일</option><option value="30">30일</option></select></label></form>',true);
  try{const select=f.d.querySelector('select'),column=f.d.querySelector('.r3-native-wheel');assert.ok(column);assert.equal(new f.w.FormData(f.d.querySelector('form')).get('reserve-day'),'29');column.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));assert.equal(select.value,'30');assert.equal(new f.w.FormData(f.d.querySelector('form')).get('reserve-day'),'30');select.innerHTML='<option value="28" selected>28일</option>';await tick();assert.equal(column.querySelectorAll('[role=option]').length,1);assert.equal(column.getAttribute('aria-activedescendant'),column.firstChild.id);assert.equal(new f.w.FormData(f.d.querySelector('form')).get('reserve-day'),'28');}finally{f.close();}

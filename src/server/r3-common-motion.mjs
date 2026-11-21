@@ -6,7 +6,7 @@ export function createCommonMotion(win=window){
  if(win.ORDER_COMMON_MOTION?.version==='motion21')return win.ORDER_COMMON_MOTION;
  const doc=win.document,media=win.matchMedia?.('(prefers-reduced-motion: reduce)'),lifetime=new win.AbortController();
  const reduced=()=>media?.matches===true||doc.hidden;
- const cleanups=new Set(),resizeJobs=new WeakMap(),liveAnimations=new Set();let serial=0;
+ const cleanups=new Set(),resizeJobs=new WeakMap(),backdrops=new WeakMap(),liveAnimations=new Set();let serial=0;
  const uid=prefix=>'r3-'+prefix+'-'+(++serial);
  const time=(el,key,fallback)=>{const raw=win.getComputedStyle(el).getPropertyValue(key).trim(),n=parseFloat(raw);return Number.isFinite(n)?n*(raw.endsWith('ms')?1:1000):fallback;};
  const ease=(el,key,fallback='cubic-bezier(.22,1,.36,1)')=>win.getComputedStyle(el).getPropertyValue(key).trim()||fallback;
@@ -176,10 +176,31 @@ export function createCommonMotion(win=window){
   signal?.addEventListener('abort',destroy,{once:true});cleanups.add(destroy);refresh();return {set,refresh,settle,value:()=>{const item=items[Math.round(clamp(position))];return item?String(optionValue(item)):'';},position:()=>position,destroy};
  }
 
+ function backdrop(dim,{signal}={}){
+  if(!dim)return null;if(backdrops.has(dim))return backdrops.get(dim);
+  const original=Object.fromEntries(['opacity','transition'].map(key=>[key,{value:dim.style.getPropertyValue(key),priority:dim.style.getPropertyPriority(key)}]));
+  let flight=null,phase=0,closed=false;
+  // The underlying opacity is the destination, so a shorter fade cannot fall
+  // back to an opaque scrim while its sheet is still finishing its exit.
+  dim.style.setProperty('transition','none');
+  function set(next,{duration=280,easing='ease-out',immediate=false,from}={}){
+   if(closed)return;
+   const opacity=from??(dim.hidden?0:Number(win.getComputedStyle(dim).opacity)||0),to=next?1:0,gen=++phase;
+   flight?.cancel();flight=null;dim.hidden=false;dim.style.opacity=String(to);
+   flight=!immediate&&opacity!==to?animation(dim,[{opacity},{opacity:to}],{duration,easing,fill:'both'}):null;
+   const active=flight;
+   finish(active,()=>{if(closed||phase!==gen)return;dim.style.opacity=String(to);active?.cancel();if(flight===active)flight=null;});
+  }
+  function hide(){if(closed)return;++phase;dim.hidden=true;flight?.cancel();flight=null;}
+  function destroy(){if(closed)return;closed=true;++phase;flight?.cancel();flight=null;for(const [key,state]of Object.entries(original))if(state.value)dim.style.setProperty(key,state.value,state.priority);else dim.style.removeProperty(key);signal?.removeEventListener('abort',destroy);backdrops.delete(dim);cleanups.delete(destroy);}
+  const control={set,hide,destroy};backdrops.set(dim,control);signal?.addEventListener('abort',destroy,{once:true});cleanups.add(destroy);return control;
+ }
+
  function bottomPanel(panel,{trigger,handle,signal,onClose,open=false,dim}={}){
   const controller=new win.AbortController();let showing=false,phase=0,flight=null,drag=null,savedOverflow,priorFocus,background=new Map(),ownsDim=!dim,suppressClick=false,ownsHandle=!handle;
   const original={role:panel.getAttribute('role'),modal:panel.getAttribute('aria-modal'),open:panel.getAttribute('data-open'),transform:panel.style.transform,inert:panel.inert};
   if(!dim){dim=doc.createElement('div');dim.className='r3-panel-dim';panel.before(dim);}else dim.classList.add('r3-panel-dim');
+  const shade=backdrop(dim,{signal:controller.signal});
   panel.classList.add('r3-bottom-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');if(!panel.id)panel.id=uid('panel');
   if(trigger){trigger.setAttribute('aria-controls',panel.id);trigger.setAttribute('aria-haspopup','dialog');}
   if(!handle){handle=doc.createElement('button');handle.type='button';handle.className='r3-panel-handle';handle.setAttribute('aria-label','패널 닫기');panel.prepend(handle);}
@@ -188,12 +209,14 @@ export function createCommonMotion(win=window){
   function lock(){if(savedOverflow!==undefined)return;savedOverflow=doc.documentElement.style.overflow;doc.documentElement.style.overflow='hidden';for(let child=panel,parent=panel.parentElement;parent;child=parent,parent=parent.parentElement){for(const el of parent.children)if(el!==child&&el!==dim&&!['STYLE','SCRIPT','HEAD'].includes(el.tagName)){background.set(el,el.inert);el.inert=true;}if(parent===doc.body)break;}}
   function currentY(){const transform=win.getComputedStyle(panel).transform;try{return new win.DOMMatrixReadOnly(transform).m42;}catch{return 0;}}
   function set(next,{focus=true,notify=true,immediate=false}={}){
-   const wasHidden=panel.hidden,from=wasHidden?(panel.getBoundingClientRect().height||win.innerHeight):currentY();const gen=++phase;flight?.cancel();showing=next;panel.hidden=false;dim.hidden=false;dim.classList.toggle('is-closed',!next);panel.inert=!next;trigger?.setAttribute('aria-expanded',String(next));panel.dataset.open=String(next);
+   const wasHidden=panel.hidden,from=wasHidden?(panel.getBoundingClientRect().height||win.innerHeight):currentY();const gen=++phase;flight?.cancel();showing=next;panel.hidden=false;
+   shade.set(next,{duration:time(panel,next?'--panel-open-dur':'--panel-close-dur',next?350:230),easing:ease(panel,'--panel-slide-ease'),immediate});
+   dim.classList.toggle('is-closed',!next);panel.inert=!next;trigger?.setAttribute('aria-expanded',String(next));panel.dataset.open=String(next);
    if(next){if(!priorFocus)priorFocus=doc.activeElement;lock();}
    const height=panel.getBoundingClientRect().height||win.innerHeight;panel.style.transform='none';
    flight=!immediate?animation(panel,[{transform:`translate3d(0,${from}px,0)`},{transform:`translate3d(0,${next?0:height}px,0)`}],{duration:time(panel,next?'--panel-open-dur':'--panel-close-dur',next?350:230),easing:ease(panel,'--panel-slide-ease'),fill:'both'}):null;
    if(next&&focus)(focusables().find(el=>el!==handle)||handle)?.focus({preventScroll:true});
-   finish(flight,()=>{if(phase!==gen)return;flight?.cancel();flight=null;panel.style.transform='none';if(!next){panel.hidden=true;dim.hidden=true;release();if(focus)(trigger?.isConnected?trigger:priorFocus)?.focus?.({preventScroll:true});priorFocus=null;if(notify)onClose?.();}});
+   finish(flight,()=>{if(phase!==gen)return;flight?.cancel();flight=null;panel.style.transform='none';if(!next){panel.hidden=true;shade.hide();release();if(focus)(trigger?.isConnected?trigger:priorFocus)?.focus?.({preventScroll:true});priorFocus=null;if(notify)onClose?.();}});
   }
   const on=(el,type,fn,extra={})=>el.addEventListener(type,fn,{...extra,signal:controller.signal});
   on(dim,'click',()=>set(false));on(handle,'click',e=>{if(suppressClick){suppressClick=false;e.preventDefault();return;}if(!drag)set(false);});
@@ -281,7 +304,7 @@ export function createCommonMotion(win=window){
   scan();const observer=new win.MutationObserver(records=>{if(records.some(r=>[...r.addedNodes,...r.removedNodes].some(el=>el.nodeType===1&&(el.matches?.('select')||el.querySelector?.('select')))))scan();});observer.observe(scope.nodeType===9?doc.documentElement:scope,{childList:true,subtree:true});
   function destroy(){controller.abort();observer.disconnect();for(const cleanup of installed.values())cleanup?.();installed.clear();cleanups.delete(destroy);}cleanups.add(destroy);return {destroy,refresh:scan};
  }
- const api={version:'motion21',animation,skeleton,resize,dropdown,tagInsert,tagRemove,persistedSwitch,wheel,bottomPanel,bindInputs,nativeSelects,destroy(){lifetime.abort();for(const cleanup of [...cleanups])cleanup();for(const a of liveAnimations)a.cancel();liveAnimations.clear();style.remove();if(win.ORDER_COMMON_MOTION===api)delete win.ORDER_COMMON_MOTION;}};
+ const api={version:'motion21',animation,skeleton,resize,dropdown,tagInsert,tagRemove,persistedSwitch,wheel,backdrop,bottomPanel,bindInputs,nativeSelects,destroy(){lifetime.abort();for(const cleanup of [...cleanups])cleanup();for(const a of liveAnimations)a.cancel();liveAnimations.clear();style.remove();if(win.ORDER_COMMON_MOTION===api)delete win.ORDER_COMMON_MOTION;}};
  win.ORDER_COMMON_MOTION=api;bindInputs(doc);nativeSelects(doc);
  doc.addEventListener('visibilitychange',()=>{if(doc.hidden)for(const a of [...liveAnimations])a.finish?.();},{signal:lifetime.signal});
  return api;

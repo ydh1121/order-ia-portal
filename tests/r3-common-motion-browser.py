@@ -176,11 +176,25 @@ def run(browser, reduced=False):
         assert 10 <= int(wheel_receipt['value']) <= 18 and wheel_receipt['selected'] == 1
         assert 'rotateX(' in wheel_receipt['transform'] and 'translateZ(' in wheel_receipt['transform']
         report['lastStep'] = 'panel real frames and Escape restoration'
-        panel = page.evaluate('''async()=>{const panel=document.querySelector('#panel'),trigger=document.querySelector('#consult'),input=panel.querySelector('input');trigger.focus();const drawer=common.bottomPanel(panel,{trigger});drawer.set(true);const openSamples=await frames(panel,400);const focusIn=document.activeElement===input;panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await delay(280);return {openSamples,focusIn,focusBack:document.activeElement===trigger,hidden:panel.hidden,sameInput:panel.querySelector('input')===input,value:input.value,scrollUnlocked:document.documentElement.style.overflow===''};}''')
+        panel = page.evaluate('''async()=>{
+            const panel=document.querySelector('#panel'),trigger=document.querySelector('#consult'),input=panel.querySelector('input');
+            trigger.focus();const drawer=common.bottomPanel(panel,{trigger}),dim=document.querySelector('.r3-panel-dim');
+            drawer.set(true);const openSamples=await frames(panel,400),focusIn=document.activeElement===input;
+            const measure=async ms=>{const start=performance.now(),out=[];while(performance.now()-start<ms){await new Promise(requestAnimationFrame);out.push({t:performance.now()-start,opacity:Number(getComputedStyle(dim).opacity),hidden:dim.hidden,panelHidden:panel.hidden,sameDim:document.querySelector('.r3-panel-dim')===dim,count:document.querySelectorAll('.r3-panel-dim').length});}return out;};
+            drawer.set(false,{focus:false,notify:false});const reverseClose=await measure(75),beforeReverse=Number(getComputedStyle(dim).opacity);
+            drawer.set(true,{focus:false,notify:false});const afterReverse=Number(getComputedStyle(dim).opacity),reverseOpen=await measure(400);
+            panel.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));const closeSamples=await measure(300);
+            return {openSamples,reverseClose,beforeReverse,afterReverse,reverseOpen,closeSamples,focusIn,focusBack:document.activeElement===trigger,hidden:panel.hidden,sameInput:panel.querySelector('input')===input,value:input.value,scrollUnlocked:document.documentElement.style.overflow===''};
+        }''')
         report['panel'] = panel
         assert panel['focusIn'] and panel['focusBack'] and panel['hidden'] and panel['sameInput'] and panel['scrollUnlocked']
         assert panel['value'] == '입력 보존'
+        assert all(s['sameDim'] and s['count'] == 1 for key in ('reverseClose','reverseOpen','closeSamples') for s in panel[key])
+        close_frames = [s for s in panel['closeSamples'] if not s['hidden']]
+        assert all(b['opacity'] <= a['opacity']+.02 for a,b in zip(close_frames,close_frames[1:]))
+        assert panel['closeSamples'][-1]['hidden'] and panel['closeSamples'][-1]['opacity'] == 0
         if not reduced:
+            assert abs(panel['beforeReverse']-panel['afterReverse']) <= .02
             samples = panel['openSamples']
             assert max(s['width'] for s in samples)-min(s['width'] for s in samples) < .1
             assert max(s['height'] for s in samples)-min(s['height'] for s in samples) < .1

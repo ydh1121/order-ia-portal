@@ -78,6 +78,32 @@ test('the inline auth sheet has one transform motion owner while focus and the c
  view.root.__orderAuthSheet.close({immediate:true});view.unchanged();
 });
 
+test('one backdrop survives account view changes and stays transparent until the slower sheet exit completes',async t=>{
+ const view=await mount(t,{state:'guest-1',reducedMotion:false}),{w}=view,flights=[];
+ const animate=w.HTMLElement.prototype.animate;
+ w.HTMLElement.prototype.animate=function(keyframes,options){
+  if(!this.matches('.sheet-dim,.auth-sheet'))return animate.call(this,keyframes,options);
+  let resolve,reject;const finished=new Promise((yes,no)=>{resolve=yes;reject=no;});
+  const flight={element:this,keyframes,options,finished,cancel(){reject(new Error('cancelled'));},finish(){resolve();}};
+  flights.push(flight);return flight;
+ };
+ view.open();const holder=view.sheet(),dim=holder.querySelector('.sheet-dim');
+ for(const flight of flights.slice())flight.finish();await tick();
+ const oldDimFlights=flights.filter(flight=>flight.element===dim).length;
+ holder.querySelector('[data-action=signup]').click();
+ assert.equal(view.sheet(),holder);assert.equal(holder.querySelector('.sheet-dim'),dim);assert.equal(dim.parentElement,holder);
+ assert.equal(flights.filter(flight=>flight.element===dim).length,oldDimFlights,'changing the inner form must not restart its backdrop');
+ view.root.__orderAuthSheet.open('login','empty','compact');
+ const dialog=holder.querySelector('.auth-sheet'),email=dialog.querySelector('[name=email]');
+ email.focus();email.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+ const dimExit=flights.findLast(flight=>flight.element===dim),sheetExit=flights.findLast(flight=>flight.element===dialog);
+ assert.ok(dimExit.options.duration<sheetExit.options.duration,'the regression includes a fade that ends before its sheet');
+ dimExit.finish();await tick();
+ assert.equal(view.sheet(),holder);assert.equal(dim.hidden,false);assert.equal(w.getComputedStyle(dim).opacity,'0');
+ assert.equal(holder.querySelectorAll('.sheet-dim').length,1);assert.equal(dialog.isConnected,true);
+ sheetExit.finish();await tick();assert.equal(view.sheet(),null);view.unchanged();
+});
+
 test('the product opens the canonical compact login over the same introduction and closes by Escape, scrim and drag',async t=>{
  const view=await mount(t,{state:'guest-3'}),{w}=view;
  const opener=view.open();
