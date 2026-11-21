@@ -26,27 +26,6 @@ export function installProductUiRegistry(win=window,factories={}){
  factories.workflow?.(win);
  const roots=new WeakMap(),active=new Set();
  const disposeValue=value=>{if(typeof value==='function')value();else value?.destroy?.();};
- function quickActions(root,api,adapter){
-  // A page owns one floating menu. Embedded account and authentication panels
-  // inherit the page's menu instead of creating another fixed-position owner.
-  if(!root.querySelector||root.closest?.('.product-panel-body,.product-auth-sheet,[data-product-auth-sheet],[data-component-source]'))return [];
-  if(Array.isArray(api.quickActions))return api.quickActions;
-  const authenticated=api.brandAccount?.authenticated??adapter?.context?.actor?.authenticated;
-  if(authenticated!==true||typeof api.select!=='function')return [];
-  const account=(section,state)=>{
-   const menu=root.querySelector('.obm-brand[data-authenticated="true"]')?.__orderAccountMenu;
-   if(menu?.open)menu.open(section);else api.select('profile',state);
-  };
-  const actions=[
-   {id:'account',label:'내 계정',symbol:'○',run:()=>account('profile','default')},
-   {id:'notifications',label:'알림',symbol:'●',run:()=>account('notifications','notification')}
-  ];
-  if(typeof (api.consultation||adapter?.consultation)?.request==='function')actions.unshift({id:'consultation',label:'납품 상담',symbol:'↗',run:()=>{
-   const trigger=api.screen==='drawer'&&root.querySelector('[data-action="open-drawer"]');
-   if(trigger)trigger.click();else api.select('drawer','closed');
-  }});
-  return actions;
- }
  function mount(module,root,state,api={}){
   if(!root||typeof module?.mount!=='function')return null;
   const previous=roots.get(root);
@@ -57,14 +36,13 @@ export function installProductUiRegistry(win=window,factories={}){
   previous?.dispose();
   const controller=new win.AbortController();
   const motion=win.ORDER_ASYNC_MOTION.mount?.(root,{source:api.mode==='product'?'server':'qa-fixture'});
-  const record={module,state,adapter:api.adapter,controller,motion,mounting:true,closed:false,canonical:null,workflow:null,gooey:null,dispose:null};
+  const record={module,state,adapter:api.adapter,controller,motion,mounting:true,closed:false,canonical:null,workflow:null,dispose:null};
   const adapter=api.adapter||win.ORDER_APP_ADAPTER;
   const mountedApi={...api,adapter,consultation:api.consultation||adapter?.consultation,screen:api.screen||module.id,signal:controller.signal,motion,commonMotion:win.ORDER_COMMON_MOTION};
-  mountedApi.quickActions=quickActions(root,mountedApi,adapter);
   const dispose=()=>{
    if(record.closed)return;record.closed=true;controller.abort();
    try{disposeValue(record.canonical);}finally{
-    try{disposeValue(record.workflow);}finally{disposeValue(record.gooey);motion?.destroy?.();roots.delete(root);active.delete(record);api.signal?.removeEventListener('abort',dispose);}
+    try{disposeValue(record.workflow);}finally{motion?.destroy?.();roots.delete(root);active.delete(record);api.signal?.removeEventListener('abort',dispose);}
    }
   };
   // Retained account-stack pages can invalidate their canonical data without
@@ -80,7 +58,8 @@ export function installProductUiRegistry(win=window,factories={}){
    // idempotent for a root, so its authored and registry entrypoints share one
    // controller. Common document listeners are never destroyed per root.
    record.workflow=win.ORDER_WORKFLOW_MOTION?.mount?.(root,{screen:mountedApi.screen,state,api:mountedApi,adapter:mountedApi.adapter,signal:controller.signal,reduced:mountedApi.reduced});
-   record.gooey=win.ORDER_ADMIN_MOTION?.mountGooey?.(root,mountedApi.quickActions,{signal:controller.signal,reduced:mountedApi.reduced});
+   // The authored page attaches Gooey to its existing notification button.
+   // A registry or an embedded panel must never invent another floating owner.
   }catch(error){record.mounting=false;dispose();throw error;}
   return dispose;
  }

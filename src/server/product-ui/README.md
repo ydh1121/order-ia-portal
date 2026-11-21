@@ -33,6 +33,16 @@ An authored admin module owns its admin helpers. The workflow installer returns
 the same controller for a root, allowing its authored and registry entrypoints to
 share one lifecycle. Inline account panels and auth sheets use the same registry.
 
+The authored onboarding module owns the existing `.ob-quick` notification button.
+It passes that button and container to `mountGooey` as `options.trigger` and
+`options.container`; the helper never creates another floating trigger. Exactly
+two circular, icon-only actions fan out: the existing deck icon opens the Order
+Pass through `manage.quotes`, and an egg with the Korean won sign (₩) opens the existing
+`notifications` panel. The original bell, unread badge and authentication state
+remain owned by onboarding and the shared account menu. The registry, admin
+modules and embedded account/auth panels do not add generic floating actions.
+Source wiring does not establish test, deployment or user acceptance status.
+
 ## Generation for the 2026-11-21 changes
 
 First capture the exact release10 review epoch from its immutable checkout.

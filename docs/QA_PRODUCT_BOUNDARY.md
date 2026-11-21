@@ -33,6 +33,19 @@
    root별 `signal`, `motion`, 실제 adapter와 상담 API를 제공한다. root 제거 시
    해당 작업만 정리하며 문서 공통 리스너는 페이지 종료 때 정리한다.
 
+## 기존 알림 플로팅 버튼의 소유권
+
+`scripts/r3/authored/onboarding.js`가 기존 `.ob-quick`의 종 버튼·미읽음 배지·인증
+상태와 두 메뉴 동작을 소유한다. `product-admin-motion.mjs`의 `mountGooey`는
+이 버튼과 컨테이너를 `options.trigger`·`options.container`로 받아 원형 아이콘
+두 개의 부채꼴 움직임만 연결한다. 오더 패스는 기존 `manage.quotes` 패널,
+시세 알림은 기존 `notifications` 패널을 연다. 아이콘 옆 텍스트 박스는 없다.
+
+bootstrap과 관리자 모듈은 일반 계정·상담·알림용 플로팅 버튼을 추가하지 않는다.
+중첩 계정 패널과 인증 시트도 별도 소유자를 생성하지 않는다. QA는 같은 authored
+버튼·모션·기존 동작에 fixture를 주입하며, QA host/frame에서 대체 메뉴를 만들지
+않는다. 소스 변경과 자동검사·실화면·배포·사용자 판정은 별도로 기록한다.
+
 ## QA fixture를 추가할 때
 
 1. `qa-fixture-adapter.mjs`에 제품 API와 같은 요청·응답·실패 계약을 추가한다.

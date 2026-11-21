@@ -462,7 +462,48 @@ def check_notification_pin(page, screens):
     typography = current_wordmark_typography(frame)
     bell, panel = frame.locator('[data-action=quick]'), frame.locator('.obm-panel')
     expect(bell).to_be_enabled()
+    expect(frame.locator('.ob-quick>button')).to_have_count(1)
+    expect(frame.locator('[data-product-gooey]')).to_have_count(1)
+    expect(frame.locator('.pm-gooey-trigger')).to_have_count(1)
+    expect(frame.locator('.pm-gooey-label')).to_have_count(0)
+    actions=frame.locator('.pm-gooey-action')
+    expect(actions).to_have_count(2)
+    assert actions.evaluate_all('(els)=>els.map(el=>el.getAttribute("aria-label"))')==['오더 패스','시세 알림']
+    assert actions.evaluate_all('(els)=>els.every(el=>!el.innerText.trim()&&el.querySelector("svg"))')
+    expect(actions.nth(1).locator('.ob-market-notice-icon path[data-currency="KRW"][d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"]')).to_have_count(1)
+    bell.evaluate('el=>window.__gooeyOriginalBell=el')
+    unread=bell.locator('.quick-unread').text_content()
     frame_click(page, bell)
+    expect(bell).to_have_attribute('aria-expanded','true')
+    expect(panel).to_be_hidden()
+    expect(actions.nth(0)).to_have_css('transform','matrix(1, 0, 0, 1, -82, -20)')
+    expect(actions.nth(1)).to_have_css('transform','matrix(1, 0, 0, 1, -22, -82)')
+    geometry=bell.evaluate('''el=>{
+      const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,cx:r.x+r.width/2,cy:r.y+r.height/2};};
+      return {width:innerWidth,bell:rect(el),actions:[...el.parentElement.querySelectorAll('.pm-gooey-action')].map(n=>({...rect(n),label:n.getAttribute('aria-label'),text:n.innerText}))};
+    }''')
+    for action,expected in zip(geometry['actions'],[(-82,-20),(-22,-82)]):
+        assert action['width']==44 and action['height']==44,geometry
+        assert abs(action['cx']-geometry['bell']['cx']-expected[0])<.1,geometry
+        assert abs(action['cy']-geometry['bell']['cy']-expected[1])<.1,geometry
+        assert 0<=action['x'] and action['x']+action['width']<=geometry['width'],geometry
+    out=ROOT/'artifacts/motion21/gooey-product'
+    out.mkdir(parents=True,exist_ok=True)
+    page.screenshot(path=str(out/f'gooey-open-{geometry["width"]}.png'))
+    (out/f'gooey-geometry-{geometry["width"]}.json').write_text(json.dumps(geometry,ensure_ascii=False,indent=2)+'\n')
+    frame_click(page,actions.nth(0))
+    expect(panel).to_be_visible()
+    expect(panel.locator('[data-obm-page="manage.quotes"] [data-pass-card]')).to_be_visible()
+    expect(bell).to_have_attribute('aria-expanded','false')
+    expect(panel.locator('[data-product-gooey]')).to_have_count(0)
+    expect(frame.locator('[data-product-gooey]')).to_have_count(1)
+    panel.locator('.obm-heading').press('Escape')
+    expect(panel).to_be_hidden()
+    expect(bell).to_be_visible()
+    assert bell.evaluate('el=>el===window.__gooeyOriginalBell')
+    assert bell.locator('.quick-unread').text_content()==unread
+    frame_click(page,bell)
+    frame_click(page,actions.nth(1))
     expect(panel).to_be_visible()
     read = panel.get_by_role('button', name='읽음', exact=True)
     expect(read).to_be_visible()
@@ -478,7 +519,7 @@ def check_notification_pin(page, screens):
     assert frame_identity(read) == envelope['payload']['id']
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
-    print('PASS real notification popover: inner read-button pin, native top-layer veil, focus retained, restore and zero mutation')
+    print('PASS existing bell: only two radial icons, real Order Pass and notification panels, pin restore and zero mutation')
     return typography
 
 

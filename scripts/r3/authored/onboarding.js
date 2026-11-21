@@ -12,6 +12,7 @@
   const productIcon = simple => w.ORDER_INTRO_ICON ? w.ORDER_INTRO_ICON(simple) : icon('search',42);
   // Reuse the retained AnimateIcons Lucide Bell paths; the notification owner supplies behavior.
   const noticeIcon = '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ob-notice-icon"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>';
+  const marketNoticeIcon = '<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="ob-market-notice-icon"><path d="M12 2C8.6 2 5 9.1 5 14a7 7 0 0 0 14 0c0-4.9-3.6-12-7-12Z"/><path data-currency="KRW" stroke-width="1.5" d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"/></svg>';
   function illustration(step) {
     const first=step===1;
     return '<div class="ob-illustration"><img class="ob-art" alt="" width="287" height="226" data-intro-art>'+
@@ -107,19 +108,25 @@
     };
     const brand=shell.querySelector('header .brand');
     const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{};
+    let quickMenu=null;
     function noticeState(snapshot){
       if(!quick)return;
       const count=Number.isSafeInteger(snapshot?.unread)&&snapshot.unread>0?snapshot.unread:0,badge=quick.querySelector('.quick-unread');
       if(badge){badge.textContent=count>99?'99+':String(count);badge.hidden=!count;}
       quick.setAttribute('aria-label','알림'+(count?' · 읽지 않은 알림 '+count+'개':''));
-      quick.setAttribute('aria-expanded',String(snapshot?.page==='notifications'&&['open','opening'].includes(snapshot?.phase)));
       quick.disabled=snapshot?.authenticated!==true;
+      if(quick.disabled||['open','opening'].includes(snapshot?.phase))quickMenu?.close();
     }
     const brandMenu=w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced,
       onStateChange(snapshot){noticeState(snapshot);context.onStateChange?.(snapshot);}});
     if(quick){
-      if(brandMenu?.panel)quick.setAttribute('aria-controls',brandMenu.panel.id);
       noticeState(brandMenu?.inspect());
+      // The retained notification button owns the two connected destinations.
+      // Its account menu remains the source of permissions and unread state.
+      if(brandMenu)quickMenu=w.ORDER_ADMIN_MOTION?.mountGooey?.(root,[
+        {id:'order-pass',label:'오더 패스',icon:icon('deck',22),run:()=>brandMenu.open('manage.quotes')},
+        {id:'market-price',label:'시세 알림',icon:marketNoticeIcon,run:()=>brandMenu.open('notifications')}
+      ],{trigger:quick,container:quick.parentElement,signal:ctl.signal,reduced:api.reduced});
     }
     on(window,'message',e=>{
       if(api.mode==='product')return;
@@ -145,6 +152,7 @@
       ++stepRequest;
       const restore=main.contains(document.activeElement);
       if(!shade.hidden)show(false);
+      quickMenu?.close();
       brandMenu?.close({focus:false,immediate:true});magnetic?.destroy();modeIcons?.destroy();
       const nextNav=nextMain.querySelector('.ob-pages'),nextStep=Number(next.dataset.introStep);
       if(nav && nextNav){nextNav.replaceWith(nav);}
@@ -173,6 +181,7 @@
 
     function show(open){
       if(open){
+        quickMenu?.close();
         endDrag();
         controller?.activate();magnetic?.reset();modeIcons?.pause();brandMenu?.pause();
         paused=stage.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
@@ -200,13 +209,12 @@
         return;
       }
       if(b.dataset.mfIntro){go(Number(b.dataset.mfIntro));return;}
-      if(b===quick){brandMenu?.open('notifications');return;}
       if(b.dataset.action==='delivery-policy'){const note=shell.querySelector('.ob-policy');note.hidden=!note.hidden;b.setAttribute('aria-expanded',String(!note.hidden));return;}
     });
     on(shell,'keydown',e=>{
       if(!shade.hidden){if(e.key==='Escape'){e.preventDefault();show(false);return;}
         if(e.key==='Tab'){const all=[...modal.querySelectorAll('button')].filter(b=>!b.closest('[hidden]'));if(e.shiftKey&&document.activeElement===all[0]){e.preventDefault();all.at(-1).focus();}else if(!e.shiftKey&&document.activeElement===all.at(-1)){e.preventDefault();all[0].focus();}}return;}
-      if(e.key==='Escape'&&quick?.getAttribute('aria-expanded')==='true'){brandMenu?.close();quick.focus();return;}
+      if(quick?.parentElement.contains(e.target))return;
       if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();go(step+(e.key==='ArrowRight'?1:-1));}
     });
     on(shell,'dragstart',e=>{if(main.contains(e.target))e.preventDefault();});
@@ -242,7 +250,7 @@
     on(w,'pointercancel',e=>{if(drag?.id===e.pointerId)endDrag();});
     on(shell,'lostpointercapture',e=>{if(drag?.id===e.pointerId)endDrag();});
     if(state==='company')show(true);
-    return ()=>{endDrag();clearTimeout(clickReset);cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();brandMenu?.destroy();ctl.abort();};
+    return ()=>{endDrag();clearTimeout(clickReset);cancelMode();magnetic?.destroy();pill?.destroy();modeIcons?.destroy();quickMenu?.destroy();brandMenu?.destroy();ctl.abort();};
   }
   const positions=['guest','member'].flatMap(type=>[1,2,3,4].map(n=>[type+'-'+n,(type==='guest'?'비회원 ':'회원 ')+n]));
   w.ORDER_DESIGN_MODULES.push({id:'onboarding',label:'소개·견적 모드',group:'매장 고객',role:'customer',width:'mobile',

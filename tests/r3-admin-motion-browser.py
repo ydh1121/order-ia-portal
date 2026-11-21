@@ -24,11 +24,12 @@ HTML='''<style>
 .sidebar-shell{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:110px}.qa-admin-sidebar{width:220px;background:#eaf0f9;padding:12px;overflow:hidden}.qa-admin-sidebar span{display:block;white-space:nowrap}
 #depth-sub{padding:16px;background:#e9eff8}#terms{max-width:620px;margin:28px 0;position:relative}.terms-body{height:260px;overflow:auto;background:white;padding:16px}.terms-body section{min-height:210px}.terms-body h3{margin:0 0 16px}.terms-body p{line-height:1.8}
 #workflow{margin:24px 0;max-width:700px}#receipt-stage{max-width:380px}#amount{max-width:340px}.test-actions{display:flex;gap:12px;margin:16px 0;flex-wrap:wrap}
+.ob-quick{position:fixed;right:24px;bottom:24px;width:46px;height:46px;z-index:50}.ob-quick>button{width:46px;height:46px;border:1px solid #dce3ee;border-radius:50%;background:white;color:#365fd2;display:grid;place-items:center;padding:0}
 </style><main id="app"><nav id="role-menu" aria-label="관리 메뉴"><a id="nav-home" href="#home" aria-current="page">현황</a><a id="nav-last" href="#billing">거래 및 청구 관리</a></nav>
 <div class="sidebar-shell"><aside class="qa-admin-sidebar"><button id="collapse" data-pm-collapse aria-expanded="true">메뉴 접기</button><span data-pm-label>거래 관리</span><span data-pm-label>현재 계정</span></aside><div></div></div>
 <button id="depth" data-pm-depth aria-expanded="false" aria-controls="depth-sub">하위 메뉴</button><div id="depth-sub" hidden>견적 목록 · 발급 내역</div>
 <div id="dashboard"></div><section id="terms"><h2>명시된 검수용 문서</h2><div class="terms-body"><div data-policy-content>'''+''.join(f'<section><h3>{i}. 검수 항목</h3><p>이 본문은 목차, 실제 스크롤 위치와 끌기 동작을 측정하는 합성 문서입니다. 게시된 서비스 약관이 아닙니다.</p></section>' for i in range(1,5))+'''</div></div></section>
-<section id="workflow"><div class="test-actions"><button id="print-example">검수용 종이 표시</button><button id="amount-add">금액 12,340</button><button id="amount-remove">금액 8</button></div><div id="amount" class="wf-amount"></div><div id="receipt-stage"></div></section><output id="quick-result"></output></main>'''
+<section id="workflow"><div class="test-actions"><button id="print-example">검수용 종이 표시</button><button id="amount-add">금액 12,340</button><button id="amount-remove">금액 8</button></div><div id="amount" class="wf-amount"></div><div id="receipt-stage"></div></section><nav class="ob-quick" aria-label="알림"><button id="existing-bell" data-action="quick" aria-label="알림"><svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg></button></nav><output id="quick-result"></output></main>'''
 HARNESS=r'''
 const style=document.createElement('style');style.textContent=productAdminMotionCss+productWorkflowMotionCss;document.head.append(style);
 window.nativeRAF=window.requestAnimationFrame.bind(window);const cancelRAF=window.cancelAnimationFrame.bind(window);window.moduleFrames=new Set();
@@ -41,9 +42,12 @@ window.fixture={kind:'dummy',commercial:false,persistent:false,data:{title:'합�
 ],segments:[{id:'a',label:'접수',amount:9,color:'#4169e1'},{id:'b',label:'완료',amount:3,color:'#51a7ae'},{id:'c',label:'검토',amount:6,color:'#a08add'}]}};
 window.adminAPI=installProductAdminMotion(window);window.workflow=installProductWorkflowMotion(window);
 window.stored={revision:0,data:{layout:[0,1,2].map(i=>({id:'widget-'+i,wide:false}))}};window.layoutWrites=[];window.quickRuns=[];
+window.originalBell=document.querySelector('#existing-bell');
+const passIcon='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5H20V19H4Z"/><path d="M8 9H16M8 13H14"/></svg>';
+const marketIcon='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2C8.6 2 5 9.1 5 14a7 7 0 0 0 14 0c0-4.9-3.6-12-7-12Z"/><path data-currency="KRW" stroke-width="1.5" d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"/></svg>';
 window.options={data:fixture.data,loadLayout:async()=>structuredClone(stored),saveLayout:async(payload,{signal})=>{
  layoutWrites.push(structuredClone(payload));return new Promise((resolve,reject)=>{window.ackLayout=()=>{stored={revision:stored.revision+1,data:{layout:structuredClone(payload.layout)}};resolve(structuredClone(stored));};signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true});});
-},actions:[{id:'consult',label:'상담',run:()=>quickRuns.push('consult')},{id:'account',label:'내 계정',run:()=>quickRuns.push('account')},{id:'alerts',label:'알림',run:()=>quickRuns.push('alerts')}]};
+},trigger:originalBell,container:originalBell.parentElement,actions:[{id:'order-pass',label:'오더 패스',icon:passIcon,run:()=>quickRuns.push('manage.quotes')},{id:'market-price',label:'시세 알림',icon:marketIcon,run:()=>quickRuns.push('notifications')}]};
 window.remount=()=>{window.admin?.destroy();document.querySelector('#dashboard').innerHTML=adminAPI.renderDashboard(fixture.data);window.admin=adminAPI.mount(document.querySelector('#app'),options);};remount();
 document.querySelector('#collapse').addEventListener('click',e=>e.currentTarget.setAttribute('aria-expanded',String(e.currentTarget.getAttribute('aria-expanded')==='false')));
 document.querySelector('#depth').addEventListener('click',e=>admin.toggleDepth(e.currentTarget));
@@ -61,7 +65,7 @@ window.take=kind=>{
  if(kind==='ring')return {angle:Number(q('.pm-ring-wheel g').getAttribute('transform').match(/rotate\(([-.\d]+)/)[1]),selected:q('.pm-ring-wheel').getAttribute('aria-valuetext')};
  if(kind==='widgets')return all('[data-pm-widgets]>[data-widget-id]').map(e=>({id:e.dataset.widgetId,wide:e.classList.contains('qa-widget-expanded'),matrix:matrix(e),rect:rect(e)}));
  if(kind==='index')return {top:q('.terms-body').scrollTop,end:q('.terms-body').scrollHeight-q('.terms-body').clientHeight,thumb:matrix(q('.pm-scroll-head')).y,current:q('.pm-scroll-tick[aria-current]')?.getAttribute('aria-label')};
- if(kind==='gooey'){const circles=all('.pm-gooey-surface g>circle');return {open:q('[data-product-gooey]').dataset.open,items:all('.pm-gooey-action').map((e,i)=>({...matrix(e),opacity:Number(getComputedStyle(e).opacity),cy:Number(circles[i+1].getAttribute('cy')),r:Number(circles[i+1].getAttribute('r'))}))};}
+ if(kind==='gooey'){const circles=all('.pm-gooey-surface g>circle');return {open:q('[data-product-gooey]').dataset.open,center:{x:Number(circles[0].getAttribute('cx')),y:Number(circles[0].getAttribute('cy'))},items:all('.pm-gooey-action').map((e,i)=>({...matrix(e),opacity:Number(getComputedStyle(e).opacity),cx:Number(circles[i+1].getAttribute('cx')),cy:Number(circles[i+1].getAttribute('cy')),r:Number(circles[i+1].getAttribute('r')),radius:parseFloat(getComputedStyle(e).width)/2}))};}
  if(kind==='paper'){const e=q('.wf-paper');return e?{...matrix(e),opacity:Number(getComputedStyle(e).opacity),animations:e.getAnimations().length}:null;}
  if(kind==='amount')return {label:q('#amount').getAttribute('aria-label'),nodes:all('#amount [data-place]').map(e=>({place:e.dataset.place,text:e.textContent,position:getComputedStyle(e).position,opacity:Number(getComputedStyle(e).opacity),...matrix(e),translate:getComputedStyle(e).translate}))};
 };
@@ -88,6 +92,58 @@ def idle(page):
     page.wait_for_function('window.moduleFrames.size===0',timeout=10000)
 
 
+def check_gooey(page, reduced, name, evidence):
+    trigger=page.locator('.ob-quick>button[data-action=quick]')
+    expect(trigger).to_have_count(1)
+    expect(page.locator('.pm-gooey-trigger')).to_have_count(1)
+    expect(page.locator('[data-product-gooey]')).to_have_count(1)
+    assert trigger.evaluate('el=>el===window.originalBell')
+    expect(page.locator('.pm-gooey-action')).to_have_count(2)
+    expect(page.locator('.pm-gooey-label')).to_have_count(0)
+    assert page.locator('.pm-gooey-action').evaluate_all('(els)=>els.map(el=>el.getAttribute("aria-label"))')==['오더 패스','시세 알림']
+    assert page.locator('.pm-gooey-action').evaluate_all('(els)=>els.every(el=>!el.innerText.trim()&&el.querySelector("svg"))')
+    gooey=capture(page,'gooey','.pm-gooey-trigger',trigger.click,reduced)
+    for row in gooey['samples']:
+        center=row['value']['center']
+        for item in row['value']['items']:
+            assert abs(item['x']-(item['cx']-center['x']))<.02,item
+            assert abs(item['y']-(item['cy']-center['y']))<.02,item
+            assert abs(item['sx']*item['radius']-item['r'])<.01,item
+    if not reduced:
+        assert any(0<i['r']<22 and i['x']<0 and i['y']<0 for row in gooey['samples'] for i in row['value']['items'])
+    idle(page)
+    settled=page.evaluate("take('gooey')")
+    for item,expected in zip(settled['items'],[(-82,-20),(-22,-82)]):
+        assert abs(item['x']-expected[0])<.02 and abs(item['y']-expected[1])<.02,item
+        assert item['radius']==22
+    assert abs(settled['items'][0]['x']-settled['items'][1]['x'])>50
+    assert abs(settled['items'][0]['y']-settled['items'][1]['y'])>50
+    assert page.locator('.pm-gooey-surface feGaussianBlur').get_attribute('stdDeviation')=='6'
+    assert '18 -7' in page.locator('.pm-gooey-surface feColorMatrix').get_attribute('values')
+    page.screenshot(path=OUT/f'gooey-{name}.png')
+    trigger.press('Escape')
+    expect(trigger).to_have_attribute('aria-expanded','false')
+    expect(trigger).to_be_focused()
+    idle(page)
+    trigger.press('ArrowUp')
+    expect(page.locator('.pm-gooey-action').first).to_be_focused()
+    page.keyboard.press('End')
+    expect(page.locator('.pm-gooey-action').last).to_be_focused()
+    page.locator('.pm-gooey-action').last.click()
+    assert page.evaluate('quickRuns')==['notifications']
+    expect(trigger).to_have_attribute('aria-expanded','false')
+    trigger.click()
+    page.locator('.pm-gooey-action').first.click()
+    assert page.evaluate('quickRuns')==['notifications','manage.quotes']
+    expect(trigger).to_have_attribute('aria-expanded','false')
+    trigger.click()
+    page.mouse.click(2,2)
+    expect(trigger).to_have_attribute('aria-expanded','false')
+    idle(page)
+    evidence['samples']['gooey']=gooey
+    evidence['gooey']={'entrypoints':1,'actions':['order-pass','market-price'],'visualLabelBoxes':0,'settled':settled,'destinations':page.evaluate('quickRuns')}
+
+
 def run(browser,width,reduced):
     context=browser.new_context(viewport={'width':width,'height':900},reduced_motion='reduce' if reduced else 'no-preference')
     page=context.new_page()
@@ -100,6 +156,18 @@ def run(browser,width,reduced):
         page.set_content(HTML)
         page.add_script_tag(content=ADMIN+'\n'+WORKFLOW+'\n'+HARNESS)
         idle(page)
+        if os.environ.get('R3_GOOEY_ONLY')=='1':
+            check_gooey(page,reduced,name,evidence)
+            page.evaluate('admin.destroy();index.destroy();paperAbort.abort();')
+            idle(page)
+            expect(page.locator('[data-product-gooey],.pm-gooey-action,.pm-gooey-trigger')).to_have_count(0)
+            expect(page.locator('.ob-quick>button[data-action=quick]')).to_have_count(1)
+            assert page.evaluate('document.querySelector(".ob-quick>button")===originalBell')
+            assert not errors,errors
+            evidence.update(scope='Gooey only; synthetic callback destinations, not a commerce result',cleanup={'pendingRAF':page.evaluate('moduleFrames.size'),'originalBellRetained':True,'pageErrors':errors})
+            (OUT/f'gooey-frames-{name}.json').write_text(json.dumps(evidence,ensure_ascii=False,indent=2))
+            print(f'PASS existing bell Gooey real RAF {name}',flush=True)
+            return
         period=page.locator('[data-pm-stat] [data-period=month]')
         stat=capture(page,'stat','[data-pm-stat] [data-period=month]',period.click,reduced,1900)
         idle(page)
@@ -210,30 +278,7 @@ def run(browser,width,reduced):
         expect(rail).not_to_have_attribute('data-dragging','true')
         evidence['samples']['scrollIndex']=scroll
 
-        trigger=page.locator('.pm-gooey-trigger')
-        gooey=capture(page,'gooey','.pm-gooey-trigger',trigger.click,reduced)
-        for row in gooey['samples']:
-            for item in row['value']['items']:
-                assert abs(item['y']-(item['cy']-28))<.02,item
-                assert abs(item['sx']*24-item['r'])<.01,item
-        if not reduced:
-            assert any(0<i['r']<24 for row in gooey['samples'] for i in row['value']['items'])
-        expect(page.locator('.pm-gooey-action')).to_have_count(3)
-        assert page.locator('.pm-gooey-surface feGaussianBlur').get_attribute('stdDeviation')=='6'
-        assert '18 -7' in page.locator('.pm-gooey-surface feColorMatrix').get_attribute('values')
-        page.screenshot(path=OUT/f'gooey-{name}.png')
-        trigger.press('Escape')
-        expect(trigger).to_have_attribute('aria-expanded','false')
-        expect(trigger).to_be_focused()
-        idle(page)
-        trigger.press('ArrowUp')
-        expect(page.locator('.pm-gooey-action').first).to_be_focused()
-        page.keyboard.press('End')
-        expect(page.locator('.pm-gooey-action').last).to_be_focused()
-        page.locator('.pm-gooey-action').last.click()
-        assert page.evaluate('quickRuns')==['alerts']
-        expect(trigger).to_have_attribute('aria-expanded','false')
-        evidence['samples']['gooey']=gooey
+        check_gooey(page,reduced,name,evidence)
 
         amount=capture(page,'amount','#amount-add',page.locator('#amount-add').click,reduced,650)
         expect(page.locator('#amount')).to_have_attribute('aria-label','12,340원')
