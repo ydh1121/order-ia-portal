@@ -17,6 +17,30 @@ from r3_workflow_browser_support import PNG, check_signature_flow, configure, in
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/motion21/workflow'
+REPORT = {}
+
+
+def step(name):
+    REPORT['lastStep'] = name
+
+
+def save_failure(page, reduced, error):
+    name = '390-reduced' if reduced else '390-motion'
+    REPORT['error'] = str(error)
+    if page.locator('#frame').count():
+        try:
+            REPORT['frame'] = page.frame_locator('#frame').locator('#order-single').evaluate('''root=>{
+              const w=root.ownerDocument.defaultView;
+              return {fixture:w.ORDER_APP_ADAPTER?.fixture?.inspect(),frames:w.__workflowFrames||{},requests:w.__workflowRequests||[],signaturePackets:w.__signaturePackets||[],signatureAttachments:w.__signatureAttachments||[],activeElement:root.ownerDocument.activeElement?.outerHTML?.slice(0,600)};
+            }''', timeout=2000)
+        except Exception as capture_error:
+            REPORT['captureError'] = str(capture_error)
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT/f'partial-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
+    try:
+        page.screenshot(path=OUT/f'failure-{name}.png', full_page=True)
+    except Exception:
+        pass
 
 
 def observe_requests(frame):
@@ -56,22 +80,31 @@ def assert_spinner(samples, reduced):
 
 
 def check_business(page, frame, reduced):
+    step('business input and suggestion confirmation')
     observe_requests(frame)
     number = frame.locator('[name=business-number]')
     number.fill('1234567890')
     frame.locator('[name=business-name]').fill('검수용 합성 사업장')
     frame.locator('[name=owner-name]').fill('검수 담당자')
-    frame.locator('[name=business-sector]').fill('음식점업')
-    frame.locator('[name=business-type]').fill('제과점업')
+    for name, value in [('business-sector', '음식점업'), ('business-type', '제과점업')]:
+        field = frame.locator('[name='+name+']')
+        field.fill(value)
+        field.press('ArrowDown')
+        field.press('Enter')
+        expect(field).to_have_value(value)
+        expect(field).to_have_attribute('aria-expanded', 'false')
+        expect(frame.locator('#'+field.get_attribute('aria-controls'))).to_be_hidden()
     frame.locator('[type=file]').set_input_files({'name': 'synthetic-registration.png', 'mimeType': 'image/png', 'buffer': PNG})
     expect(frame.locator('#order-single')).to_have_attribute('data-file-selected', 'true')
     verify = frame.locator('[data-action=verify-business]')
+    step('business provider failure and input retention')
     configure(frame, {'requests': {'product POST /business-verifications': {'scenario': 'error', 'errorCode': 'BUSINESS_PROVIDER_UNAVAILABLE', 'status': 503}}})
     frame_click(page, verify)
     expect(verify).to_have_attribute('data-async-phase', 'error')
     expect(number).to_have_value('123-45-67890')
     expect(frame.locator('[name=owner-name]')).to_have_value('검수 담당자')
     assert inspect_fixture(frame)['data']['businessVerifications'] == []
+    step('business retry pending spinner frames')
     configure(frame, {'requests': {'product POST /business-verifications': {'scenario': 'loading'}}})
     frame_click(page, verify)
     expect(verify).to_have_attribute('data-async-phase', 'pending')
@@ -82,6 +115,7 @@ def check_business(page, frame, reduced):
     assert_spinner(pending, reduced)
     assert inspect_fixture(frame)['pending'] == 1
     assert inspect_fixture(frame)['data']['businessVerifications'] == []
+    step('business acknowledgement and registration file reuse')
     release(frame)
     expect(verify).to_have_attribute('data-async-phase', 'success')
     expect(frame.locator('.wf-status')).to_contain_text('검토용 인증 결과')
@@ -111,6 +145,7 @@ def fixture_persona_remount(frame, persona):
 
 
 def check_receipt(page, frame, reduced, persona='operator'):
+    step('receipt '+persona+' choices')
     if persona == 'supplier':
         fixture_persona_remount(frame, persona)
     observe_requests(frame)
@@ -123,11 +158,13 @@ def check_receipt(page, frame, reduced, persona='operator'):
     recipient.select_option('supplier' if persona == 'operator' else 'site')
     before = len(inspect_fixture(frame)['data']['receipts'])
     configure(frame, {'requests': {'product POST /receipts': {'scenario': 'loading'}}})
+    step('receipt '+persona+' pending request')
     frame_click(page, issue)
     expect(issue).to_have_attribute('data-async-phase', 'pending')
     expect(issue).to_be_disabled()
     assert len(inspect_fixture(frame)['data']['receipts']) == before
     sample_frames(frame, 'receipt-'+persona, '.wf-paper', 1300)
+    step('receipt '+persona+' printer entry frames')
     release(frame)
     paper = frame.locator('.wf-paper')
     expect(paper).to_be_visible()
@@ -143,6 +180,7 @@ def check_receipt(page, frame, reduced, persona='operator'):
     expect(paper).to_contain_text(saved['documentDigest'])
     expect(paper).to_contain_text('공급사 → 사업장' if persona == 'supplier' else '오더 → 공급사')
     expect(frame.locator('button[data-label="다시 열기"]')).to_be_enabled()
+    step('receipt '+persona+' saved document readback')
     frame.locator('.wf-field select').last.select_option(saved['id'])
     frame_click(page, frame.locator('button[data-label="다시 열기"]'))
     expect(frame.locator('.wf-status')).to_contain_text(saved['number'])
@@ -150,6 +188,7 @@ def check_receipt(page, frame, reduced, persona='operator'):
     assert any(call['path'] == '/receipts/'+saved['id'] and call['method'] == 'GET' for call in inspect_fixture(frame)['calls'])
     # Paper drag uses the real pointer and returns to its saved position. It does
     # not issue a second receipt or treat a visual gesture as a document write.
+    step('receipt '+persona+' trusted paper drag and return')
     x, y = frame_pointer_position(page, paper)
     page.mouse.move(x, y)
     page.mouse.down()
@@ -167,6 +206,7 @@ def check_receipt(page, frame, reduced, persona='operator'):
 
 
 def check_billing(page, frame, reduced):
+    step('billing account and amount input')
     observe_requests(frame)
     account = frame.locator('.wf-field select').first
     expect(account.locator('option')).not_to_have_count(0)
@@ -180,16 +220,19 @@ def check_billing(page, frame, reduced):
     expect(frame.locator('.wf-amount')).to_have_attribute('aria-label', '8,300원')
     # Keyed digit spans survive a place-preserving edit and expose real spring frames.
     sample_frames(frame, 'amount', '.wf-amount [data-place="digit-0"]', 600)
+    step('billing amount digit frames')
     amount.fill('8301')
     amount_frames = take_frames(frame, 'amount')
     if not reduced:
         assert len({sample['transform'] for sample in amount_frames}) > 3
     draft = frame.locator('button[data-label="임시 저장"]')
+    step('billing draft failure and retained input')
     configure(frame, {'requests': {'product POST /billing': {'scenario': 'error', 'status': 503}}})
     frame_click(page, draft)
     expect(draft).to_have_attribute('data-async-phase', 'error')
     expect(amount).to_have_value('8301')
     assert inspect_fixture(frame)['data']['billing'] == []
+    step('billing draft retry and acknowledgement')
     configure(frame, {'requests': {'product POST /billing': {'scenario': 'loading'}}})
     frame_click(page, draft)
     expect(draft).to_have_attribute('data-async-phase', 'pending')
@@ -201,6 +244,7 @@ def check_billing(page, frame, reduced):
     stored = inspect_fixture(frame)['data']['billing'][0]
     assert stored['status'] == 'DRAFT' and stored['revision'] == 1 and stored['amount'] == 8301
     expect(frame.locator('button[data-label="불러오기"]')).to_be_enabled()
+    step('billing saved draft reopen')
     frame_click(page, frame.locator('button[data-label="새 청구"]'))
     expect(amount).to_have_value('')
     frame.locator('.wf-field select').last.select_option(stored['id'])
@@ -208,6 +252,7 @@ def check_billing(page, frame, reduced):
     expect(amount).to_have_value('8301')
     expect(frame.get_by_label('청구 내용', exact=True)).to_have_value('검수용 별도 청구')
     issue = frame.locator('button[data-label="청구서 발급"]')
+    step('billing immutable issuance')
     frame_click(page, issue)
     expect(frame.locator('.wf-status')).to_contain_text('발송과 결제는 아직 진행하지 않았어요.')
     expect(amount).to_be_disabled()
@@ -218,13 +263,24 @@ def check_billing(page, frame, reduced):
 
 
 def check(page, origin, reduced):
+    step('opening canonical review screens')
     screens = ReviewScreens(page, origin, 390)
+    step('opening canonical business screen')
     business = check_business(page, screens.screen('business', 'filled'), reduced)
+    REPORT['business'] = business
+    step('opening canonical receipt screen')
     receipt = screens.screen('receipt', 'before')
-    receipts = [check_receipt(page, receipt, reduced), check_receipt(page, receipt, reduced, 'supplier')]
+    receipts = REPORT['receipts'] = []
+    receipts.append(check_receipt(page, receipt, reduced))
+    receipts.append(check_receipt(page, receipt, reduced, 'supplier'))
+    step('opening canonical billing screen')
     billing = check_billing(page, screens.screen('admin-billing', 'draft'), reduced)
-    signature = check_signature_flow(page, screens.screen('signature', 'empty'))
-    return {'width': 390, 'reducedMotion': reduced, 'scope': 'canonical product UI with isolated frame-memory QA transport', 'business': business, 'receipts': receipts, 'billing': billing, 'signature': signature, 'commercialWrites': 0}
+    REPORT['billing'] = billing
+    step('opening canonical signature screen')
+    signature = check_signature_flow(page, screens.screen('signature', 'empty'), on_step=step)
+    REPORT['signature'] = signature
+    step('complete')
+    return dict(REPORT)
 
 
 def main():
@@ -236,18 +292,29 @@ def main():
             reports = []
             try:
                 for reduced in (False, True):
+                    REPORT.clear()
+                    REPORT.update({'width': 390, 'reducedMotion': reduced, 'scope': 'canonical product UI with isolated frame-memory QA transport', 'commercialWrites': 0, 'lastStep': 'login'})
                     context = browser.new_context(viewport={'width': 390, 'height': 900}, reduced_motion='reduce' if reduced else 'no-preference')
                     page = context.new_page()
                     errors = []
+                    REPORT['errors'] = errors
                     page.on('pageerror', lambda error: errors.append(str(error)))
-                    page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
-                    page.locator('input[name=email]').fill(fixture['email'])
-                    page.locator('input[name=password]').fill(fixture['pass'])
-                    page.locator('button[type=submit]').click()
-                    page.wait_for_url('**/ia?view=qa-lab**')
-                    reports.append(check(page, fixture['url'], reduced))
-                    assert not errors, errors
-                    context.close()
+                    try:
+                        page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+                        page.locator('input[name=email]').fill(fixture['email'])
+                        page.locator('input[name=password]').fill(fixture['pass'])
+                        page.locator('button[type=submit]').click()
+                        page.wait_for_url('**/ia?view=qa-lab**')
+                        reports.append(check(page, fixture['url'], reduced))
+                        assert not errors, errors
+                        OUT.mkdir(parents=True, exist_ok=True)
+                        name = '390-reduced' if reduced else '390-motion'
+                        (OUT/f'frames-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
+                    except Exception as error:
+                        save_failure(page, reduced, error)
+                        raise
+                    finally:
+                        context.close()
             finally:
                 browser.close()
         OUT.mkdir(parents=True, exist_ok=True)

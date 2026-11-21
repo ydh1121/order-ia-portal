@@ -86,7 +86,8 @@ def check_consultation_flow(page, frame):
     return {'scope': 'frame-memory QA consultation via canonical product adapter', 'sameForm': True, 'requestRetryPreserved': True, 'savedCase': saved, 'submittedContext': creates[-1]['context']}
 
 
-def check_signature_flow(page, frame, *, fail_first=True):
+def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: None):
+    on_step('signature editor startup')
     expect(frame.get_by_role('heading', name='거래내역 증빙과 서명', exact=True)).to_be_visible()
     expect(frame.locator('.wf-panel select').first.locator('option')).not_to_have_count(0)
     frame.locator('#order-single').evaluate('''el=>{
@@ -110,6 +111,7 @@ def check_signature_flow(page, frame, *, fail_first=True):
     frame_click(page, frame.get_by_role('button', name='자료와 서명 준비', exact=True))
     file = frame.locator('.wf-panel input[type=file]')
     expect(file).to_be_visible()
+    on_step('signature actual image load and missing-signature rejection')
     file.set_input_files({'name': 'synthetic-proof.png', 'mimeType': 'image/png', 'buffer': PNG})
     expect(frame.locator('canvas[aria-label="1쪽 가림 영역 선택"]')).to_be_visible()
     confirmation = frame.get_by_label('가림 처리한 모든 페이지를 확인했습니다.', exact=True)
@@ -120,14 +122,17 @@ def check_signature_flow(page, frame, *, fail_first=True):
     assert not any(call['path'] == '/evidence' and call['method'] == 'POST' for call in inspect_fixture(frame)['calls'])
     frame.get_by_label('또는 이름 입력으로 서명', exact=True).fill('검수용 합성 서명')
     if fail_first:
+        on_step('signature sealed upload failure and retention')
         configure(frame, {'requests': {'role POST /evidence': {'scenario': 'error', 'status': 503}}})
         frame_click(page, submit)
         expect(frame.locator('.wf-status')).to_contain_text('다시 시도')
         assert inspect_fixture(frame)['data']['cases'][0]['evidenceId'] is None
+    on_step('signature same sealed upload retry pending')
     configure(frame, {'requests': {'role POST /evidence': {'scenario': 'loading'}}})
     frame_click(page, submit)
     expect(submit).to_be_disabled()
     expect(submit).to_have_attribute('data-async-phase', 'pending')
+    on_step('signature attach acknowledgement and digest readback')
     release(frame)
     expect(frame.locator('.wf-panel')).to_have_attribute('data-success', 'true')
     expect(frame.locator('.wf-status')).to_contain_text('검토 중')

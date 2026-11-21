@@ -265,8 +265,11 @@ def run(browser,width,reduced):
         page.mouse.up()
         receipt.evaluate('async el=>{await Promise.allSettled(el.getAnimations().map(a=>a.finished));}')
         assert abs(page.evaluate("take('paper').y"))<.1
+        native_selection=page.evaluate('()=>{const selection=getSelection();return {collapsed:selection?.isCollapsed??true,text:selection?.toString()||""};}')
+        assert native_selection['collapsed'] or native_selection['text']=='','paper drag must not leave native text selection behind'
         evidence['samples'].update(amount=amount,amountExit=shrink,receipt=paper)
         evidence['receiptDrag']=dragged
+        evidence['nativeSelectionAfterReceiptDrag']=native_selection
         page.screenshot(path=OUT/f'workflow-{name}.png')
         page.evaluate('admin.destroy();index.destroy();paperAbort.abort();')
         idle(page)

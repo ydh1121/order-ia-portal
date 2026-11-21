@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {installProductUiRegistry} from '../src/server/product-ui/bootstrap.mjs';
 import {installProductAdminMotion} from '../src/server/product-admin-motion.mjs';
-const require=createRequire(import.meta.url),{JSDOM}=require('jsdom');
+const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 
 test('one Gooey page menu opens actual consultation, account and notifications; embedded panels do not duplicate it',()=>{
  const dom=new JSDOM('<main id="page"><div class="obm-brand" data-authenticated="true"></div><section class="product-panel-body"></section><section class="product-auth-sheet"></section></main>',{pretendToBeVisual:true});
