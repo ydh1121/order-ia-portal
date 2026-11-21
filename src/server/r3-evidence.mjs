@@ -1,4 +1,5 @@
-// Only this bounded, opaque grayscale pixel packet is accepted. Source files and metadata cannot be stored through this endpoint.
+// Only bounded grayscale pixels and the explicit submission attestation are accepted.
+import {evidenceSignatureBinding} from './evidence-signature.mjs';
 export const packetType='application/vnd.order.masked-rasters';
 const maxBytes=8*1024*1024, maxSide=2048, maxPixels=2*1024*1024;
 const privateHeaders={'Cache-Control':'private, no-store','Vary':'Cookie, Cf-Access-Jwt-Assertion','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'};
@@ -35,6 +36,10 @@ export async function handleR3Evidence({request,env,actor}){
       const record=url.searchParams.get('id');if(!id(record))return json({error:'INVALID_RECEIPT'},400);
       const row=await db.prepare(`SELECT o.object_key,o.digest FROM r3_evidence_object o JOIN r3_case c ON c.id=o.case_id JOIN r3_evidence_receipt e ON e.id=o.id AND e.state='MASKED_SCANNED' WHERE o.id=? AND o.case_id=? AND ${scope}`).bind(record,caseId,actor.id).first();
       if(!row)return json({error:'NOT_FOUND'},404);
+      if(url.searchParams.get('binding')==='1'){
+        const binding=await db.prepare("SELECT data_json FROM order_operation WHERE kind='evidence-signature' AND id=?").bind(record).first();
+        return binding?json({binding:JSON.parse(binding.data_json)}):json({error:'LEGACY_SIGNATURE_BINDING_UNAVAILABLE'},404);
+      }
       const object=await bucket.get(row.object_key);if(!object || object.size>maxBytes)return json({error:'EVIDENCE_UNAVAILABLE'},503);
       return new Response(object.body,{headers:{...privateHeaders,'Content-Type':packetType,'Content-Disposition':'attachment; filename="review-pixels.orpx"'}});
     }
@@ -46,14 +51,27 @@ export async function handleR3Evidence({request,env,actor}){
     if(!row)return json({error:'CASE_NOT_ELIGIBLE'},403);
     const bytes=await boundedBody(request);if(!bytes)return json({error:'FILE_LIMIT'},413);
     const pages=inspectPacket(bytes);if(!pages)return json({error:'INVALID_MASKED_RASTER'},422);
+    const binding=row.kind==='reprice'?await evidenceSignatureBinding(bytes,pages,request.headers.get('X-Order-Submission'),{actorId:actor.id,caseId}):null;
+    if(row.kind==='reprice'&&!binding)return json({error:'SIGNATURE_BINDING_REQUIRED'},422);
     const digest=await hex(bytes),priorStmt=db.prepare('SELECT id,case_id,digest FROM r3_evidence_object WHERE actor_id=? AND request_key=?').bind(actor.id,key);
-    const prior=await priorStmt.first();if(prior)return prior.case_id===caseId && prior.digest===digest?json({evidenceId:prior.id,pages:pages.length}):json({error:'REQUEST_KEY_REUSED'},409);
+    async function savedSignature(evidenceId){
+      if(!binding)return false;
+      const saved=await db.prepare("SELECT data_json FROM order_operation WHERE kind='evidence-signature' AND id=? AND created_by=? AND state='SIGNED'").bind(evidenceId,actor.id).first();
+      if(!saved)return false;const value=JSON.parse(saved.data_json);
+      return Object.entries(binding).every(([key,expected])=>value[key]===expected)&&value.evidenceId===evidenceId;
+    }
+    const prior=await priorStmt.first();if(prior){
+      if(prior.case_id!==caseId||prior.digest!==digest)return json({error:'REQUEST_KEY_REUSED'},409);
+      const signatureBound=await savedSignature(prior.id);if(binding&&!signatureBound)return json({error:'LEGACY_SIGNATURE_BINDING_UNAVAILABLE'},409);
+      return json({evidenceId:prior.id,pages:pages.length,signatureBound});
+    }
     const evidenceId=crypto.randomUUID(),objectKey='r3/masked/'+evidenceId;
     await bucket.put(objectKey,bytes,{httpMetadata:{contentType:packetType}});
     let stored;
     try{
       const commands=[db.prepare(`INSERT INTO r3_evidence_receipt(id,org_id,site_id,purpose,state) SELECT ?,c.org_id,c.site_id,c.kind,'MASKED_SCANNED' FROM r3_case c WHERE c.id=? AND c.revision=? AND ${writer} AND ${eligible}`).bind(evidenceId,caseId,row.revision,actor.id),
         db.prepare(`INSERT INTO r3_evidence_object(id,case_id,actor_id,request_key,digest,object_key,pages,created_at) SELECT ?,?,?,?,?,?,?,? WHERE changes()=1`).bind(evidenceId,caseId,actor.id,key,digest,objectKey,pages.length,new Date().toISOString())];
+      if(binding)commands.push(db.prepare(`INSERT INTO order_operation(kind,id,org_id,site_id,created_by,revision,state,data_json,created_at,updated_at) SELECT 'evidence-signature',?,?,?,?,1,'SIGNED',?,?,? WHERE changes()=1`).bind(evidenceId,row.org_id,row.site_id,actor.id,JSON.stringify({...binding,evidenceId,signedAt:new Date().toISOString()}),new Date().toISOString(),new Date().toISOString()));
       await db.batch(commands);stored=await priorStmt.first();
     }catch{
       // A transport failure can follow a committed batch. Never delete the object until a positive read proves the outcome.
@@ -61,6 +79,7 @@ export async function handleR3Evidence({request,env,actor}){
     }
     if(stored?.id!==evidenceId)await bucket.delete(objectKey);
     if(!stored || stored.case_id!==caseId || stored.digest!==digest)return json({error:'REVISION_OR_REQUEST_CONFLICT'},409);
-    return json({evidenceId:stored.id,pages:pages.length});
+    const signatureBound=await savedSignature(stored.id);if(binding&&!signatureBound)return json({error:'SIGNATURE_BINDING_UNAVAILABLE'},503);
+    return json({evidenceId:stored.id,pages:pages.length,signatureBound});
   }catch{return json({error:'EVIDENCE_UNAVAILABLE'},503);}
 }

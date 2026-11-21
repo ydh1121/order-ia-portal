@@ -42,25 +42,22 @@ function wirePalette(root,signal){
   const input=root.querySelector('.tag-field input'),suggest=root.querySelector('.tag-suggestions');
   if(!input)return;
   const tagList=root.querySelector('.tag-list'),result=root.querySelector('.search-results'),detail=root.querySelector('[data-search-detail]');
-  const ids=()=>[...tagList.querySelectorAll('[data-tag]')].map(b=>b.dataset.tag);
+  const ids=()=>[...tagList.querySelectorAll('[data-tag]:not([data-r3-removing])')].map(b=>b.dataset.tag);
   suggest.id=U.uid('pass-suggestions');input.setAttribute('aria-controls',suggest.id);
-  function show(open){suggest.classList.toggle('is-open',open);suggest.inert=!open;input.setAttribute('aria-expanded',String(open));}
+  const popup=w.ORDER_COMMON_MOTION?.dropdown(suggest,{trigger:input,signal});
+  function show(open){if(popup)popup.set(open);else{suggest.classList.toggle('is-open',open);suggest.inert=!open;input.setAttribute('aria-expanded',String(open));}}
   function options(){return dictionary.filter(t=>!ids().includes(t)&&t.includes(input.value.trim()));}
   function refresh(){input.placeholder=ids().length?'':'견적 검색';result.innerHTML=results(ids());detail.hidden=true;result.hidden=false;}
   function populate(){suggest.innerHTML=options().map(t=>`<button role="option" data-suggestion="${esc(t)}">${esc(t)}</button>`).join('');show(Boolean(options().length));}
   function add(value){
     if(!dictionary.includes(value)||ids().includes(value))return;
-    tagList.insertAdjacentHTML('beforeend',tag(value));
-    w.ORDER_CUSTOMER_CONTROLS?.motion(tagList.lastElementChild,[{scale:'.78',opacity:0},{scale:'1.07',offset:.7},{scale:'1',opacity:1}],{duration:180});
+    const template=document.createElement('template');template.innerHTML=tag(value);const chip=template.content.firstElementChild;
+    if(w.ORDER_COMMON_MOTION)w.ORDER_COMMON_MOTION.tagInsert(tagList,chip);else tagList.append(chip);
     input.value='';refresh();show(false);input.focus();
   }
   function removeTag(chip){
-    const ghost=chip.cloneNode(true),rect=chip.getBoundingClientRect();
-    ghost.removeAttribute('data-tag');ghost.removeAttribute('aria-label');ghost.inert=true;ghost.setAttribute('aria-hidden','true');
-    Object.assign(ghost.style,{position:'fixed',left:rect.left+'px',top:rect.top+'px',width:rect.width+'px',pointerEvents:'none'});
-    document.body.append(ghost);chip.remove();refresh();input.focus();
-    const fade=w.ORDER_CUSTOMER_CONTROLS?.motion(ghost,[{opacity:1,scale:'1'},{opacity:0,scale:'.7'}],{duration:125});
-    if(fade){fade.onfinish=()=>ghost.remove();fade.oncancel=()=>ghost.remove();}else ghost.remove();
+    if(!chip)return;
+    if(w.ORDER_COMMON_MOTION)w.ORDER_COMMON_MOTION.tagRemove(chip,{complete:refresh});else chip.remove();refresh();input.focus();
   }
   let composing=false;
   input.addEventListener('compositionstart',()=>{composing=true;show(false);},{signal});
@@ -79,7 +76,7 @@ function wirePalette(root,signal){
   root.addEventListener('keydown',e=>{
     if(e.isComposing||e.keyCode===229)return;
     const optionsList=[...suggest.querySelectorAll('button')];
-    if(e.target===input&&e.key==='Backspace'&&!input.value&&ids().length){e.preventDefault();removeTag(tagList.lastElementChild);return;}
+    if(e.target===input&&e.key==='Backspace'&&!input.value&&ids().length){e.preventDefault();removeTag([...tagList.querySelectorAll('[data-tag]:not([data-r3-removing])')].at(-1));return;}
     if(e.target===input&&e.key==='Enter'){e.preventDefault();if(input.value.trim()){const first=options()[0];if(first)add(first);}return;}
     if(e.target===input&&e.key==='ArrowDown'){e.preventDefault();populate();suggest.querySelector('button')?.focus();return;}
     if(suggest.contains(e.target)&&['ArrowDown','ArrowUp'].includes(e.key)&&optionsList.length){e.preventDefault();optionsList[(optionsList.indexOf(e.target)+(e.key==='ArrowDown'?1:-1)+optionsList.length)%optionsList.length].focus();}
@@ -87,9 +84,11 @@ function wirePalette(root,signal){
   },{signal});
 }
 R.push({id:'passes',group:'내 견적·메뉴',label:'오더 패스',description:'사업장과 날짜별 오더 패스·태그 검색',width:'mobile',states:states([['grid','격자 보기'],['deck','카드 넘기기'],['empty','내역 없음'],['loading','불러오는 중'],['expired','만료 포함']]),
-render(s,o={}){return `<div class="page passes-page">${head('내 오더 패스','',o)}${sample}${s==='empty'?`<div class="empty"><div class="nav-ticket empty-ticket"><span class="empty-ticket-brand">Order. ${brandDots()}</span>${button('최저가 알아보기','new-quote')}</div><h2>아직 저장된 견적이 없어요</h2></div>`:s==='loading'?`<div class="pass-skeleton" role="status" aria-label="오더 패스 불러오는 중">${[0,1].map(()=>`<div class="nav-ticket skeleton-ticket"><div class="skeleton-top">${brandDots()}<i></i></div><i class="skeleton-title"></i><i class="skeleton-summary"></i><div class="pass-perforation"></div><i class="skeleton-foot"></i></div>`).join('')}</div>`:`<details class="collection-search"><summary>${icon('search',18)} 오더 패스 검색</summary>${palette('empty')}</details>${collectionPicker()}<div class="pass-stage ${s==='deck'?'is-deck':''}">${passes.map(passCard).join('')}</div><div class="deck-controls" ${s==='deck'?'':'hidden'}>${button('이전','deck-prev','secondary')}<span class="deck-position" aria-live="polite"></span>${button('다음','deck-next','secondary')}</div><div class="expanded-pass" hidden></div>${expireNotice()}`}</div>`;},
+render(s,o={}){return `<div class="page passes-page">${head('내 오더 패스','',o)}${sample}${s==='empty'?`<div class="empty"><div class="nav-ticket empty-ticket"><span class="empty-ticket-brand">Order. ${brandDots()}</span>${button('최저가 알아보기','new-quote')}</div><h2>아직 저장된 견적이 없어요</h2></div>`:s==='loading'?`<div class="pass-stage pass-loading" role="status" aria-label="오더 패스 불러오는 중">${passes.map(passCard).join('')}</div>`:`<details class="collection-search"><summary>${icon('search',18)} 오더 패스 검색</summary>${palette('empty')}</details>${collectionPicker()}<div class="pass-stage ${s==='deck'?'is-deck':''}">${passes.map(passCard).join('')}</div><div class="deck-controls" ${s==='deck'?'':'hidden'}>${button('이전','deck-prev','secondary')}<span class="deck-position" aria-live="polite"></span>${button('다음','deck-next','secondary')}</div><div class="expanded-pass" hidden></div>${expireNotice()}`}</div>`;},
 mount(root,s,api){
   const controller=new AbortController(),signal=controller.signal,stage=root.querySelector('.pass-stage');
+  const layout=stage&&w.ORDER_CUSTOMER_CONTROLS?.deckLayout(stage,{signal});let initialStage=true;
+  if(s==='loading'&&stage){const skeleton=w.ORDER_COMMON_MOTION?.skeleton(stage);signal.addEventListener('abort',()=>skeleton?.destroy(),{once:true});return()=>controller.abort();}
   wirePalette(root,signal);roleLinks(root,signal,api);
   const received=new Set();
   let view=s==='deck'?'deck':'grid',site='전체',sort='recent',current=0,dismissed=false,selected=null;
@@ -102,6 +101,10 @@ mount(root,s,api){
     });
   }
   function renderStage(rebuild){
+    if(!stage)return;
+    const paint=()=>renderStageContent(rebuild);if(layout)layout.update(paint,{animate:!initialStage});else paint();initialStage=false;
+  }
+  function renderStageContent(rebuild){
     if(!stage)return;const rows=getRows();
     if(rebuild){
       const existing=new Map([...stage.children].map(card=>[card.dataset.passId,card]));
@@ -244,7 +247,94 @@ function consultationSelection(root,state,signal){
     }
   },{capture:true,signal});
 }
-R.push({id:'drawer',group:'공통 컴포넌트',label:'하단 패널·휠 선택',description:'정보 패널과 기능 패널의 높이, 드래그 닫기, 날짜·시간 휠을 확인합니다.',width:'mobile',states:states([['closed','닫힘'],['info','안내 패널'],['booking','상담 예약'],['wheel','시간 선택'],['saving','처리 중'],['done','완료 예시']]),render(s,o={}){return `<div class="drawer-scene"><div class="page">${head('납품 상담','',o)}${sample}<div class="consult-tickets">${passes.filter(p=>p.tone!=='expired').map(p=>'<article class="consult-ticket"><label><input type="checkbox" name="consult-pass" data-id="'+p.id+'"><span><strong>'+p.site+'</strong><small>'+summary(p)+' · '+(p.lines.length>1?'복합 주문':p.lines[0][2])+'</small></span></label><button type="button" class="btn text" aria-expanded="false" data-action="consult-ticket-detail">패스 상세</button><div class="consult-ticket-detail" hidden>'+ticketDetail(p)+'</div></article>').join('')}</div><div class="bottom-actions"><p class="consult-selection-message" role="status"></p>${button('상담 예약','open-drawer')}${roleButton('consult','내 상담 내역')}</div></div><div class="drawer-dim ${s==='closed'?'is-closed':''}" data-action="close-drawer"></div><section class="functional-drawer t-panel-slide" data-open="${s!=='closed'}" ${s==='closed'?'inert':''} role="dialog" aria-label="상담 예약 패널"><button class="drawer-handle" data-action="close-drawer" aria-label="패널 닫기"><i></i></button><button class="icon-btn drawer-close" data-action="close-drawer" aria-label="닫기">${icon('close')}</button><p class="consult-summary" hidden></p>${s==='info'?`<h1>어떤 상담을 받을까요?</h1><p class="muted">원하는 상담 항목을 골라 주세요.</p><fieldset class="consult-topics"><legend>상담 항목</legend>${['납품 일정','수량','가격 조건'].map(t=>'<label><input type="checkbox" name="topic"> '+t+'</label>').join('')}</fieldset><label class="consult-memo">요청 사항<textarea rows="3" maxlength="300"></textarea></label>${button('시간 선택하기','show-wheel','primary wide')}`:s==='done'?`<div class="empty"><div class="success-mark">${icon('check')}</div><h2>상담을 예약했어요</h2><p>샘플 화면이에요. 실제 상담은 내 상담 내역에서 요청할 수 있어요.</p></div>`:`<h1>편한 시간을 알려주세요</h1><div class="booking-day"><span class="small muted">선택한 날짜</span><strong>2026년 11월 19일 목요일</strong></div><div class="wheel-picker" aria-label="상담 시간 선택"><div class="wheel-highlight"></div><div class="wheel-column" role="listbox" aria-label="시"><div class="wheel-spacer"></div>${[10,11,12,13,14,15,16,17,18].map(n=>`<button role="option" aria-selected="${n===11}" data-hour="${n}" class="${n===11?'selected':''}">${String(n).padStart(2,'0')}시</button>`).join('')}<div class="wheel-spacer"></div></div><div class="wheel-column" role="listbox" aria-label="분"><div class="wheel-spacer"></div>${[0,10,20,30,40,50].map(n=>`<button role="option" aria-selected="${n===0}" data-minute="${n}" class="${n===0?'selected':''}">${String(n).padStart(2,'0')}분</button>`).join('')}<div class="wheel-spacer"></div></div></div><div class="sr-only selected-time" aria-live="polite">오전 11시 00분</div>${button(s==='saving'?'<span class="spinner" role="status" aria-label="예약 요청 중"></span>':'예약 요청','request-booking','primary wide',s==='saving'?'disabled':'')}`}</section></div>`;},mount(root,s,api){const c=new AbortController();roleLinks(root,c.signal,api);if(api.mode!=='product')consultationSelection(root,s,c.signal);let hour=11,minute=0,start=null;const sheet=root.querySelector('.functional-drawer'),handle=root.querySelector('.drawer-handle');const label=()=>{const buttons=root.querySelectorAll('[data-minute]');for(const b of buttons){b.disabled=hour===18&&Number(b.dataset.minute)>0;}if(hour===18&&minute!==0){minute=0;const first=root.querySelector('[data-minute="0"]');for(const b of buttons){b.classList.toggle('selected',b===first);b.setAttribute('aria-selected',String(b===first));}if(first)first.closest('.wheel-column').scrollTop=first.offsetTop-first.closest('.wheel-column').offsetTop-68;}root.querySelector('.selected-time').textContent=`${hour<12?'오전':'오후'} ${hour%12||12}시 ${String(minute).padStart(2,'0')}분`;};root.querySelectorAll('.wheel-column').forEach(col=>{const selected=col.querySelector('.selected');if(selected)col.scrollTop=selected.offsetTop-col.offsetTop-68;let timer;col.addEventListener('scroll',()=>{clearTimeout(timer);timer=setTimeout(()=>{const items=[...col.querySelectorAll('button:not(:disabled)')];const nearest=items.reduce((a,b)=>Math.abs(a.offsetTop-col.offsetTop-col.scrollTop-68)<Math.abs(b.offsetTop-col.offsetTop-col.scrollTop-68)?a:b);items.forEach(b=>{b.classList.toggle('selected',b===nearest);b.setAttribute('aria-selected',String(b===nearest));});if(nearest.dataset.hour!==undefined)hour=+nearest.dataset.hour;else minute=+nearest.dataset.minute;label();},90);},{signal:c.signal});c.signal.addEventListener('abort',()=>clearTimeout(timer));});root.addEventListener('click',e=>{const b=e.target.closest('[data-action],.wheel-column button');if(!b)return;const a=b.dataset.action;
-if(a==='consult-ticket-detail'){const line=b.closest('.consult-ticket');const detail=line.querySelector('.consult-ticket-detail');detail.hidden=!detail.hidden;b.setAttribute('aria-expanded',String(!detail.hidden));}
-if(a==='open-drawer')api.select('drawer','info');if(a==='show-wheel')api.select('drawer','booking');if(a==='close-drawer')api.select('drawer','closed');if(a==='request-booking'){if(api.mode==='product'){api.onUnavailable?.('request-booking');api.toast?.('아직 연결되지 않은 기능이에요.');}else api.demoSuccess?.(b,()=>api.select('drawer','done'));}if(b.closest('.wheel-column')){const col=b.closest('.wheel-column');col.scrollTo({top:b.offsetTop-col.offsetTop-68,behavior:api.reduced?.()?'auto':'smooth'});}},{signal:c.signal});handle?.addEventListener('pointerdown',e=>{start=e.clientY;handle.setPointerCapture(e.pointerId);},{signal:c.signal});handle?.addEventListener('pointerup',e=>{if(start!==null&&e.clientY-start>45)api.select('drawer','closed');start=null;},{signal:c.signal});root.addEventListener('keydown',e=>{if(e.key==='Escape'&&s!=='closed')api.select('drawer','closed');},{signal:c.signal});return()=>c.abort();}});
+R.push({id:'drawer',group:'공통 컴포넌트',label:'하단 패널·휠 선택',description:'정보 패널과 기능 패널의 높이, 드래그 닫기, 날짜·시간 휠을 확인합니다.',width:'mobile',states:states([['closed','닫힘'],['info','안내 패널'],['booking','상담 예약'],['wheel','시간 선택'],['saving','처리 중'],['done','완료 예시']]),render(s,o={}){return `<div class="drawer-scene"><div class="page">${head('납품 상담','',o)}${sample}<div class="consult-tickets">${passes.filter(p=>p.tone!=='expired').map(p=>'<article class="consult-ticket"><label><input type="checkbox" name="consult-pass" data-id="'+p.id+'"><span><strong>'+p.site+'</strong><small>'+summary(p)+' · '+(p.lines.length>1?'복합 주문':p.lines[0][2])+'</small></span></label><button type="button" class="btn text" aria-expanded="false" data-action="consult-ticket-detail">패스 상세</button><div class="consult-ticket-detail" hidden>'+ticketDetail(p)+'</div></article>').join('')}</div><div class="bottom-actions"><p class="consult-selection-message" role="status"></p>${button('상담 예약','open-drawer')}${roleButton('consult','내 상담 내역')}</div></div><div class="drawer-dim ${s==='closed'?'is-closed':''}" data-action="close-drawer"></div><section class="functional-drawer t-panel-slide" data-open="${s!=='closed'}" ${s==='closed'?'inert':''} role="dialog" aria-label="상담 예약 패널"><button class="drawer-handle" data-action="close-drawer" aria-label="패널 닫기"><i></i></button><button class="icon-btn drawer-close" data-action="close-drawer" aria-label="닫기">${icon('close')}</button><p class="consult-summary" hidden></p>${s==='info'?`<h1>어떤 상담을 받을까요?</h1><p class="muted">원하는 상담 항목을 골라 주세요.</p><fieldset class="consult-topics"><legend>상담 항목</legend>${['납품 일정','수량','가격 조건'].map(t=>'<label><input type="checkbox" name="topic"> '+t+'</label>').join('')}</fieldset><label class="consult-memo">요청 사항<textarea rows="3" maxlength="300"></textarea></label>${button('시간 선택하기','show-wheel','primary wide')}`:s==='done'?`<div class="empty"><div class="success-mark">${icon('check')}</div><h2>상담을 예약했어요</h2><p>샘플 화면이에요. 실제 상담은 내 상담 내역에서 요청할 수 있어요.</p></div>`:`<h1>편한 시간을 알려주세요</h1><div class="booking-day"><span class="small muted">선택한 날짜</span><strong>2026년 11월 19일 목요일</strong></div><div class="wheel-picker" aria-label="상담 시간 선택"><div class="wheel-highlight"></div><div class="wheel-column" role="listbox" aria-label="시"><div class="wheel-spacer"></div>${[10,11,12,13,14,15,16,17,18].map(n=>`<button role="option" aria-selected="${n===11}" data-hour="${n}" class="${n===11?'selected':''}">${String(n).padStart(2,'0')}시</button>`).join('')}<div class="wheel-spacer"></div></div><div class="wheel-column" role="listbox" aria-label="분"><div class="wheel-spacer"></div>${[0,10,20,30,40,50].map(n=>`<button role="option" aria-selected="${n===0}" data-minute="${n}" class="${n===0?'selected':''}">${String(n).padStart(2,'0')}분</button>`).join('')}<div class="wheel-spacer"></div></div></div><div class="sr-only selected-time" aria-live="polite">오전 11시 00분</div>${button(s==='saving'?'<span class="spinner" role="status" aria-label="예약 요청 중"></span>':'예약 요청','request-booking','primary wide',s==='saving'?'disabled':'')}`}</section></div>`;},mount(root,s,api){
+  const c=new AbortController(),signal=c.signal,common=w.ORDER_COMMON_MOTION,connected=api.mode==='product'||typeof api.consultation?.load==='function';
+  roleLinks(root,signal,api);if(!connected)consultationSelection(root,s,signal);
+  const sheet=root.querySelector('.functional-drawer'),handle=root.querySelector('.drawer-handle'),trigger=root.querySelector('[data-action="open-drawer"]'),dim=root.querySelector('.drawer-dim');
+  let hour=11,minute=0,pending=false,loaded=!connected,available=[],wheels=[],panel;
+  let notice=sheet.querySelector('.consult-request-message');
+  if(!notice){notice=document.createElement('p');notice.className='consult-request-message';notice.setAttribute('role','status');sheet.append(notice);}
+  const say=text=>{notice.textContent=text;};
+  function topics(){
+    if(sheet.querySelector('.consult-topics'))return;
+    const fields=document.createElement('div');fields.className='consult-fields';
+    fields.innerHTML='<fieldset class="consult-topics"><legend>상담 항목</legend>'+['납품 조건','상품 문의','견적 문의'].map(t=>'<label><input type="checkbox" name="topic"> '+t+'</label>').join('')+'</fieldset><label class="consult-memo">요청 사항<textarea rows="3" maxlength="300"></textarea></label>';
+    const heading=sheet.querySelector('h1,h2');if(heading)heading.after(fields);else sheet.append(fields);
+  }
+  function booking(){
+    if(!sheet.querySelector('.wheel-picker')){
+      const template=document.createElement('template');template.innerHTML=R.find(module=>module.id==='drawer').render('booking');
+      for(const part of template.content.querySelectorAll('.functional-drawer>.booking-day,.functional-drawer>.wheel-picker,.functional-drawer>.selected-time,.functional-drawer>[data-action="request-booking"]'))sheet.insertBefore(part,notice);
+    }
+    if(connected&&!sheet.querySelector('input[name="desiredDate"],[data-action="choose-consult-date"]')){
+      const existing=sheet.querySelector('.booking-day');if(existing)existing.remove();
+      const label=document.createElement('label');label.className='consult-date-field';label.textContent='희망 상담일';const date=document.createElement('input');date.type='date';date.name='desiredDate';date.required=true;
+      const parts=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date()).map(p=>[p.type,p.value]));date.min=[parts.year,parts.month,parts.day].join('-');label.append(date);sheet.querySelector('.wheel-picker').before(label);
+    }
+    sheet.querySelector('[data-action="show-wheel"]')?.remove();mountWheels();
+  }
+  function label(){
+    const buttons=root.querySelectorAll('[data-minute]');for(const b of buttons)b.disabled=hour===18&&Number(b.dataset.minute)>0;
+    if(hour===18&&minute!==0)minute=0;
+    const minutes=wheels.find(item=>item.part==='minute');minutes?.control.refresh();minutes?.control.set(minute);
+    const text=root.querySelector('.selected-time');if(text)text.textContent=`${hour<12?'오전':'오후'} ${hour%12||12}시 ${String(minute).padStart(2,'0')}분`;
+  }
+  function mountWheels(){
+    for(const col of sheet.querySelectorAll('.wheel-column')){
+      if(col.dataset.consultWheel)continue;col.dataset.consultWheel='true';
+      const part=col.querySelector('[data-hour]')?'hour':'minute';
+      if(common){const control=common.wheel(col,{value:part==='hour'?hour:minute,signal,onChange:value=>{if(part==='hour')hour=Number(value);else minute=Number(value);label();}});wheels.push({part,control});}
+      else {col.tabIndex=0;col.addEventListener('click',e=>{const button=e.target.closest('[role=option]');if(!button||button.disabled)return;for(const item of col.querySelectorAll('[role=option]'))item.setAttribute('aria-selected',String(item===button));if(part==='hour')hour=Number(button.dataset.hour);else minute=Number(button.dataset.minute);label();},{signal});}
+    }
+  }
+  if(connected){sheet.querySelector('.empty')?.remove();const sampleLabel=root.querySelector('.nav-sample');if(sampleLabel){if(api.adapter?.fixture)sampleLabel.textContent='검토용 견적·상담 데이터';else sampleLabel.remove();}topics();booking();}
+  else mountWheels();
+  if(common)panel=common.bottomPanel(sheet,{trigger,handle,signal,dim,open:s!=='closed',onClose:()=>{if(!connected)api.select('drawer','closed');}});
+  async function load(){
+    if(!connected)return;
+    const area=root.querySelector('.consult-tickets');area.replaceChildren();trigger.disabled=true;
+    say('상담할 견적을 불러오는 중입니다.');
+    try{
+      if(typeof api.consultation?.load!=='function')throw new Error('CONSULTATION_NOT_CONNECTED');
+      const response=await api.consultation.load({signal});if(signal.aborted)return;
+      available=(response.targets||[]).filter(target=>!target.expiresAt||Date.parse(target.expiresAt)>Date.now());
+      for(const target of available){
+        const line=document.createElement('article');line.className='consult-ticket';const choice=document.createElement('label'),input=document.createElement('input');input.type='checkbox';input.name='consult-pass';input.dataset.id=target.id;
+        const text=document.createElement('span'),name=document.createElement('strong'),detail=document.createElement('small');name.textContent=target.label;detail.textContent=target.detail||'';text.append(name,detail);choice.append(input,text);line.append(choice);area.append(line);
+      }
+      if(!available.length){const empty=document.createElement('p');empty.textContent='연결할 발급 견적 없이 일반 상담을 요청할 수 있습니다.';area.append(empty);}
+      loaded=true;trigger.disabled=false;say('');
+    }catch(error){if(error.name==='AbortError')return;loaded=false;trigger.disabled=false;say('상담 정보를 불러오지 못했습니다. 다시 시도해 주세요.');const retry=document.createElement('button');retry.type='button';retry.textContent='상담 정보 다시 불러오기';retry.onclick=load;area.append(retry);}
+  }
+  load();
+  root.addEventListener('click',async e=>{
+    const b=e.target.closest('[data-action]');if(!b)return;const a=b.dataset.action;
+    if(a==='consult-ticket-detail'){const line=b.closest('.consult-ticket'),detail=line.querySelector('.consult-ticket-detail');detail.hidden=!detail.hidden;b.setAttribute('aria-expanded',String(!detail.hidden));}
+    if(a==='open-drawer'){
+      if(connected){if(!loaded){await load();return;}if(available.length&&!root.querySelector('[name="consult-pass"]:checked')){root.querySelector('.consult-selection-message').textContent='상담할 견적을 선택해 주세요.';root.querySelector('[name="consult-pass"]')?.focus();return;}panel?.set(true);}
+      else api.select('drawer','info');
+    }
+    if(a==='show-wheel'){if(connected)booking();else api.select('drawer','booking');}
+    if(a==='close-drawer'){if(panel)panel.set(false);else api.select('drawer','closed');}
+    if(a!=='request-booking'||pending)return;
+    if(!connected&&!api.consultation?.request){api.demoSuccess?.(b,()=>api.select('drawer','done'));return;}
+    if(!loaded){say('상담할 견적 정보를 먼저 불러와 주세요.');return;}
+    const desiredDate=sheet.querySelector('[name="desiredDate"]')?.value||root.querySelector('[data-action="choose-consult-date"] strong')?.textContent;
+    const dateInput=sheet.querySelector('[name="desiredDate"]');if(dateInput&&!dateInput.reportValidity())return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(desiredDate||'')){say('희망 상담일을 선택해 주세요.');root.querySelector('[data-action="choose-consult-date"]')?.focus();return;}
+    const payload={targets:[...root.querySelectorAll('[name="consult-pass"]:checked')].map(input=>input.dataset.id),subject:[...sheet.querySelectorAll('[name="topic"]:checked')].map(input=>input.parentElement.textContent.trim()).join(', ')||'견적 문의',memo:sheet.querySelector('.consult-memo textarea')?.value||'',desiredDate,desiredTime:String(hour).padStart(2,'0')+':'+String(minute).padStart(2,'0')};
+    if(available.length&&!payload.targets.length){say('상담할 견적을 선택해 주세요.');return;}
+    const locked=[...sheet.querySelectorAll('input,textarea,button,select')].map(el=>[el,el.disabled]),wheelArea=sheet.querySelector('.wheel-picker'),priorInert=wheelArea?.inert;
+    pending=true;for(const [el]of locked)el.disabled=true;if(wheelArea)wheelArea.inert=true;b.setAttribute('aria-busy','true');say('상담 요청을 저장하는 중입니다.');
+    try{
+      if(typeof api.consultation?.request!=='function')throw new Error('CONSULTATION_NOT_CONNECTED');
+      const task=()=>api.consultation.request(payload,{signal});const response=api.motion?.run?await api.motion.run(b,task):await task();
+      if(signal.aborted)return;if(response?.ok===false)throw new Error(response.error||'CONSULTATION_FAILED');
+      say('상담 요청을 접수했습니다. 담당자 확인 후 안내됩니다.');b.textContent='상담 요청 접수됨';b.dataset.requestSaved='true';
+      const caseId=response?.case?.id||response?.caseId;if(caseId){const link=document.createElement('a');link.textContent='접수한 상담 보기';link.href='/ia?view=roles-r3&menu=consult&case='+encodeURIComponent(caseId);notice.append(document.createTextNode(' '),link);}
+    }catch(error){if(error.name==='AbortError')return;say(['AMBIGUOUS_BUSINESS_SCOPE','CONSULTATION_SCOPE_MISMATCH','BUSINESS_SELECTION_REQUIRED'].includes(error.message)?'같은 사업장의 견적만 선택해 주세요. 여러 사업장 상담은 나누어 요청해 주세요.':'상담 요청을 저장하지 못했습니다. 입력은 유지되어 있습니다. 다시 시도해 주세요.');}
+    finally{pending=false;b.removeAttribute('aria-busy');if(!signal.aborted){for(const [el,disabled]of locked)el.disabled=disabled;if(wheelArea)wheelArea.inert=priorInert;if(b.dataset.requestSaved)b.disabled=true;}}
+  },{signal});
+  return()=>c.abort();
+}});
 })(window);

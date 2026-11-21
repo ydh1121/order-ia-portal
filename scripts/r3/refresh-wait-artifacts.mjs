@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 // Rebuild just the eight current wait screens from their retained vector exports.
 import {readFile, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
@@ -29,13 +30,8 @@ const catalog = catalogData.catalog.map(row => {
   return {...row, current, hashes, authoredChange:true, runtimeFamily:'quoteWait'};
 });
 const used = new Set(catalog.flatMap(row => [row.current, row.previous]));
-async function updateModule(path, changes) {
-  const source = (await read(path)).split('\n').map(line => {
-    const match = /^export const (\w+)=/.exec(line);
-    if (!match || !Object.hasOwn(changes, match[1])) return line;
-    return 'export const '+match[1]+'='+JSON.stringify(changes[match[1]])+';';
-  }).join('\n');
-  await writeFile(new URL(path, import.meta.url), source);
+async function updateModule(path, changes){
+  return updateGeneratedModule(new URL(path,import.meta.url),changes);
 }
 await updateModule('../../src/server/r3-ui/catalog.gen.mjs', {
   catalog, frames:Object.fromEntries(Object.entries(frames).filter(([key]) => used.has(key)))});

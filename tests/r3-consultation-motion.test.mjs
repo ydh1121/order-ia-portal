@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
+import {sharedCoreScript} from '../src/server/product-ui/assets.gen.mjs';
+import {createCommonMotion} from '../src/server/r3-common-motion.mjs';
+import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
+import {installProductAdapter} from '../src/server/product-app-adapter.mjs';
+import {installQaFixtureAdapter} from '../src/server/r3-ui/qa-fixture-adapter.mjs';
+const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
+const until=async fn=>{for(let i=0;i<120;i++){if(fn())return;await new Promise(resolve=>setTimeout(resolve,10));}throw Error('Consultation UI did not reach expected state');};
+
+test('canonical consultation uses adapter targets, retains its same form on close and awaits actual create/submit fixture acknowledgements',async t=>{
+ const dom=new JSDOM('<main id="order-single"></main>',{url:'https://qa-fixture.invalid',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:new VirtualConsole()}),w=dom.window,d=w.document,root=d.querySelector('main');
+ w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});w.crypto.randomUUID=()=>crypto.randomUUID();Object.defineProperty(w.crypto,'subtle',{value:crypto.subtle});w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;
+ w.eval(sharedCoreScript);w.eval(readFileSync(new URL('../scripts/r3/authored/navigation.js',import.meta.url),'utf8'));
+ w.eval('window.adapter=('+installQaFixtureAdapter.toString()+')({screen:"drawer",state:"closed",fixture:{persona:"buyer"}},'+installProductAdapter.toString()+');');
+ const adapter=w.adapter;await adapter.ready;const writes=[],send=adapter.roleRequest;adapter.roleRequest=(path,body,signal)=>{if(body)writes.push(JSON.parse(JSON.stringify(body)));return send(path,body,signal);};const common=createCommonMotion(w),module=w.ORDER_DESIGN_MODULES.find(m=>m.id==='drawer');root.innerHTML=module.render('closed');const motion=mountAsyncMotion(root,{source:'qa-fixture'});let navigations=0;
+ const dispose=module.mount(root,'closed',{mode:'qa-fixture',adapter,consultation:adapter.consultation,motion,select(){navigations++;}});
+ t.after(()=>{dispose();motion.destroy();common.destroy();adapter.fixture.dispose();w.close();});
+ await until(()=>root.querySelectorAll('[name=consult-pass]').length===1&&root.querySelector('[name=consult-pass]').dataset.id==='qa-existing-quote');
+ const target=root.querySelector('[name=consult-pass]'),open=root.querySelector('[data-action=open-drawer]'),panel=root.querySelector('.functional-drawer'),memo=panel.querySelector('textarea'),date=panel.querySelector('[name=desiredDate]');
+ open.click();assert.equal(panel.hidden,true);assert.match(root.querySelector('.consult-selection-message').textContent,/선택/);target.checked=true;open.click();assert.equal(panel.hidden,false);
+ memo.value='실제 연결한 견적 상담';date.value=new Date(Date.now()+86400000).toISOString().slice(0,10);panel.querySelector('[name=topic]').checked=true;
+ panel.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(panel.hidden,true);assert.equal(d.activeElement,open);open.click();assert.equal(panel.querySelector('textarea'),memo);assert.equal(memo.value,'실제 연결한 견적 상담');assert.equal(navigations,0,'close and reopen keep the canonical form instead of remounting a state sample');
+ const submit=panel.querySelector('[data-action=request-booking]');adapter.fixture.configure({requests:{'role POST ':{scenario:'error',status:503}}});submit.click();await until(()=>submit.dataset.asyncPhase==='error');assert.equal(submit.disabled,false);assert.equal(memo.value,'실제 연결한 견적 상담');assert.equal(adapter.fixture.inspect().data.cases.filter(c=>c.kind==='consult').length,0);
+ adapter.fixture.configure({requests:{'role POST ':{scenario:'loading'}}});submit.click();await until(()=>adapter.fixture.inspect().pending===1);assert.equal(memo.disabled,true);assert.equal(submit.disabled,true);assert.equal(submit.dataset.requestSaved,undefined);assert.equal(adapter.fixture.inspect().data.cases.filter(c=>c.kind==='consult').length,0);
+ adapter.fixture.releasePending({requests:{}});await until(()=>submit.dataset.requestSaved==='true');const saved=adapter.fixture.inspect().data.cases.find(c=>c.kind==='consult'),created=writes.filter(write=>write.action==='create');assert.equal(saved.state,'OPEN');assert.deepEqual(created[0],created[1],'retry preserves the same context and idempotency key');assert.deepEqual(created[1].context.targets,['qa-existing-quote']);assert.match(created[1].context.memo,/실제 연결한 견적 상담/);assert.match(created[1].context.memo,/희망 시간: 11:00/);assert.equal(created[1].context.desiredDate,date.value);assert.equal(submit.disabled,true);assert.equal(memo.disabled,false);assert.equal(adapter.fixture.inspect().source.persistent,false);assert.equal(adapter.fixture.inspect().source.commercial,false);
+ const readback=(await adapter.roleRequest('')).cases.find(item=>item.id===saved.id);assert.deepEqual(JSON.parse(JSON.stringify(readback.context)),created[1].context);assert.deepEqual(Array.from(readback.context.targets),['qa-existing-quote']);assert.equal(readback.context.desiredDate,date.value);assert.equal(readback.context.memo,'실제 연결한 견적 상담\n희망 시간: 11:00');
+ readback.context.targets.push('caller-mutated');readback.context.memo='수신한 복사본만 변경';const unchanged=(await adapter.roleRequest('')).cases.find(item=>item.id===saved.id);assert.deepEqual(Array.from(unchanged.context.targets),['qa-existing-quote']);assert.equal(unchanged.context.memo,'실제 연결한 견적 상담\n희망 시간: 11:00');
+});

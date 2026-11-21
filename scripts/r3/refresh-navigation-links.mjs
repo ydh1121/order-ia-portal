@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {gzipSync,gunzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
@@ -45,9 +46,7 @@ const catalog=data.catalog.map(row=>{
 });
 const used=new Set(catalog.flatMap(row=>[row.current,row.previous]));
 async function update(file,fields){
-  const path=new URL('../../src/server/r3-ui/'+file,import.meta.url);
-  const lines=(await readFile(path,'utf8')).split('\n').map(line=>{const k=/^export const (\w+)=/.exec(line)?.[1];return Object.hasOwn(fields,k)?'export const '+k+'='+JSON.stringify(fields[k])+';':line;});
-  await writeFile(path,lines.join('\n'));
+  return updateGeneratedModule(new URL('../../src/server/r3-ui/'+file,import.meta.url),fields);
 }
 await update('catalog.gen.mjs',{catalog,frames:Object.fromEntries(Object.entries(frames).filter(([k])=>used.has(k)))});
 await update('runtime.gen.mjs',{runtimes,hostCode:bootQaHost.toString()});

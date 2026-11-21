@@ -83,8 +83,14 @@ export async function onRequest({request,env}){
    if(isArchivedQaRequest(url.searchParams)||!savedRun){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
    else html=renderProductLab(nonce,url.searchParams);
  }else if(r3View==='product-r3'){
-   const {renderProductApplication}=await import('../../src/server/product-app-page.mjs');
-   html=await renderProductApplication(nonce,productContext,url.searchParams.get('screen')||'store-purchase',url.searchParams.get('state')||'default','email',url.searchParams.get('componentVariant')||null);
+   const screen=url.searchParams.get('screen')||'store-purchase',state=url.searchParams.get('state')||'default',componentVariant=url.searchParams.get('componentVariant')||null;
+   if(screen==='component-library'){
+    const {renderProductLibraryApplication}=await import('../../src/server/r3-qa-product-page.mjs');
+    html=await renderProductLibraryApplication(nonce,productContext,screen,state,'email',componentVariant);
+   }else{
+    const {renderProductApplication}=await import('../../src/server/product-app-page.mjs');
+    html=await renderProductApplication(nonce,productContext,screen,state,'email',componentVariant);
+   }
    if(!html)return new Response('이 화면은 아직 제품 기능에 연결되지 않았습니다. QA랩의 기존 기록에서 설계를 확인해 주세요.',{status:404,headers:{...headers,'Content-Type':'text/plain; charset=utf-8'}});
  }else if(r3View==='simple-r3'||r3View==='detailed-r3'){
    headers['Content-Security-Policy']=headers['Content-Security-Policy']

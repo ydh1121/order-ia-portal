@@ -230,7 +230,7 @@ export async function handleProductLab({request,env,actor,path,csrf,clock=()=>ne
   if(product){
    const context=await labContext(env,actor,product[1],product[2],csrf),suffix=product[4]||'/';
    if(suffix.startsWith('/practice/'))return json({error:'LEGACY_PRACTICE_NOT_A_PRODUCT_RUNTIME'},409);
-   if(product[2]==='guest'&&!(product[3]==='product'&&['/account','/features'].includes(suffix)&&request.method==='GET'))return json({error:'AUTHENTICATION_REQUIRED'},401);
+   if(product[2]==='guest'&&!(product[3]==='product'&&(['/account','/features'].includes(suffix)||/^\/policies\/(required|privacy|optional)$/.test(suffix))&&request.method==='GET'))return json({error:'AUTHENTICATION_REQUIRED'},401);
    if(suffix==='/session'&&request.method==='GET')return json({csrf,expiresAt:actor.expiresAt,practiceAllowed:false,mode:'lab',runId:product[1],persona:product[2]});
    const dest=new URL(request.url);dest.pathname='/api/ia/'+(product[3]==='product'?'product':'r3-'+product[3])+suffix;
    const forwarded=new Request(dest,request),ctx={request:forwarded,env:context.env,actor:context.actor,path:suffix,clock};

@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 // Add navigable uses of shared primitives to the existing common/default review
 // frame. Link only frames in this catalog and keep historical review identities.
 import {readFile,writeFile} from 'node:fs/promises';
@@ -48,5 +49,4 @@ const catalog=data.catalog.map(row=>{
 });
 const used=new Set(catalog.flatMap(row=>[row.current,row.previous]));
 const changes={catalog,frames:Object.fromEntries(Object.entries(frames).filter(([key])=>used.has(key)))};
-const file=(await readFile(path,'utf8')).split('\n').map(line=>{const name=/^export const (\w+)=/.exec(line)?.[1];return Object.hasOwn(changes,name)?'export const '+name+'='+JSON.stringify(changes[name])+';':line;});
-await writeFile(path,file.join('\n'));
+await updateGeneratedModule(path,changes);

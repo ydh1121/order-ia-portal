@@ -99,3 +99,11 @@
 - `Jakubantalik/transitions.dev`의 전환 스킬을 필수 검증 기준으로 사용한다. 스켈레톤은 실제 텍스트 위치, Springy input은 글자 입력·삭제, Swipe deck은 격자부터 날짜순 덱까지 이어지는 이동을 확인한다.
 - 파일 업로드는 파일당 10,000,000바이트 이하의 허용 PDF·이미지로 제한하고 여러 보안 검토를 적용한다. 서버의 요청 건·업로더·권한 결속을 확인하며, 향후 OCR/AI 입력을 신뢰할 수 있는 명령으로 취급하지 않는다.
 - 관리자 화면에는 Kokonut UI 디자인을 사용할 수 있다. 영수증의 두 발급 흐름, 별도 청구의 계정 선택, 서명과 실제 제출의 결속, 사업자번호 인증과 등록증 업로드·업태/업종을 각각 확인한다. 외부 인증·전자계약 미연결을 완료로 표시하지 않는다.
+
+## QA 소유권 분리·모션 21개 반영·Gooey — 2026-11-21
+
+- 사용자 원문: https://drive.google.com/file/d/1xSZ_UxC8Tp9ozkPIMiaUQrMwLQnukp5Y/view . UTF-8 901바이트 / 9줄 / 끝 개행 없음 / SHA256 `81b23fada54defce3f28fa2cf6553e9f7a52a7581687cc75dbab63944fc99728`.
+- 제품 화면·상태·동작을 바꾸는 작업이 QA host/frame 소스 수정에 의존하지 않도록 제품 모듈, 검토 도구, 응답 fixture의 소유권을 분리한다. QA는 같은 제품 모듈을 가져와 독립 fixture transport로 실행한다.
+- 직전 감사의 지정 모션 미반영 3개와 기능상 미흡 18개를 구현·검증한다. 실제 응답과 저장 결과에 연결하고, 외부 서비스 미설정·사용자 승인 상태는 사실대로 남긴다.
+- Kokonut UI, transitions.dev, Libraries.dev의 원본을 고정 commit·라이선스·복원 안내와 함께 Drive에 보존한다. 재사용 안내: https://drive.google.com/file/d/1oqK-xt_5NxpYjv48shNPi6JFTlh-8qwv/view .
+- 우측 하단 플로팅 버튼은 https://libraries.dev/gooey 의 구현을 사용하고 실제 연결된 작업을 연다. 중첩 패널에서 버튼과 모션 소유자를 중복 생성하지 않는다.

@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 // Rebuild the changed product families against the verified e8e12588 checkout.
 // This script never edits the frozen review controller or any historical file.
 // Usage: node scripts/r3/refresh-feedback-20261120.mjs /path/to/e8e12588-checkout
@@ -97,8 +98,7 @@ for(const [hash,packed] of Object.entries(source.frames))if(!retained.has(hash))
   archivedBodies++;
 }
 async function rewrite(name,values){
-  const file=new URL('../../src/server/r3-ui/'+name+'.gen.mjs',import.meta.url),text=await fs.readFile(file,'utf8');
-  await fs.writeFile(file,text.split('\n').map(line=>{const key=/^export const (\w+)=/.exec(line)?.[1];return Object.hasOwn(values,key)?'export const '+key+'='+JSON.stringify(values[key])+';':line;}).join('\n'));
+  return updateGeneratedModule(new URL('../../src/server/r3-ui/'+name+'.gen.mjs',import.meta.url),values);
 }
 await rewrite('catalog',{catalog,frames:Object.fromEntries(Object.entries(frames).filter(([key])=>retained.has(key)))});
 await rewrite('runtime',{runtimes});

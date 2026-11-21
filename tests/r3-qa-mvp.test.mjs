@@ -10,7 +10,7 @@ import {getQaSupplemental} from '../src/server/r3-qa-assets.mjs';
 import {serveR3Artifact,isR3ReviewTarget} from '../src/server/r3-qa-page.mjs';
 import {bootApprovedShell} from '../src/server/r3-ui/approved-controller.mjs';
 import {approvedShellBody} from '../src/server/r3-ui/approved-shell.mjs';
-import {registerQaMvp} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
+import {getQaMvpRuntimeSource} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
 import {sharedCoreScript,commonMotionScript} from '../src/server/r3-ui/qa-assets.gen.mjs';
 import {createProductUiLab} from './helpers/product-ui-lab.mjs';
 import {qaSalesFixture} from '../src/server/r3-qa-sales.mjs';
@@ -25,7 +25,7 @@ async function mount(id,{adapter,sourceRuntime=false}={}){
   const source=extras.documents.get(id);assert.ok(source,id);const dom=setup(source.body),w=dom.window,calls=[];
   w.ORDER_APP_CONTEXT={mode:'lab',now:'2026-11-20T00:00:00.000Z'};if(adapter)w.ORDER_APP_ADAPTER=adapter;
   w.HTMLElement.prototype.animate=function(){return {finished:Promise.resolve(),cancel(){},pause(){},play(){}};};
-  w.eval(sourceRuntime?source.mount:sharedCoreScript+'\n'+commonMotionScript+'\n('+registerQaMvp.toString()+')()');
+  w.eval(sourceRuntime?source.mount:sharedCoreScript+'\n'+commonMotionScript+'\n('+getQaMvpRuntimeSource()+')()');
   const root=w.document.querySelector('#order-single'),api={screen:source.row.screen,reduced:()=>false,select(...args){calls.push(args);},toast(){}};
   const unmountShared=w.QAUI.sharedMount(root,api),module=w.ORDER_DESIGN_MODULES.find(m=>m.id===source.row.screen),dispose=module.mount(root,source.row.state,api);
   const cleanup=()=>{dispose?.();unmountShared?.();};await settled();return {dom,w,root,calls,cleanup};
@@ -177,7 +177,7 @@ test('BLOUB composes original upper-to-result blocks and reduced-motion shows th
   const source=extras.documents.get('component-library/bloub/email'),dom=setup(source.body),w=dom.window,definitions=[];
   const {bloubMontages}=await import('../src/server/r3-bloub.mjs'),{waitMontages}=await import('../src/server/r3-quote-wait.mjs');
   let destroyed=0;w.BloubR4={async mountBloub(slot,definition,options){definitions.push({definition,options});let time=0;const duration=definition.blocks.reduce((s,b)=>s+b.duration,0);return {seek(value){time=value;},pause(){},getState(){return {time,duration,blockedBy:[]};},destroy(){destroyed++;}};}};
-  w.eval('('+registerQaMvp.toString()+')('+JSON.stringify({...bloubMontages,...waitMontages})+')');
+  w.eval('('+getQaMvpRuntimeSource()+')('+JSON.stringify({...bloubMontages,...waitMontages})+')');
   const root=w.document.querySelector('#order-single'),dispose=w.ORDER_DESIGN_MODULES.find(m=>m.id==='component-library').mount(root,'bloub',{reduced:()=>true,select(){}});
   root.querySelector('[data-bloub-upper]').value='delayed';root.querySelector('[data-bloub-outcome]').value='equal';root.querySelector('[data-bloub-play]').click();await tick();
   assert.deepEqual(Array.from(definitions[0].definition.blocks,b=>b.state),[...waitMontages.delayed.blocks,...waitMontages.finishing.blocks,...waitMontages.complete.blocks].map(b=>b.state));
@@ -206,7 +206,7 @@ test('3D motion variants keep the original image and separate source usage from 
 test('3D motion respects reduced-motion both at entry and when the preference changes during playback',()=>{
   const source=extras.documents.get('component-library/asset-intro-art-float/email'),dom=setup(source.body),w=dom.window;
   let quiet=true,onChange=null,removed=0;const preference={get matches(){return quiet;},addEventListener(type,fn){assert.equal(type,'change');onChange=fn;},removeEventListener(type,fn){assert.equal(fn,onChange);removed++;}};
-  w.matchMedia=()=>preference;w.eval('('+registerQaMvp.toString()+')()');
+  w.matchMedia=()=>preference;w.eval('('+getQaMvpRuntimeSource()+')()');
   const root=w.document.querySelector('#order-single'),dispose=w.ORDER_DESIGN_MODULES.find(m=>m.id==='component-library').mount(root,source.row.state,{reduced:()=>quiet,select(){}});
   const play=root.querySelector('[data-qa-art-play]'),stage=root.querySelector('[data-qa-art-motion]');assert.equal(play.disabled,true);assert.equal(stage.dataset.qaArtStatus,'idle');assert.match(root.querySelector('[data-qa-art-status-text]').textContent,/모션 줄이기/);
   quiet=false;onChange();assert.equal(play.disabled,false);play.click();assert.equal(stage.dataset.qaArtStatus,'playing');
@@ -243,7 +243,7 @@ test('BLOUB repeated sequences reveal each result once without hiding the observ
   const {bloubMontages}=await import('../src/server/r3-bloub.mjs'),{waitMontages}=await import('../src/server/r3-quote-wait.mjs');
   let time=0,duration=0,pulse;w.setInterval=fn=>{pulse=fn;return 1;};w.clearInterval=()=>{};
   w.BloubR4={async mountBloub(slot,definition){duration=definition.blocks.reduce((s,b)=>s+b.duration,0);return {getState:()=>({time,duration,blockedBy:[]}),pause(){},destroy(){}};}};
-  w.eval('('+registerQaMvp.toString()+')('+JSON.stringify({...bloubMontages,...waitMontages})+')');
+  w.eval('('+getQaMvpRuntimeSource()+')('+JSON.stringify({...bloubMontages,...waitMontages})+')');
   const root=w.document.querySelector('#order-single'),dispose=w.ORDER_DESIGN_MODULES.find(m=>m.id==='component-library').mount(root,'bloub',{reduced:()=>false,select(){}});
   root.querySelector('[data-bloub-loop]').checked=true;root.querySelector('[data-bloub-play]').click();await tick();
   time=duration-1;pulse();const result=root.querySelector('[data-bloub-result-panel]');assert.equal(result.hidden,false);const first=result.firstElementChild;pulse();assert.equal(result.firstElementChild,first);

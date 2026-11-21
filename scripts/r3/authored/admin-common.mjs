@@ -26,6 +26,40 @@ export function mountReviewControls(root,state,api) {
     @media(prefers-reduced-motion:reduce){.ops-nav-indicator,.qa-donut{transition:none}}
   `; root.ownerDocument.head.append(style);
   root.dataset.motionRuntime='admin-common';
+  const adapter=api.adapter||window.ORDER_APP_ADAPTER;
+  const productMotion=window.ORDER_ADMIN_MOTION,restorations=[];
+  // The dashboard's visual source is shared with signed product routes. The QA
+  // adapter alone owns example responses; masked renderer totals are not reused.
+  if(productMotion&&api.screen==='admin-overview'&&state==='normal'){
+    const old=one('.qa-widget-grid');
+    if(old){const replacement=document.createElement('div');replacement.innerHTML=productMotion.renderDashboard(api.dashboardData||{});old.replaceWith(replacement);restorations.push(()=>replacement.replaceWith(old));const stats=one('.qa-stats');if(stats){const hidden=stats.hidden;stats.hidden=true;restorations.push(()=>{stats.hidden=hidden;});}}
+  }
+  const review=Boolean(adapter?.fixture)||api.mode!=='product';
+  const quickActions=api.quickActions||[['admin-quotes','견적 관리'],['profile','내 계정'],['admin-inquiries','문의 관리']].flatMap(([id,label])=>{
+    const module=window.ORDER_DESIGN_MODULES.find(item=>item.id===id);return module?[{id,label,run:()=>route(id,module.states[0])}]:[];
+  });
+  const saveLayout=async(payload,{signal})=>{
+    if(review){
+      if(typeof api.saveReviewLayout!=='function'||typeof api.demoSuccess!=='function')throw Error('LAYOUT_UNAVAILABLE');
+      const save=root.querySelector('[data-layout=save]');let applied=false;
+      await api.demoSuccess(save,()=>{if(signal.aborted)return;api.saveReviewLayout(payload.layout.map(item=>({index:Number(item.id.slice(7)),wide:item.wide})));applied=true;});
+      if(!applied)throw Error('LAYOUT_NOT_SAVED');
+      return {revision:payload.revision+1,data:{layout:payload.layout}};
+    }
+    if(!adapter?.request)throw Error('LAYOUT_UNAVAILABLE');
+    return adapter.request('/settings/dashboard-layout',{expectedRevision:payload.revision,requestKey:payload.requestKey,data:{layout:payload.layout}},signal);
+  };
+  const motion=productMotion?.mount(root,{screen:api.screen,reduced:api.reduced,data:api.dashboardData||{},actions:quickActions,
+    ...(review?{}:{loadLayout:({signal})=>adapter.request('/settings/dashboard-layout',null,signal)}),saveLayout});
+  const workflow=window.ORDER_WORKFLOW_MOTION?.mount(root,{screen:api.screen,state,adapter,reduced:api.reduced,api});
+  on(root,'r3-widget-layout',e=>{
+    const entries=e.detail?.layout;
+    if(!motion||!Array.isArray(entries)||entries.length!==3||!entries.every(item=>item&&[0,1,2].includes(item.index)&&typeof item.wide==='boolean'))return;
+    motion.restoreLayout({layout:entries.map(item=>({id:'widget-'+item.index,wide:item.wide}))});
+  });
+  if(motion&&adapter?.request&&['admin-overview','admin-analytics'].includes(api.screen)&&state!=='loading'){
+    Promise.resolve(adapter.request('/dashboard',null,abort.signal)).then(data=>{if(!abort.signal.aborted)motion.updateData(data);}).catch(()=>{if(!abort.signal.aborted){const scope=one('.pm-data-scope');if(scope)scope.textContent='현황을 불러오지 못했습니다. 다시 시도해 주세요.';}});
+  }
   const fieldError=input=>{window.QAUI.setFieldError(input,'입력값을 확인해 주세요.');window.QAUI.shake(input.closest('.input-shell')||input);input.focus();};
   function validate(form){
     if(!form)return true;
@@ -39,7 +73,7 @@ export function mountReviewControls(root,state,api) {
     commonOptions.classList.toggle('is-open',open);commonOptions.inert=!open;trigger.setAttribute('aria-expanded',String(open));if(focus)trigger.focus();
   }
   on(document,'pointerdown',e=>{if(commonOptions&&!e.target.closest('.common-dropdown'))setOptions(false);});
-  if(nav){
+  if(nav&&!motion){
     let indicator=nav.querySelector('.qa-nav-hover');
     if(!indicator){indicator=document.createElement('span');indicator.className='ops-nav-indicator';indicator.setAttribute('aria-hidden','true');nav.prepend(indicator);}
     indicator.style.opacity='0';
@@ -80,7 +114,7 @@ export function mountReviewControls(root,state,api) {
   function updateAmount(){if(!amount)return;amount.value=amount.value.replace(/\D/g,'').slice(0,9);if(billingSummary[0])billingSummary[0].textContent=account?.selectedOptions[0]?.textContent||'—';if(billingSummary[1])billingSummary[1].textContent=amount.value?Number(amount.value).toLocaleString('ko-KR')+'원':'—';}
   on(amount,'input',updateAmount);on(account,'change',updateAmount);
   const grid=one('.qa-widget-grid');
-  if(grid){
+  if(grid&&!motion){
     const tools=document.createElement('div');tools.className='qa-widget-edit';
     const make=(name,action)=>{const b=document.createElement('button');b.type='button';b.className='btn text';b.textContent=name;b.dataset.layout=action;return b;};
     const edit=make('위젯 배치','edit'),controls=document.createElement('span'),list=document.createElement('select');
@@ -106,13 +140,14 @@ export function mountReviewControls(root,state,api) {
       if(action==='save')api.demoSuccess(save,()=>{if(scoped)api.saveReviewLayout(layout());finish();});
     });
   }
-  if(state!=='loading'&&!api.reduced())for(const card of all('.qa-stat,.qa-donut,.ops-metric'))card.animate?.([{opacity:.35,translate:'0 4px'},{opacity:1,translate:'0 0'}],{duration:260,easing:'ease-out'});
+  if(!motion&&state!=='loading'&&!api.reduced())for(const card of all('.qa-stat,.qa-donut,.ops-metric'))card.animate?.([{opacity:.35,translate:'0 4px'},{opacity:1,translate:'0 0'}],{duration:260,easing:'ease-out'});
   const defaultNext={'admin-overview':'normal','admin-billing':'draft','admin-quotes':'list','receipt':'before'};
   const outcome={'review-approve':'approval-requested','confirm-payment':'list','approve-price':'list','submit-entity':'detail','submit-zone':'detail','submit-order':'detail','submit-invite':'list','submit-reply':'closed','submit-capacity':'week','run-simulation':'normal','review-policy':'published','submit-policy':'normal','submit-billing':'complete','issue-receipt':'complete','retry-receipt':'complete','submit-performance':'reviewing','approve-performance':'approved','review-ad':'approved'};
   const simulated=new Set([...Object.keys(outcome),'save-draft','save-negotiation','confirm-ledger','submit-dispute','confirm-dispatch','submit-price-review','hold-payment','issue-document','request-signature','mark-quote']);
   function actionClick(e){
     const b=e.target.closest('button');if(!b||b.disabled)return;
     const a=b.dataset.action||b.dataset.qaAction;
+    if(workflow?.handlesAction(a))return;
     const target=b.dataset.opRoute||b.dataset.mfGo||(a==='admin-route'&&b.dataset.target);
     if(target){const next=b.dataset.mfState||b.dataset.opNext||defaultNext[target];route(target,next);return;}
     if(a==='save-demo'){api.demoSuccess(b);return;}
@@ -123,7 +158,7 @@ export function mountReviewControls(root,state,api) {
     if(b.hasAttribute('data-option')){trigger.textContent=b.dataset.option;setOptions(false,true);return;}
     if(b.matches('.t-toggle')){const next=b.getAttribute('aria-checked')!=='true';b.dataset.on=String(next);b.setAttribute('aria-checked',String(next));b.classList.add('is-init');return;}
     if(['collapse','collapse-sidebar'].includes(a)){const compact=panel.classList.toggle(a==='collapse'?'collapsed':'is-collapsed');b.setAttribute('aria-expanded',String(!compact));b.setAttribute('aria-label',compact?'메뉴 펼치기':'메뉴 접기');return;}
-    if(['submenu','toggle-submenu'].includes(a)){const sub=one('.ops-subnav,#qa-admin-submenu');if(!sub)return;const open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',String(open));sub.inert=!open;sub.setAttribute('aria-hidden',String(!open));sub.classList.toggle('is-open',open);if(sub.classList.contains('ops-subnav')){sub.hidden=!open;if(open&&!api.reduced())sub.animate?.([{opacity:0,translate:'0 -4px'},{opacity:1,translate:'0 0'}],{duration:180});}return;}
+    if(['submenu','toggle-submenu'].includes(a)){if(motion?.toggleDepth(b))return;const sub=one('.ops-subnav,#qa-admin-submenu');if(!sub)return;const open=b.getAttribute('aria-expanded')!=='true';b.setAttribute('aria-expanded',String(open));sub.inert=!open;sub.setAttribute('aria-hidden',String(!open));sub.classList.toggle('is-open',open);if(sub.classList.contains('ops-subnav')){sub.hidden=!open;if(open&&!api.reduced())sub.animate?.([{opacity:0,translate:'0 -4px'},{opacity:1,translate:'0 0'}],{duration:180});}return;}
     if(a==='copy-summary'){api.toast(all('.qa-stat').map(n=>n.textContent.trim()).join(' / '));return;}
     if(['export-quotes','save-receipt'].includes(a)){api.downloadReviewDocument();return;}
     if(a==='issue-receipt'){
@@ -165,5 +200,5 @@ export function mountReviewControls(root,state,api) {
     if(e.key==='ArrowDown'&&e.target===trigger){e.preventDefault();setOptions(true);commonOptions.querySelector('button')?.focus();}
     if(commonOptions?.contains(e.target)&&['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();(e.key==='ArrowDown'?e.target.nextElementSibling:e.target.previousElementSibling)?.focus();}
   });
-  return ()=>{abort.abort();style.remove();};
+  return ()=>{abort.abort();workflow?.destroy?.();motion?.destroy();for(const restore of restorations.reverse())restore();style.remove();};
 }

@@ -1,6 +1,8 @@
-export function runRolePage(labels,createEvidenceEditor,createCustomerControls,mountAsyncMotion){
+export function runRolePage(labels,createEvidenceEditor,createCustomerControls,mountAsyncMotion,createCommonMotion){
   let asyncMotion;
-  const controls=createCustomerControls(),signedView={mode:'grid',selected:null,gesture:null,tags:[]};
+  const common=window.ORDER_COMMON_MOTION||createCommonMotion?.(window);
+  const controls=createCustomerControls(),signedView={mode:'grid',selected:null,gesture:null,tags:[],tagController:null,newTag:null};
+  let formController=null,publicationController=null;
   const $=id=>document.getElementById(id), name=x=>labels[x]||x;
   const endpoint=window.ORDER_APP_CONTEXT?.endpoints?.role||'/api/ia/r3-role';
   const menus={
@@ -83,6 +85,7 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
     return data;
   }
   function clear(){
+    formController?.abort();publicationController?.abort();signedView.tagController?.abort();
     ++epoch;signedView.gesture?.abort();panelView='';signedView.selected=null;signedView.tags=[];asyncMotion?.destroy();asyncMotion=null;cipher=null;drafts={};clearTimeout(expiryTimer);dispose();dispose=()=>{};ready=false;csrf='';pending=null;grants=[];cases=[];next='';opts={quotes:[],products:[],businesses:[]};
     for(const id of ['role-search-tags','role-menu','queue-list','list','detail','create','publication'])$(id).replaceChildren();
     $('account-trigger').hidden=true;$('account-panel').hidden=true;$('account-panel').replaceChildren();
@@ -131,28 +134,41 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
     return li;
   }
   function list(){
-    const key=menu(),out=$('list'),related=$('queue-list');signedView.gesture?.abort();out.replaceChildren();related.replaceChildren();
-    $('query').removeAttribute('list');$('query').onkeydown=null;$('role-search-tags').replaceChildren();
+    const key=menu(),out=$('list'),related=$('queue-list');signedView.gesture?.abort();signedView.tagController?.abort();out.replaceChildren();related.replaceChildren();
+    for(const attr of ['list','role','aria-controls','aria-autocomplete','aria-expanded'])$('query').removeAttribute(attr);$('query').onkeydown=null;$('role-search-tags').replaceChildren();
     if(!allowed(key)){out.append(node('li','이 메뉴에 연결된 권한이 없습니다.'));return;}
     const term=(query().get('q')||'').trim().toLocaleLowerCase(),filter=query().get('filter')||'all';
     const contains=x=>String(x||'').toLocaleLowerCase().includes(term);
     const tagArea=$('role-search-tags');tagArea.replaceChildren();tagArea.hidden=key!=='quotes';
     if(key==='quotes'){
       const available=[...new Set(opts.quotes.flatMap(q=>[q.productName,q.supplierName,gName(q),q.deliveryState?name(q.deliveryState):null]).filter(Boolean))];
-      const input=$('query');input.setAttribute('list','role-tag-options');const options=node('datalist');options.id='role-tag-options';
-      for(const tag of available.filter(v=>!signedView.tags.includes(v))){const o=node('option');o.value=tag;options.append(o);}
-      tagArea.append(options);
-      for(const tag of signedView.tags){const chip=button(tag+' ×',()=>{signedView.tags=signedView.tags.filter(v=>v!==tag);list();input.focus();});chip.setAttribute('aria-label',tag+' 태그 제거');tagArea.append(chip);}
+      const input=$('query');signedView.tagController=new AbortController();const tagSignal=signedView.tagController.signal;
+      const options=node('div');options.className='r3-select-options';options.id='role-tag-options';options.setAttribute('role','listbox');options.hidden=true;document.body.append(options);tagSignal.addEventListener('abort',()=>options.remove(),{once:true});
+      input.setAttribute('role','combobox');input.setAttribute('aria-controls',options.id);input.setAttribute('aria-autocomplete','list');
+      const place=()=>{const r=input.getBoundingClientRect();Object.assign(options.style,{left:r.left+'px',top:r.bottom+4+'px',width:r.width+'px',maxHeight:'220px'});};
+      const dropdown=common?.dropdown(options,{trigger:input,signal:tagSignal,place});
+      function addTag(tag){if(signedView.tags.includes(tag))return;signedView.tags.push(tag);signedView.newTag=tag;input.value='';historyChange({q:null},true);list();input.focus();}
+      function removeTag(tag,chip){const done=()=>{signedView.tags=signedView.tags.filter(v=>v!==tag);list();input.focus();};if(common&&chip)common.tagRemove(chip,{complete:done});else done();}
+      for(const tag of available.filter(v=>!signedView.tags.includes(v)&&v.toLocaleLowerCase().includes(input.value.trim().toLocaleLowerCase()))){const o=button(tag,()=>addTag(tag));o.setAttribute('role','option');o.onpointerdown=e=>e.preventDefault();options.append(o);}
+      for(const tag of signedView.tags){const chip=button(tag+' ×',()=>removeTag(tag,chip));chip.setAttribute('aria-label',tag+' 태그 제거');if(common&&signedView.newTag===tag)common.tagInsert(tagArea,chip);else tagArea.append(chip);}signedView.newTag=null;
+      const showOptions=()=>{if(dropdown)dropdown.set(Boolean(options.children.length));else{place();options.hidden=!options.children.length;input.setAttribute('aria-expanded',String(!options.hidden));}};
+      input.addEventListener('focus',showOptions,{signal:tagSignal});
+      document.addEventListener('pointerdown',e=>{if(e.target!==input&&!options.contains(e.target))dropdown?.set(false);},{signal:tagSignal});
+      input.addEventListener('blur',e=>{if(!options.contains(e.relatedTarget))dropdown?.set(false);},{signal:tagSignal});
+      if(input.value&&document.activeElement===input)showOptions();
       input.onkeydown=e=>{
         if(e.isComposing||e.keyCode===229)return;
         if(e.key==='Enter'&&available.includes(input.value)&&!signedView.tags.includes(input.value)){
-          e.preventDefault();signedView.tags.push(input.value);input.value='';historyChange({q:null},true);list();input.focus();
-        }else if(e.key==='Backspace'&&!input.value&&signedView.tags.length){e.preventDefault();signedView.tags.pop();list();}
+          e.preventDefault();addTag(input.value);
+        }else if(e.key==='Backspace'&&!input.value&&signedView.tags.length){e.preventDefault();removeTag(signedView.tags.at(-1),[...tagArea.children].at(-1));}
+        else if(e.key==='ArrowDown'){e.preventDefault();showOptions();options.firstElementChild?.focus();}
+        else if(e.key==='Escape')dropdown?.set(false);
       };
+      options.addEventListener('keydown',e=>{const rows=[...options.children],index=rows.indexOf(document.activeElement);if(['ArrowDown','ArrowUp'].includes(e.key)){e.preventDefault();rows[(index+(e.key==='ArrowDown'?1:-1)+rows.length)%rows.length]?.focus();}if(e.key==='Escape'){dropdown?.set(false);input.focus();}},{signal:tagSignal});
       const tools=node('div'),deck=node('li'),cards=node('div'),pager=node('div');
       tools.className='signed-pass-tools';deck.className='signed-passes';cards.className='signed-pass-cards';pager.className='signed-pass-pager';
       const rows=[];
-      for(const q of opts.quotes){
+      for(const q of [...opts.quotes].sort((a,b)=>String(b.issued_at||'').localeCompare(String(a.issued_at||''))||String(a.id).localeCompare(String(b.id)))){
         const terms=[qTitle(q),q.supplierName,gName(q),name(q.deliveryState)];
         if(!terms.some(contains)||!signedView.tags.every(tag=>terms.some(v=>String(v||'').includes(tag))))continue;
         const li=node('article');li.tabIndex=0;li.dataset.ticket=q.id;li.className='signed-pass';
@@ -175,7 +191,11 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
         const counter=node('span');counter.setAttribute('aria-live','polite');
         const move=step=>{const i=Math.max(0,rows.findIndex(r=>r.dataset.ticket===signedView.selected));signedView.selected=rows[(i+step+rows.length)%rows.length].dataset.ticket;view(signedView.mode);};
         pager.append(button('이전',()=>move(-1)),counter,button('다음',()=>move(1)));
+        signedView.gesture=new AbortController();const layout=controls.deckLayout?.(cards,{signal:signedView.gesture.signal});let first=true;
         function view(mode){
+          const paint=()=>viewContent(mode);if(layout)layout.update(paint,{animate:!first});else paint();first=false;
+        }
+        function viewContent(mode){
           signedView.mode=mode;
           const current=Math.max(0,rows.findIndex(r=>r.dataset.ticket===signedView.selected));
           signedView.selected=rows[current].dataset.ticket;
@@ -183,7 +203,7 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
           rows.forEach((card,i)=>{const depth=(i-current+rows.length)%rows.length;card.inert=mode==='deck'&&depth!==0;card.style.setProperty('--depth',String(Math.min(3,depth)));card.style.zIndex=String(rows.length-depth);});
           counter.textContent=(current+1)+' / '+rows.length;pager.hidden=mode!=='deck'||rows.length<2;
         }
-        view(signedView.mode);signedView.gesture=new AbortController();
+        view(signedView.mode);
         controls.swipeDeck(cards,{enabled:()=>signedView.mode==='deck'&&rows.length>1,top:()=>rows.find(el=>el.dataset.ticket===signedView.selected),step:move,signal:signedView.gesture.signal});
         cards.onkeydown=e=>{if(signedView.mode==='deck'&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();move(e.key==='ArrowLeft'?-1:1);rows.find(el=>el.dataset.ticket===signedView.selected).focus();}};
       }else related.append(node('li','이 사업장에서 확인할 수 있는 발급 견적이 없습니다.'));
@@ -215,6 +235,7 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
     l.append(input);parent.append(l);return input;
   }
   function createForm(){
+    formController?.abort();formController=new AbortController();const formSignal=formController.signal;
     const form=$('create');form.replaceChildren();form.hidden=true;
     const key=menu(),pre=qMap(query().get('quote'));const creators=grants.filter(g=>allowCreate[g.role]?.some(k=>key==='inbox'||k===key));
     if(!creators.length||!allowed(key))return;
@@ -266,6 +287,11 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
       const targets=v.getAll('targets');if(targets.length)ctx.targets=targets;
       if(Object.keys(ctx).length)data.context=ctx;remember();save(data,keyDraft,submit);
     };
+    if(key==='consult'&&common){
+      const open=button('상담 예약 열기',()=>panel.set(true));form.before(open);formSignal.addEventListener('abort',()=>open.remove(),{once:true});
+      const heading=node('h2','상담 예약');form.prepend(heading);form.setAttribute('aria-label','상담 예약');
+      const panel=common.bottomPanel(form,{trigger:open,signal:formSignal,open:!query().get('case')});
+    }
   }
   let panelRequest=0,panelView='';
   async function accountPanel(view='home',active=0){
@@ -326,7 +352,15 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
   };
   $('account-panel').onkeydown=e=>{if(e.key==='Escape')$('account-trigger').click();};
   function publication(){
+    publicationController?.abort();publicationController=new AbortController();
     const el=$('publication');el.replaceChildren();if(!opts.publication)return;
+    if(common){
+      const toggle=button('Order 메뉴 공개',()=>{});el.append(toggle);
+      let current=opts.publication.revision,request=null;
+      common.persistedSwitch(toggle,{value:opts.publication.enabled,signal:publicationController.signal,
+        save:async(enabled,{signal})=>{if(!request||request.enabled!==enabled)request={enabled,expectedRevision:current,requestKey:crypto.randomUUID()};const response=await api(endpoint+'/publication',request,signal);current=response.publication?.revision??response.revision??current+1;request=null;return {...response,value:response.publication?Boolean(response.publication.enabled):enabled};},
+        onSaved:enabled=>{opts.publication={...opts.publication,enabled,revision:current};status('공개 설정을 저장했습니다.');},onError:error});return;
+    }
     const form=node('form'),cb=node('input');cb.type='checkbox';cb.checked=Boolean(opts.publication.enabled);
     const label=node('label','Order 메뉴 공개');label.prepend(cb);form.append(label);
     const submit=node('button','공개 설정 저장');form.append(submit);el.append(form);

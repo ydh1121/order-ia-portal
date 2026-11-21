@@ -11,7 +11,8 @@ import tempfile
 from review_document import prepare
 
 HERE = Path(__file__).resolve().parent
-UI = HERE.parents[1] / "src/server/r3-ui"
+UI = HERE.parents[1] / "src/server/product-ui"
+REVIEW_UI = UI.with_name("r3-ui")
 FAMILIES = {
     "questions": {"q1", "q3", "q4"},
     "onboarding": {"onboarding"},
@@ -31,10 +32,17 @@ def load_module(path):
         if line.startswith("export const "):
             name, encoded = line[len("export const "):].split("=", 1)
             values[name] = json.loads(encoded.rstrip(";"))
+    if path.name == "runtime.gen.mjs" and "runtimes" in values and "frameCode" not in values:
+        values.update(load_module(REVIEW_UI / "review-engine.gen.mjs"))
     return values
 
 
 def write_module(path, values):
+    if path.resolve() == (UI / "runtime.gen.mjs").resolve():
+        engine = {key: values[key] for key in ("hostCode", "frameCode") if key in values}
+        if engine:
+            write_module(REVIEW_UI / "review-engine.gen.mjs", engine)
+        values = {"runtimes": values["runtimes"]}
     banner = [line for line in path.read_text().splitlines() if line.startswith("//")]
     for key, value in values.items():
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
@@ -54,6 +62,8 @@ def onboarding_art():
 
 
 def refresh(source, family, catalog_file):
+    if catalog_file.resolve() == (REVIEW_UI / "catalog.gen.mjs").resolve():
+        catalog_file = UI / "catalog.gen.mjs"
     runtime_file = catalog_file.with_name("runtime.gen.mjs")
     catalog = load_module(catalog_file)
     runtime = load_module(runtime_file)

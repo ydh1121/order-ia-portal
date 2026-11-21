@@ -394,21 +394,41 @@
     applyPendingFocus(root,api);return()=>{dispose();c.abort();};
   }});
 
-  registry.push({id:'terms',group:'로그인·가입',label:'약관·동의',description:'필수·선택 동의와 목차 이동을 검토합니다. 확정 약관 원문은 연결 전이며 본문은 빈 문서선으로 표시합니다.',width:'mobile',states:states([['required','필수 약관'],['privacy','개인정보'],['optional','선택 동의'],['missing','동의 누락']]),render(s,o={}) {
-    const titles=[s==='privacy'?'개인정보 처리방침':s==='optional'?'선택 알림':'서비스 이용약관'];
-    return `<div class="page terms-page">${head('약관을<br>확인해 주세요','',{...o,back:true})}<div class="segmented"><button type="button" data-term="required" class="${s==='missing'?'terms-invalid':s==='required'?'active':''}">이용약관</button><button type="button" data-term="privacy" class="${s==='privacy'?'active':''}">개인정보</button><button type="button" data-term="optional" class="${s==='optional'?'active':''}">선택 동의</button></div><div class="terms-reading"><div class="scroll-region terms-body" tabindex="0" aria-label="약관 내용">${titles.map((t,i)=>`<section data-term-section="${i}"><h3>${t}</h3><div class="terms-copy-lines" aria-label="약관 원문 자리"><i></i><i></i><i></i><i></i></div></section>`).join('')}</div></div><label class="check-row ${s==='missing'?'terms-invalid':''}"><input aria-invalid="${s==='missing'}" name="terms-check" type="checkbox" ${s==='optional'?'':'required'}>${s==='optional'?'[선택] 소식과 혜택을 받아볼게요':'[필수] 내용을 확인하고 동의해요'}</label><div class="sr-only" data-terms-feedback ${s==='missing'?'':'hidden'}>${note('필수 약관에 동의해 주세요.','error')}</div><div class="bottom-actions">${button('확인','terms-done')}</div></div>`;
+  registry.push({id:'terms',group:'로그인·가입',label:'약관·동의',description:'게시된 약관의 본문·버전과 읽기 목차를 연결합니다. 검수용 본문은 실제 약관과 구분해서 표시합니다.',width:'mobile',states:states([['required','필수 약관'],['privacy','개인정보'],['optional','선택 동의'],['missing','동의 누락']]),render(s,o={}) {
+    return `<div class="page terms-page">${head('약관을<br>확인해 주세요','',{...o,back:true})}<div class="segmented"><button type="button" data-term="required" class="${s==='missing'?'terms-invalid':s==='required'?'active':''}">이용약관</button><button type="button" data-term="privacy" class="${s==='privacy'?'active':''}">개인정보</button><button type="button" data-term="optional" class="${s==='optional'?'active':''}">선택 동의</button></div><p class="pm-policy-meta" data-policy-meta></p><div class="terms-reading"><div class="scroll-region terms-body" tabindex="0" role="region" aria-label="약관 내용" aria-busy="true"><div data-policy-content></div><p class="pm-policy-status" data-policy-status role="status">약관 본문을 불러오고 있습니다.</p><button type="button" class="btn text" data-policy-retry hidden>다시 불러오기</button></div></div><label class="check-row ${s==='missing'?'terms-invalid':''}"><input aria-invalid="${s==='missing'}" name="terms-check" type="checkbox" disabled ${s==='optional'?'':'required'}>${s==='optional'?'[선택] 소식과 혜택을 받아볼게요':'[필수] 내용을 확인하고 동의해요'}</label><div class="sr-only" data-terms-feedback ${s==='missing'?'':'hidden'}>${note('필수 약관에 동의해 주세요.','error')}</div><div class="bottom-actions"><button type="button" class="btn primary" data-action="terms-done" disabled>확인</button></div></div>`;
   },mount(root,s,api={}) {
     const c=new AbortController(),session=pendingTermsSession,check=root.querySelector('[name=terms-check]');
     if(session?.draft&&interactive(api))check.checked=session.checks[s]??(s==='optional'?session.draft.marketing:session.draft.required);
+    const adapter=api.adapter||w.ORDER_APP_ADAPTER,policyId=s==='privacy'?'privacy':s==='optional'?'optional':'required';
+    const region=root.querySelector('.terms-body'),content=root.querySelector('[data-policy-content]'),status=root.querySelector('[data-policy-status]'),meta=root.querySelector('[data-policy-meta]'),retry=root.querySelector('[data-policy-retry]'),done=root.querySelector('[data-action=terms-done]');
+    let ready=false,index=null,request=0;
+    async function loadPolicy(){
+      const epoch=++request;ready=false;check.disabled=done.disabled=true;retry.hidden=true;region.setAttribute('aria-busy','true');status.hidden=false;status.textContent='약관 본문을 불러오고 있습니다.';index?.destroy();index=null;content.replaceChildren();meta.textContent='';delete check.dataset.policyVersion;
+      try{
+        const policy=typeof api.loadPolicy==='function'?await api.loadPolicy(policyId,{signal:c.signal}):await adapter?.request?.('/policies/'+policyId,null,c.signal);
+        if(c.signal.aborted||request!==epoch)return;
+        const fixture=Boolean(adapter?.fixture)&&policy?.status==='fixture'&&policy?.fixture?.kind==='dummy'&&policy?.fixture?.commercial===false;
+        const published=policy?.status==='published';
+        const sections=policy?.sections;
+        if((!published&&!fixture)||policy?.id!==policyId||typeof policy?.version!=='string'||!policy.version||!Array.isArray(sections)||!sections.length||!sections.every(section=>section&&typeof section.title==='string'&&section.title.trim()&&Array.isArray(section.paragraphs)&&section.paragraphs.length&&section.paragraphs.every(p=>typeof p==='string'&&p.trim()))){
+          status.textContent='아직 게시된 약관 본문이 없습니다. 게시 후 내용을 확인하고 동의할 수 있습니다.';retry.hidden=false;return;
+        }
+        for(const [i,row] of sections.entries()){
+          const section=document.createElement('section'),heading=document.createElement('h3');section.dataset.termSection=String(i);section.dataset.policySection=String(row.id??i);heading.textContent=row.title;section.append(heading);
+          for(const text of row.paragraphs){const p=document.createElement('p');p.textContent=text;section.append(p);}content.append(section);
+        }
+        meta.textContent=(fixture?'검수용 본문 · 실제 약관이 아닙니다. · ':'')+(policy.title||'약관')+' · 버전 '+policy.version;
+        status.hidden=true;check.dataset.policyVersion=policy.version;ready=true;check.disabled=done.disabled=false;
+        index=w.ORDER_ADMIN_MOTION?.mountScrollIndex(root,{reduced:api.reduced,regionSelector:'.terms-body',headingSelector:'h3'});
+      }catch(error){if(!c.signal.aborted&&request===epoch){status.textContent='약관 본문을 불러오지 못했습니다. 다시 시도해 주세요.';retry.hidden=false;}}
+      finally{if(!c.signal.aborted&&request===epoch)region.setAttribute('aria-busy','false');}
+    }
+    retry.addEventListener('click',loadPolicy,{signal:c.signal});loadPolicy();
     root.addEventListener('click',e=>{
       const btn=e.target.closest('button');if(!btn)return;
       if(btn.dataset.term){if(session)session.checks[s]=check.checked;openTerms(api,session,btn.dataset.term);}
-      if(btn.dataset.section!==undefined){
-        const region=root.querySelector('.terms-body'),target=region.querySelector(`[data-term-section="${btn.dataset.section}"]`);
-        if(target){const top=Math.max(0,target.getBoundingClientRect().top-region.getBoundingClientRect().top+region.scrollTop-8);if(region.scrollTo)region.scrollTo({top,behavior:api.reduced?.()?'auto':'smooth'});else region.scrollTop=top;}
-        root.querySelectorAll('[data-section]').forEach(b=>b.classList.toggle('active',b===btn));
-      }
       if(btn.dataset.action==='terms-done'){
+        if(!ready)return;
         if(!check.checked&&s!=='optional'){root.querySelector('[data-terms-feedback]').hidden=false;check.setAttribute('aria-invalid','true');const chip=root.querySelector('[data-term="'+(s==='privacy'?'privacy':'required')+'"]');chip?.classList.add('terms-invalid');check.closest('label').classList.add('terms-invalid');U.shake(chip);chip?.focus();return;}
         if(session?.draft){if(s==='optional')session.draft.marketing=check.checked;else session.draft.required=true;}
         returnFromTerms(api,session);
@@ -417,7 +437,7 @@
     },{signal:c.signal});
     check.addEventListener('change',()=>{if(check.checked){root.querySelector('[data-terms-feedback]').hidden=true;check.setAttribute('aria-invalid','false');root.querySelectorAll('.terms-invalid').forEach(el=>el.classList.remove('terms-invalid'));}},{signal:c.signal});
     applyPendingFocus(root,api);
-    return()=>{c.abort();if(session&&pendingTermsSession!==session&&pendingSignupRestore!==session.draft)session.draft=null;};
+    return()=>{c.abort();index?.destroy();if(session&&pendingTermsSession!==session&&pendingSignupRestore!==session.draft)session.draft=null;};
   }});
   w.QA_ACCOUNT={meter};
 })(window);

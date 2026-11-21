@@ -2,6 +2,7 @@
 // while reconstructing these HTML, mount, fixture or source bytes.
 import * as r1Epoch from './r3-ui/r1-e8e12588-history.gen.mjs';
 import * as rework09Epoch from './r3-ui/r3-af5ece3e-history.gen.mjs';
+import * as release10Epoch from './r3-ui/r3-e5f97029-history.gen.mjs';
 
 const enc=new TextEncoder();
 const sha=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(value))),v=>v.toString(16).padStart(2,'0')).join('');
@@ -29,6 +30,8 @@ function reader({epochMetadata,epochIndexGzip,epochFragmentsGzip}){
   const valid=(id,width,hash)=>typeof id==='string'&&epochMetadata.widths.includes(width)&&typeof hash==='string'&&/^[a-f0-9]{64}$/.test(hash);
   return {
     metadata:epochMetadata,
+    parts:fragments,
+    async rawRecord(id){return expand((await index()).nodes,id);},
     async body(digest){
       const archive=await index();
       if(!Object.hasOwn(archive.bodies,digest))return null;
@@ -55,9 +58,31 @@ function reader({epochMetadata,epochIndexGzip,epochFragmentsGzip}){
     }
   };
 }
+function deltaReader({epochMetadata,epochIndexGzip,epochFragmentsGzip},base){
+ if(epochMetadata.delta.baseEpoch!==base.metadata.epoch)throw Error('Reviewed delta base mismatch');
+ let savedIndex,savedParts;
+ const index=()=>savedIndex??=unpack(epochIndexGzip,epochMetadata.delta.indexSha256);
+ const parts=()=>savedParts??=Promise.all([base.parts(),unpack(epochFragmentsGzip,epochMetadata.delta.fragmentsSha256)]).then(([old,added])=>[...old,...added]);
+ function hydrate(value,hash){return value&&typeof value==='object'&&Object.keys(value).length===1&&value.__orderCurrentHash===1?hash:Array.isArray(value)?value.map(v=>hydrate(v,hash)):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,hydrate(v,hash)])):value;}
+ function patch(previous,change,hash){if(!change)return previous;if(change[0]==='v')return hydrate(change[1],hash);const result=Array.isArray(previous)?[...previous]:{...previous};for(const [key,value] of change[1]){if(value[0]==='d')delete result[key];else result[key]=patch(result[key],value,hash);}return result;}
+ const valid=(id,width,hash)=>typeof id==='string'&&epochMetadata.widths.includes(width)&&typeof hash==='string'&&/^[a-f0-9]{64}$/.test(hash);
+ return {
+  metadata:epochMetadata,parts,
+  async body(digest){const archive=await index();if(!Object.hasOwn(archive.bodies,digest))return null;const body=join(archive.bodies[digest],await parts());if(await sha(body)!==digest)throw Error('Reviewed delta body integrity mismatch');return body;},
+  async target(target,release){if(release!==epochMetadata.release||!target)return false;const id=[target.screen,target.state,target.variant].join('/');return valid(id,target.viewport,target.artifactHash)&&Object.hasOwn((await index()).records,key(id,target.viewport,target.artifactHash));},
+  async artifact(id,width,hash){
+   if(!valid(id,width,hash))return null;const archive=await index(),saved=archive.records[key(id,width,hash)];if(!saved)return null;
+   const record=patch(saved[0]===null?null:await base.rawRecord(saved[0]),archive.patches[saved[1]],hash),fragments=await parts(),values={...record.metadata};
+   for(const [name,recipe] of Object.entries(record.fields))values[name]=join(recipe,fragments);values.exportHash=await sha(values.editable);
+   const artifact=Object.fromEntries(record.propertyOrder.map(name=>[name,values[name]]));
+   return {artifact,replayFrame:artifact.replayFrame||join(archive.replayRecipe,fragments),archivedSource:{epoch:epochMetadata.epoch,commit:epochMetadata.commit,tree:epochMetadata.tree}};
+  }
+ };
+}
 // Earlier immutable identities retain precedence. A later snapshot never rebinds
 // an existing hash to newly generated code, fixtures or feedback status.
-const epochs=[reader(r1Epoch),reader(rework09Epoch)];
+const previousEpoch=reader(rework09Epoch);
+const epochs=[reader(r1Epoch),previousEpoch,deltaReader(release10Epoch,previousEpoch)];
 export const reviewedEpochMetadata=r1Epoch.epochMetadata;
 export const reviewedEpochsMetadata=Object.freeze(epochs.map(epoch=>epoch.metadata));
 export async function readReviewedEpochBody(digest){

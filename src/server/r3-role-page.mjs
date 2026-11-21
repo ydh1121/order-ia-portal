@@ -1,4 +1,5 @@
 import {mountAsyncMotion,asyncMotionCss} from './r3-async-motion.mjs';
+import {createCommonMotion} from './r3-common-motion.mjs';
 import {createCustomerControls} from './r3-customer-controls.mjs';
 import {runRolePage} from './r3-role-client.mjs';
 import {browserFunction} from './browser-source.mjs';
@@ -51,5 +52,5 @@ export function renderR3RolePage(nonce){
   <ul id="queue-list"></ul><ul id="list"></ul><button type="button" hidden id="more">다음 50건</button><button type="button" id="refresh">새로고침</button>
   <form id="create" hidden></form></section><section class="panel" id="detail" aria-live="polite"></section></main>
   <section id="publication"></section><section id="r3-practice" hidden></section>
-  <script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)},${browserFunction(createCustomerControls)},${browserFunction(mountAsyncMotion)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
+  <script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)},${browserFunction(createCustomerControls)},${browserFunction(mountAsyncMotion)},${browserFunction(createCommonMotion)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
 }

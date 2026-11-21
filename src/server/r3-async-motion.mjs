@@ -18,13 +18,8 @@ export const asyncMotionCss = `
 @keyframes r3-async-check{from{clip-path:inset(0 100% 0 0);opacity:.35}to{clip-path:inset(0);opacity:1}}
 .r3-motion-sr{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden;white-space:nowrap;pointer-events:none}
 [data-async-region]{position:relative;isolation:isolate}
-[data-async-region=pending]{min-height:var(--r3-skeleton-size,8rem)}
-[data-async-region=pending]::before,[data-async-region=success]::before{content:"";position:absolute;z-index:5;inset:0;pointer-events:none;
- background:linear-gradient(90deg,#e0e6ec 62%,transparent 62%) .8rem .85rem/46% .8rem no-repeat,
- repeating-linear-gradient(to bottom,#e6ebf0 0 .55rem,transparent .55rem 2.4rem) .8rem 3rem/67% calc(100% - 3.3rem) no-repeat,
- repeating-linear-gradient(to bottom,#e6ebf0 0 .55rem,transparent .55rem 2.4rem) 95% 3rem/20% calc(100% - 3.3rem) no-repeat,var(--r3-skeleton-bg,#fff)}
-[data-async-region=pending]::before{animation:r3-async-pulse 1.35s ease-in-out infinite}
-[data-async-region=success]::before{animation:r3-async-reveal var(--reveal-dur,400ms) var(--reveal-ease,ease-in-out) both}
+/* Text placeholders are measured Range rectangles in ORDER_COMMON_MOTION.
+   Empty regions announce loading; no fabricated text positions are painted. */
 @keyframes r3-async-pulse{50%{filter:brightness(.975)}}
 @keyframes r3-async-reveal{from{opacity:1;filter:blur(0)}to{opacity:0;filter:blur(var(--reveal-blur,2px))}}
 [data-r3-motion-paused] .r3-motion-glyph,[data-r3-motion-paused] [data-async-region]::before,[data-r3-motion-paused][data-async-region]::before{animation-play-state:paused!important}
@@ -55,6 +50,7 @@ export function mountAsyncMotion(root,{source='server'}={}){
    if(aria.label===null)button.removeAttribute('aria-label');else button.setAttribute('aria-label',aria.label);
    for(const property of ['--r3-motion-height','--r3-motion-border','--r3-motion-fill','--r3-motion-ink'])button.style.removeProperty(property);
   }
+  record.skeleton?.destroy();
   if(region){delete region.dataset.asyncRegion;delete region.dataset.asyncSource;}
   if(aria.busy===null)key.removeAttribute('aria-busy');else key.setAttribute('aria-busy',aria.busy);
   if(region&&button){if(aria.regionBusy===null)region.removeAttribute('aria-busy');else region.setAttribute('aria-busy',aria.regionBusy);}
@@ -68,7 +64,7 @@ export function mountAsyncMotion(root,{source='server'}={}){
    button.setAttribute('aria-label',labels[phase]);record.word.textContent=labels[phase];
    record.glyph.textContent=phase==='error'?'!':'';
   }
-  if(region){region.dataset.asyncRegion=phase;region.dataset.asyncSource=source;region.setAttribute('aria-busy',String(phase==='pending'));}
+  if(region){region.dataset.asyncRegion=phase;region.dataset.asyncSource=source;region.setAttribute('aria-busy',String(phase==='pending'));if(phase!=='pending')record.skeleton?.finish(phase);}
   key.setAttribute('aria-busy',String(phase==='pending'));
   if(!status.isConnected)announcerParent.append(status);status.textContent=labels[phase];
   key.dispatchEvent(new win.CustomEvent('r3:async-state',{bubbles:true,detail:{phase,source,requestId}}));
@@ -85,6 +81,7 @@ export function mountAsyncMotion(root,{source='server'}={}){
   const labels={pending:'처리 중',success:'완료',error:'실패',...opts.labels};
   const aria={label:button?.getAttribute('aria-label'),busy:key.getAttribute('aria-busy'),regionBusy:region?.getAttribute('aria-busy')};
   const record={button,region,key,controller,requestId,labels,aria,pending:true};
+  if(region)record.skeleton=win.ORDER_COMMON_MOTION?.skeleton(region);
   if(button){
    const style=win.getComputedStyle(button),height=button.getBoundingClientRect().height;
    button.style.setProperty('--r3-motion-height',(height||44)+'px');
@@ -155,7 +152,6 @@ export const editorMotionCss = `
 `;
 export function bindEditorMotion(root){
  const doc=root.ownerDocument,win=doc.defaultView,ctl=new win.AbortController();
- const gestures=new Map(),composing=new WeakSet(),media=win.matchMedia('(prefers-reduced-motion: reduce)');
  function enhance(scope){
   for(const label of scope.querySelectorAll('.price-meta label:not(.r3-floating),#carrier-editor .freight-row label:not(.r3-floating)')){
    const input=label.querySelector(':scope>input');
@@ -181,20 +177,12 @@ export function bindEditorMotion(root){
   for(const group of groups)enhance(group);
  });observer.observe(root,{subtree:true,childList:true});
  const on=(name,fn)=>root.addEventListener(name,fn,{signal:ctl.signal});
- const stop=()=>{for(const anim of gestures.values())anim.cancel();gestures.clear();};
- const animate=(input,direction)=>{
-  if(doc.hidden||media.matches||!input?.animate||!input.matches('input:not([type=checkbox]):not([type=radio])'))return;
-  gestures.get(input)?.cancel();
-  const anim=input.animate([{transform:'translateY(0)'},{transform:'translateY('+direction+'px)',offset:.37},{transform:'translateY(0)'}],{duration:210,easing:'cubic-bezier(.22,1,.36,1)'});
-  gestures.set(input,anim);anim.finished.then(()=>{if(gestures.get(input)===anim)gestures.delete(input);},()=>{});
- };
- on('compositionstart',e=>composing.add(e.target));on('compositionend',e=>{composing.delete(e.target);animate(e.target,-1.25);});
- on('input',e=>{if(!e.isComposing&&!composing.has(e.target))animate(e.target,e.inputType?.startsWith('delete')?1.25:-1.25);});
+ // The document's common input layer animates inserted/deleted graphemes.
+ // Do not also translate the native input: that displaces its caret/IME window.
  const orient=e=>{
   if(!e.target.matches('select'))return;
   const rect=e.target.getBoundingClientRect();
   e.target.style.setProperty('--r3-menu-origin',win.innerHeight-rect.bottom<Math.min(288,e.target.options.length*36)&&rect.top>win.innerHeight-rect.bottom?'bottom':'top');
  };on('pointerdown',orient);on('keydown',orient);
- doc.addEventListener('visibilitychange',()=>{if(doc.hidden)stop();},{signal:ctl.signal});media.addEventListener?.('change',stop,{signal:ctl.signal});
- return {destroy(){ctl.abort();observer.disconnect();stop();}};
+ return {destroy(){ctl.abort();observer.disconnect();}};
 }

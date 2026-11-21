@@ -7,6 +7,148 @@ import subprocess
 from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
+from r3_workflow_browser_support import inspect_fixture, configure, release
+
+
+def capture_commands(frame):
+    """Observe the canonical adapter without replacing its transport or result."""
+    frame.locator('#order-single').evaluate('''el=>{
+      const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER,request=a.request.bind(a);
+      w.__adminCommands=[];
+      a.request=(path,body,signal)=>{if(body)w.__adminCommands.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
+    }''')
+
+
+def commands(frame):
+    return frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__adminCommands')
+
+
+def receipt_workflow(page, frame, width):
+    panel=frame.locator('.wf-panel')
+    expect(panel.get_by_role('heading',name='영수증 발급',exact=True)).to_be_visible()
+    purchases=panel.get_by_label('결제 내역',exact=True)
+    expect(purchases.locator('option')).to_have_count(3)
+    purchases.select_option('qa-order-paid')
+    expect(panel.get_by_label('발급 주체',exact=True)).to_have_value('order-to-business')
+    panel.get_by_label('받는 곳',exact=True).select_option('site')
+    capture_commands(frame)
+    issue=panel.locator('[data-label="영수증 발급"]')
+    configure(frame,{'requests':{'product POST /receipts':{'scenario':'loading'}}})
+    frame_click(page,issue)
+    expect(issue).to_have_attribute('data-async-phase','pending')
+    expect(purchases).to_be_disabled()
+    expect(panel.locator('.wf-paper')).to_have_count(0)
+    page.keyboard.press('Enter')
+    held=inspect_fixture(frame)
+    assert held['pending']==1 and held['data']['receipts']==[],held
+    assert len(commands(frame))==1,'a duplicate keyboard activation must not issue another request'
+    release(frame,{'requests':{'product POST /receipts':{'scenario':'error','status':503}}})
+    expect(issue).to_have_attribute('data-async-phase','error')
+    expect(panel.locator('.wf-status')).to_have_attribute('data-error','true')
+    expect(purchases).to_be_enabled()
+    expect(purchases).to_have_value('qa-order-paid')
+    assert inspect_fixture(frame)['data']['receipts']==[]
+    configure(frame,{'requests':{'product POST /receipts':{'scenario':'loading'}}})
+    frame_click(page,issue)
+    expect(issue).to_have_attribute('data-async-phase','pending')
+    release(frame)
+    paper=panel.locator('.wf-paper')
+    expect(paper).to_be_visible()
+    expect(issue).to_have_attribute('data-async-phase','success')
+    saved=inspect_fixture(frame)
+    assert len(saved['data']['receipts'])==1,saved
+    item=saved['data']['receipts'][0]
+    assert item['purchaseId']=='qa-order-paid' and item['recipient']['kind']=='site'
+    assert item['paid']==240000 and item['status']=='ISSUED'
+    assert commands(frame)[0]==commands(frame)[1],'retry keeps the immutable payload and idempotency key'
+    expect(paper).to_contain_text(item['number'])
+    expect(paper).to_contain_text('240,000원')
+    expect(paper.locator('code')).to_have_text(item['documentDigest'])
+    expect(panel.get_by_label('발급한 영수증',exact=True)).to_have_value(item['id'])
+    frame_click(page,panel.locator('[data-label="다시 열기"]'))
+    expect(panel.locator('[data-label="다시 열기"]')).to_have_attribute('data-async-phase','success')
+    expect(paper).to_contain_text(item['number'])
+    assert inspect_fixture(frame)['data']['receipts']==[item],'reopening keeps the issued snapshot'
+    frame.locator('#order-single').evaluate('el=>{const w=el.ownerDocument.defaultView;w.__printCalls=0;w.print=()=>{w.__printCalls++;};}')
+    frame_click(page,panel.get_by_role('button',name='인쇄',exact=True))
+    assert frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__printCalls')==1
+    assert any(call['method']=='GET' and call['path']=='/receipts/'+item['id'] for call in inspect_fixture(frame)['calls'])
+    assert saved['source']['kind']=='dummy' and saved['source']['commercial'] is False and saved['source']['persistent'] is False
+    panel.screenshot(path=out/f'receipt-{width}.png',animations='disabled')
+    return {'source':saved['source'],'issued':item,'retryPayloadPreserved':True,'pendingDuplicateBlocked':True,'reopenedSameDocument':True,'printRequested':True,'commercialDocumentIssued':False}
+
+
+def billing_workflow(page, frame, width):
+    panel=frame.locator('.wf-panel')
+    expect(panel.get_by_role('heading',name='별도 청구',exact=True)).to_be_visible()
+    account=panel.get_by_label('청구 계정',exact=True)
+    expect(account.locator('option')).to_have_count(1)
+    subject=panel.get_by_label('청구 내용',exact=True)
+    amount=panel.get_by_label('금액 직접 입력',exact=True)
+    draft=panel.locator('[data-label="임시 저장"]')
+    issue=panel.locator('[data-label="청구서 발급"]')
+    capture_commands(frame)
+    frame_click(page,issue)
+    expect(panel.locator('.wf-status')).to_contain_text('청구 계정, 내용, 금액과 납부 기한')
+    assert commands(frame)==[],'missing required values do not create a draft or issued document'
+    subject.fill('QA 별도 배송비')
+    amount.fill('1234')
+    frame_click(page,panel.locator('.wf-number-pad').get_by_role('button',name='0',exact=True))
+    expect(amount).to_have_value('12340')
+    expect(panel.locator('.wf-amount')).to_have_attribute('aria-label','12,340원')
+    panel.get_by_label('메모 · 선택',exact=True).fill('검토용 저장 내용')
+    panel.get_by_label('납부 기한',exact=True).fill('2026-12-01')
+    configure(frame,{'requests':{'product POST /billing':{'scenario':'loading'}}})
+    frame_click(page,draft)
+    expect(draft).to_have_attribute('data-async-phase','pending')
+    expect(subject).to_be_disabled()
+    expect(amount).to_be_disabled()
+    expect(issue).to_be_disabled()
+    page.keyboard.press('Enter')
+    assert len(commands(frame))==1 and inspect_fixture(frame)['data']['billing']==[]
+    release(frame,{'requests':{'product POST /billing':{'scenario':'error','status':503}}})
+    expect(draft).to_have_attribute('data-async-phase','error')
+    expect(amount).to_be_enabled()
+    expect(amount).to_have_value('12340')
+    expect(subject).to_have_value('QA 별도 배송비')
+    assert inspect_fixture(frame)['data']['billing']==[]
+    configure(frame,{'requests':{'product POST /billing':{'scenario':'loading'}}})
+    frame_click(page,draft)
+    expect(draft).to_have_attribute('data-async-phase','pending')
+    release(frame)
+    expect(panel.locator('.wf-status')).to_have_text('임시 저장했어요.')
+    saved=inspect_fixture(frame)['data']['billing']
+    assert len(saved)==1 and saved[0]['status']=='DRAFT' and saved[0]['revision']==1,saved
+    assert saved[0]['amount']==12340 and saved[0]['accountId']=='qa-store:qa-site'
+    assert commands(frame)[0]==commands(frame)[1],'a failed draft retries its exact saved inputs and request key'
+    draft_id=saved[0]['id']
+    expect(panel.get_by_label('저장한 청구서',exact=True)).to_have_value(draft_id)
+    frame_click(page,panel.get_by_role('button',name='새 청구',exact=True))
+    expect(subject).to_have_value('')
+    expect(amount).to_have_value('')
+    frame_click(page,panel.get_by_role('button',name='불러오기',exact=True))
+    expect(subject).to_have_value('QA 별도 배송비')
+    expect(amount).to_have_value('12340')
+    expect(panel.get_by_label('메모 · 선택',exact=True)).to_have_value('검토용 저장 내용')
+    configure(frame,{'requests':{'product POST /billing':{'scenario':'loading'}}})
+    frame_click(page,issue)
+    expect(issue).to_have_attribute('data-async-phase','pending')
+    expect(draft).to_be_disabled()
+    assert inspect_fixture(frame)['data']['billing'][0]['status']=='DRAFT'
+    release(frame)
+    expect(panel.locator('.wf-status')).to_contain_text('발송과 결제는 아직 진행하지 않았어요.')
+    expect(amount).to_be_disabled()
+    issued=inspect_fixture(frame)['data']['billing']
+    assert len(issued)==1 and issued[0]['id']==draft_id and issued[0]['revision']==2
+    assert issued[0]['status']=='ISSUED' and issued[0]['paid']==0 and issued[0]['deliveryStatus']=='NOT_SENT'
+    frame_click(page,panel.get_by_role('button',name='새 청구',exact=True))
+    expect(subject).to_be_enabled()
+    frame_click(page,panel.get_by_role('button',name='불러오기',exact=True))
+    expect(panel.locator('.wf-status')).to_contain_text('내용을 변경할 수 없어요.')
+    expect(amount).to_have_value('12340')
+    expect(amount).to_be_disabled()
+    panel.screenshot(path=out/f'billing-{width}.png',animations='disabled')
+    return {'source':inspect_fixture(frame)['source'],'issued':issued[0],'draftRetryPreserved':True,'pendingSerialized':True,'savedDocumentReopened':True,'issuedInputsLocked':True,'sent':False,'paid':False}
 
 root=Path(__file__).resolve().parents[1]
 out=root/'artifacts/motion-runtime'
@@ -20,12 +162,18 @@ try:
         for width,reduced in [(390,'reduce'),(1440,'no-preference')]:
             ctx=browser.new_context(viewport={'width':width,'height':900},reduced_motion=reduced)
             page=ctx.new_page()
-            page.goto(c['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+            errors=[]
+            page.on('pageerror',lambda error:errors.append(str(error)))
+            page.goto(c['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
             page.locator('input[name=email]').fill(c['email'])
             page.locator('input[name=password]').fill(c['pass'])
             page.locator('button[type=submit]').click()
             page.wait_for_url('**/ia?view=qa-lab**')
             screens=ReviewScreens(page,c['url'],width)
+            # The helper also supports retained archive tests. This test exercises
+            # the current product-backed QA route and keeps its trusted-pointer setup.
+            page.goto(f"{c['url']}/ia?view=qa-lab&width={width}")
+            expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash',re.compile(r'^[0-9a-f]{64}$'),timeout=30000)
             frame=screens.screen('common','default')
             doc=frame.locator('#order-single')
             expect(doc).to_have_attribute('data-motion-runtime','admin-common')
@@ -86,23 +234,34 @@ try:
                 frame_click(page,sub)
                 nav=panel.locator('.qa-admin-nav-item').nth(1)
                 nav.focus()
-                expect(panel.locator('.qa-nav-hover')).to_have_css('opacity','1')
-                legend=panel.locator('.qa-donut-legend button').first
-                legend.focus()
-                expect(panel.locator('.qa-donut strong')).to_have_text(legend.locator('strong').text_content())
-                frame_click(page,panel.locator('.qa-cost-day').nth(1))
-                expect(panel.locator('.qa-chart-tip')).to_contain_text('비용 미제공')
+                expect(panel.locator('.qa-admin-nav .pm-nav-indicator')).to_have_css('opacity','1')
+                expect(panel.locator('.pm-data-scope')).to_have_text('QA 샘플 사업장')
+                expect(panel.locator('[data-pm-stat] .pm-stat-value')).to_have_text('21건')
+                frame_click(page,panel.locator('[data-pm-stat] [data-period="30"]'))
+                expect(panel.locator('[data-pm-stat] .pm-stat-value')).to_have_text('83건')
+                wheel=panel.locator('.pm-ring-wheel')
+                wheel.press('ArrowRight')
+                expect(wheel).to_have_attribute('aria-valuetext','농장 4건')
+                expect(panel.locator('.pm-ring-readout strong')).to_have_text('4건')
+                expect(panel.locator('.pm-ring-wheel g path')).to_have_count(3)
+                plot=panel.locator('[data-pm-metric] .pm-plot')
+                frame_click(page,plot,position={'x':2,'y':50})
+                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text('검토 1일 · 1건')
+                plot.press('End')
+                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text('검토 7일 · 7건')
+                plot.press('Shift+ArrowLeft')
+                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text('검토 6일 – 검토 7일 · 합계 13건')
                 grid=panel.locator('.qa-widget-grid')
-                first=grid.locator(':scope > section').first.locator('h2').text_content()
+                first=grid.locator(':scope > [data-widget-id]').first.locator('h2').text_content()
                 frame_click(page,panel.get_by_role('button',name='위젯 배치'))
                 frame_click(page,panel.get_by_role('button',name='뒤로',exact=True))
-                assert grid.locator(':scope > section').nth(1).locator('h2').text_content()==first
-                frame_click(page,panel.get_by_role('button',name='너비 변경'))
+                assert grid.locator(':scope > [data-widget-id]').nth(1).locator('h2').text_content()==first
+                frame_click(page,panel.locator('[data-layout=size]'))
                 expect(grid.locator('.qa-widget-expanded')).to_have_count(1)
                 frame_click(page,panel.get_by_role('button',name='배치 적용'))
                 expect(panel.get_by_role('button',name='위젯 배치')).to_be_visible()
                 page.reload()
-                expect(grid.locator(':scope > section').nth(1).locator('h2')).to_have_text(first)
+                expect(grid.locator(':scope > [data-widget-id]').nth(1).locator('h2')).to_have_text(first)
                 expect(grid.locator('.qa-widget-expanded')).to_have_count(1)
                 panel.screenshot(path=out/'admin-overview-1440.png',animations='disabled')
                 loading=screens.screen('admin-overview','loading')
@@ -123,19 +282,24 @@ try:
                 item=f.locator('.ops-funnel button').nth(2)
                 item.focus()
                 expect(f.locator('.ops-chart-output')).to_have_text(re.compile(item.locator('span').text_content()))
-                receipt=screens.screen('receipt','before')
-                frame_click(page,receipt.locator('[data-qa-action=issue-receipt]'))
-                expect(receipt.locator('.qa-receipt')).to_have_attribute('data-state','issuing')
-                expect(receipt.locator('.qa-receipt-paper')).to_have_css('animation-name','qaPrintReceipt')
-                expect(receipt.locator('.qa-receipt')).to_have_attribute('data-state','complete')
-                with page.expect_download() as download:
-                    frame_click(page,receipt.get_by_role('button',name='검수용 영수증 예시 HTML 저장'))
-                content=Path(download.value.path()).read_text()
-                assert 'frame-meta' in content and '정산 영수증' in content and '<iframe' not in content
-                assert not re.search(r'<script(?! type="application/json")',content)
-                record['admin']=['sidebar','submenu','shared hover background','ring keyboard','masked chart','widget layout reapplied on same-tab reload','filtered list','metric index']
-                record['receiptDownload']={'type':'projected review HTML','name':download.value.suggested_filename,'commercialDocumentIssued':False}
+                record['admin']=['sidebar','submenu','shared spring nav indicator','actual fixture stat period','ring arcs and keyboard','actual fixture metric pointer and range','widget layout reapplied on same-tab reload','filtered list','metric index']
                 record['selectedLoading']=['held until controlled response','complete → normal','offline → retry state']
+            record['receipt']=receipt_workflow(page,screens.screen('receipt','before'),width)
+            if width==1440:
+                # The former receipt-local demo download is superseded by the
+                # actual print action; the host's script-free review export remains.
+                page.locator('#points').click()
+                page.locator('[data-drawer-tab=settings]').click()
+                with page.expect_download() as download:
+                    page.locator('#export-editable').click()
+                content=Path(download.value.path()).read_text()
+                assert 'frame-meta' in content and '영수증' in content and '<iframe' not in content
+                assert not re.search(r'<script(?! type="application/json")',content)
+                record['receiptDownload']={'type':'projected review HTML','name':download.value.suggested_filename,'commercialDocumentIssued':False}
+                page.locator('#close-drawer').click()
+            record['billing']=billing_workflow(page,screens.screen('admin-billing','draft'),width)
+            assert not errors,errors
+            record['pageErrors']=errors
             evidence.append(record)
             ctx.close()
         browser.close()

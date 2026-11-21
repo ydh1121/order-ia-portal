@@ -7,6 +7,7 @@ import {createHash,randomBytes} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
 import {getQaApplicationDocument,getQaSupplemental} from '../src/server/r3-qa-assets.mjs';
 import {renderProductApplication} from '../src/server/product-app-page.mjs';
+import {renderProductLibraryApplication} from '../src/server/r3-qa-product-page.mjs';
 import {bootProductLab,isProductLiveTarget,productLabPages,renderProductLab} from '../src/server/product-lab-page.mjs';
 import {productBuild} from '../src/server/product-build.gen.mjs';
 import {onRequest as iaPage} from '../functions/ia/[[path]].js';
@@ -130,12 +131,14 @@ test('document, renderer and signed Pages route reject unknown or different-asse
   for(const variantId of [asset.id+'-000000000000',wrongAsset,'<invalid>']){
     assert.equal(await getQaApplicationDocument(screen,state,'email',variantId),null);
     assert.equal(await renderProductApplication(nonce,context,screen,state,'email',variantId),null);
+    assert.equal(await renderProductLibraryApplication(nonce,context,screen,state,'email',variantId),null);
     const result=await page({screen,state,componentVariant:variantId});
     assert.equal(result.status,404);assert.match(result.headers.get('Content-Type'),/^text\/plain/);
   }
   assert.equal(await getQaApplicationDocument('store-purchase','select','email',valid),null);
   assert.equal(await renderProductApplication(nonce,context,'store-purchase','select','email',valid),null);
   assert.equal((await page({screen:'store-purchase',state:'select',componentVariant:valid})).status,404);
+  assert.equal(await renderProductApplication(nonce,context,screen,state,'email',valid),null,'the product owner never builds QA showcase documents');
   const accepted=await page({screen,state,componentVariant:valid});assert.equal(accepted.status,200);
   const doc=domFor(t,await accepted.text()).window.document;
   assert.equal(doc.documentElement.dataset.productComponentVariant,valid);
@@ -146,7 +149,7 @@ test('document, renderer and signed Pages route reject unknown or different-asse
 // this test observes the actual browser bootstrap's identity/ready message only.
 async function readyMessage(t,name,context){
   const variantId=selection(name).variant.id;
-  const html=await renderProductApplication(nonce,context,screen,state,'email',variantId);
+  const html=await renderProductLibraryApplication(nonce,context,screen,state,'email',variantId);
   const dom=domFor(t,html),w=dom.window,messages=[],requests=[];
   w.postMessage=(message,destination)=>messages.push({message:clone(message),destination});
   w.fetch=async(input,init={})=>{requests.push({path:String(input),method:init.method||'GET'});return Response.json({error:'ACCESS_DENIED'},{status:403});};

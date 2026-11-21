@@ -167,8 +167,10 @@ try:
         expect(buyer.locator('#queue-list').get_by_role('button',name='납품 요청')).to_have_count(0)
         admin=operator.locator('#publication')
         for enabled in [True,False]:
-            admin.get_by_role('checkbox').set_checked(enabled)
-            admin.get_by_role('button').click()
+            toggle = admin.get_by_role('switch', name='Order 메뉴 공개')
+            if toggle.get_attribute('aria-checked') != str(enabled).lower():
+                toggle.click()
+            expect(toggle).to_have_attribute('aria-checked', str(enabled).lower())
             expect(operator.locator('#status')).to_have_text('공개 설정을 저장했습니다.')
             assert operator.request.get(base+'/api/order/features').json()=={'orderMenu':enabled}
         for subject,page,width in [('buyer',buyer,390),('supplier',supplier,320),('operator',operator,1440)]:

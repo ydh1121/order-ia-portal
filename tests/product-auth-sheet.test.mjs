@@ -147,6 +147,8 @@ test('signup, its terms draft and OTP use the same canonical modules within one 
  const view=await mount(t,{qa:true});view.open('signup');
  view.sheet().querySelector('[name=email]').value='draft@example.invalid';view.sheet().querySelector('[name=password]').value='Dummy-test-123!';view.sheet().querySelector('[name=password-confirm]').value='Dummy-test-123!';
  view.sheet().querySelector('[data-action=open-terms]').click();assert.equal(view.sheet().dataset.authScreen,'terms');
+ await until(()=>!view.sheet().querySelector('[data-action=terms-done]').disabled,'the controlled policy request supplies the readable terms version');
+ assert.match(view.sheet().querySelector('[data-policy-meta]').textContent,/검수용 본문/);
  view.sheet().querySelector('[name=terms-check]').checked=true;view.sheet().querySelector('[data-action=terms-done]').click();
  assert.equal(view.sheet().dataset.authScreen,'signup');assert.equal(view.sheet().querySelector('[name=email]').value,'draft@example.invalid');assert.equal(view.sheet().querySelector('[name=password]').value,'Dummy-test-123!');assert.equal(view.sheet().querySelector('[name=required-consent]').checked,true);
  view.sheet().querySelector('[name=marketing-consent]').checked=true;view.scenario('complete');view.sheet().querySelector('[data-action=submit-signup]').click();
@@ -163,6 +165,7 @@ test('terms inside the signup sheet retain keyboard focus at both modal boundari
  const view=await mount(t,{qa:true});view.open('signup');
  view.sheet().querySelector('[name=email]').value='draft@example.invalid';
  view.sheet().querySelector('[data-action=open-terms]').click();
+ await until(()=>!view.sheet().querySelector('[data-action=terms-done]').disabled,'the policy response activates the actual final action');
  const {w}=view,dialog=view.sheet().querySelector('[role=dialog]'),first=dialog.querySelector('[data-action=back]'),last=dialog.querySelector('[data-action=terms-done]');
  last.focus();const forward=new w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true});last.dispatchEvent(forward);
  assert.equal(forward.defaultPrevented,true,'Tab at the final terms action remains inside the modal');assert.equal(w.document.activeElement,first);

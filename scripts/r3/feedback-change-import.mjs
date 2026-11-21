@@ -2,7 +2,7 @@
 // from the reviewed IA checkout. This script emits parameters and makes no DB call.
 import {readFile, writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
-import {catalog, release} from '../../src/server/r3-ui/catalog.gen.mjs';
+import {catalog, release} from '../../src/server/product-ui/catalog.gen.mjs';
 
 const [traceFile, output, mode] = process.argv.slice(2);
 if (mode && mode !== '--followup72') throw Error('Unknown import mode');
@@ -11,7 +11,7 @@ if (!traceFile || !output) throw new Error('Usage: node feedback-change-import.m
 const sha = value => createHash('sha256').update(value).digest('hex');
 const source = 'e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
 const trace = JSON.parse(await readFile(traceFile, 'utf8'));
-const catalogFile = await readFile(new URL('../../src/server/r3-ui/catalog.gen.mjs', import.meta.url));
+const catalogFile = await readFile(new URL('../../src/server/product-ui/catalog.gen.mjs', import.meta.url));
 if (trace.sources.originalSha256 !== source || trace.sources.catalogSha256 !== sha(catalogFile))
   throw new Error('Original feedback or current catalog differs from the correction matrix.');
 const byFrame = new Map(catalog.map(row => [row.id, row]));

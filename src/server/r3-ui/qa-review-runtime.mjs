@@ -17,7 +17,8 @@ export function installQaReviewRuntime(session,installFixture,installAdapter){
       const mountedApi={...api,adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
         select(...args){if(sheet?.select(...args))return;preservePurchase();return api.select(...args);}};
       if(module.id==='onboarding')sheet=window.ORDER_AUTH_SHEET?.attach(root,mountedApi,{getState:()=>session.state});
-      const dispose=mount(root,state,mountedApi);
+      const canonical={id:module.id,mount};
+      const dispose=window.ORDER_PRODUCT_UI?.mount(canonical,root,state,mountedApi)||mount(root,state,mountedApi);
       return()=>{sheet?.dispose();dispose?.();};
     };
   }

@@ -8,6 +8,7 @@ import subprocess
 from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
 from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
+from r3_workflow_browser_support import check_consultation_flow
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -134,43 +135,14 @@ def check(page, origin, width):
     skeleton = library.locator("details").filter(has_text="목록 뼈대·데이터 표시")
     frame_click(page, skeleton.locator("summary"))
     frame_click(page, skeleton.locator('[data-mf-go="passes"][data-mf-state="loading"]'))
-    expect(page.frame_locator("#frame").locator(".skeleton-ticket").first).to_be_visible()
+    expect(page.frame_locator("#frame").locator(".r3-geometry-skeleton i").first).to_be_visible()
 
     page.clock.set_fixed_time("2026-12-15T05:00:00Z")
     frame = screen("drawer", "closed")
-    expect(frame.locator("[data-consult-ready=true]")).to_have_count(1)
-    first = frame.locator(".consult-ticket").first
-    frame_click(page, first.locator('[data-action="consult-ticket-detail"]'))
-    expect(first.locator(".ticket-item")).to_have_count(2)
-    frame_click(page, first.locator('[name="consult-pass"]'))
-    frame_click(page, frame.locator('[data-action="open-drawer"]'))
-    frame = page.frame_locator("#frame")
-    expect(frame.locator(".consult-topics")).to_be_visible()
-    expect(frame.locator("[data-consult-ready=true]")).to_have_count(1)
-    expect(frame.locator(".consult-summary")).to_contain_text("샘플베이커리")
-    frame_click(page,frame.get_by_label("납품 일정",exact=True))
-    frame.locator("textarea").fill("제품 검수용 메모")
-    frame_click(page,frame.get_by_role("button",name="시간 선택하기"))
-    expect(frame.locator(".consult-summary")).to_contain_text("제품 검수용 메모")
-    expect(frame.locator(".consult-summary")).to_contain_text("납품 일정")
-    frame = screen("drawer", "booking")
-    frame_click(page, frame.locator('[data-action="choose-consult-date"]'))
-    dialog = frame.get_by_role("dialog", name="상담 희망일")
-    expect(dialog).to_be_visible()
-    expect(dialog.locator('[data-day="2026-12-25"]')).to_be_disabled()
-    expect(dialog.locator('[data-day="2026-12-26"]')).to_be_disabled()
-    expect(dialog.locator('[data-day="2026-12-14"]')).to_be_disabled()
-    frame_click(page, dialog.locator('[data-day="2026-12-17"]'))
-    expect(dialog).to_be_hidden()
-    expect(frame.locator('[data-action="choose-consult-date"] strong')).to_have_text("2026-12-17")
-    frame = screen("drawer", "wheel")
-    expect(frame.locator('[data-hour="9"]')).to_have_count(0)
-    expect(frame.locator('[data-hour="10"]')).to_have_count(1)
-    frame_click(page, frame.locator('[data-hour="18"]'))
-    expect(frame.locator('[data-minute="10"]')).to_be_disabled()
-    frame = screen("drawer", "done")
-    expect(frame.get_by_text("상담을 예약했어요", exact=True)).to_be_visible()
-    expect(frame.locator(".functional-drawer .empty button")).to_have_count(0)
+    consultation = check_consultation_flow(page, frame)
+    receipt_path = ROOT / 'artifacts/motion21/consultation'
+    receipt_path.mkdir(parents=True, exist_ok=True)
+    (receipt_path / f'consultation-{width}.json').write_text(json.dumps(consultation, ensure_ascii=False, indent=2), encoding='utf-8')
     frame = archived.screen("profile", "notification")
     archived.notices()
     read = frame.locator('[data-action="read-notice"]')

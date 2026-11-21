@@ -1,5 +1,5 @@
-import {catalog,frames} from './r3-ui/catalog.gen.mjs';
-import {runtimes} from './r3-ui/runtime.gen.mjs';
+import {catalog,frames} from './product-ui/catalog.gen.mjs';
+import {runtimes} from './product-ui/runtime.gen.mjs';
 import {browserFunction} from './browser-source.mjs';
 
 let bundle;
@@ -120,7 +120,7 @@ export function installProductAuthSheet(registerAccount){
     demoSuccess(button,done,...options){return api.demoSuccess?.(button,result=>{if(epoch===viewEpoch&&holder&&!closing)done?.(result);},...options);}
    };
    disposeShared=window.QAUI?.sharedMount?.(holder,viewApi);
-   disposeView=module.mount(holder,next,viewApi);
+   disposeView=window.ORDER_PRODUCT_UI?.mount(module,holder,next,viewApi)||module.mount(holder,next,viewApi);
    namespace(scene,id);
    if(id==='terms'){
     const signal=new AbortController(),oldDispose=disposeView;

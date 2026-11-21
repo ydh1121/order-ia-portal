@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 // Rebuild only the shared brand/account consumers from a verified immutable
 // checkout. All pre-change artifact hashes, bodies and runtimes remain replayable.
 import fs from 'node:fs/promises';
@@ -75,8 +76,7 @@ const catalog=source.catalog.map(row=>{
   return {...row,current,hashes,authoredChange:true};
 });
 async function rewrite(file,values){
-  const target=new URL(file,directory),text=await fs.readFile(target,'utf8');
-  await fs.writeFile(target,text.split('\n').map(line=>{const name=/^export const (\w+)=/.exec(line)?.[1];return Object.hasOwn(values,name)?'export const '+name+'='+JSON.stringify(values[name])+';':line;}).join('\n'));
+  return updateGeneratedModule(new URL(file,directory),values);
 }
 await rewrite('catalog.gen.mjs',{catalog,frames});
 await rewrite('runtime.gen.mjs',{runtimes});
