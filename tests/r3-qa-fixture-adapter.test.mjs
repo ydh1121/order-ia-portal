@@ -6,6 +6,7 @@ import {installProductAdapter} from '../src/server/product-app-adapter.mjs';
 import {browserFunction} from '../src/server/browser-source.mjs';
 import {getQaApplicationDocument} from '../src/server/r3-qa-assets.mjs';
 import {getProductPanelBootstrap} from '../src/server/product-account-panels.mjs';
+import {qaFixtureForRow,qaSourceForRow} from '../src/server/r3-qa-review-runtime.mjs';
 
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const json=value=>JSON.parse(JSON.stringify(value));
@@ -53,6 +54,28 @@ test('serialized fixture transport identifies dummy data, infers authentication,
  w.ORDER_BRAND_ACCOUNT_CONTEXT.navigate('manage.business');assert.equal(before,1);
  assert.deepEqual(f.messages,[{target:'*',message:{scope:'ORDER_R3_FRAME',channel:'next-channel',artifact:'b'.repeat(64),type:'navigate',payload:{screen:'store-settings',state:'default'}}}]);
  assert.equal(f.network,0);assert.equal(f.storage,0);assert.deepEqual(f.errors,[]);
+});
+
+test('receipt catalog fixtures use issuing personas while explicit buyer review retains access denial',async t=>{
+ for(const [role,persona,model] of [['customer','operator','order-to-business'],['admin','operator','order-to-business'],['supplier','supplier','supplier-to-site']]){
+  const row={screen:'receipt',state:'ready',role},f=await fixture(t,{...row,fixture:qaFixtureForRow(row)});
+  assert.equal(f.adapter.context.persona,persona);
+  const options=await f.adapter.request('/receipt-options');
+  assert.ok(options.items.length>0);assert.ok(options.items.every(item=>item.paid>0&&item.models.length===1&&item.models[0]===model));
+  assert.equal(f.network,0);assert.equal(f.storage,0);
+ }
+ const row={screen:'receipt',state:'ready',role:'customer',fixture:{persona:'buyer'}},denied=await fixture(t,{...row,fixture:qaFixtureForRow(row)});
+ assert.equal(denied.adapter.context.persona,'buyer');
+ await assert.rejects(denied.adapter.request('/receipt-options'),error=>error.status===403&&error.message==='ACCESS_DENIED');
+ assert.equal(denied.adapter.fixture.inspect().data.receipts.length,0);
+});
+
+test('review source fallback identifies product owners and preserves explicit provenance',()=>{
+ assert.deepEqual(qaSourceForRow({screen:'receipt'},'a'.repeat(64)).files,['src/server/product-ui/documents.mjs','src/server/product-ui/modules.mjs']);
+ assert.deepEqual(qaSourceForRow({screen:'login',runtimeFamily:'account'},'b'.repeat(64)).files,['src/server/product-ui/runtime.gen.mjs','scripts/r3/authored/account.js']);
+ const sourceFiles=['src/server/product-workflow-motion.mjs'];
+ assert.deepEqual(qaSourceForRow({screen:'receipt',sourceFiles},'c'.repeat(64)).files,sourceFiles);
+ assert.deepEqual(qaSourceForRow({screen:'receipt',provenance:{files:sourceFiles}},'d'.repeat(64)).files,sourceFiles);
 });
 
 test('memory account and purchase transitions preserve revisions and identities without confirming external payments',async t=>{

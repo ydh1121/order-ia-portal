@@ -18,29 +18,31 @@ from r3_workflow_browser_support import PNG, check_signature_flow, configure, in
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/motion21/workflow'
 REPORT = {}
+WORKFLOWS = ('business', 'receipt-operator', 'receipt-supplier', 'billing', 'signature')
 
 
 def step(name):
     REPORT['lastStep'] = name
 
 
-def save_failure(page, reduced, error):
-    name = '390-reduced' if reduced else '390-motion'
+def save_failure(page, name, error):
     REPORT['error'] = str(error)
-    if page.locator('#frame').count():
-        try:
+    REPORT['errorType'] = type(error).__name__
+    try:
+        if page is not None and not page.is_closed() and page.locator('#frame').count():
             REPORT['frame'] = page.frame_locator('#frame').locator('#order-single').evaluate('''root=>{
               const w=root.ownerDocument.defaultView;
               return {fixture:w.ORDER_APP_ADAPTER?.fixture?.inspect(),frames:w.__workflowFrames||{},requests:w.__workflowRequests||[],signaturePackets:w.__signaturePackets||[],signatureAttachments:w.__signatureAttachments||[],activeElement:root.ownerDocument.activeElement?.outerHTML?.slice(0,600)};
             }''', timeout=2000)
-        except Exception as capture_error:
-            REPORT['captureError'] = str(capture_error)
+    except Exception as capture_error:
+        REPORT['captureError'] = str(capture_error)
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT/f'partial-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
     try:
-        page.screenshot(path=OUT/f'failure-{name}.png', full_page=True)
-    except Exception:
-        pass
+        if page is not None and not page.is_closed():
+            page.screenshot(path=OUT/f'failure-{name}.png', full_page=True)
+    except Exception as capture_error:
+        REPORT['screenshotError'] = str(capture_error)
+    (OUT/f'partial-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 def observe_requests(frame):
@@ -149,6 +151,10 @@ def check_receipt(page, frame, reduced, persona='operator'):
     if persona == 'supplier':
         fixture_persona_remount(frame, persona)
     observe_requests(frame)
+    setup = inspect_fixture(frame)
+    REPORT['receiptSetup'] = {'controls': setup['controls'], 'paidPurchaseIds': [item['id'] for item in setup['data']['purchases'] if item['paid'] > 0], 'calls': setup['calls']}
+    assert setup['controls']['persona'] == persona, REPORT['receiptSetup']
+    assert REPORT['receiptSetup']['paidPurchaseIds'], REPORT['receiptSetup']
     issue = frame.locator('button[data-label="영수증 발급"]')
     expect(issue).to_be_enabled()
     model = frame.locator('.wf-field select').nth(1)
@@ -262,24 +268,61 @@ def check_billing(page, frame, reduced):
     return {'sameDraftRetry': True, 'reloadPreserved': True, 'issuedRevision': saved['revision'], 'paid': saved['paid'], 'deliveryStatus': saved['deliveryStatus'], 'amountFrames': amount_frames}
 
 
-def check(page, origin, reduced):
+def check(page, origin, reduced, workflow):
     step('opening canonical review screens')
     screens = ReviewScreens(page, origin, 390)
-    step('opening canonical business screen')
-    business = check_business(page, screens.screen('business', 'filled'), reduced)
-    REPORT['business'] = business
-    step('opening canonical receipt screen')
-    receipt = screens.screen('receipt', 'before')
-    receipts = REPORT['receipts'] = []
-    receipts.append(check_receipt(page, receipt, reduced))
-    receipts.append(check_receipt(page, receipt, reduced, 'supplier'))
-    step('opening canonical billing screen')
-    billing = check_billing(page, screens.screen('admin-billing', 'draft'), reduced)
-    REPORT['billing'] = billing
-    step('opening canonical signature screen')
-    signature = check_signature_flow(page, screens.screen('signature', 'empty'), on_step=step)
-    REPORT['signature'] = signature
+    if workflow == 'business':
+        step('opening canonical business screen')
+        REPORT['business'] = check_business(page, screens.screen('business', 'filled'), reduced)
+    elif workflow in ('receipt-operator', 'receipt-supplier'):
+        step('opening canonical receipt screen')
+        persona = workflow.removeprefix('receipt-')
+        REPORT['receipts'] = [check_receipt(page, screens.screen('receipt', 'before'), reduced, persona)]
+    elif workflow == 'billing':
+        step('opening canonical billing screen')
+        REPORT['billing'] = check_billing(page, screens.screen('admin-billing', 'draft'), reduced)
+    elif workflow == 'signature':
+        step('opening canonical signature screen')
+        REPORT['signature'] = check_signature_flow(page, screens.screen('signature', 'empty'), on_step=step)
+    else:
+        raise ValueError('Unknown workflow: '+workflow)
     step('complete')
+
+
+def run_case(browser, fixture, workflow, reduced):
+    name = workflow + ('-390-reduced' if reduced else '-390-motion')
+    REPORT.clear()
+    REPORT.update({'case': name, 'workflow': workflow, 'width': 390, 'reducedMotion': reduced, 'scope': 'canonical product UI with a new browser context and isolated frame-memory QA transport', 'commercialWrites': 0, 'lastStep': 'login', 'errors': []})
+    context = page = None
+    try:
+        context = browser.new_context(viewport={'width': 390, 'height': 900}, reduced_motion='reduce' if reduced else 'no-preference')
+        page = context.new_page()
+        errors = REPORT['errors']
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+        page.locator('input[name=email]').fill(fixture['email'])
+        page.locator('input[name=password]').fill(fixture['pass'])
+        page.locator('button[type=submit]').click()
+        page.wait_for_url('**/ia?view=qa-lab**')
+        check(page, fixture['url'], reduced, workflow)
+        assert not REPORT['errors'], REPORT['errors']
+        REPORT['result'] = 'PASS'
+        OUT.mkdir(parents=True, exist_ok=True)
+        (OUT/f'frames-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
+        print('PASS '+name, flush=True)
+    except Exception as error:
+        REPORT['result'] = 'FAIL'
+        save_failure(page, name, error)
+        print('FAIL '+name+' at '+REPORT['lastStep']+': '+str(error), flush=True)
+    finally:
+        if context is not None:
+            try:
+                context.close()
+            except Exception as error:
+                REPORT['result'] = 'FAIL'
+                REPORT['cleanupError'] = str(error)
+                (OUT/f'partial-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
+                print('FAIL '+name+' at context cleanup: '+str(error), flush=True)
     return dict(REPORT)
 
 
@@ -292,33 +335,18 @@ def main():
             reports = []
             try:
                 for reduced in (False, True):
-                    REPORT.clear()
-                    REPORT.update({'width': 390, 'reducedMotion': reduced, 'scope': 'canonical product UI with isolated frame-memory QA transport', 'commercialWrites': 0, 'lastStep': 'login'})
-                    context = browser.new_context(viewport={'width': 390, 'height': 900}, reduced_motion='reduce' if reduced else 'no-preference')
-                    page = context.new_page()
-                    errors = []
-                    REPORT['errors'] = errors
-                    page.on('pageerror', lambda error: errors.append(str(error)))
-                    try:
-                        page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
-                        page.locator('input[name=email]').fill(fixture['email'])
-                        page.locator('input[name=password]').fill(fixture['pass'])
-                        page.locator('button[type=submit]').click()
-                        page.wait_for_url('**/ia?view=qa-lab**')
-                        reports.append(check(page, fixture['url'], reduced))
-                        assert not errors, errors
+                    for workflow in WORKFLOWS:
+                        reports.append(run_case(browser, fixture, workflow, reduced))
+                        # Persist after every isolated case, including failures. A later
+                        # infrastructure interruption must not erase earlier receipts.
                         OUT.mkdir(parents=True, exist_ok=True)
-                        name = '390-reduced' if reduced else '390-motion'
-                        (OUT/f'frames-{name}.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=2), encoding='utf-8')
-                    except Exception as error:
-                        save_failure(page, reduced, error)
-                        raise
-                    finally:
-                        context.close()
+                        (OUT/'receipt.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
             finally:
                 browser.close()
-        OUT.mkdir(parents=True, exist_ok=True)
-        (OUT/'receipt.json').write_text(json.dumps(reports, ensure_ascii=False, indent=2), encoding='utf-8')
+        failed = [report for report in reports if report['result'] != 'PASS']
+        assert len(reports) == len(WORKFLOWS)*2, 'Every workflow must run in normal and reduced motion'
+        if failed:
+            raise AssertionError('Workflow cases failed ('+str(len(failed))+'/'+str(len(reports))+'): '+', '.join(report['case']+' ['+report['lastStep']+']' for report in failed))
         print('PASS canonical business, two receipt models, billing and signed evidence at 390px, normal and reduced motion; RAF receipt saved.')
     finally:
         host.terminate()
