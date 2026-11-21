@@ -35,9 +35,6 @@ export function mountReviewControls(root,state,api) {
     if(old){const replacement=document.createElement('div');replacement.innerHTML=productMotion.renderDashboard(api.dashboardData||{});old.replaceWith(replacement);restorations.push(()=>replacement.replaceWith(old));const stats=one('.qa-stats');if(stats){const hidden=stats.hidden;stats.hidden=true;restorations.push(()=>{stats.hidden=hidden;});}}
   }
   const review=Boolean(adapter?.fixture)||api.mode!=='product';
-  const quickActions=api.quickActions||[['admin-quotes','견적 관리'],['profile','내 계정'],['admin-inquiries','문의 관리']].flatMap(([id,label])=>{
-    const module=window.ORDER_DESIGN_MODULES.find(item=>item.id===id);return module?[{id,label,run:()=>route(id,module.states[0])}]:[];
-  });
   const saveLayout=async(payload,{signal})=>{
     if(review){
       if(typeof api.saveReviewLayout!=='function'||typeof api.demoSuccess!=='function')throw Error('LAYOUT_UNAVAILABLE');
@@ -49,7 +46,7 @@ export function mountReviewControls(root,state,api) {
     if(!adapter?.request)throw Error('LAYOUT_UNAVAILABLE');
     return adapter.request('/settings/dashboard-layout',{expectedRevision:payload.revision,requestKey:payload.requestKey,data:{layout:payload.layout}},signal);
   };
-  const motion=productMotion?.mount(root,{screen:api.screen,reduced:api.reduced,data:api.dashboardData||{},actions:quickActions,
+  const motion=productMotion?.mount(root,{screen:api.screen,reduced:api.reduced,data:api.dashboardData||{},
     ...(review?{}:{loadLayout:({signal})=>adapter.request('/settings/dashboard-layout',null,signal)}),saveLayout});
   const workflow=window.ORDER_WORKFLOW_MOTION?.mount(root,{screen:api.screen,state,adapter,reduced:api.reduced,api});
   on(root,'r3-widget-layout',e=>{

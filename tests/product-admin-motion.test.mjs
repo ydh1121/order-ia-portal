@@ -136,18 +136,31 @@ test('Scroll Index measures real headings, follows scrolling and scrubs the actu
 });
 
 test('Gooey FAB mirrors one spring clock into SVG blobs and crisp buttons, and closes accessibly',t=>{
-  const view=setup(t,{reduced:false});let invoked=0;const c=view.mount({actions:[{id:'account',label:'내 계정',run(){invoked++;}},{id:'alerts',label:'알림',run(){invoked++;}}]});
-  const group=view.root.querySelector('[data-product-gooey]'),trigger=group.querySelector('.pm-gooey-trigger'),item=group.querySelector('.pm-gooey-action'),blobs=group.querySelectorAll('g>circle');
+  const view=setup(t,{reduced:false,html:'<main id="app"><div class="ob-quick"><button data-action="quick" aria-label="알림"><svg class="ob-notice-icon" aria-hidden="true"><path d="M6 6L18 18"/></svg></button></div></main>'});
+  const trigger=view.root.querySelector('[data-action=quick]'),container=trigger.parentElement;let invoked=0;
+  const icon='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6H20V18H4Z"/></svg>';
+  const c=view.mount({trigger,container,actions:[{id:'order-pass',label:'오더 패스',icon,run(){invoked++;}},{id:'market-price',label:'시세 알림',icon,run(){invoked++;}}]});
+  const group=view.root.querySelector('[data-product-gooey]'),items=[...group.querySelectorAll('.pm-gooey-action')],item=items[0],blobs=group.querySelectorAll('g>circle');
+  assert.equal(view.root.querySelectorAll('.pm-gooey-trigger').length,1);assert.equal(view.root.querySelector('.pm-gooey-trigger'),trigger);assert.equal(items.length,2);
   assert.equal(group.querySelector('feColorMatrix').getAttribute('values'),'1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7');
-  trigger.click();view.advance(150);const y=Number(item.style.transform.match(/translateY\(([-.\d]+)/)[1]);assert.equal(Number(blobs[1].getAttribute('cy')),Number((28+y).toFixed(2)),'content and liquid are painted in the same RAF');
+  trigger.click();assert.equal(view.frames.size,1,'both radial actions share one animation clock');view.advance(150);
+  const center={x:Number(blobs[0].getAttribute('cx')),y:Number(blobs[0].getAttribute('cy'))};
+  for(const [i,action]of items.entries()){
+    const [,x,y]=action.style.transform.match(/translate(?:3d)?\(([-.\d]+)px,\s*([-.\d]+)px/).map(Number);
+    assert.ok(x<0&&y<0,'each action moves diagonally instead of in a vertical column');
+    assert.equal(Number(blobs[i+1].getAttribute('cx')),Number((center.x+x).toFixed(2)));
+    assert.equal(Number(blobs[i+1].getAttribute('cy')),Number((center.y+y).toFixed(2)),'content and liquid share both coordinates in the same RAF');
+  }
   view.advance(5000);view.key(trigger,'ArrowUp');assert.equal(view.w.document.activeElement,item);view.key(item,'Escape');assert.equal(trigger.getAttribute('aria-expanded'),'false');assert.equal(item.inert,true);assert.equal(view.w.document.activeElement,trigger);assert.equal(invoked,0);
-  trigger.click();view.advance(5000);item.click();assert.equal(invoked,1);assert.equal(trigger.getAttribute('aria-expanded'),'false');c.destroy();assert.equal(view.root.querySelector('[data-product-gooey]'),null);assert.equal(view.frames.size,0);
+  trigger.click();view.advance(5000);item.click();assert.equal(invoked,1);assert.equal(trigger.getAttribute('aria-expanded'),'false');c.destroy();assert.equal(view.root.querySelector('[data-product-gooey]'),null);assert.equal(view.root.querySelector('.ob-quick>button'),trigger);assert.equal(view.frames.size,0);
 });
 
 test('reduced motion keeps direct manipulation but schedules no chart/ring/FAB spring frames',t=>{
-  const view=setup(t);dashboard(view);view.mount({data:supplied,actions:[{label:'현재 계정',run(){}}]});
+  const view=setup(t);dashboard(view);const container=view.w.document.createElement('div');container.className='ob-quick';container.innerHTML='<button data-action="quick" aria-label="알림"></button>';view.root.append(container);const trigger=container.querySelector('button');
+  const icon='<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6H20V18H4Z"/></svg>';
+  view.mount({data:supplied,trigger,container,actions:[{id:'order-pass',label:'오더 패스',icon,run(){}},{id:'market-price',label:'시세 알림',icon,run(){}}]});
   view.root.querySelector('[data-pm-stat] [data-period=month]').click();view.key(view.root.querySelector('.pm-ring-wheel'),'End');view.root.querySelector('.pm-gooey-trigger').click();
-  assert.equal(view.frames.size,0);assert.equal(view.root.querySelector('.pm-gooey-action').style.transform,'translateY(-66.00px) scale(1.0000)');
+  assert.equal(view.frames.size,0);assert.deepEqual([...view.root.querySelectorAll('.pm-gooey-action')].map(b=>b.style.transform.match(/translate(?:3d)?\(([-.\d]+)px,\s*([-.\d]+)px/).slice(1).map(Number)),[[-82,-20],[-22,-82]]);
   assert.match(productAdminMotionCss,/@media \(prefers-reduced-motion: reduce\)/);
 });
 

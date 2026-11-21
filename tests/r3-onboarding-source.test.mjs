@@ -6,6 +6,7 @@ import {runtimes} from '../src/server/r3-ui/runtime.gen.mjs';
 import {sharedTemplates} from '../src/server/r3-ui/qa-assets.gen.mjs';
 import {mountBrandAccountMenu,brandAccountMenuCss} from '../src/server/order-engine/browser/brand-account-menu.mjs';
 import {mountIntroPagination} from '../scripts/r3/authored/intro-pagination.mjs';
+import {installProductAdminMotion,productAdminMotionCss} from '../src/server/product-admin-motion.mjs';
 
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const source=await readFile(new URL('../scripts/r3/authored/onboarding.js',import.meta.url),'utf8');
@@ -13,13 +14,14 @@ const css=await readFile(new URL('../scripts/r3/authored/onboarding.css',import.
 const core=runtimes.onboarding.slice(0,runtimes.onboarding.indexOf('})(window);')+'})(window);'.length);
 
 function fixture(t,state='guest-1',authenticated=state.startsWith('member-'),context={}){
-  const dom=new JSDOM('<!doctype html><style>'+brandAccountMenuCss+css+'</style><main class="ds" id="root"></main>',{runScripts:'outside-only',pretendToBeVisual:true,url:'https://qa.invalid/'});
+  const dom=new JSDOM('<!doctype html><style>'+brandAccountMenuCss+productAdminMotionCss+css+'</style><main class="ds" id="root"></main>',{runScripts:'outside-only',pretendToBeVisual:true,url:'https://qa.invalid/'});
   const w=dom.window,root=w.document.getElementById('root'),calls=[],captured=new Map();
   w.HTMLElement.prototype.setPointerCapture=function(id){captured.set(id,this);};
   w.HTMLElement.prototype.hasPointerCapture=function(id){return captured.get(id)===this;};
   w.HTMLElement.prototype.releasePointerCapture=function(id){captured.delete(id);};
   w.ORDER_QA_ASSETS=sharedTemplates;
   w.mountBrandAccountMenu=mountBrandAccountMenu;
+  installProductAdminMotion(w);
   w.eval(core+'\nwindow.ORDER_INTRO_PAGINATION=('+mountIntroPagination.toString()+');\n'+source);
   const module=w.ORDER_DESIGN_MODULES.find(row=>row.id==='onboarding');
   root.innerHTML=module.render(state);
@@ -146,7 +148,8 @@ test('the two retained illustrations regain their supplied captions and the memb
   assert.equal(quick.querySelector('.ob-notice-icon').getAttribute('viewBox'),'0 0 24 24');
   assert.equal(quick.querySelectorAll('.ob-notice-icon path').length,2);
   assert.ok(quick.querySelector('.quick-unread[hidden]'));
-  assert.equal(f.w.getComputedStyle(quick).backgroundColor,'rgb(255, 255, 255)');
+  assert.equal(f.root.querySelectorAll('[data-product-gooey]').length,1);
+  assert.equal(quick.closest('[data-product-gooey]'),quick.parentElement);
   const fragment=f.w.document.createElement('div');fragment.innerHTML=f.module.render('guest-2');
   assert.equal(fragment.querySelector('.ob-copy p').textContent,'가격 거품을 최대한 걷어내고국내 최대 규모의 농장에서 직접 배송해요');
   assert.equal(fragment.querySelector('.ob-art-caption').textContent,'당사 1일 출하량 약 120,000 구 이상난각번호 1번, 2번 합산 기준전국 1일 평균 : 약 16,000구');
@@ -155,7 +158,7 @@ test('the two retained illustrations regain their supplied captions and the memb
   assert.equal(fragment.querySelector('.ob-art-caption'),null);
 });
 
-test('the notification button opens the supplied account renderer and shares its live unread count',async t=>{
+test('the existing notification bell offers only Order Pass and market notification routes with its live unread count',async t=>{
   const seen=[],rendered=[];
   const f=fixture(t,'member-1',true,{unread:3,onStateChange:snapshot=>seen.push(snapshot.unread),renderPanel({id,container,setUnread}){
     rendered.push(id);
@@ -163,13 +166,23 @@ test('the notification button opens the supplied account renderer and shares its
     control.addEventListener('click',()=>setUnread(0));container.append(control);
   }});
   const quick=f.root.querySelector('[data-action="quick"]'),badge=quick.querySelector('.quick-unread'),menu=f.root.querySelector('.ob-brand-common').__orderAccountMenu;
+  const actions=[...f.root.querySelectorAll('.pm-gooey-action')];
   assert.equal(badge.textContent,'3');assert.equal(badge.hidden,false);
-  assert.equal(quick.getAttribute('aria-controls'),menu.panel.id);
+  assert.equal(f.root.querySelectorAll('.ob-quick>button').length,1);
+  assert.equal(quick.getAttribute('aria-controls'),f.root.querySelector('.pm-gooey-actions').id);
+  assert.deepEqual(actions.map(button=>button.getAttribute('aria-label')),['오더 패스','시세 알림']);
+  assert.equal(f.root.querySelector('.pm-gooey-label'),null);
   quick.click();
+  assert.equal(quick.getAttribute('aria-expanded'),'true');assert.deepEqual(rendered,[],'the bell opens the radial actions before any account panel');
+  actions[0].click();await Promise.resolve();
+  assert.equal(menu.inspect().page,'manage.quotes');assert.deepEqual(rendered,['manage.quotes']);
+  assert.equal(quick.getAttribute('aria-expanded'),'false');
+  menu.close({immediate:true});await Promise.resolve();
+  quick.click();actions[1].click();
   await Promise.resolve();
   assert.equal(menu.inspect().page,'notifications');
-  assert.deepEqual(rendered,['notifications']);
-  assert.equal(quick.getAttribute('aria-expanded'),'true');
+  assert.deepEqual(rendered,['manage.quotes','notifications']);
+  assert.equal(quick.getAttribute('aria-expanded'),'false');
   menu.panel.querySelector('[data-obm-page="notifications"] .obm-panel-content button').click();
   assert.equal(menu.inspect().unread,0);
   assert.equal(badge.hidden,true);
@@ -178,4 +191,10 @@ test('the notification button opens the supplied account renderer and shares its
   assert.equal(badge.textContent,'5');assert.equal(badge.hidden,false);
   menu.close({immediate:true});
   assert.equal(quick.getAttribute('aria-expanded'),'false');
+  await Promise.resolve();
+  quick.click();
+  f.root.dispatchEvent(new f.w.CustomEvent('r3-onboarding-state',{cancelable:true,detail:{state:'member-2',markup:f.module.render('member-2')}}));
+  assert.equal(f.root.querySelector('[data-action="quick"]'),quick);assert.equal(f.root.querySelectorAll('[data-product-gooey]').length,1);assert.equal(f.root.querySelectorAll('.pm-gooey-action').length,2);
+  assert.equal(quick.getAttribute('aria-expanded'),'false','changing intro steps closes the same existing owner');
+  f.close();assert.equal(f.root.querySelector('[data-product-gooey],.pm-gooey-action'),null);assert.equal(f.root.querySelector('[data-action="quick"]'),quick);
 });

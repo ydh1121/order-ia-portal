@@ -16,6 +16,16 @@
 
 [공유 제품 bootstrap][boot]이 공통·관리자·업무 모션을 설치한다. 제품과 QA 문서가 같은 canonical module을 소비하며, QA의 데이터·성공·실패·지연 상태는 [별도 메모리 transport][fixture]가 제공한다. 문서별 공통 listener와 각 mount의 AbortSignal 수명을 구분한다. QA host/frame의 상태·의견 제어 코드를 제품 모션의 소유자로 바꾸지 않는다.
 
+### Gooey 추가 정정의 소스 연결 — 2026-11-21
+
+[최신 사용자 정정 원문](https://drive.google.com/file/d/1esSQDw-fnDXyXn7z_gjSBXO3p-dHW3tQ/view)은 기존 알림 플로팅 버튼 하나에 Gooey를 적용하고, 오더 패스와 시세 알림의 원형 아이콘 두 개만 부채꼴로 펼치도록 지정한다. 이 추가 정정은 위 21개 집계와 기존 검사 횟수에 합산하지 않는다.
+
+현재 [onboarding 원본](../scripts/r3/authored/onboarding.js)이 기존 종 버튼·컨테이너를 [admin motion][admin]의 `mountGooey`에 넘긴다. 오더 패스는 기존 `deck` SVG와 `brandMenu.open('manage.quotes')`를 사용하며, [제품 계정 패널](../src/server/product-account-panels.mjs)의 `delivery-request/ready` 오더 패스를 연다. 시세 알림은 달걀 안의 백슬래시 SVG와 기존 `brandMenu.open('notifications')`를 사용한다. 텍스트 박스·세로 목록·추가 일반 작업 버튼은 생성하지 않는다. 미읽음 배지·인증과 기존 데이터 처리 경로를 유지한다.
+
+이 단락은 현재 소스 연결을 기록한다. 아래 기존 검사 결과를 이번 정정의 자동검사·실브라우저·배포·사용자 확인 결과로 재사용하지 않는다.
+
+### 기존 21개 작업의 검사 기록
+
 다음 검사 파일은 이 문서 작성 중 로컬에서 통과를 확인했다. 총 67개는 서로 다른 집중 검사 묶음의 합이며, 배포 후보 전체 CI 결과를 뜻하지 않는다.
 
 | 표기 | 파일 | 확인 결과와 범위 |

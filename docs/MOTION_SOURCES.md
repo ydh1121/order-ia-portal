@@ -1,6 +1,6 @@
 # 제품 모션의 출처와 적용 범위
 
-기준일: 2026-11-21. 이 문서는 M01–M27, File drop, 새 Gooey 플로팅 메뉴의 **참조 원본과 실제 사용한 구현 기법**을 기록한다. 기능 검증·실브라우저 관찰·사용자 수용 판정은 [구현 및 검증 매핑](MOTION21_IMPLEMENTATION.md)에서 별도로 관리한다. 출처가 있다는 사실만으로 원본과의 시각적 동등성이나 사용자 승인을 선언하지 않는다.
+기준일: 2026-11-21. 이 문서는 M01–M27, File drop, 기존 알림 플로팅 버튼의 Gooey 메뉴에 사용한 **참조 원본과 실제 구현 기법**을 기록한다. 기능 검증·실브라우저 관찰·사용자 수용 판정은 [구현 및 검증 매핑](MOTION21_IMPLEMENTATION.md)에서 별도로 관리한다. 출처가 있다는 사실만으로 원본과의 시각적 동등성이나 사용자 승인을 선언하지 않는다.
 
 제품과 QA는 같은 `product-ui` 등록 모듈 및 공통 motion 함수를 사용한다. 실제 데이터·인증·저장은 제품 adapter가 담당하고, QA는 명시적인 메모리 fixture adapter를 사용한다. 레퍼런스의 예시 매출, 상점, 계정, 법률 문구와 자동 성공 타이머를 제품 데이터로 가져오지 않는다.
 
@@ -77,9 +77,9 @@
 | M26 Amount pad | K `components/kokonutui/amount-pad.tsx` | `product-workflow-motion.mjs`의 `amountDigits`, `mount` billing 경로 | 자리별 node, digit 진입 spring, blur/opacity, comma 위치 이동, 제거되는 자리의 독립 exit를 번안한다. 계수와 원화 정수화 범위는 아래 상세에 적었다. 실제 청구 계정·draft·issue·재열기는 제품 API 계약이다. |
 | M27 Business verification / Card field 개량 | K `components/kokonutui/card-field.tsx` — 지정된 입력 UX 참조 | `product-workflow-motion.mjs`의 `mountBusiness`; `product-experience-operations.mjs` | 숫자 입력→검증 중→결과라는 폼 UX를 사업자 정보로 바꿨다. 원본의 카드 브랜드 추정·Luhn·CVC·카드 전체 애니메이션을 실제 차용했다고 주장하지 않는다. 사업자 검증 공급자 호출·권한·revision·응답 판정·등록증 제출은 Order 자체 구현이다. |
 
-## 3. 추가 Gooey FAB와 File drop
+## 3. 기존 알림 FAB의 Gooey와 File drop
 
-### 새 플로팅 작업 메뉴
+### 기존 알림 버튼의 두 아이콘 메뉴
 
 요청한 원본은 [Libraries.dev Gooey](https://libraries.dev/gooey)이며 실제 소스는 G의 다음 파일이다.
 
@@ -91,9 +91,16 @@
 - `packages/liquid-gooey/src/spring.ts`
 - 사용법: `packages/liquid-gooey/README.md`; 사이트 진입점: `sites/gooey/`
 
-`product-admin-motion.mjs`의 공개 `mountGooey(root, actions, options)`는 선명한 DOM 버튼 뒤에 SVG 액체 표면을 두는 구조, blur 6·alpha contrast 18·intercept -7 필터, 동일 spring clock의 버튼 transform과 SVG blob 좌표·반지름 미러링을 번안한다. HTML 버튼 자체에 SVG 필터를 씌워 글자가 번지게 하지 않는다. 현재 메뉴의 spring 계수와 버튼 간격은 제품용 조정값이다. 원본 패키지의 React 트리나 모든 geometry observer를 통째로 포함한 구현은 아니다.
+`product-admin-motion.mjs`의 공개 `mountGooey(root, actions, options)`는 선명한 DOM 아이콘 뒤에 SVG 액체 표면을 두는 구조, blur 6·alpha contrast 18·intercept -7 필터, 동일 spring clock의 버튼 transform과 SVG blob 좌표·반지름 미러링을 번안한다. 두 원형 항목은 X·Y 좌표를 함께 바꿔 부채꼴로 펼치며, 버튼에는 아이콘과 접근성 이름만 둔다. 옆 텍스트 박스와 세로 목록은 만들지 않는다. 현재 메뉴의 spring 계수와 펼침 위치는 제품용 조정값이다. 원본 패키지의 React 트리나 모든 geometry observer를 통째로 포함한 구현은 아니다.
 
-제품 연결은 `src/server/product-ui/bootstrap.mjs`의 `quickActions`와 lifecycle이 담당한다. 관리자 authored 모듈에는 같은 `api.quickActions`를 전달하고, 그 외 제품 frame에도 공통 메뉴를 연결한다. 호출자는 실제 상담·계정·알림 동작을 제공한다. nested panel의 중복 생성, Escape 초점 복귀, 열린 항목의 키보드 초점, reduced motion, destroy 정리를 처리한다. 이전 Liquid Taffy 참조와 새 Libraries.dev 출처를 같은 라이브러리로 표기하지 않는다.
+제품 연결은 [authored onboarding](../scripts/r3/authored/onboarding.js)이 소유한다. 기존 `.ob-quick > button[data-action=quick]`과 그 컨테이너를 `options.trigger`·`options.container`로 넘기며, `mountGooey`는 새 플로팅 버튼을 생성하지 않는다. `product-ui/bootstrap.mjs`는 공통 설치와 root 수명만 관리하고 일반 계정·상담·알림 메뉴를 추가하지 않는다. 관리자 모듈과 중첩 계정 패널·인증 시트도 별도 플로팅 소유자를 만들지 않는다.
+
+| 원형 항목 | 아이콘 | 기존 제품 동작 |
+| --- | --- | --- |
+| 오더 패스 | 공통 `deck` SVG | `brandMenu.open('manage.quotes')` → 기존 `delivery-request/ready`의 오더 패스 앞면·뒷면 |
+| 시세 알림 | 달걀 윤곽 안의 백슬래시 `\` SVG | `brandMenu.open('notifications')` → 기존 알림 조회·읽음 처리 |
+
+기존 종 아이콘·미읽음 배지·인증 상태는 onboarding과 공유 계정 메뉴가 계속 관리한다. Gooey는 펼침 상태·키보드·Escape 초점 복귀·축소 모션·정리를 담당하며, 현재 알림 처리나 오더 패스의 업무 계약을 새로 만들지 않는다. 이 정정의 자동검사·실화면·배포·사용자 판정은 별도로 기록한다. 이전 Liquid Taffy 참조와 Libraries.dev Gooey 출처를 같은 라이브러리로 표기하지 않는다.
 
 ### File drop 보안 요구
 
