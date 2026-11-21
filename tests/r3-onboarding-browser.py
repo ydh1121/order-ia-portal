@@ -1,5 +1,6 @@
 """Check guest/member onboarding, restored auth origin, editable art and footer in the QA frame."""
 import json
+import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -298,6 +299,137 @@ def check_auth_overlay_motion(page, origin, width):
     print('PASS auth entrance and backdrop RAF: one stable canonical sheet and dim, monotonic opacity through the complete exit, preserved focus and normal-motion Escape/drag close')
 
 
+def check_auth_overlay_internal_transition(page, origin, width):
+    """Use trusted activation and RAF to check both settled and interrupted login→signup."""
+    out = ROOT / 'artifacts' / 'r3-auth-motion'
+    out.mkdir(parents=True, exist_ok=True)
+    git_head, git_tree = subprocess.check_output(
+        ['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], cwd=ROOT, text=True).splitlines()
+    source_hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in (
+        'src/server/product-auth-sheet.mjs', 'scripts/r3/authored/account.js',
+        'src/server/r3-common-motion.mjs', 'src/server/product-ui/runtime.gen.mjs',
+        'src/server/product-ui/catalog.gen.mjs')}
+    for interrupted in (False, True):
+        case = 'interrupted' if interrupted else 'settled'
+        report = {'case': case, 'width': width, 'gitHead': git_head, 'gitTree': git_tree,
+                  'sourceHashes': source_hashes, 'result': 'UNVERIFIED', 'errors': [],
+                  'scope': 'canonical product auth in loopback QA fixture; no business writes'}
+        errors = report['errors']
+        on_error = lambda error: errors.append(str(error))
+        page.on('pageerror', on_error)
+        root, probe_started = None, False
+        try:
+            screens = ReviewScreens(page, origin, width)
+            frame = screens.screen('onboarding', 'guest-1')
+            root = frame.locator('#order-single')
+            report['artifactHash'] = page.locator('#frame').get_attribute('data-test-ready-hash')
+            page_url = page.url
+            root.evaluate('''root=>{
+                const receipt={samples:[],entryTrusted:null,transition:null},started=performance.now();
+                const before={document,root,main:root.querySelector('.ob-main'),stage:root.querySelector('.ob-stage')};
+                let holder=null,dim=null,scene=null,raf=0,stopped=false,nextAnimation=1;
+                const animations=new WeakMap();
+                const read=phase=>{
+                    const current=root.querySelector('[data-product-auth-sheet]'),shade=current?.querySelector('.sheet-dim');
+                    if(!shade)return null;
+                    if(!dim){holder=current;dim=shade;scene=current.querySelector('.auth-scene');}
+                    return {phase,t:performance.now()-started,screen:current.dataset.authScreen,
+                        sameHolder:current===holder,sameDim:shade===dim,sameScene:current.querySelector('.auth-scene')===scene,
+                        count:root.querySelectorAll('[data-product-auth-sheet] .sheet-dim').length,
+                        sceneCount:current.querySelectorAll(':scope>.auth-scene').length,
+                        opacity:Number(getComputedStyle(shade).opacity),hidden:shade.hidden,
+                        animations:shade.getAnimations().map(animation=>{
+                            if(!animations.has(animation))animations.set(animation,nextAnimation++);
+                            return {id:animations.get(animation),startTime:animation.startTime,
+                                currentTime:animation.currentTime,playState:animation.playState};
+                        }),sameIntroduction:document===before.document&&root===before.root&&
+                            root.querySelector('.ob-main')===before.main&&root.querySelector('.ob-stage')===before.stage};
+                };
+                const sample=phase=>{const row=read(phase);if(row)receipt.samples.push(row);return row;};
+                const click=event=>{
+                    const target=event.target.closest('button');
+                    if(!root.querySelector('[data-product-auth-sheet]')&&target?.textContent.trim()==='로그인'){
+                        receipt.entryTrusted=event.isTrusted;queueMicrotask(()=>sample('entry'));
+                    }
+                    if(target?.dataset.action!=='signup'||receipt.transition)return;
+                    receipt.transition={trusted:event.isTrusted,before:sample('transition-before')};
+                    queueMicrotask(()=>{receipt.transition.after=sample('transition-after');});
+                };
+                root.addEventListener('click',click,true);
+                const tick=()=>{if(stopped)return;sample('raf');raf=requestAnimationFrame(tick);};
+                raf=requestAnimationFrame(tick);
+                window.__authInternalProbe={receipt,read,finish(){stopped=true;cancelAnimationFrame(raf);
+                    root.removeEventListener('click',click,true);sample('final');return receipt;}};
+            }''')
+            probe_started = True
+            frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
+            root.evaluate('''async(root,interrupted)=>{
+                const start=performance.now();
+                while(performance.now()-start<2000){
+                    const state=window.__authInternalProbe.read('ready');
+                    if(state&&(interrupted?state.opacity>.05&&state.opacity<.90&&state.animations.some(a=>a.playState==='running'):
+                        state.opacity>=.999&&!state.animations.some(a=>a.playState==='running')))return;
+                    await new Promise(requestAnimationFrame);
+                }
+                throw Error(interrupted?'Missed live backdrop entrance window':'Backdrop entrance did not settle');
+            }''', interrupted)
+            # Keyboard activation is trusted and does not wait for a moving sheet to become stable.
+            frame.locator('[data-product-auth-sheet] [data-action="signup"]').press('Enter')
+            root.evaluate('''async()=>{
+                const start=performance.now();
+                while(performance.now()-start<2000){
+                    const probe=window.__authInternalProbe,row=probe.read('wait'),transition=probe.receipt.transition;
+                    if(transition?.after&&row?.screen==='signup'&&row.opacity>=.999&&
+                        row.t-transition.after.t>=180&&!row.animations.some(a=>a.playState==='running'))return;
+                    await new Promise(requestAnimationFrame);
+                }
+                throw Error('Internal signup transition did not settle');
+            }''')
+            report.update(root.evaluate('()=>window.__authInternalProbe.finish()'))
+            probe_started = False
+            samples, transition = report['samples'], report['transition']
+            assert report['entryTrusted'] is True and transition and transition['trusted'] is True, report
+            assert len([row for row in samples if row['phase'] == 'raf']) >= 8, report
+            assert all(row['sameHolder'] and row['sameDim'] and row['count'] == 1 and
+                       row['sceneCount'] == 1 and row['sameIntroduction'] and not row['hidden'] for row in samples), report
+            before, after = transition['before'], transition['after']
+            assert before['screen'] == 'login' and after['screen'] == 'signup', transition
+            assert before['sameScene'] and not after['sameScene'], transition
+            assert all(b['opacity'] >= a['opacity'] - .02 for a, b in zip(samples, samples[1:])), report
+            assert samples[-1]['opacity'] >= .999 and samples[-1]['screen'] == 'signup', report
+            animation_ids = {animation['id'] for row in samples for animation in row['animations']}
+            assert len(animation_ids) == 1, ('Backdrop animation was replaced or restarted', report)
+            if interrupted:
+                assert .01 < before['opacity'] < .99, ('Transition did not interrupt entrance', transition)
+                running = {animation['id']: animation for animation in before['animations'] if animation['playState'] == 'running'}
+                continued = {animation['id']: animation for animation in after['animations']}
+                assert running and running.keys() <= continued.keys(), transition
+                for identity, animation in running.items():
+                    current = continued[identity]
+                    assert current['startTime'] == animation['startTime'], transition
+                    assert animation['currentTime'] is not None and current['currentTime'] >= animation['currentTime'], transition
+            else:
+                assert abs(after['opacity'] - before['opacity']) <= .02, transition
+            assert page.url == page_url
+            expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', report['artifactHash'])
+            assert not errors, errors
+            report['result'] = 'PASS'
+        except Exception as error:
+            report['result'] = 'FAIL'
+            report['failure'] = str(error)
+            raise
+        finally:
+            if probe_started:
+                try:
+                    report.update(root.evaluate('()=>window.__authInternalProbe.finish()'))
+                except Exception as error:
+                    report['probeReadError'] = str(error)
+            page.remove_listener('pageerror', on_error)
+            (out / f'auth-overlay-internal-{case}-{width}.json').write_text(
+                json.dumps(report, ensure_ascii=False, indent=2) + '\n')
+    print('PASS auth login→signup RAF: trusted settled/interrupted transitions retain one backdrop and its animation timeline')
+
+
 def drag_intro(page, frame, *, forward, expected_step):
     title = frame.locator('.ob-copy h1')
     size = title.evaluate('el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})')
@@ -493,7 +625,8 @@ def main():
         fixture=json.loads(host.stdout.readline())
         with sync_playwright() as pw:
             browser=pw.chromium.launch(executable_path=os.environ.get("R3_BROWSER_BINARY") or shutil.which("chromium"))
-            for width in (320,375,390,1440):
+            focused_auth = os.environ.get('R3_AUTH_TRANSITION_ONLY') == '1'
+            for width in ((390,) if focused_auth else (320,375,390,1440)):
                 context=browser.new_context(viewport={"width":width,"height":844},reduced_motion="reduce")
                 page=context.new_page()
                 page.goto(fixture["url"]+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail")
@@ -503,7 +636,9 @@ def main():
                 page.wait_for_url("**/ia?view=qa-lab**")
                 if width == 390:
                     page.emulate_media(reduced_motion="no-preference")
-                    check_auth_overlay_motion(page,fixture["url"],width)
+                    if not focused_auth:
+                        check_auth_overlay_motion(page,fixture["url"],width)
+                    check_auth_overlay_internal_transition(page,fixture["url"],width)
                     context.close()
                     continue
                 if width == 320:
