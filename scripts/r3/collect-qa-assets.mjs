@@ -4,10 +4,11 @@ import {writeFile,readFile} from 'node:fs/promises';
 import {gunzipSync,gzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
-import {catalog,frames} from '../../src/server/r3-ui/catalog.gen.mjs';
+import {catalog,frames} from '../../src/server/product-ui/catalog.gen.mjs';
 import {approvedRegistry} from '../../src/server/r3-ui/approved-registry.mjs';
-import {runtimes} from '../../src/server/r3-ui/runtime.gen.mjs';
-import {registerQaMvp} from '../../src/server/r3-ui/qa-mvp-runtime.mjs';
+import {runtimes} from '../../src/server/product-ui/runtime.gen.mjs';
+import {getQaMvpRuntimeSource} from '../../src/server/r3-ui/qa-mvp-runtime.mjs';
+import {registerProductModules} from '../../src/server/product-ui/modules.mjs';
 import {browserFunction} from '../../src/server/browser-source.mjs';
 import {mountMagneticAction} from '../../src/server/order-engine/browser/magnetic-action.mjs';
 import {mountSheetGesture} from './authored/sheet-motion.mjs';
@@ -66,7 +67,7 @@ function collect(row,html,{supplemental=false,runtime=null}={}){
     const brandConsumer=supplemental||(['onboarding','profile','login','signup','otp','password'].includes(row.screen)&&Boolean(runtimes[family]?.includes('mountBrandAccountMenu')));
     const selector=a.id==='logo-menu'&&brandConsumer?'.brand,.ob-brand':a.selector;
     const elements=[...doc.querySelectorAll(selector)];if(!elements.length)continue;
-    const usage={id:row.id,screen:row.screen,state:row.state,variant:row.variant,label:row.label,stateLabel:row.stateLabel,routes:approvedRegistry[row.screen]?.routeIds||[],source:row.current||digest(html),runtimeFamily:supplemental?'qaMvp':family,runtimeSource:runtime?digest(runtime):family&&runtimes[family]?digest(runtimes[family]):null,...(a.id==='logo-menu'&&brandConsumer?{binding:'mountBrandAccountMenu'}:{}),supplemental,count:elements.length};
+    const usage={id:row.id,screen:row.screen,state:row.state,variant:row.variant,label:row.label,stateLabel:row.stateLabel,routes:approvedRegistry[row.screen]?.routeIds||[],source:row.current||digest(html),runtimeFamily:supplemental?'product':family,runtimeSource:runtime?digest(runtime):family&&runtimes[family]?digest(runtimes[family]):null,...(a.id==='logo-menu'&&brandConsumer?{binding:'mountBrandAccountMenu'}:{}),supplemental,count:elements.length};
     a.usages.push(usage);
     elements.forEach((el,index)=>{
       const component=(a.rootSelector&&el.closest(a.rootSelector))||el;
@@ -95,7 +96,8 @@ const intro=assets.find(a=>a.id==='intro-art');
 if(intro)intro.preview='<img alt="첫 화면 3D 일러스트" width="'+art.width+'" height="'+art.height+'" src="data:image/webp;base64,'+art.data+'">';
 const coreEnd=runtimes.accountFeedback.indexOf('})(window);');
 if(coreEnd<0||!runtimes.accountFeedback.startsWith('(function (w) {'))throw Error('Original shared QAUI core missing');
-const sharedCoreScript=runtimes.accountFeedback.slice(0,coreEnd+'})(window);'.length);
+const originalSharedCore=runtimes.accountFeedback.slice(0,coreEnd+'})(window);'.length);
+const sharedCoreScript=originalSharedCore.replace("if(api.reduced?.())return;const shell=input.closest('.input-shell');","if(w.ORDER_COMMON_MOTION||api.reduced?.())return;const shell=input.closest('.input-shell');");
 const coreBody=sharedCoreScript.slice('(function (w) {'.length,-'})(window);'.length);
 const shellRow=catalog.find(r=>r.id==='admin-settlements/summary/email');
 const shellDom=new JSDOM(body(shellRow)),shell=shellDom.window.document.querySelector('.ops-page');
@@ -125,16 +127,20 @@ try{
 }catch(error){if(error.code!=='ERR_MODULE_NOT_FOUND')throw error;}
 const data=()=>assets.filter(a=>a.usages.length).map(({needle,previewRank,...a})=>({...a,sourceSha256:digest(a.preview)}));
 async function save(){
-  const values={assetPack:gzipSync(JSON.stringify(data())).toString('base64'),brandMotionScript,commonMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,sharedTemplates:{brand,opsShell,supplierOpsShell,libraryCss,introArtSource:'data:image/webp;base64,'+art.data},sharedUiProvenance:{coreSha256:digest(sharedCoreScript),shellId:shellRow.id,shellSource:shellRow.current},qaMvpRuntimeCode:browserFunction(registerQaMvp)};
-  await writeFile(new URL('../../src/server/r3-ui/qa-assets.gen.mjs',import.meta.url),'// Derived from canonical product components. Regenerate with scripts/r3/collect-qa-assets.mjs.\n'+Object.entries(values).map(([k,v])=>'export const '+k+'='+JSON.stringify(v)+';').join('\n')+'\nexport function createSharedUi(w){'+coreBody+'\nreturn w.QAUI;\n}\n');
+  const productValues={brandMotionScript,commonMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,sharedTemplates:{brand,opsShell,supplierOpsShell,introArtSource:'data:image/webp;base64,'+art.data},sharedUiProvenance:{coreSha256:digest(sharedCoreScript),originalCoreSha256:digest(originalSharedCore),shellId:shellRow.id,shellSource:shellRow.current},productRuntimeCode:browserFunction(registerProductModules)};
+  const encode=values=>Object.entries(values).map(([key,value])=>'export const '+key+'='+JSON.stringify(value)+';').join('\n')+'\n';
+  await writeFile(new URL('../../src/server/product-ui/assets.gen.mjs',import.meta.url),'// Canonical product primitives and templates. Regenerate with collect-qa-assets.mjs.\n'+encode(productValues)+'export function createSharedUi(w){'+coreBody+'\nreturn w.QAUI;\n}\n');
+  const reviewValues={assetPack:gzipSync(JSON.stringify(data())).toString('base64'),libraryCss,qaMvpRuntimeCode:getQaMvpRuntimeSource()};
+  const exports=Object.keys(productValues).filter(key=>key!=='sharedTemplates').concat('createSharedUi');
+  await writeFile(new URL('../../src/server/r3-ui/qa-assets.gen.mjs',import.meta.url),'// Review-only asset index and showcase runtime. Product primitives have one owner.\n'+encode(reviewValues)+"export {"+exports.join(',')+"} from '../product-ui/assets.gen.mjs';\nimport {sharedTemplates as productTemplates} from '../product-ui/assets.gen.mjs';\nexport const sharedTemplates={...productTemplates,libraryCss};\n");
 }
 await save();
 if(!process.argv.includes('--core-only')){
   // The first pass makes shared factories available without a generated-module cycle.
   // Supplemental library pages are excluded; they are consumers, never product usages.
-  const {getQaSupplemental}=await import('../../src/server/r3-qa-assets.mjs');
-  const supplemental=await getQaSupplemental();
-  for(const [id,doc] of supplemental.documents)if(doc.row.screen!=='component-library'){
+  const {getProductDocuments}=await import('../../src/server/product-ui/documents.mjs');
+  const supplemental=await getProductDocuments();
+  for(const [id,doc] of supplemental.documents){
     for(const asset of assets){asset.usages=asset.usages.filter(u=>u.id!==id);for(const variant of asset.variants)variant.uses=variant.uses.filter(u=>u.id!==id);asset.variants=asset.variants.filter(v=>v.uses.length);}
     collect({...doc.row,current:digest(doc.body)},doc.body,{supplemental:true,runtime:doc.mount});
   }

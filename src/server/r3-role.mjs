@@ -190,9 +190,9 @@ export async function handleR3Role({request,env,actor,path}) {
     if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
     if(request.headers.get('Origin')!==url.origin || !actor.csrf || request.headers.get('X-IA-CSRF')!==actor.csrf) return json({error:'CSRF_DENIED'},403);
     if((request.headers.get('Content-Type')||'').split(';')[0]!=='application/json')return json({error:'JSON_REQUIRED'},415);
-    if(Number(request.headers.get('Content-Length'))>4096)return json({error:'REQUEST_TOO_LARGE'},413);
+    if(Number(request.headers.get('Content-Length'))>16384)return json({error:'REQUEST_TOO_LARGE'},413);
     const reader=request.body?.getReader(); if(!reader)return json({error:'INVALID_INPUT'},400);
-    const buf=new Uint8Array(4096);let used=0;
+    const buf=new Uint8Array(16384);let used=0;
     for(;;){const {done,value}=await reader.read();if(done)break;if(used+value.length>buf.length){await reader.cancel();return json({error:'REQUEST_TOO_LARGE'},413);}buf.set(value,used);used+=value.length;}
     let input;try{input=readInput(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf.subarray(0,used))));}catch{return json({error:'INVALID_INPUT'},400);}
     if(!input)return json({error:'INVALID_INPUT'},400);

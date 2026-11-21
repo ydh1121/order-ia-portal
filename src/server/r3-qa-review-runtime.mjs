@@ -11,7 +11,8 @@ export function qaFixtureForRow(row){
   const guest=(auth&&!authComplete)||row.screen==='onboarding'&&!row.state.startsWith('member-')||row.state.startsWith('guest-')||['guest','qa-guest'].includes(row.state)||row.screen==='account-settings'&&row.state==='closed'||
     row.screen==='admin-access'||row.screen==='session-access'&&['expired','signed-out','oauth-cancel','unverified','draft'].includes(row.state);
   const scenario=row.state==='qa-loading'?'loading':row.state==='qa-error'?'error':row.state==='qa-empty'?'empty':'normal';
-  return {authenticated:!guest,persona:row.role==='admin'?'operator':row.role==='supplier'?'supplier':'buyer',scenario,
+  const persona=row.role==='supplier'?'supplier':row.role==='admin'||row.screen==='receipt'?'operator':'buyer';
+  return {authenticated:!guest,persona,scenario,
     arrival:row.screen==='onboarding'&&row.state==='member-4'||authComplete,...row.fixture};
 }
 export async function qaReviewHash(row,contentHash){
@@ -26,8 +27,8 @@ export async function qaReviewHashes(row,hashes){
 export function qaSourceForRow(row,contentHash){
   const files=row.sourceFiles||row.provenance?.files||
     (row.screen==='price-workspace'?['src/server/r3-price-workspace-page.mjs','src/server/r3-price-workspace-client.mjs','src/server/r3-price-workspace-model.mjs']:
-      row.runtimeFamily?['src/server/r3-ui/runtime.gen.mjs',...({integratedLogin:['scripts/r3/authored/account.js','scripts/r3/authored/integrated-login.mjs'],accountFeedback:['scripts/r3/authored/account.js'],account:['scripts/r3/authored/account.js'],onboarding:['scripts/r3/authored/onboarding.js'],navigation:['scripts/r3/authored/navigation.js'],business:['scripts/r3/authored/business.js'],questions:['scripts/r3/authored/questions.js'],quoteJourney:['scripts/r3/authored/quote-journey.mjs'],sharedQuoteResult:['src/server/r3-quote-result.mjs'],adminCommon:['scripts/r3/authored/admin-common.mjs'],adminLoading:['scripts/r3/authored/admin-common.mjs','scripts/r3/authored/selected-loading.mjs']}[row.runtimeFamily]||[])]:
-      ['src/server/r3-qa-assets.mjs','src/server/r3-ui/qa-mvp-runtime.mjs']);
+      row.runtimeFamily?['src/server/product-ui/runtime.gen.mjs',...({integratedLogin:['scripts/r3/authored/account.js','scripts/r3/authored/integrated-login.mjs'],accountFeedback:['scripts/r3/authored/account.js'],account:['scripts/r3/authored/account.js'],onboarding:['scripts/r3/authored/onboarding.js'],navigation:['scripts/r3/authored/navigation.js'],business:['scripts/r3/authored/business.js'],questions:['scripts/r3/authored/questions.js'],quoteJourney:['scripts/r3/authored/quote-journey.mjs'],sharedQuoteResult:['src/server/r3-quote-result.mjs'],adminCommon:['scripts/r3/authored/admin-common.mjs'],adminLoading:['scripts/r3/authored/admin-common.mjs','scripts/r3/authored/selected-loading.mjs']}[row.runtimeFamily]||[])]:
+      ['src/server/product-ui/documents.mjs','src/server/product-ui/modules.mjs']);
   return {format:'order-qa-source/v1',mode:'controlled-qa',contentHash,runtimeDigest:qaReviewRuntimeDigest,
     files:[...new Set(files)],sharedFiles:qaReviewRuntimeSources,persistence:'frame-memory',...(row.provenance?{provenance:row.provenance}:{})};
 }

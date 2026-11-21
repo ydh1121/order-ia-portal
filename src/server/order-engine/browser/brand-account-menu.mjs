@@ -121,7 +121,16 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   }
   const root=makePage('root');pages=[root];root.node.dataset.pageId='1';slider.append(root.node);
   function measure(node){return Math.max(144,node.scrollHeight||node.getBoundingClientRect().height||144);}
-  function resize(){if(phase==='closed'||destroyed)return;const current=pages.at(-1),height=measure(current.node)+'px';if(slider.style.height!==height)slider.style.height=height;position();}
+  let resizeMotion=null;
+  function resize(){
+    if(phase==='closed'||destroyed)return;
+    const current=pages.at(-1),height=measure(current.node);
+    if(slider.style.height!==height+'px'){
+      if(win.ORDER_COMMON_MOTION)resizeMotion=win.ORDER_COMMON_MOTION.resize(slider,{height},{duration:time('--stack-height-dur',380)});
+      else slider.style.height=height+'px';
+    }
+    position();
+  }
   function position(){
     if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;
     const x=view?.offsetLeft||0,y=view?.offsetTop||0,width=view?.width||win.innerWidth,height=view?.height||win.innerHeight;
@@ -205,7 +214,10 @@ export function mountBrandAccountMenu(brand, initial = {}) {
   function pageTransition(from,to,back=false,focus=true,enabled=true,progress=0){
     win.clearTimeout(pageTimer);clearPageMotion();const version=++navigation;
     const label=back?null:from.focus?.querySelector?.('.obm-label'),labelBox=label?.getBoundingClientRect(),origin=labelBox?{left:labelBox.left,top:labelBox.top,width:labelBox.width,height:labelBox.height,fontSize:Number.parseFloat(win.getComputedStyle(label).fontSize)}:null;
-    const fromHeight=measure(from.node);from.node.dataset.pageId=back?'2':'1';to.node.dataset.pageId=back?'1':'2';
+    // A quick Back during an expansion starts at the visible intermediate
+    // height, rather than jumping to the outgoing page's full scrollHeight.
+    const fromHeight=slider.getBoundingClientRect().height||measure(from.node);resizeMotion?.cancel();
+    from.node.dataset.pageId=back?'2':'1';to.node.dataset.pageId=back?'1':'2';
     from.node.inert=true;from.node.setAttribute('aria-hidden','true');to.node.inert=false;to.node.removeAttribute('aria-hidden');
     for(const item of to.node.querySelectorAll('[data-obm-selected]'))delete item.dataset.obmSelected;
     const width=slider.getBoundingClientRect().width||Math.max(1,parseFloat(panel.style.width)-20)||300,{fromLayer,toLayer}=stackLayers(from,to,back);
@@ -333,7 +345,7 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     }
   }
   function destroy(){
-    if(destroyed)return;close({focus:false,immediate:true});destroyed=true;++generation;++navigation;halt();cancelArrival();controller.abort();preference?.removeEventListener?.('change',preferenceChanged);win.clearTimeout(pageTimer);win.cancelAnimationFrame?.(frame);observer?.disconnect();for(const page of pages)disposePage(page);player?.destroy?.();panel.remove();
+    if(destroyed)return;close({focus:false,immediate:true});resizeMotion?.cancel();destroyed=true;++generation;++navigation;halt();cancelArrival();controller.abort();preference?.removeEventListener?.('change',preferenceChanged);win.clearTimeout(pageTimer);win.cancelAnimationFrame?.(frame);observer?.disconnect();for(const page of pages)disposePage(page);player?.destroy?.();panel.remove();
     original.parent.insertBefore(svg,original.next?.parentNode===original.parent?original.next:null);trigger.remove();svg.style.opacity='';brand.classList.remove('obm-brand');word?.classList.remove('obm-wordmark');delete brand.dataset.authenticated;delete brand.dataset.accountOpen;delete brand.dataset.accountArrivalCount;delete brand.dataset.motionPaused;delete brand.dataset.motionReduced;
     if(periodOrigin&&period.parentNode!==periodOrigin.parent)periodOrigin.parent.insertBefore(period,periodOrigin.next?.parentNode===periodOrigin.parent?periodOrigin.next:null);
     for(const [key,value] of Object.entries(original.sizing))if(value)brand.style.setProperty(key,value);else brand.style.removeProperty(key);

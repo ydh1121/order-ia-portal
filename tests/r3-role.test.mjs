@@ -4,10 +4,11 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {handleR3Role} from '../src/server/r3-role.mjs';
 import {renderR3RolePage} from '../src/server/r3-role-page.mjs';
+import {signedEvidencePacket} from './r3-evidence-signature.fixture.mjs';
 
 function workspace(){
   const sql=new DatabaseSync(':memory:');
-  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests','0013_owner_session_revocations'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
+  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests','0013_owner_session_revocations','0017_product_operations'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
   const prepare=(query,params=[])=>({query,params,bind:(...v)=>prepare(query,v),first:async()=>sql.prepare(query).get(...params),all:async()=>({results:sql.prepare(query).all(...params)})});
   const db={prepare,batch:async rows=>{sql.exec('BEGIN');try{for(const {query,params} of rows)sql.prepare(query).run(...params);sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}};
   const grant=(actor,role,org,site='')=>sql.prepare('INSERT INTO r3_membership VALUES(?,?,?,?,1)').run(actor,role,org,site);
@@ -105,9 +106,10 @@ test('reprice attachment binds the uploaded receipt to its case and uploader wit
     INSERT INTO r3_price_quote VALUES('q-reprice','buyer','store','one','farm',1,'2020-01-01','2999-01-01','key','hash','digest','{"destination":{"region_code":"r","region_version":"v"}}','{}');`);
   for(const caseId of ['reprice-a','reprice-b'])assert.equal((await run('buyer',caseId,0,'create',{kind:'reprice',orgId:'store',siteId:'one',quoteId:'q-reprice'})).status,200);
   const objects=new Map(),bucket={put:async(k,bytes)=>objects.set(k,new Uint8Array(bytes)),get:async k=>{const b=objects.get(k);return b&&{body:b,size:b.length}},delete:async k=>objects.delete(k)};
-  const pixel=new Uint8Array([79,82,80,88,1,1,0,2,0,2,255,0,255,0]);
-  const saved=await handleR3Role({request:new Request('https://ia.test/api/ia/r3-role/evidence?caseId=reprice-a',{method:'POST',headers:{Origin:'https://ia.test','X-IA-CSRF':'x','Content-Type':'application/vnd.order.masked-rasters','Idempotency-Key':'reprice-upload'},body:pixel}),env:{ORDER_QA_DB:db,ORDER_PRIVATE_EVIDENCE:bucket},actor:{id:'buyer',csrf:'x'}});
-  assert.equal(saved.status,200);const {evidenceId}=await saved.json();
+  const signed=await signedEvidencePacket(),pixel=signed.bytes;
+  const saved=await handleR3Role({request:new Request('https://ia.test/api/ia/r3-role/evidence?caseId=reprice-a',{method:'POST',headers:{Origin:'https://ia.test','X-IA-CSRF':'x','Content-Type':'application/vnd.order.masked-rasters','Idempotency-Key':'reprice-upload','X-Order-Submission':JSON.stringify(signed.header)},body:pixel}),env:{ORDER_QA_DB:db,ORDER_PRIVATE_EVIDENCE:bucket},actor:{id:'buyer',csrf:'x'}});
+  assert.equal(saved.status,200);const {evidenceId,signatureBound}=await saved.json();assert.equal(signatureBound,true);
+  const binding=JSON.parse(sql.prepare("SELECT data_json FROM order_operation WHERE kind='evidence-signature' AND id=?").get(evidenceId).data_json);assert.equal(binding.actorId,'buyer');assert.equal(binding.caseId,'reprice-a');assert.equal(binding.packetDigest,signed.packetDigest);
   const before=sql.prepare("SELECT id,state,revision,evidence_id FROM r3_case WHERE id IN ('reprice-a','reprice-b') ORDER BY id").all();
   const eventsBefore=sql.prepare("SELECT count(*) n FROM r3_case_event WHERE case_id IN ('reprice-a','reprice-b')").get().n;
   assert.equal((await run('buyer','reprice-b',1,'attach',{evidenceId})).status,409,'another case cannot reuse the receipt, even for its uploader');

@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 // One-time, scoped refresh from an immutable source checkout. Run with the path
 // to the verified pre-change checkout; old artifacts and their code stay replayable.
 import fs from 'node:fs/promises';
@@ -111,8 +112,7 @@ const catalog=source.catalog.map(row=>{
   return {...row,current:digest,hashes};
 });
 async function rewrite(name,updates){
-  const file=new URL(name+'.gen.mjs',directory),text=await fs.readFile(file,'utf8');
-  await fs.writeFile(file,text.split('\n').map(line=>{const key=/^export const (\w+)=/.exec(line)?.[1];return Object.hasOwn(updates,key)?'export const '+key+'='+JSON.stringify(updates[key])+';':line;}).join('\n'));
+  return updateGeneratedModule(new URL(name+'.gen.mjs',directory),updates);
 }
 await rewrite('catalog',{catalog,frames});
 await rewrite('runtime',{frameCode,hostCode:browserFunction(bootQaHost),runtimes});

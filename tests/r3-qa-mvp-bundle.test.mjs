@@ -7,13 +7,13 @@ import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 import {getQaSupplemental} from '../src/server/r3-qa-assets.mjs';
 import {publicationIdentity} from '../src/server/r3-qa-publication.mjs';
-import {registerQaMvp} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
+import {getQaMvpRuntimeSource} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
 import {qaMvpRuntimeCode} from '../src/server/r3-ui/qa-assets.gen.mjs';
 import {browserFunction} from '../src/server/browser-source.mjs';
 const {build}=createRequire(new URL('./build-tools/package.json',import.meta.url))('esbuild');
 
 test('supplemental review hashes and publication receipt are invariant under the deployment bundler',async()=>{
-  assert.equal(qaMvpRuntimeCode,browserFunction(registerQaMvp),'regenerate the frozen runtime after changing its source');
+  assert.equal(qaMvpRuntimeCode,getQaMvpRuntimeSource(),'regenerate the frozen runtime after changing its source');
   const directory=await mkdtemp(join(tmpdir(),'qa-mvp-bundle-'));
   try{
     const output=join(directory,'worker.mjs');

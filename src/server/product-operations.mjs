@@ -1,5 +1,6 @@
 // One product service, used by the business route and by the isolated lab.
 // The lab supplies a DB binding and a server-selected identity, never outcomes.
+import {productExperience} from './product-experience-operations.mjs';
 import {handleR3Price} from './r3-price.mjs';
 import {readRoleScope} from './r3-role.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
@@ -218,7 +219,9 @@ export async function handleProductOperations({request,env,actor,path='/',clock=
   if(path==='/account')return json(await account(db,actor,b,now));
   if(path==='/notifications')return json(await notifications(db,actor,b,now));
   if(path.startsWith('/drafts/'))return json(await draft(db,actor,path.slice(8),b,now));
-  const grants=await readRoleScope(db,actor.id);if(!grants.length)fail('NO_BUSINESS_MEMBERSHIP',403);
+  const grants=await readRoleScope(db,actor.id);if(!grants.length&&!path.startsWith('/policies/'))fail('NO_BUSINESS_MEMBERSHIP',403);
+  const experience=await productExperience({db,env,actor,path,b,grants,now},{sql,rows,hash,fail,id,text,integer,project,visible,getOperation,replay,commit});
+  if(experience!==undefined)return json(experience);
   if(path==='/purchase-quote'&&b)return json((await purchaseQuote(db,env,actor,b,grants,now)).result);
   if(path==='/purchases')return json(await purchases(db,env,actor,b,grants,now));
   if(path==='/sales'&&!b){if(!grants.some(g=>g.role==='OPERATOR'))fail('ACCESS_DENIED',403);return json(await purchaseList(db,actor.id,grants,now));}

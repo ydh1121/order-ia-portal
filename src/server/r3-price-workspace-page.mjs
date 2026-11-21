@@ -1,3 +1,4 @@
+import {getProductUiBootstrap} from './product-ui/bootstrap.gen.mjs';
 import {workspaceSharedCss} from './r3-workspace-theme.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {installQaSession} from './qa-session-client.mjs';
@@ -23,10 +24,10 @@ export const priceWorkspaceDocumentCss=workspaceSharedCss+'html,body{margin:0;mi
 // The review frame and the standalone page render this same editor. The outer
 // page header belongs to the standalone document, not to the R1 review shell.
 export function priceWorkspaceFragment({header=true}={}){
-  return {css:priceWorkspaceDocumentCss,body:(header?'<header class="pw-page-header"><div><a href="/ia/">IA 포털</a><span>/</span><h1>단가표</h1></div><nav aria-label="검토 도구"><a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA랩</a></nav></header>':'')+'<div id="price-workspace-app" class="price-workspace"></div>'};
+  return {css:priceWorkspaceDocumentCss+getProductUiBootstrap().css,body:(header?'<header class="pw-page-header"><div><a href="/ia/">IA 포털</a><span>/</span><h1>단가표</h1></div><nav aria-label="검토 도구"><a href="/ia?view=qa-lab" target="_blank" rel="noopener">QA랩</a></nav></header>':'')+'<div id="price-workspace-app" class="price-workspace"></div>'};
 }
 
 export function renderPriceWorkspace(nonce){
   const fragment=priceWorkspaceFragment();
-  return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>단가표 | Order</title><style>'+fragment.css+'</style></head><body class="ds">'+fragment.body+'<script type="module" nonce="'+nonce+'">import "/ia/r3-product/web/common-ui.mjs";'+browserFunction(installQaSession)+'();'+browserFunction(mountPriceWorkspace)+'(document.getElementById("price-workspace-app"),'+browserFunction(createPriceWorkspaceModel)+'(),'+browserFunction(createPriceWorkbookReader)+'(),'+browserFunction(importPriceWorkbook)+','+browserFunction(mountPriceWorkspaceTree)+');</script></body></html>';
+  return '<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>단가표 | Order</title><style>'+fragment.css+'</style></head><body class="ds">'+fragment.body+'<script type="module" nonce="'+nonce+'">import "/ia/r3-product/web/common-ui.mjs";'+getProductUiBootstrap().script+browserFunction(installQaSession)+'();'+browserFunction(mountPriceWorkspace)+'(document.getElementById("price-workspace-app"),'+browserFunction(createPriceWorkspaceModel)+'(),'+browserFunction(createPriceWorkbookReader)+'(),'+browserFunction(importPriceWorkbook)+','+browserFunction(mountPriceWorkspaceTree)+');</script></body></html>';
 }

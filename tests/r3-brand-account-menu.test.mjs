@@ -9,7 +9,7 @@ import * as history from '../src/server/r3-ui/brand-history.gen.mjs';
 import {extendBrandAccountSource} from '../src/server/r3-brand-account-extension.mjs';
 import {extendQuoteSource} from '../src/server/r3-product-extensions.mjs';
 import {mountBrandAccountMenu,brandAccountMenuCss} from '../src/server/order-engine/browser/brand-account-menu.mjs';
-import {registerQaMvp} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
+import {getQaMvpRuntimeSource} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
 import {buyerResultClient,projectBuyerResult} from '../src/server/r3-quote-result.mjs';
 const {quoteJellyRuntime,quoteFiles}=productSources;
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
@@ -298,7 +298,7 @@ test('MVP brand consumers require explicit server authentication and consume arr
     let consumed=0;const supplied=[];
     w.ORDER_APP_CONTEXT={mode:'lab',actor:{id:authenticated?'lab-buyer':'lab-guest',authenticated}};
     w.mountBrandAccountMenu=(brand,options)=>{supplied.push(options);return mountBrandAccountMenu(brand,options);};
-    w.eval('('+registerQaMvp.toString()+')()');
+    w.eval('('+getQaMvpRuntimeSource()+')()');
     const api={screen:'component-library',reduced:()=>true,select(){},brandAccount:{authenticated,consumeArrival(){consumed++;return true;}}};
     const root=w.document.querySelector('#root'),module=w.ORDER_DESIGN_MODULES.find(module=>module.id==='component-library');
     const first=module.mount(root,'components',api),second=module.mount(root,'components',api);

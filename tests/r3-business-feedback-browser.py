@@ -8,6 +8,7 @@ import subprocess
 from playwright.sync_api import expect, sync_playwright
 
 from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
+from r3_workflow_browser_support import check_signature_flow
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts" / "business-date"
@@ -46,12 +47,12 @@ def check_opening_date(page, frame, width):
     assert abs(geometry["left"] * 2 + geometry["width"] - geometry["viewportWidth"]) <= 1.1, geometry
     assert geometry["scrollWidth"] <= geometry["clientWidth"] + 1, geometry
 
-    # Use trusted browser wheel input, then wait for native scrolling and the
-    # selected row to settle. Do not substitute scrollTop or synthetic events.
+    # Use trusted wheel input against the common 3D drum. Observe a centered
+    # settled option and real rotation; do not substitute scrollTop.
     year.evaluate("""el=>{
-        el.__openingNative={wheel:0,scroll:0,end:0};
-        for(const [event,key] of [['wheel','wheel'],['scroll','scroll'],['scrollend','end']])
-            el.addEventListener(event,e=>{if(e.isTrusted)el.__openingNative[key]++;},{passive:true});
+        el.__openingNative={wheel:0,settled:0};
+        el.addEventListener('wheel',e=>{if(e.isTrusted)el.__openingNative.wheel++;},{passive:true});
+        el.addEventListener('r3:wheel-settled',()=>el.__openingNative.settled++);
     }""")
     x, y = frame_pointer_position(page, year)
     page.mouse.move(x, y)
@@ -62,21 +63,26 @@ def check_opening_date(page, frame, width):
         while(performance.now()<deadline){
             await new Promise(requestAnimationFrame);
             const selected=el.querySelector('[aria-selected=true]'),c=el.getBoundingClientRect(),r=selected?.getBoundingClientRect();
-            const now=[el.scrollTop,selected?.id,r?.top].join('|');
+            const now=[el.dataset.wheelPosition,selected?.id,r?.top].join('|');
             stable=now===last?stable+1:0;last=now;
             const offset=r?Math.abs(r.top+r.height/2-c.top-c.height/2):Infinity;
-            if(stable>=4&&offset<=1.1&&el.__openingNative.end>0)
-                return {...el.__openingNative,value:Number(selected.dataset.openingValue),offset};
+            if(stable>=4&&offset<=1.1&&el.__openingNative.settled>0)
+                return {...el.__openingNative,value:Number(selected.dataset.openingValue),offset,transform:selected.style.transform,position:Number(el.dataset.wheelPosition)};
         }
-        throw Error('Native opening-date wheel did not settle on one centered option');
+        throw Error('Opening-date drum did not settle on one centered option');
     }""")
-    assert native["wheel"] > 0 and native["scroll"] > 0, native
+    assert native["wheel"] > 0 and native["settled"] > 0, native
+    assert "rotateX(" in native["transform"] and "translateZ(" in native["transform"], native
+    assert abs(native["position"] - round(native["position"])) < .001, native
     assert 1900 <= native["value"] < 2026, native
     expect(value).to_have_text("2026/11/20")
 
     # Keyboard selection must use the same draft and dependent month/day range.
     year.press("End"); year.press("ArrowUp"); year.press("ArrowUp")
-    month.press("Home"); month.press("ArrowDown"); day.press("End")
+    expect(sheet.get_by_role("heading")).to_contain_text("2024/")
+    month.press("Home"); month.press("ArrowDown")
+    expect(sheet.get_by_role("heading")).to_contain_text("2024/02/")
+    day.press("End")
     expect(sheet.get_by_role("heading")).to_have_text("개업일 [2024/02/29]")
     expect(day.locator('[aria-selected="true"]')).to_have_text("29일")
     expect(day.locator('[data-opening-value="30"]')).to_have_count(0)
@@ -103,7 +109,11 @@ def check_opening_date(page, frame, width):
     frame_click(page, control)
     expect(panel).to_have_attribute("id", panel_id)
     expect(sheet.get_by_role("heading")).to_have_text("개업일 [2024/02/29]")
-    year.press("End"); month.press("End"); day.press("End"); day.press("ArrowDown")
+    year.press("End")
+    expect(sheet.get_by_role("heading")).to_contain_text("2026/")
+    month.press("End")
+    expect(sheet.get_by_role("heading")).to_contain_text("2026/11/")
+    day.press("End"); day.press("ArrowDown")
     expect(sheet.get_by_role("heading")).to_have_text("개업일 [2026/11/20]")
     expect(month.locator('[data-opening-value="12"]')).to_have_count(0)
     expect(day.locator('[data-opening-value="21"]')).to_have_count(0)
@@ -170,10 +180,9 @@ def check(page, origin, width):
     expect(frame.get_by_role("button",name="내 사업장 인증·보완")).to_be_visible()
 
     frame = screen("proof", "empty")
-    expect(frame.get_by_role("heading",name="거래내역 증빙",exact=True)).to_be_visible()
+    expect(frame.get_by_role("heading",name="거래내역 증빙과 서명",exact=True)).to_be_visible()
     expect(frame.get_by_text("거래내역 증빙 시 주의사항",exact=True)).to_be_visible()
     expect(frame.get_by_text("최근 3개월 내 자료",exact=False)).to_be_visible()
-    assert frame.locator("[type=file]").evaluate("el=>el.multiple")
     memo = frame.locator("[name=document-memo]")
     memo.fill("가 A 1 ! 👨‍👩‍👧")
     expect(frame.locator("progress")).to_have_js_property("value",5)
@@ -181,45 +190,23 @@ def check(page, origin, width):
     memo.fill("가"*499 + " 👩‍🍳" + "과")
     expect(frame.locator("progress")).to_have_js_property("value",500)
     expect(memo).to_have_value("가"*499 + " 👩‍🍳")
-    for state, label in [("blocked","이 파일은 차단됐어요."),("error","파일을 올리지 못했어요.")]:
-        frame = screen("proof",state)
-        expect(frame.get_by_role("alert")).to_contain_text(label)
-        expect(frame.get_by_role("alert")).to_contain_text("다시")
+    frame_click(page, frame.get_by_role("button",name="자료와 서명 준비",exact=True))
+    file = frame.locator("[type=file]")
+    expect(file).to_be_visible()
+    assert file.evaluate("el=>el.multiple")
+    file.set_input_files({"name":"invalid-content.png","mimeType":"image/png","buffer":b"not an image"})
+    expect(frame.locator(".wf-status")).to_contain_text("파일을 열 수 없습니다.")
+    expect(frame.locator(".wf-status")).to_contain_text("파일 형식과 크기")
+    expect(frame.locator("canvas[aria-label='1쪽 가림 영역 선택']")).to_have_count(0)
+    expect(memo).to_have_value("가"*499 + " 👩‍🍳")
 
     frame = screen("signature","empty")
-    expect(frame.get_by_role("heading",name="서명이 필요해요")).to_be_visible()
-    expect(frame.get_by_role("button",name="다시 하기")).to_be_visible()
-    thumbnails = frame.locator(".document-thumb")
-    expect(thumbnails).to_have_count(2)
-    frame_click(page, thumbnails.first)
-    dialog = frame.get_by_role("dialog",name="제출 자료 미리보기")
-    expect(dialog).to_be_visible()
-    display = dialog.locator("output")
-    expect(display).to_contain_text("1 / 2")
-    frame_click(page, dialog.get_by_role("button",name="다음"))
-    expect(display).to_contain_text("2 / 2")
-    frame_click(page, dialog.get_by_role("button",name="확대",exact=True))
-    expect(dialog.locator(".document-viewport")).to_have_class("document-viewport is-zoomed")
-    frame_click(page, dialog.get_by_role("button",name="추가 가림"))
-    frame_click(page, dialog.get_by_role("button",name="가운데 행 가리기"))
-    frame_click(page, dialog.get_by_role("button",name="가림 저장"))
-    marker = dialog.locator("canvas").evaluate("c=>Array.from(c.getContext('2d').getImageData(c.width*.2,c.height*.45,1,1).data)")
-    assert marker == [0,0,0,255], marker
-    dialog.get_by_role("button",name="닫기").press("Escape")
-    expect(dialog).to_be_hidden()
-    frame_click(page, frame.get_by_role("button",name="제출하기"))
-    expect(frame.locator(".signature-error")).to_contain_text("서명이 필요해요.")
-    expect(frame.locator(".signature-canvas")).to_be_focused()
-    expect(frame.locator(".signature-canvas")).to_have_attribute("aria-invalid","true")
-    frame = screen("signature", "processing")
-    expect(frame.get_by_role("button",name="제출 중")).to_be_disabled()
-    expect(frame.locator("[data-action=submit-signature] .spinner")).to_be_visible()
-    frame = screen("signature","done")
-    expect(frame.locator("h1")).to_have_count(0)
-    expect(frame.get_by_role("status").filter(has_text="검토를 요청했어요")).to_be_visible()
-    expect(frame.get_by_role("button",name="내 증빙 가리기·제출")).to_be_visible()
+    signed = check_signature_flow(page, frame)
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / f"signature-{width}.json").write_text(json.dumps(signed,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps({"width":width,"business_dropdown_layout_shift_px":after-before,
-                      "proof_limit":500,"signed_gallery_mask_pixel":marker}))
+                      "proof_limit":500,"signed_packet_pages":signed["packets"][-1]["pages"],
+                      "signature_retry_preserved":True}))
 
 
 def main():

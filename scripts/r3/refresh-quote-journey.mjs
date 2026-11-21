@@ -1,3 +1,4 @@
+import {updateGeneratedModule} from './generated-targets.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
@@ -55,11 +56,6 @@ const catalog=data.catalog.map(row=>{
 // Retain previous frame bytes. Immutable history modules own their old scripts
 // and source hashes; this refresh changes only the selected current consumers.
 for(const [file,changes] of [['catalog',{frames,catalog}],['runtime',{runtimes:{...runtimes,...modules},...(resultsOnly?{}:{hostCode:bootQaHost.toString()})}]]){
-  const path=new URL('../../src/server/r3-ui/'+file+'.gen.mjs',import.meta.url);
-  const next=(await readFile(path,'utf8')).split('\n').map(line=>{
-    const name=/^export const (\w+)=/.exec(line)?.[1];
-    return Object.hasOwn(changes,name)?'export const '+name+'='+JSON.stringify(changes[name])+';':line;
-  }).join('\n');
-  await writeFile(path,next);
+  await updateGeneratedModule(new URL('../../src/server/r3-ui/'+file+'.gen.mjs',import.meta.url),changes);
 }
 console.log(JSON.stringify({scope:resultsOnly?'current-quote-results':'quote-journey',changedRows:catalog.filter((row,index)=>row.current!==data.catalog[index].current).length,retainedFrameBodies:Object.keys(data.frames).length}));

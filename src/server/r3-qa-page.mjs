@@ -157,10 +157,10 @@ export async function serveR3Artifact(request,env){
   const bodyDigest=archived?.body??r[sourceVersion];
   const artifactHash=await approvedHash(archived||r,width,sourceVersion);
   if(pinned&&pinned!==artifactHash)return json({error:'UNKNOWN_REVIEW_TARGET'},404);
-  // Old logo/brand bodies remain in the reviewed epoch fragment pack when the
+  // Old interaction/logo/brand bodies remain in the reviewed epoch fragment pack when the
   // current/previous catalogue no longer references them. Their original
   // archive modules are unchanged and need not be duplicated in this bundle.
-  const packed=frames[bodyDigest]||beforeInteraction.archivedBodies[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
+  const packed=frames[bodyDigest]||archivedBodies[bodyDigest]||beforeRework.archivedBodies[bodyDigest];
   const body=packed?await inflate(packed):await resolveR3HistoricalBody(bodyDigest);
   const interactionArchive=archived&&archived===beforeInteraction.archivedRows[r.id];
   const brandArchive=archived&&archived===beforeBrand.archivedRows[r.id];

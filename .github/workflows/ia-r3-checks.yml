@@ -105,26 +105,11 @@ jobs:
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-onboarding-browser.py
-      - name: Check business forms, proof and signature review at three widths
-        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
-        env:
-          R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-business-feedback-browser.py
-      - name: Check pass filtering, tag search, profile settings and booking hours
-        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
-        env:
-          R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-navigation-browser.py
       - name: Check detailed quote lists, keyboard and swipe confirmation
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/r3-questions-browser.py
-      - name: Exercise controlled requests and approved admin interactions in the protected QA frame
-        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
-        env:
-          R3_BROWSER_BINARY: /usr/bin/google-chrome
-        run: python tests/r3-admin-common-browser.py
       - name: Verify pending, failure and retry in the signed price editor
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -179,6 +164,7 @@ jobs:
             artifacts/approved-shell/
             artifacts/motion-runtime/
             artifacts/motion-live/
+            artifacts/motion21/
             artifacts/r3-auth-motion/
             artifacts/business-date/
             artifacts/qa-mvp/
@@ -280,5 +266,130 @@ jobs:
           path: |
             artifacts/logo-correction/
             artifacts/account-panels/
+          if-no-files-found: warn
+          retention-days: 7
+
+  motion21:
+    name: Motion 21 and Gooey browser frames
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install DOM and bundler test dependencies
+        run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
+      - name: Verify canonical product source manifest
+        run: node scripts/build-product-manifest.mjs --check
+      - name: Verify R1 QA and product runtime sources agree
+        run: node scripts/r3/build-qa-review-runtime.mjs --check
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and verify Korean fonts for motion measurements
+        run: |
+          if ! fc-list ':lang=ko' family | grep -F 'Noto Sans CJK' > /dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends fonts-noto-cjk
+            fc-cache -f
+          fi
+          fc-list ':lang=ko:charset=ac00' family | sort -u
+          fc-list ':lang=ko:charset=ac00' family | grep -F 'Noto Sans CJK' > /dev/null
+      - name: Install browser test driver
+        id: browser-deps
+        run: python -m pip install playwright==1.56.0
+      - name: Verify measured text, continuous control motion and reduced motion
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-common-motion-browser.py
+      - name: Verify signed workflow, receipt, billing and evidence motions
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-workflow-motion-browser.py
+      - name: Verify dashboard springs, draggable widgets and Gooey menu
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-admin-motion-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: motion21-browser-receipts
+          path: artifacts/motion21/
+          if-no-files-found: warn
+          retention-days: 7
+
+  product_workflows:
+    name: Product forms, navigation and admin workflows
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install DOM and bundler test dependencies
+        run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
+      - name: Verify canonical product source manifest
+        run: node scripts/build-product-manifest.mjs --check
+      - name: Verify canonical product UI bootstrap
+        run: node scripts/r3/build-product-ui-bootstrap.mjs --check
+      - name: Verify R1 QA and product runtime sources agree
+        run: node scripts/r3/build-qa-review-runtime.mjs --check
+      - name: Check serialized clients after Worker bundling
+        run: |
+          node tests/r3-bundled-clients.mjs
+          node tests/r3-admin-common-dom.mjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and verify Korean fonts for rendered QA
+        run: |
+          if ! fc-list ':lang=ko' family | grep -F 'Noto Sans CJK' > /dev/null; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends fonts-noto-cjk
+            fc-cache -f
+          fi
+          fc-list ':lang=ko:charset=ac00' family | sort -u
+          fc-list ':lang=ko:charset=ac00' family | grep -F 'Noto Sans CJK' > /dev/null
+          fc-match 'sans-serif:lang=ko' --format '%{family} | %{file}\n'
+      - name: Install browser test driver
+        id: browser-deps
+        run: python -m pip install playwright==1.56.0
+      # Preserve each failed outcome while still running the other two scripts.
+      # These three checks moved from ia; no browser scenario runs twice here.
+      - name: Check business forms, proof and signature review at three widths
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-business-feedback-browser.py
+      - name: Check pass filtering, tag search, profile settings and booking hours
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-navigation-browser.py
+      - name: Exercise controlled requests and approved admin interactions in the protected QA frame
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/r3-admin-common-browser.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: product-workflow-browser-receipts
+          path: |
+            artifacts/business-date/
+            artifacts/motion21/consultation/
+            artifacts/motion-runtime/
+            artifacts/frame-pointer/
           if-no-files-found: warn
           retention-days: 7

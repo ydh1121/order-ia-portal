@@ -1,7 +1,7 @@
-import {getQaApplicationDocument,qaMvpCss} from './r3-qa-assets.mjs';
-import {qaMvpRuntimeCode} from './r3-ui/qa-assets.gen.mjs';
+import {getProductApplicationDocument,productUiCss} from './product-ui/documents.mjs';
+import {productRuntimeCode} from './product-ui/assets.gen.mjs';
 import {r3ProductAsset} from './r3-product-page.mjs';
-import {bootBusinessDirectory,businessDirectoryPanelMarkup} from './r3-business-directory-page.mjs';
+import {bootBusinessDirectory,businessDirectoryPanelMarkup} from './product-ui/business-directory.mjs';
 import {browserFunction} from './browser-source.mjs';
 
 const serialized=value=>JSON.stringify(value).replaceAll('<','\\u003c');
@@ -19,7 +19,7 @@ let bundle;
 export function getProductPanelBootstrap(){
  return bundle??=(async()=>{
   const documents=Object.fromEntries(await Promise.all(screens.map(async([screen,state])=>{
-   const document=await getQaApplicationDocument(screen,state);
+   const document=await getProductApplicationDocument(screen,state);
    if(!document)throw Error('PRODUCT_PANEL_DOCUMENT_MISSING: '+screen+'/'+state);
    return [screen+'/'+state,{screen,state,body:document.body}];
   })));
@@ -31,7 +31,7 @@ export function getProductPanelBootstrap(){
   // preserving the existing region implementation without eval or dynamic imports.
   const regionFactory='function(){'+regionSource.replace(/^export /gm,'')+';return {listRegionRoots,listRegionLeaves,regionSelection};}';
   const data={routes,documents,business:businessDirectoryPanelMarkup()};
-  return {script:'('+browserFunction(installProductPanelWorkflows)+')('+serialized(data)+','+qaMvpRuntimeCode+','+browserFunction(bootBusinessDirectory)+','+regionFactory+');',css:qaMvpCss+productPanelCss};
+  return {script:'('+browserFunction(installProductPanelWorkflows)+')('+serialized(data)+','+productRuntimeCode+','+browserFunction(bootBusinessDirectory)+','+regionFactory+');',css:productUiCss+productPanelCss};
  })().catch(error=>{bundle=undefined;throw error;});
 }
 
@@ -144,18 +144,19 @@ export function installProductPanelWorkflows(config,registerRuntime,mountBusines
     const mountCurrent=()=>{
      disposeRuntime?.();disposeShared?.();
      root=canonicalBody(row,id,container);container.replaceChildren(root);
-     disposeShared=window.QAUI?.sharedMount?.(root,api);disposeRuntime=modules.get(screen)?.mount(root,row.state,api);
+     disposeShared=window.QAUI?.sharedMount?.(root,api);disposeRuntime=window.ORDER_PRODUCT_UI?.mount(modules.get(screen),root,row.state,{...api,signal:localSignal})||modules.get(screen)?.mount(root,row.state,api);
      if(typeof disposeRuntime!=='function')throw Error('PRODUCT_PANEL_RUNTIME_MISSING');
      for(const saved of savedFilters){const input=[...root.querySelectorAll('input,select')].find(input=>input.name===saved.name);if(input){input.value=saved.value;window.QAUI?.syncField?.(input);}}
     };
     mountCurrent();
     // The stack keeps its parent DOM for the return animation. Once a child
-    // workflow has run, remount the same canonical parent against fresh server
-    // data when it becomes current again. A completed order must not leave its
-    // old confirmation form or cached empty order list active on Back.
+    // workflow has run, refresh that canonical parent's server data when it
+    // becomes current again. Purchase modules retain their controls and motion
+    // owners while discarding the previous accepted quote and cached list;
+    // modules without a refresh lifecycle are remounted.
     const panel=container.closest('.obm-panel'),menu=[...document.querySelectorAll('.obm-brand')].map(brand=>brand.__orderAccountMenu).find(menu=>menu?.panel===panel);
     if(panel&&menu){
-     const observer=new MutationObserver(()=>{if(alive&&refreshOnReturn&&container.isConnected&&!panel.dataset.stackMoving&&menu.inspect().page===id){refreshOnReturn=false;mountCurrent();}});
+     const observer=new MutationObserver(()=>{if(alive&&refreshOnReturn&&container.isConnected&&!panel.dataset.stackMoving&&menu.inspect().page===id){refreshOnReturn=false;if(!disposeRuntime?.refresh?.())mountCurrent();}});
      observer.observe(panel,{childList:true,subtree:true,attributes:true,attributeFilter:['data-stack-moving']});
      localSignal.addEventListener('abort',()=>observer.disconnect(),{once:true});
     }

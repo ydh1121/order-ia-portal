@@ -1,5 +1,5 @@
-import {catalog,frames} from './r3-ui/catalog.gen.mjs';
-import {runtimes} from './r3-ui/runtime.gen.mjs';
+import {catalog,frames} from './product-ui/catalog.gen.mjs';
+import {runtimes} from './product-ui/runtime.gen.mjs';
 import {browserFunction} from './browser-source.mjs';
 
 let bundle;
@@ -25,9 +25,9 @@ export function getProductAuthSheetBootstrap(){
 
 export const productAuthSheetCss=String.raw`
 .ds .product-auth-sheet{position:fixed;inset:0;z-index:80;isolation:isolate}
-.ds .product-auth-sheet>.auth-scene{position:absolute;inset:0;width:100%;height:100%;background:transparent}
+.ds .product-auth-sheet>.auth-scene{position:absolute;inset:0;width:100%;height:100%;background:transparent;pointer-events:none}
 /* The canonical gesture and WAAPI own translation; generic modal transitions must not trail them. */
-.ds .product-auth-sheet .auth-sheet{bottom:0;left:0;right:0;width:min(100%,460px);max-width:460px;max-height:calc(100% - 20px);margin-inline:auto;overscroll-behavior:contain;transition:none}
+.ds .product-auth-sheet .auth-sheet{bottom:0;left:0;right:0;width:min(100%,460px);max-width:460px;max-height:calc(100% - 20px);margin-inline:auto;overscroll-behavior:contain;transition:none;pointer-events:auto}
 .ds .product-auth-sheet .sheet-dim{position:absolute;inset:0}
 .ds .product-auth-sheet .terms-page{padding:0;min-height:0}
 .ds .product-auth-sheet .terms-page .page-head{margin-top:0}
@@ -48,7 +48,7 @@ export function installProductAuthSheet(registerAccount){
  function attach(root,api,{getState=()=>''}={}){
   root.__orderAuthSheet?.dispose();
   const registry=accounts(),controller=new AbortController();
-  let holder=null,disposeView=null,disposeShared=null,viewEpoch=0,closing=false,disposed=false;
+  let holder=null,shade=null,disposeView=null,disposeShared=null,viewEpoch=0,closing=false,disposed=false;
   let opener=null,originState='',returnTarget=null,previousReturn,background=[],paused=[],menus=[],flight=null;
   const known=id=>['login','signup','otp','password','terms'].includes(id)&&registry.has(id);
   const reduced=()=>Boolean(api.reduced?.());
@@ -71,7 +71,7 @@ export function installProductAuthSheet(registerAccount){
    background=[];paused=[];menus=[];
   }
   function cleanup({focus=true}={}){
-   flight?.cancel();flight=null;clearView();holder?.remove();holder=null;closing=false;
+   flight?.cancel();flight=null;clearView();holder?.remove();holder=null;shade?.destroy();shade=null;closing=false;
    if(window.ORDER_QA_AUTH_RETURN===returnTarget){if(previousReturn===undefined)delete window.ORDER_QA_AUTH_RETURN;else window.ORDER_QA_AUTH_RETURN=previousReturn;}
    returnTarget=null;releaseBackground();
    if(focus&&opener?.isConnected&&!opener.closest('[inert],[hidden]'))opener.focus({preventScroll:true});
@@ -81,8 +81,9 @@ export function installProductAuthSheet(registerAccount){
    closing=true;const sheet=holder.querySelector('.auth-sheet');
    const finish=()=>{cleanup({focus:!after});after?.();};
    if(immediate||reduced()||!sheet?.animate){finish();return;}
-   sheet.inert=true;flight?.cancel();
-   flight=sheet.animate([{transform:sheet.style.transform||'translateY(0)'},{transform:'translateY(105%)'}],{duration:300,easing:'cubic-bezier(.22,1,.36,1)',fill:'forwards'});
+   const from=getComputedStyle(sheet).transform||sheet.style.transform||'translateY(0)';
+   sheet.inert=true;flight?.cancel();shade?.set(false,{duration:250});
+   flight=sheet.animate([{transform:from},{transform:'translateY(105%)'}],{duration:300,easing:'cubic-bezier(.22,1,.36,1)',fill:'forwards'});
    flight.finished.then(()=>{if(!disposed&&holder)finish();},()=>{});
   }
   function toast(message){
@@ -105,8 +106,14 @@ export function installProductAuthSheet(registerAccount){
     const grip=document.createElement('div');grip.className='sheet-handle';grip.setAttribute('aria-hidden','true');sheet.append(grip,...template.content.childNodes);scene.append(dim,sheet);
    }
    scene.querySelector('.auth-background')?.remove();scene.querySelector('.auth-return-action')?.remove();
-   holder.replaceChildren(scene);holder.dataset.authScreen=id;holder.dataset.authState=next;holder.dataset.authVariant='compact';
-   const viewApi={...api,screen:id,variant:'compact',authOriginStep:null,toast,
+   // Keep one backdrop outside the replaceable account view. Login → signup
+   // and terms navigation must not remove/recreate or replay the dark layer.
+   const nextDim=scene.querySelector('.sheet-dim');nextDim?.remove();
+   if(!holder.querySelector(':scope>.sheet-dim')){holder.append(nextDim);shade=window.ORDER_COMMON_MOTION?.backdrop(nextDim);shade?.set(true,{immediate:reduced(),duration:300,from:0});}
+   const previousScene=holder.querySelector(':scope>.auth-scene');if(previousScene)previousScene.replaceWith(scene);else holder.append(scene);
+   holder.dataset.authScreen=id;holder.dataset.authState=next;holder.dataset.authVariant='compact';
+   const viewApi={...api,screen:id,variant:'compact',authOriginStep:null,toast,sheetBackdrop:shade,
+    cancelSheetMotion(){flight?.cancel();flight=null;},
     localState(value){if(epoch!==viewEpoch||closing)return;if(value==='closed')close({immediate:true});else if(holder)holder.dataset.authState=value;},
     select(target,value,...rest){
      if(epoch!==viewEpoch||closing||!holder)return;
@@ -120,12 +127,12 @@ export function installProductAuthSheet(registerAccount){
     demoSuccess(button,done,...options){return api.demoSuccess?.(button,result=>{if(epoch===viewEpoch&&holder&&!closing)done?.(result);},...options);}
    };
    disposeShared=window.QAUI?.sharedMount?.(holder,viewApi);
-   disposeView=module.mount(holder,next,viewApi);
+   disposeView=window.ORDER_PRODUCT_UI?.mount(module,holder,next,viewApi)||module.mount(holder,next,viewApi);
    namespace(scene,id);
    if(id==='terms'){
     const signal=new AbortController(),oldDispose=disposeView;
     window.ORDER_QA_SHEET?.(scene.querySelector('.auth-sheet'),[scene.querySelector('.sheet-handle')],{signal:signal.signal,reduced,close});
-    scene.querySelector('.sheet-dim').addEventListener('click',()=>close(),{signal:signal.signal});
+    holder.querySelector('.sheet-dim').addEventListener('click',()=>close(),{signal:signal.signal});
     holder.addEventListener('keydown',event=>{
      if(event.key==='Escape'){event.preventDefault();close();return;}
      if(event.key!=='Tab'||event.defaultPrevented)return;

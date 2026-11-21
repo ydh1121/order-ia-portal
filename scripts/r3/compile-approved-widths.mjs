@@ -1,7 +1,7 @@
 // Precompute additional QA viewport identities so a cold Pages isolate can serve the catalog immediately.
 import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
-import {catalog} from '../../src/server/r3-ui/catalog.gen.mjs';
+import {catalog} from '../../src/server/product-ui/catalog.gen.mjs';
 import {additionalWidths} from '../../src/server/r3-ui/approved-width-list.mjs';
 
 const hash = value=>createHash('sha256').update(value).digest('hex');

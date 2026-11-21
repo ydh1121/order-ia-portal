@@ -1,3 +1,4 @@
+import {getProductUiBootstrap} from './product-ui/bootstrap.gen.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {priceWorkspaceFragment} from './r3-price-workspace-page.mjs';
 import {mountPriceWorkspace} from './r3-price-workspace-client.mjs';
@@ -138,7 +139,7 @@ async function canonicalModalSource(){
 export async function getPriceWorkspaceQaRuntimeSource(){
   const modal=await canonicalModalSource();
   const config={states:priceWorkspaceQaStates,reference:defaultPriceRows,now:'2026-11-20T00:00:00.000Z'};
-  return modal+'\n('+browserFunction(registerPriceWorkspaceQa)+')('+js(config)+','+[
+  return getProductUiBootstrap().script+'\n'+modal+'\n('+browserFunction(registerPriceWorkspaceQa)+')('+js(config)+','+[
     createPriceWorkspaceModel,createPriceWorkbookReader,importPriceWorkbook,mountPriceWorkspaceTree,mountPriceWorkspace,createPriceWorkspaceQaTransport
   ].map(fn=>'('+browserFunction(fn)+')').join(',')+');';
 }

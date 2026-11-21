@@ -9,6 +9,8 @@ function json(body,status=200) {return new Response(JSON.stringify(body),{status
 export async function handleIaRequest(request,env,dependencies={}) {
   const pathname=new URL(request.url).pathname;
   if(pathname.startsWith('/api/ia/auth/'))return handleOwnerAuthRequest(request,env,dependencies.now);
+  const publicPolicy=pathname.match(/^\/api\/ia\/product\/policies\/(required|privacy|optional)$/);
+  if(publicPolicy&&request.method==='GET'){try{const {readPublishedPolicy}=await import('./product-experience-operations.mjs');return json(await readPublishedPolicy(env.ORDER_PRODUCT_DB||env.ORDER_QA_DB,publicPolicy[1]));}catch(error){return json({error:error.status?error.message:'POLICY_SERVICE_UNAVAILABLE'},error.status||503);}}
   // IMPORTANT: Neither a missing config nor a fabricated header bypasses the server gate.
   let actor;
   try {actor=await (isBusinessSurface(new URL(request.url))?businessActor:requireActor)(request,env,dependencies.fetcher||fetch,dependencies.now)}

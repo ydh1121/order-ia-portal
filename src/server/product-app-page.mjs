@@ -1,9 +1,10 @@
-import {catalog,frames,cssGzip} from './r3-ui/catalog.gen.mjs';
-import {runtimes} from './r3-ui/runtime.gen.mjs';
-import {getQaApplicationDocument} from './r3-qa-assets.mjs';
+import {catalog,frames,cssGzip} from './product-ui/catalog.gen.mjs';
+import {runtimes} from './product-ui/runtime.gen.mjs';
+import {getProductApplicationDocument} from './product-ui/documents.mjs';
+import {getProductUiBootstrap} from './product-ui/bootstrap.gen.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {installProductAdapter} from './product-app-adapter.mjs';
-import {brandMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,commonMotionScript,sharedTemplates} from './r3-ui/qa-assets.gen.mjs';
+import {brandMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,commonMotionScript,sharedTemplates} from './product-ui/assets.gen.mjs';
 import {brandPanelUiCss} from './order-engine/browser/brand-panel-ui.gen.mjs';
 import {getProductPanelBootstrap} from './product-account-panels.mjs';
 import {getProductAuthSheetBootstrap} from './product-auth-sheet.mjs';
@@ -12,11 +13,11 @@ const js=value=>JSON.stringify(value).replaceAll('<','\\u003c');
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const inflate=async value=>new Response(new Blob([Uint8Array.from(atob(value),c=>c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 let styles;
-export function productBootstrap(nonce,context,panels,authSheet){return `<script nonce="${nonce}">${sharedCoreScript}\n${commonMotionScript}\n(${browserFunction(installProductAdapter)})(${js(context)});\n${panels?.script||''}\n${authSheet?.script||''}</script>`;}
+export function productBootstrap(nonce,context,panels,authSheet){return `<script nonce="${nonce}">${sharedCoreScript}\n${commonMotionScript}\n${getProductUiBootstrap().script}\n(${browserFunction(installProductAdapter)})(${js(context)});\n${panels?.script||''}\n${authSheet?.script||''}</script>`;}
 export function injectProductContext(html,nonce,context,panels){
- return html.replace('</head>','<style>'+brandPanelUiCss+(panels?.css||'')+'</style>'+productBootstrap(nonce,context,panels)+'</head>');
+ return html.replace('</head>','<style>'+brandPanelUiCss+getProductUiBootstrap().css+(panels?.css||'')+'</style>'+productBootstrap(nonce,context,panels)+'</head>');
 }
-function bootProductDocument(screen,state,introArtSource){
+function bootProductDocument(screen,state,introArtSource,reviewLibrary=false){
  const root=document.getElementById('order-single'),adapter=window.ORDER_APP_ADAPTER;
  let currentState=state,authSheet=null;
  const announce=()=>window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state:currentState,payload:{path:location.pathname+location.search},componentVariant:document.documentElement.dataset.productComponentVariant||null,source:adapter?.context.source},location.origin);
@@ -39,8 +40,8 @@ function bootProductDocument(screen,state,introArtSource){
     root.dispatchEvent(event);
     if(event.defaultPrevented){currentState=nextState;api.localState(nextState);const url=new URL(location.href);url.searchParams.set('state',nextState);history.replaceState(null,'',url);announce();return;}
    }
-   if(['admin-orders','admin-payments','customer-orders','order-detail','receipt','trade-documents'].includes(next)){next='store-purchase';nextState='select';}
-   if(!['onboarding','login','signup','otp','password','terms','profile','account-settings','store-purchase','delivery-request','admin-shipments','supplier-shipments','admin-analytics','admin-revenue-rules','member-email-templates','component-library'].includes(next)){status('이 화면은 아직 제품 기능에 연결되지 않았어요. 기존 기록에서 설계를 검토할 수 있습니다.');return;}
+   if(['admin-orders','admin-payments','customer-orders','order-detail','trade-documents'].includes(next)){next='store-purchase';nextState='select';}
+   if(!(reviewLibrary&&next==='component-library')&&!['onboarding','login','signup','otp','password','terms','profile','account-settings','store-purchase','delivery-request','admin-shipments','supplier-shipments','admin-analytics','admin-revenue-rules','member-email-templates','business','proof','signature','receipt','admin-billing','admin-overview','drawer'].includes(next)){status('이 화면은 아직 제품 기능에 연결되지 않았어요. 기존 기록에서 설계를 검토할 수 있습니다.');return;}
    const url=new URL(location.href);url.searchParams.set('screen',next);url.searchParams.set('state',nextState||'default');if(next==='component-library'&&typeof nextOptions?.componentVariant==='string'&&/^[-\w]{1,100}$/.test(nextOptions.componentVariant))url.searchParams.set('componentVariant',nextOptions.componentVariant);else url.searchParams.delete('componentVariant');location.assign(url);
   },
   localState(next){document.documentElement.dataset.productState=next;},toast:status,
@@ -51,7 +52,7 @@ function bootProductDocument(screen,state,introArtSource){
  if(screen==='onboarding')authSheet=window.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>currentState});
  const disposeShared=window.QAUI?.sharedMount?.(root,api);
  const module=window.ORDER_DESIGN_MODULES?.find(m=>m.id===screen);
- const dispose=module?.mount?.(root,state,api);
+ const dispose=window.ORDER_PRODUCT_UI?.mount(module,root,state,api)||module?.mount?.(root,state,api);
  if(!module)status('이 화면의 동작 연결을 준비하고 있어요.');
  const accountController=new AbortController();
  if(screen==='profile'){
@@ -69,21 +70,32 @@ export async function renderProductApplication(nonce,context,screen='store-purch
  if(['login','signup','otp'].includes(screen)&&!['empty','error','closed'].includes(state))state='empty';
  if(screen==='password'&&['success','done','sent','complete'].includes(state))state='request';
  if(screen==='account-settings'&&['default','normal'].includes(state)){screen='profile';state='default';}
- if(componentVariant&&(screen!=='component-library'||!/^[-\w]{1,100}$/.test(componentVariant)))return null;
- let document=await getQaApplicationDocument(screen,state,variant,componentVariant);
- if(componentVariant&&document?.componentVariantId!==componentVariant)return null;
+ // Asset indexes and review-only component variants are served by the review adapter.
+ if(componentVariant||screen==='component-library')return null;
+ const workflowDefaults={business:'empty',proof:'empty',signature:'empty',receipt:'before','admin-billing':'draft','admin-overview':'normal',drawer:'info'};
+ if(state==='default'&&workflowDefaults[screen])state=workflowDefaults[screen];
+ let document=await getProductApplicationDocument(screen,state,variant);
  if(document)state=document.row.state;
  if(!document){
-  // Only these source-only surfaces are safe without a business projection.
+  // Authored entry surfaces below connect to the real workflow adapter at mount.
   // Orders, approvals, completed signatures and analytics require their own
   // product adapter; an authored example is never a fallback for a real URL.
-  const pureStates={onboarding:/^(guest|member)-[1-4]$/,login:/^(empty|error|closed)$/,signup:/^(empty|error|closed)$/,otp:/^(empty|error|closed)$/,password:/^(request|empty|error|strong|weak|mismatch)$/,profile:/^(default|notification|empty|menu|restricted)$/,terms:/^(required|optional|withdraw|default)$/};
+  const pureStates={onboarding:/^(guest|member)-[1-4]$/,login:/^(empty|error|closed)$/,signup:/^(empty|error|closed)$/,otp:/^(empty|error|closed)$/,password:/^(request|empty|error|strong|weak|mismatch)$/,profile:/^(default|notification|empty|menu|restricted)$/,terms:/^(required|privacy|optional|missing|withdraw|default)$/,business:/^empty$/,proof:/^(empty|error|format|oversize|blocked)$/,signature:/^(empty|missing)$/,receipt:/^(before|error)$/,'admin-billing':/^(draft|error)$/,'admin-overview':/^(normal|empty|error)$/,drawer:/^(closed|info|booking)$/};
   if(!pureStates[screen]?.test(state))return null;
   const row=catalog.find(r=>r.screen===screen&&r.state===state&&r.variant===variant)||catalog.find(r=>r.screen===screen&&r.variant===variant)||catalog.find(r=>r.screen===screen);
   if(!row)return null;
   const fallback={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member','quote-wait':'member'};
   document={body:await inflate(frames[row.current]),mount:runtimes[row.runtimeFamily||fallback[row.screen]]||'',css:'',row};state=row.state;
  }
+ return renderProductUiDocument(nonce,context,document);
+}
+
+// A caller can compose an independently owned document with the same product
+// transport and UI lifetime. The product renderer never imports that caller.
+export async function renderProductUiDocument(nonce,context,document,{reviewLibrary=false}={}){
+ if(!document?.row||typeof document.body!=='string')return null;
+ const {screen,state}=document.row;
+ if(!/^[a-f0-9]{16,128}$/.test(nonce)||!/^[-\w]{1,100}$/.test(screen)||!/^[-\w]{1,100}$/.test(state))throw Error('INVALID_PRODUCT_ROUTE');
  styles??=inflate(cssGzip);const [css,panels,authSheet]=await Promise.all([styles,getProductPanelBootstrap(),screen==='onboarding'?getProductAuthSheetBootstrap():null]);
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandPanelUiCss+brandAccountCss+panels.css+(authSheet?.css||'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+');</script></body></html>';
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+panels.css+(authSheet?.css||'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
 }

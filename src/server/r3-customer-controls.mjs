@@ -4,6 +4,39 @@ export function createCustomerControls() {
   const motion = (el, keyframes, timing) => !document.hidden && !reduced() && el.animate
     ? el.animate(keyframes, timing) : null;
 
+  function deckLayout(stage,{signal}={}){
+    const jobs=new Map();let revision=0;
+    function cancel(){++revision;for(const [card,job]of jobs){job.animation?.cancel();Object.assign(card.style,job.original);}jobs.clear();delete stage.dataset.r3FlipActive;}
+    function update(write,{animate=true}={}){
+      // Capture the current painted frame before interrupting an earlier flip.
+      const before=new Map([...stage.children].map(card=>[card,card.getBoundingClientRect()]));
+      cancel();const at=revision;
+      const original=new Map([...stage.children].map(card=>[card,{transition:card.style.transition,scale:card.style.scale,translate:card.style.translate}]));
+      for(const card of stage.children)card.style.transition='none';
+      write();
+      // The caller has now put the same cards in its chosen date order. Keep
+      // that order visible as they gather, without a long tail for many cards.
+      const cards=[...stage.children],stagger=Math.min(60,180/Math.max(1,cards.length-1));
+      for(const [index,card] of cards.entries()){
+        const prior=original.get(card)||{transition:card.style.transition,scale:card.style.scale,translate:card.style.translate},from=before.get(card),to=card.getBoundingClientRect();
+        if(!animate||reduced()||!from?.width||!to.width||!from.height||!to.height){Object.assign(card.style,prior);continue;}
+        const scale=from.width/to.width+' '+from.height/to.height;
+        card.style.scale=scale;card.style.translate='0px';
+        const scaled=card.getBoundingClientRect(),translate=(from.left-scaled.left)+'px '+(from.top-scaled.top)+'px';
+        card.style.scale=prior.scale;card.style.translate=prior.translate;
+        // Backwards fill holds the captured painted frame during its delay,
+        // including when another mode change interrupts an unfinished FLIP.
+        const a=motion(card,[{scale,translate},{scale:prior.scale||'1',translate:prior.translate||'0px'}],{duration:420,delay:index*stagger,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});
+        if(!a){Object.assign(card.style,prior);continue;}
+        const job={animation:a,original:prior};jobs.set(card,job);stage.dataset.r3FlipActive='true';
+        a.finished.then(()=>{if(revision!==at||jobs.get(card)!==job)return;a.cancel();Object.assign(card.style,prior);jobs.delete(card);if(!jobs.size)delete stage.dataset.r3FlipActive;},()=>{});
+      }
+    }
+    signal?.addEventListener('abort',cancel,{once:true});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)cancel();},{signal});
+    return {update,cancel};
+  }
+
   function swipeDeck(stage, { enabled, top, step, signal }) {
     let drag = null;
     let suppress = false;
@@ -140,5 +173,5 @@ export function createCustomerControls() {
     signal.addEventListener('abort', () => { ++generation; for (const a of active) a.cancel(); }, { once: true });
     return set;
   }
-  return { motion, swipeDeck, slidePanel, speedDial };
+  return { motion, swipeDeck, deckLayout, slidePanel, speedDial };
 }
