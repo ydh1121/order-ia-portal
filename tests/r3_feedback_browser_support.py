@@ -11,25 +11,49 @@ def prepare_frame_pointer(page):
     if getattr(page, "_qa_pointer_installed", False):
         return
     page._qa_pointer_installed = True
-    page.add_init_script("""if(window!==top && !window.__qaPointerProbeInstalled){
-        window.__qaPointerProbeInstalled=true;
-        window.__qaPointerDocument=String(performance.timeOrigin)+':'+Math.random().toString(36).slice(2);
-        window.__qaPointerReceipts=[];
-        window.__qaPointerTimeline=[];
-        for(const type of ['pointerdown','pointerup','pointercancel','click'])window.addEventListener(type,e=>{
-            const arm=window.__qaArmedPointer;
-            window.__qaPointerTimeline.push({phase:type,at:performance.now(),trusted:e.isTrusted,
-                armed:arm?.id||null,target:e.target?.id||e.target?.localName});
-            if(window.__qaPointerTimeline.length>30)window.__qaPointerTimeline.shift();
-            if(!arm)return;
-            const receipt={
-                id:arm.id,phase:type,trusted:e.isTrusted,hit:arm.el.contains(e.target),
-                pointer:e.pointerType||'mouse'
+    page.add_init_script("""if(window!==top){
+        if(!window.__qaInstallPointerProbe){
+            const types=new Set(['pointerdown','pointerup','pointercancel','click']),seen=new WeakSet();
+            let controller;
+            window.__qaPointerDocument=String(performance.timeOrigin)+':'+Math.random().toString(36).slice(2);
+            window.__qaPointerReceipts=[];
+            window.__qaPointerTimeline=[];
+            const observe=(e,observer)=>{
+                try{
+                    if(!types.has(e.type)||seen.has(e))return;
+                    seen.add(e);
+                    const arm=window.__qaArmedPointer;
+                    window.__qaPointerTimeline.push({phase:e.type,at:performance.now(),trusted:e.isTrusted,
+                        armed:arm?.id||null,target:e.target?.id||e.target?.localName,observer});
+                    if(window.__qaPointerTimeline.length>30)window.__qaPointerTimeline.shift();
+                    if(!arm)return;
+                    const receipt={
+                        id:arm.id,phase:e.type,trusted:e.isTrusted,hit:arm.el.contains(e.target),
+                        pointer:e.pointerType||'mouse',observer
+                    };
+                    window.__qaPointerReceipts.push(receipt);
+                    console.debug('__qa_physical_pointer__'+JSON.stringify(receipt));
+                    if(e.type===arm.last)window.__qaArmedPointer=null;
+                }catch(error){window.__qaPointerObserverError=String(error);}
             };
-            window.__qaPointerReceipts.push(receipt);
-            console.debug('__qa_physical_pointer__'+JSON.stringify(receipt));
-            if(type===arm.last)window.__qaArmedPointer=null;
-        },true);
+            // Archived picking can stop later window-capture listeners. Observe that
+            // same event without changing the native barrier or manufacturing a receipt.
+            const descriptor=Object.getOwnPropertyDescriptor(Event.prototype,'stopImmediatePropagation');
+            const nativeStop=descriptor.value;
+            Object.defineProperty(Event.prototype,'stopImmediatePropagation',{...descriptor,value:function(...args){
+                const result=Reflect.apply(nativeStop,this,args);
+                observe(this,'capture-barrier');
+                return result;
+            }});
+            window.__qaInstallPointerProbe=()=>{
+                controller?.abort();
+                controller=new AbortController();
+                for(const type of types)window.addEventListener(type,e=>observe(e,'capture'),
+                    {capture:true,signal:controller.signal});
+                window.__qaPointerProbeInstalled=true;
+            };
+        }
+        window.__qaInstallPointerProbe();
     }else if(window===top){
         window.__qaFrameTimeline=[];
         window.addEventListener('message',e=>{
@@ -162,6 +186,7 @@ def frame_click(page, locator, position=None, *, activation="click"):
     x, y = frame_pointer_position(page, locator, position)
     request_id = uuid4().hex
     armed = locator.evaluate("""(el,arg)=>{
+        window.__qaInstallPointerProbe();
         window.__qaPointerReceipts=[];window.__qaArmedPointer={el,id:arg.id,last:arg.last};
         return {document:window.__qaPointerDocument,at:performance.now(),
             veilHidden:document.getElementById('r3-veil')?.hidden,
@@ -199,6 +224,7 @@ def frame_click(page, locator, position=None, *, activation="click"):
                 armedRequest:window.__qaArmedPointer?.id||null,
                 receipts:window.__qaPointerReceipts||[],
                 recentEvents:window.__qaPointerTimeline||[],
+                observerError:window.__qaPointerObserverError||null,
                 veilHidden:document.getElementById('r3-veil')?.hidden,
                 activeElement:document.activeElement?.id||document.activeElement?.localName
             })""")
