@@ -352,11 +352,19 @@ def check_auth_overlay_internal_transition(page, origin, width):
                         receipt.entryTrusted=event.isTrusted;queueMicrotask(()=>sample('entry'));
                     }
                     if(target?.dataset.action!=='signup'||receipt.transition)return;
-                    receipt.transition={trusted:event.isTrusted,before:sample('transition-before')};
-                    queueMicrotask(()=>{receipt.transition.after=sample('transition-after');});
+                    receipt.transition={action:target.dataset.action,trusted:event.isTrusted,before:sample('transition-before')};
+                    queueMicrotask(()=>{receipt.transition.microtask=sample('transition-microtask');});
                 };
                 root.addEventListener('click',click,true);
-                const tick=()=>{if(stopped)return;sample('raf');raf=requestAnimationFrame(tick);};
+                const tick=()=>{
+                    if(stopped)return;
+                    const row=sample('raf'),transition=receipt.transition;
+                    // A capture listener's microtask can precede the product click handler.
+                    // Bind the completed scene observation to this activation's first signup RAF.
+                    if(transition&&!transition.after&&transition.before?.screen==='login'&&
+                        row?.screen==='signup'&&row.t>=transition.before.t)transition.after=row;
+                    raf=requestAnimationFrame(tick);
+                };
                 raf=requestAnimationFrame(tick);
                 window.__authInternalProbe={receipt,read,finish(){stopped=true;cancelAnimationFrame(raf);
                     root.removeEventListener('click',click,true);sample('final');return receipt;}};
@@ -389,10 +397,12 @@ def check_auth_overlay_internal_transition(page, origin, width):
             probe_started = False
             samples, transition = report['samples'], report['transition']
             assert report['entryTrusted'] is True and transition and transition['trusted'] is True, report
+            assert transition['action'] == 'signup' and transition.get('microtask'), transition
             assert len([row for row in samples if row['phase'] == 'raf']) >= 8, report
             assert all(row['sameHolder'] and row['sameDim'] and row['count'] == 1 and
                        row['sceneCount'] == 1 and row['sameIntroduction'] and not row['hidden'] for row in samples), report
             before, after = transition['before'], transition['after']
+            assert after['phase'] == 'raf' and after['t'] >= before['t'], transition
             assert before['screen'] == 'login' and after['screen'] == 'signup', transition
             assert before['sameScene'] and not after['sameScene'], transition
             assert all(b['opacity'] >= a['opacity'] - .02 for a, b in zip(samples, samples[1:])), report
