@@ -126,3 +126,24 @@ test('deck FLIP retains the same cards and interrupts from their current painted
  const f=fixture('<div id="stage"><article data-left="10" data-top="30" data-width="140" data-height="180"></article><article data-left="170" data-top="30" data-width="140" data-height="180"></article></div>');
  try{f.w.eval('window.controls=('+createCustomerControls.toString()+')()');const stage=f.d.querySelector('#stage'),cards=[...stage.children],ctl=new f.w.AbortController(),layout=f.w.controls.deckLayout(stage,{signal:ctl.signal});layout.update(()=>cards.forEach((card,i)=>{card.dataset.left=String(10+i*3);card.dataset.top=String(30+i*8);card.dataset.width='300';}));assert.deepEqual([...stage.children],cards);assert.equal(f.captures.length,2);assert.equal(f.captures[0].frames[0].scale,'0.4666666666666667 1');cards[0].dataset.left='40';layout.update(()=>{cards[0].dataset.left='10';cards[0].dataset.width='140';});assert.equal(f.captures.at(-2).frames[0].translate,'30px 0px');ctl.abort();assert.equal(stage.hasAttribute('data-r3-flip-active'),false);assert.equal(cards[0].style.transition,'');}finally{f.close();}
 });
+
+test('deck staggering follows the newly sorted dates, caps the total wait and skips motion when reduced',()=>{
+ const html='<div id="stage">'+Array.from({length:12},(_,i)=>'<article data-date="2026-11-'+String(i+1).padStart(2,'0')+'" data-left="'+i*10+'" data-width="140" data-height="180"></article>').join('')+'</div>';
+ for(const reduce of [false,true]){
+  const f=fixture(html,reduce);
+  try{
+   f.w.eval('window.controls=('+createCustomerControls.toString()+')()');
+   const stage=f.d.querySelector('#stage'),cards=[...stage.children],sorted=[...cards].sort((a,b)=>b.dataset.date.localeCompare(a.dataset.date)),layout=f.w.controls.deckLayout(stage);
+   layout.update(()=>{stage.append(...sorted);sorted.forEach((card,i)=>{card.dataset.left=String(i*3);card.dataset.width='300';});});
+   assert.deepEqual([...stage.children],sorted,'motion must not undo the product date order');
+   if(reduce){assert.equal(f.captures.length,0);assert.equal(stage.hasAttribute('data-r3-flip-active'),false);}
+   else{
+    assert.deepEqual(f.captures.map(a=>a.target),sorted);
+    const delays=f.captures.map(a=>a.options.delay);assert.equal(delays[0],0);assert.ok(delays.at(-1)<=180);
+    assert.ok(delays.every((delay,i)=>i===0||delay>delays[i-1]),'every date must start after its predecessor, including a long list');
+    assert.ok(f.captures.every(a=>a.options.fill==='both'),'each delayed card holds its captured painted frame');
+   }
+   layout.cancel();assert.ok(cards.every(card=>card.style.transition===''&&card.style.scale===''&&card.style.translate===''));
+  }finally{f.close();}
+ }
+});

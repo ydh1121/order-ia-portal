@@ -23,7 +23,7 @@ body{font:16px/1.5 system-ui;margin:16px}button,input{font:inherit;box-sizing:bo
 #dropdown{background:white;border:1px solid #aab7c8;padding:10px;width:200px}
 </style><section id="content"><h2>발급 견적의 실제 제목</h2><p>같은 줄바꿈 위치를 보존하는 실제 본문입니다. 두 번째 줄의 폭도 측정합니다.</p></section>
 <div id="resize">높이가 달라지는 계정 패널</div>
-<div id="deck"><article style="--depth:0">오늘의 견적</article><article style="--depth:1">어제의 견적</article><article style="--depth:2">이전 견적</article></div>
+<div id="deck"><article data-date="2026-11-21" style="--depth:0">오늘의 견적</article><article data-date="2026-11-20" style="--depth:1">어제의 견적</article><article data-date="2026-11-19" style="--depth:2">이전 견적</article></div>
 <input id="field" aria-label="입력" value="가"><button id="trigger">선택</button><div id="dropdown" hidden><button>선택 항목</button></div>
 <div id="tags"><button>특란 30구</button><button>매장</button></div><button id="switch">알림 수신</button>
 <div id="wheel" role="listbox" aria-label="시간">''' + ''.join(f'<button role="option" data-value="{i}">{i}시</button>' for i in range(10, 19)) + '''</div>
@@ -124,21 +124,29 @@ def run(browser, reduced=False):
             heights = [sample['height'] for sample in resize['samples']]
             assert all(b <= a + .1 for a, b in zip(heights, heights[1:]))
         assert abs(resize['samples'][-1]['height']-100) < 1
-        report['lastStep'] = 'deck painted-frame reversal'
+        report['lastStep'] = 'deck date-ordered painted stagger and reversal'
         deck = page.evaluate('''async()=>{
           const stage=document.querySelector('#deck'),cards=[...stage.children],layout=controls.deckLayout(stage),before=cards.map(rect);
-          layout.update(()=>stage.classList.add('deck'));const first=cards.map(rect);await delay(130);const middle=cards.map(rect);
-          layout.update(()=>stage.classList.remove('deck'));const reverseFirst=cards.map(rect),samples=await frames(cards[0],500);return {before,first,middle,reverseFirst,samples,sameNodes:cards.every((card,i)=>stage.children[i]===card),after:cards.map(rect)};
+          layout.update(()=>stage.classList.add('deck'));const first=cards.map(rect),initialAnimationCount=cards.reduce((sum,card)=>sum+card.getAnimations().length,0),started=performance.now(),staggerSamples=[];
+          while(performance.now()-started<220){await new Promise(requestAnimationFrame);staggerSamples.push({t:performance.now()-started,cards:cards.map(rect)});}
+          const onsets=cards.map((card,i)=>({date:card.dataset.date,at:staggerSamples.find(sample=>['x','y','width','height'].some(key=>Math.abs(sample.cards[i][key]-first[i][key])>.2))?.t??null})),middle=cards.map(rect);
+          layout.update(()=>stage.classList.remove('deck'));const reverseFirst=cards.map(rect),samples=await frames(cards[0],660);return {before,first,middle,reverseFirst,samples,initialAnimationCount,onsets,staggerSamples,sameNodes:cards.every((card,i)=>stage.children[i]===card),after:cards.map(rect)};
         }''')
         report['deck'] = deck
         assert deck['sameNodes']
         if not reduced:
+            assert [onset['date'] for onset in deck['onsets']] == ['2026-11-21', '2026-11-20', '2026-11-19']
+            onsets = [onset['at'] for onset in deck['onsets']]
+            assert all(onset is not None for onset in onsets), ('deck cards did not move', deck)
+            assert all(b > a for a, b in zip(onsets, onsets[1:])), ('deck dates did not start in order', deck)
             for prior, first in zip(deck['before'], deck['first']):
                 for key in ['x', 'y', 'width', 'height']:
                     assert abs(prior[key]-first[key]) < 1, ('deck entrance jump', key, prior, first)
             for prior, first in zip(deck['middle'], deck['reverseFirst']):
                 for key in ['x', 'y', 'width', 'height']:
                     assert abs(prior[key]-first[key]) < 1, ('deck reversal jump', key, prior, first)
+        else:
+            assert deck['initialAnimationCount'] == 0, ('reduced motion must update immediately', deck)
         for prior, final in zip(deck['before'], deck['after']):
             for key in ['x', 'y', 'width', 'height']:
                 assert abs(prior[key]-final[key]) < 1
