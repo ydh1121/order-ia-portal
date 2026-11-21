@@ -6,6 +6,7 @@ import {installProductWorkflowMotion} from '../src/server/product-workflow-motio
 import {installQaFixtureAdapter} from '../src/server/r3-ui/qa-fixture-adapter.mjs';
 import {installProductAdapter} from '../src/server/product-app-adapter.mjs';
 import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
+import {createCommonMotion} from '../src/server/r3-common-motion.mjs';
 import {createProductUiLab} from './helpers/product-ui-lab.mjs';
 
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
@@ -70,6 +71,37 @@ test('billing numeric keypad, real account selection, draft and issued reload us
   byText(v.root,'청구서 발급').click();await until(()=>v.adapter.fixture.inspect().data.billing[0].status==='ISSUED','issue persisted');await until(()=>byLabel(v.root,'청구 내용').disabled,'issued form is immutable');item=v.adapter.fixture.inspect().data.billing[0];assert.equal(item.revision,2);assert.equal(item.paid,0);assert.match(v.root.querySelector('.wf-status').textContent,/발송과 결제는 아직/);
   c.destroy();v.mount();await until(()=>byLabel(v.root,'저장한 청구서').options.length===1,'reload reads issued document');byText(v.root,'불러오기').click();assert.equal(byLabel(v.root,'청구 내용').value,'검수 청구');assert.equal(byLabel(v.root,'금액 직접 입력').value,'12340');assert.equal(byLabel(v.root,'금액 직접 입력').disabled,true);
   byText(v.root,'새 청구').click();assert.equal(byLabel(v.root,'금액 직접 입력').value,'');assert.equal(byLabel(v.root,'청구 내용').disabled,false);
+});
+
+test('workflow field names stay stable as native and enhanced selects load and change their choices',async t=>{
+  const name=control=>(control.getAttribute('aria-labelledby')||'').split(/\s+/).filter(Boolean).map(id=>control.ownerDocument.getElementById(id)?.textContent||'').join(' ');
+  for(const nativePicker of [false,true])for(const [screen,label,count] of [['receipt','결제 내역',3],['admin-billing','청구 계정',1]]){
+    const v=await setup(t,{screen});v.w.CSS={supports:()=>nativePicker};const common=createCommonMotion(v.w);
+    try{
+      v.mount();await until(()=>byLabel(v.root,label)?.options.length===count,'choices loaded through the real adapter');await tick();
+      const select=byLabel(v.root,label),caption=v.w.document.getElementById(select.getAttribute('aria-labelledby'));
+      assert.equal(name(select),label,'option text must not become part of the field name');
+      assert.equal(select.labels.length,1);assert.equal(select.labels[0].control,select);assert.equal(select.labels[0].htmlFor,select.id);
+      assert.equal(caption.contains(select),false,'the naming caption excludes the changing option values');
+      assert.equal(new Set([...v.root.querySelectorAll('[id]')].map(el=>el.id)).size,v.root.querySelectorAll('[id]').length);
+      const trigger=select.closest('.r3-select-shell')?.querySelector('[role=combobox]');assert.equal(Boolean(trigger),!nativePicker);
+      if(screen==='receipt'){
+        const events=[];for(const type of ['input','change'])select.addEventListener(type,e=>events.push(e.type));
+        if(trigger){trigger.click();const menu=v.w.document.getElementById(trigger.getAttribute('aria-controls'));menu.querySelectorAll('[role=option]')[1].click();}
+        else{select.value='qa-order-shipped';select.dispatchEvent(new v.w.Event('input',{bubbles:true}));select.dispatchEvent(new v.w.Event('change',{bubbles:true}));}
+        await tick();assert.equal(select.value,'qa-order-shipped');assert.deepEqual(events,['input','change']);assert.equal(name(select),label);
+        // The selected option remains the exact payload source when the visible
+        // dropdown is enhanced; the naming fix cannot replace that native field.
+        byText(v.root,'영수증 발급').click();await until(()=>v.adapter.fixture.inspect().data.receipts.length===1,'receipt issued for selected paid purchase');
+        assert.equal(v.adapter.fixture.inspect().data.receipts[0].purchaseId,'qa-order-shipped');
+        assert.equal(name(byLabel(v.root,'발급한 영수증')),'발급한 영수증');
+      }else{
+        assert.equal(select.options[select.selectedIndex].textContent,'QA 샘플 사업장 · qa-store');
+        assert.equal(name(byLabel(v.root,'저장한 청구서')),'저장한 청구서');
+      }
+      if(trigger){const live=select.closest('.r3-select-shell').querySelector('[role=combobox]');assert.ok(live.getAttribute('aria-label').startsWith(label+' · '));}
+    }finally{common.destroy();}
+  }
 });
 
 test('billing serializes draft/issue while pending and retains failed input and request key for retry',async t=>{

@@ -1,9 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {readFileSync} from 'node:fs';
 import {installProductUiRegistry} from '../src/server/product-ui/bootstrap.mjs';
 import {installProductAdminMotion} from '../src/server/product-admin-motion.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
+
+test('pass grid and deck cards stay inside their stage while standalone paper tickets retain normal flow',()=>{
+ const css=readFileSync(new URL('../scripts/r3/authored/navigation.css',import.meta.url),'utf8');
+ const cards=Array.from({length:4},(_,index)=>'<article class="order-pass nav-ticket" style="--index:'+index+'"><button>견적 상세</button></article>').join('');
+ const dom=new JSDOM('<style>'+css+'</style><main class="ds"><section class="page"><div class="pass-stage">'+cards+'</div><article class="nav-ticket ticket-detail">견적 내역</article><div class="nav-ticket empty-ticket">내역 없음</div></section></main>');
+ const w=dom.window,stage=w.document.querySelector('.pass-stage');
+ for(const deck of [false,true]){
+  stage.classList.toggle('is-deck',deck);
+  for(const card of stage.children)assert.equal(w.getComputedStyle(card).position,'absolute','paper surface rules must not override the card placement contract');
+  assert.equal(w.getComputedStyle(stage).height,deck?'400px':'620px');
+ }
+ for(const card of w.document.querySelectorAll('.ticket-detail,.empty-ticket'))assert.equal(w.getComputedStyle(card).position,'relative');
+ dom.window.close();
+});
 
 test('one Gooey page menu opens actual consultation, account and notifications; embedded panels do not duplicate it',()=>{
  const dom=new JSDOM('<main id="page"><div class="obm-brand" data-authenticated="true"></div><section class="product-panel-body"></section><section class="product-auth-sheet"></section></main>',{pretendToBeVisual:true});

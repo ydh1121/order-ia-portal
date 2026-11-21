@@ -23,7 +23,7 @@ if(!process.argv[2])throw Error('Provide the immutable release10 baseline checko
 const baseline=resolve(process.argv[2]),here=fileURLToPath(new URL('.',import.meta.url));
 const commit=execFileSync('git',['rev-parse','HEAD'],{cwd:baseline,encoding:'utf8'}).trim();
 if(commit!=='e5f97029b58d1f1d90bb910bebfed7237e84e2bb')throw Error('Expected the verified release10 baseline, received '+commit);
-execFileSync('git',['diff','--quiet',commit,'--','src/server/r3-ui/catalog.gen.mjs','src/server/r3-ui/runtime.gen.mjs','src/server/r3-ui/qa-assets.gen.mjs','scripts/r3/authored/account.js','scripts/r3/authored/business.js','scripts/r3/authored/navigation.js','scripts/r3/authored/onboarding.js','scripts/r3/authored/admin-common.mjs','src/server/r3-customer-controls.mjs','src/server/r3-async-motion.mjs','src/server/order-engine/browser/brand-account-menu.mjs'],{cwd:baseline});
+execFileSync('git',['diff','--quiet',commit,'--','src/server/r3-ui/catalog.gen.mjs','src/server/r3-ui/runtime.gen.mjs','src/server/r3-ui/qa-assets.gen.mjs','scripts/r3/authored/account.js','scripts/r3/authored/business.js','scripts/r3/authored/navigation.js','scripts/r3/authored/navigation.css','scripts/r3/authored/onboarding.js','scripts/r3/authored/admin-common.mjs','src/server/r3-customer-controls.mjs','src/server/r3-async-motion.mjs','src/server/order-engine/browser/brand-account-menu.mjs'],{cwd:baseline});
 const old=relative=>import(pathToFileURL(join(baseline,relative)).href);
 const [source,engine,assets,brand,customer,asyncMotion,admin]=await Promise.all([
  'src/server/r3-ui/catalog.gen.mjs','src/server/r3-ui/runtime.gen.mjs','src/server/r3-ui/qa-assets.gen.mjs',
@@ -35,6 +35,25 @@ const unpack=value=>gunzipSync(Buffer.from(value,'base64')).toString();
 if(frameCode!==engine.frameCode)throw Error('The fixed review frame changed before the product refresh.');
 if(current.cssHash!==source.cssHash)throw Error('This scoped refresh does not replace canonical CSS.');
 if(sha(assets.sharedCoreScript)!==assets.sharedUiProvenance.coreSha256)throw Error('Baseline shared core provenance mismatch.');
+const navigationScreens=new Set(['passes','search','profile','drawer']);
+const navigationCssBefore=await readFile(join(baseline,'scripts/r3/authored/navigation.css'),'utf8');
+const navigationCssAfter=await readFile(new URL('./authored/navigation.css',import.meta.url),'utf8');
+const navigationStyleBefore='<style>'+navigationCssBefore+'</style>';
+const navigationStyleAfter='<style id="r3-navigation">'+navigationCssAfter+'</style>';
+let navigationStyleChanges=0;
+function refreshNavigationStyle(body,row){
+ if(!navigationScreens.has(row.screen)||navigationCssBefore===navigationCssAfter)return body;
+ const originalCount=body.split(navigationStyleBefore).length-1;
+ const owned=[...body.matchAll(/<style id="r3-navigation">[\s\S]*?<\/style>/g)];
+ if(originalCount===1&&owned.length===0){navigationStyleChanges++;return body.replace(navigationStyleBefore,()=>navigationStyleAfter);}
+ // Later refreshes replace only this explicitly owned current style. The first
+ // migration above requires the immutable baseline's complete bytes to match.
+ if(originalCount===0&&owned.length===1){
+  if(owned[0][0]===navigationStyleAfter)return body;
+  navigationStyleChanges++;return body.replace(owned[0][0],()=>navigationStyleAfter);
+ }
+ throw Error('Expected one exact baseline or owned current navigation style: '+row.id);
+}
 const {JSDOM}=createRequire(new URL('../../tests/build-tools/package.json',import.meta.url))('jsdom');
 const authored=[];
 for(const [file,key] of [['account','accountFeedback'],['business','business'],['navigation','navigation'],['onboarding','onboarding']]){
@@ -128,6 +147,7 @@ const catalog=current.catalog.map(row=>{
   body=root.outerHTML;dom.window.close();
  }
  body=body.replace(/<style id="r3-brand-account-menu">[\s\S]*?<\/style>/g,()=>'<style id="r3-brand-account-menu">'+brandAccountMenuCss+'</style>');
+ body=refreshNavigationStyle(body,row);
  const next=sha(body),family=row.runtimeFamily||fallback[row.screen],code=runtimes[family]||'';
  const changedBody=next!==row.current,changedRuntime=code!==(currentRuntimes[family]||'');
  if(!changedBody&&!changedRuntime)return row;
@@ -139,4 +159,4 @@ const catalog=current.catalog.map(row=>{
 });
 await updateGeneratedModule(new URL('../../src/server/product-ui/runtime.gen.mjs',import.meta.url),{runtimes});
 await updateGeneratedModule(new URL('../../src/server/product-ui/catalog.gen.mjs',import.meta.url),{catalog,frames});
-console.log(JSON.stringify({baseline:commit,bodyChanges,runtimeChanges,rendered:rebuilt.size,rebuiltFamilies,replacements:counts,hostWrites:0,frameWrites:0,historicalWrites:0}));
+console.log(JSON.stringify({baseline:commit,bodyChanges,runtimeChanges,navigationStyleChanges,rendered:rebuilt.size,rebuiltFamilies,replacements:counts,hostWrites:0,frameWrites:0,historicalWrites:0}));

@@ -11,6 +11,41 @@ from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_m
 from r3_workflow_browser_support import check_consultation_flow
 
 ROOT = Path(__file__).resolve().parents[1]
+LAYOUT_OUT = ROOT / 'artifacts/frame-pointer'
+
+
+def record_pass_layout(page, frame, width, checkpoint):
+    """Read physical layout without scrolling, clicking or changing product styles."""
+    snapshot = frame.locator('#order-single').evaluate('''root=>{
+      const rect=el=>{if(!el)return null;const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,top:r.top,right:r.right,bottom:r.bottom,left:r.left};};
+      const details=el=>{if(!el)return null;const s=getComputedStyle(el);return {
+        node:el.localName,id:el.id,className:typeof el.className==='string'?el.className:'',rect:rect(el),
+        position:s.position,display:s.display,overflowX:s.overflowX,overflowY:s.overflowY,
+        height:s.height,minHeight:s.minHeight,maxHeight:s.maxHeight,flex:s.flex,
+        paddingBottom:s.paddingBottom,scrollPaddingBottom:s.scrollPaddingBottom,
+        scrollTop:el.scrollTop,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,
+        scrollLeft:el.scrollLeft,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
+        hidden:el.hidden,inert:el.inert};};
+      const target=root.querySelector('[data-pass-id="b09"] button'),ancestors=[];
+      for(let el=target;el;el=el.parentElement)ancestors.push(details(el));
+      const box=rect(target),x=box?box.x+box.width/2:0,y=box?box.y+box.height/2:0;
+      const hit=box?document.elementFromPoint(x,y):null;
+      return {viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY,devicePixelRatio},
+        root:details(root),stage:details(root.querySelector('.pass-stage')),
+        cards:[...root.querySelectorAll('[data-pass-id]')].map(el=>({id:el.dataset.passId,...details(el)})),
+        clearances:[...root.querySelectorAll('.pm-gooey-clearance')].map(details),
+        gooey:details(root.querySelector('[data-product-gooey]')),
+        target:details(target),centerHit:details(hit),centerReachesTarget:!!target&&target.contains(hit),
+        documentScroller:details(document.scrollingElement),ancestors};
+    }''')
+    snapshot['checkpoint'] = checkpoint
+    LAYOUT_OUT.mkdir(parents=True, exist_ok=True)
+    path = LAYOUT_OUT / f'navigation-layout-{width}.json'
+    report = json.loads(path.read_text()) if path.exists() else {
+        'width': width, 'scope': 'canonical current pass controls in protected QA frame; read-only physical layout', 'snapshots': []}
+    report['snapshots'].append(snapshot)
+    path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
+    return snapshot
 
 
 def check(page, origin, width):
@@ -40,7 +75,20 @@ def check(page, origin, width):
     frame_click(page, frame.locator('[data-action="close-ticket"]'))
     frame_click(page, frame.locator('[data-action="dismiss-expired"]'))
     expect(frame.locator(".expired-reminder")).to_be_hidden()
-    frame_click(page, frame.locator('[data-pass-id="b09"] button'))
+    layout = record_pass_layout(page, frame, width, 'before-expired-pass-detail')
+    try:
+        # Ticket paper styling must not turn the absolute grid/deck cards into
+        # relative normal-flow blocks extending beyond the stage's height.
+        assert len(layout['cards']) == 4
+        assert all(card['position'] == 'absolute' for card in layout['cards']), layout
+        stage = layout['stage']['rect']
+        assert all(card['rect']['top'] >= stage['top'] - 1 and card['rect']['bottom'] <= stage['bottom'] + 1
+                   for card in layout['cards']), layout
+        frame_click(page, frame.locator('[data-pass-id="b09"] button'))
+    except Exception:
+        record_pass_layout(page, frame, width, 'failed-expired-pass-detail')
+        page.screenshot(path=str(LAYOUT_OUT / f'navigation-layout-{width}-failure.png'), full_page=True)
+        raise
     expect(frame.locator('[data-action="tear-ticket"]')).to_have_count(0)
     frame_click(page, frame.locator('[data-action="close-ticket"]'))
     frame_click(page, frame.locator('[data-pass-id="c15"] button'))

@@ -30,6 +30,62 @@ body{font:16px/1.5 system-ui;margin:16px}button,input{font:inherit;box-sizing:bo
 <button id="consult">상담 예약</button><section id="panel" aria-label="상담" hidden><h2>상담 내용</h2><input value="입력 보존"><button>저장</button></section>'''
 
 
+def check_input_motion(page, reduced, report):
+    field = page.locator('#field')
+    field.scroll_into_view_if_needed()
+    field.focus()
+    field.press('End')
+    # Settle focus scrolling before arming the measurement. Native scroll/select
+    # deliberately cancels a mirror, so include those events in its receipt.
+    page.evaluate('''async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);}''')
+    report['inputMotion'] = {}
+    for name, key, value, caret, input_type in [('insert', 'x', '가x', 2, 'insertText'), ('delete', 'Backspace', '가', 1, 'deleteContentBackward')]:
+        report['lastStep'] = 'native input '+name+' trusted event and painted glyph frames'
+        expect(field).to_be_focused()
+        page.evaluate('''name=>{
+          const input=document.querySelector('#field'),controller=new AbortController(),armed=performance.now();
+          const state={name,armed,eventAt:null,done:false,events:[],mutations:[],samples:[],before:{value:input.value,start:input.selectionStart,end:input.selectionEnd,fill:input.style.webkitTextFillColor,caret:input.style.caretColor}};
+          window.__inputMotion=state;
+          for(const type of ['beforeinput','input','keydown','keyup','select','scroll','blur','visibilitychange'])document.addEventListener(type,e=>{
+            state.events.push({type:e.type,t:performance.now()-armed,trusted:e.isTrusted,target:e.target?.id||e.target?.nodeName,inputType:e.inputType||null,value:input.value,start:input.selectionStart,end:input.selectionEnd});
+            if(e.type==='input'&&e.target===input&&state.eventAt===null)state.eventAt=performance.now();
+          },{capture:true,signal:controller.signal});
+          const observer=new MutationObserver(records=>{
+            for(const record of records)for(const [type,nodes]of [['added',record.addedNodes],['removed',record.removedNodes]])for(const node of nodes)if(node.nodeType===1&&node.matches('.r3-input-mirror'))state.mutations.push({type,t:performance.now()-armed,text:node.textContent});
+          });observer.observe(document.body,{childList:true,subtree:true});
+          function sample(time){
+            const box=input.getBoundingClientRect(),layers=[...document.querySelectorAll('.r3-input-mirror')];
+            state.samples.push({t:time-armed,afterInput:state.eventAt===null?null:time-state.eventAt,mirrorCount:layers.length,value:input.value,start:input.selectionStart,end:input.selectionEnd,ownAnimations:input.getAnimations().length,scrollY,scrollLeft:input.scrollLeft,
+              glyphs:layers.flatMap(layer=>[...layer.children].map(g=>{const s=getComputedStyle(g),r=g.getBoundingClientRect();return {text:g.textContent,opacity:Number(s.opacity),translate:s.translate,scale:s.scale,transform:s.transform,x:r.x-box.x,y:r.y-box.y,width:r.width,height:r.height};}))});
+            if(state.eventAt!==null&&time-state.eventAt>=450||time-armed>=5000){
+              observer.disconnect();controller.abort();state.after={value:input.value,start:input.selectionStart,end:input.selectionEnd,ownAnimations:input.getAnimations().length,fill:input.style.webkitTextFillColor,caret:input.style.caretColor,sameInput:document.querySelector('#field')===input,mirrors:document.querySelectorAll('.r3-input-mirror').length};state.done=true;
+            }else requestAnimationFrame(sample);
+          }requestAnimationFrame(sample);
+        }''', name)
+        # The observer and RAF are running before the real keyboard event. A
+        # later Playwright polling call cannot miss the mirror's 300ms lifetime.
+        page.keyboard.press(key)
+        observed = page.evaluate('''async()=>{const state=window.__inputMotion;while(!state.done)await new Promise(requestAnimationFrame);return state;}''')
+        report['inputMotion'][name] = observed
+        events = [event for event in observed['events'] if event['type'] == 'input']
+        assert len(events) == 1 and events[0]['trusted'] and events[0]['target'] == 'field' and events[0]['inputType'] == input_type, observed
+        after = observed['after']
+        assert (after['value'], after['start'], after['end']) == (value, caret, caret), observed
+        assert after['sameInput'] and after['ownAnimations'] == 0 and after['mirrors'] == 0, observed
+        assert (after['fill'], after['caret']) == (observed['before']['fill'], observed['before']['caret']), observed
+        assert all(sample['ownAnimations'] == 0 for sample in observed['samples']), observed
+        if reduced:
+            assert not observed['mutations'] and all(sample['mirrorCount'] == 0 for sample in observed['samples']), observed
+        else:
+            assert any(event['type'] == 'added' for event in observed['mutations']) and any(event['type'] == 'removed' for event in observed['mutations']), observed
+            glyphs = [glyph for sample in observed['samples'] for glyph in sample['glyphs'] if glyph['text'] == 'x']
+            assert len(glyphs) >= 3 and any(0 < glyph['opacity'] < 1 for glyph in glyphs), observed
+            assert len({(glyph['translate'], glyph['scale']) for glyph in glyphs}) >= 3, observed
+            assert len({(glyph['y'], glyph['height']) for glyph in glyphs}) >= 3, observed
+        if name == 'insert':
+            report['input'] = {key:after[key] for key in ['value','start','end','ownAnimations']}
+
+
 def run(browser, reduced=False):
     context = browser.new_context(viewport={'width': 390, 'height': 844}, reduced_motion='reduce' if reduced else 'no-preference')
     page = context.new_page()
@@ -86,17 +142,7 @@ def run(browser, reduced=False):
         for prior, final in zip(deck['before'], deck['after']):
             for key in ['x', 'y', 'width', 'height']:
                 assert abs(prior[key]-final[key]) < 1
-        report['lastStep'] = 'native input insertion and deletion'
-        page.locator('#field').focus()
-        page.locator('#field').press('End')
-        page.locator('#field').press('x')
-        if not reduced:
-            expect(page.locator('.r3-input-mirror')).to_have_count(1)
-        selection = page.locator('#field').evaluate('(el)=>({value:el.value,start:el.selectionStart,end:el.selectionEnd,ownAnimations:el.getAnimations().length})')
-        report['input'] = selection
-        assert selection == {'value': '가x', 'start': 2, 'end': 2, 'ownAnimations': 0}
-        page.locator('#field').press('Backspace')
-        expect(page.locator('#field')).to_have_value('가')
+        check_input_motion(page, reduced, report)
         page.locator('#trigger').focus()
         report['lastStep'] = 'dropdown exit and reopen'
         dropdown = page.evaluate('''async()=>{const menu=document.querySelector('#dropdown'),popup=common.dropdown(menu,{trigger:document.querySelector('#trigger')});popup.set(true);await delay(270);popup.set(false);const exit={hidden:menu.hidden,opacity:getComputedStyle(menu).opacity,closing:menu.classList.contains('is-closing')};await delay(60);const middle=getComputedStyle(menu).opacity;popup.set(true);await delay(300);return {exit,middle,reopened:!menu.hidden,finalOpacity:getComputedStyle(menu).opacity};}''')

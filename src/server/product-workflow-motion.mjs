@@ -9,7 +9,13 @@ export function installProductWorkflowMotion(win=window){
  const doc=win.document,instances=new WeakMap(),digits=new WeakMap();
  const node=(tag,text,className)=>{const e=doc.createElement(tag);if(text!==undefined)e.textContent=text;if(className)e.className=className;return e;};
  const button=(text,primary=false)=>{const e=node('button',text,'wf-button'+(primary?' primary':''));e.type='button';e.dataset.label=text;return e;};
- const field=(label,type='text')=>{const wrap=node('label',label,'wf-field'),input=node(type==='select'?'select':type==='textarea'?'textarea':'input');if(input.tagName==='INPUT')input.type=type;wrap.append(input);return {wrap,input};};
+ let fieldSequence=0;
+ const field=(label,type='text')=>{
+  const wrap=node('label',undefined,'wf-field'),caption=node('span',label),input=node(type==='select'?'select':type==='textarea'?'textarea':'input');
+  let id;do{id='wf-field-'+(++fieldSequence);}while(doc.getElementById(id)||doc.getElementById(id+'-label'));
+  caption.id=id+'-label';input.id=id;wrap.htmlFor=id;input.setAttribute('aria-labelledby',caption.id);
+  if(input.tagName==='INPUT')input.type=type;wrap.append(caption,input);return {wrap,input};
+ };
  const reduced=()=>win.matchMedia('(prefers-reduced-motion: reduce)').matches;
  const spring=(from,to,{stiffness=520,damping=30,mass=.8,steps=60}={})=>{let value=from,velocity=0;const frames=[];for(let i=0;i<steps;i++){for(let j=0;j<4;j++){velocity+=((to-value)*stiffness-velocity*damping)/mass/240;value+=velocity/240;}frames.push(value);}frames.push(to);return frames;};
  const animate=(element,keyframes,options={})=>{if(reduced()||!element.animate)return null;return element.animate(keyframes,{duration:450,easing:'linear',...options});};
