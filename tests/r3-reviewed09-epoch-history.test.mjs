@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {gunzipSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
-import {readReviewedEpochArtifact,isReviewedEpochTarget,reviewedEpochsMetadata} from '../src/server/r3-qa-epoch-history.mjs';
+import {readReviewedEpochArtifact,readReviewedEpochBody,isReviewedEpochTarget,reviewedEpochsMetadata} from '../src/server/r3-qa-epoch-history.mjs';
 import {serveR3Artifact,isR3ReviewTarget} from '../src/server/r3-qa-page.mjs';
 
 const capture=JSON.parse(gunzipSync(await readFile(new URL('./fixtures/reviewed-af5ece3e.capture.json.gz',import.meta.url))));
@@ -47,4 +47,28 @@ test('actual450-cutoff reviewed identities remain pinned without mutating target
     assert.equal(await isReviewedEpochTarget({...target,artifactHash:'f'.repeat(64)},item.release),false);
   }
   assert.equal(JSON.stringify(targets),before);
+});
+
+test('release09 library source and return routes survive regeneration of current asset usages',async()=>{
+  const assets=['dialog','header-logo','footer-logo','logo-menu','pass-floating','footer','brand-motion','intro-art'];
+  for(const asset of assets){
+    const id='component-library/asset-'+asset+'/email',row=capture.inventory.find(row=>row.id===id);
+    assert.ok(row,id);
+    for(const width of [390,1280]){
+      const hash=row.hashes[width],saved=await readReviewedEpochArtifact(id,width,hash);
+      assert.ok(saved,id+' '+width);
+      const response=await serveR3Artifact(request({screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:hash}),{});
+      assert.equal(response.status,200);
+      const value=await response.json(),original=Object.fromEntries(Object.keys(saved.artifact).map(name=>[name,value[name]]));
+      assert.equal(digest(JSON.stringify(original)),capture.captures[[id,width,hash].join('|')],id+' preserves the entire recorded response');
+      assert.equal(value.hash,hash);
+      const context=JSON.parse(value.mount.match(/window\.ORDER_LIBRARY_SOURCE=(\{[^\n]+\});\n/)[1]);
+      const body=await readReviewedEpochBody(context.source);
+      assert.ok(body,context.source);assert.equal(digest(body),context.source);
+      assert.ok(value.html.includes(body.replace('id="order-single"','id="order-component-source" data-component-source')),id+' keeps its original source frame');
+      assert.match(value.html,/data-qa-go="component-library" data-qa-state="[^"]+"/,id+' keeps the board return route');
+      assert.match(value.html,/data-qa-go="onboarding" data-qa-state="[^"]+" data-source-usage="onboarding\/[^"]+\/email"/,id+' keeps source-use routes');
+      if(asset==='intro-art')assert.equal(context.source,'3db29129868e9b35c01967e85b0ae3be6c5af43f54d955a05046fe1e68332d2e');
+    }
+  }
 });
