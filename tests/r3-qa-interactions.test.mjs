@@ -81,10 +81,10 @@ test('the immediately preceding artifact hashes keep their exact body and execut
   }
 });
 
-async function hostHarness({initialRecords=[],legacyItems=[]}={}){
-  const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390');
-  const screens=['empty','closed'].map(state=>({...row(state),hashes:{390:row(state).hashes[390]}})),screen=screens[0];
-  const artifact={hash:screen.hashes[390],version:'current',html:'<!doctype html><html><head><!--R3-POLICY--></head><body><main id="order-single"></main><!--R3-FRAME--></body></html>',editable:'',file:'test.html'};
+async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,viewHash=null,viewVersion='current'}={}){
+  const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390'+(viewVersion==='current'?'':'&version=recorded&artifactHash='+viewHash));
+  const screens=['empty','closed'].map(state=>({...row(state),hashes:{390:state==='empty'&&viewHash||row(state).hashes[390]}})),screen=screens[0];
+  const artifact={hash:screen.hashes[390],version:viewVersion,html:'<!doctype html><html><head><!--R3-POLICY--></head><body><main id="order-single"></main><!--R3-FRAME--></body></html>',editable:'',file:'test.html'};
   const writes=[],records=[...initialRecords],messages=[];let failure=null;
   const response=(value,status=200)=>Response.json(value,{status});
   w.fetch=async(raw,options={})=>{
@@ -103,7 +103,7 @@ async function hostHarness({initialRecords=[],legacyItems=[]}={}){
         const record={...body,revision:(old?.revision||0)+1,cursor:records.length+1,updatedAt:new Date().toISOString(),action:body.action||'save'};
         records.push(record);return response(record);
       }
-      return response({items:records,nextCursor:records.length,hasMore:false});
+      return response(recordPage?await recordPage({since:Number(url.searchParams.get('since')||0),limit:Number(url.searchParams.get('limit')||150),records}):{items:records,nextCursor:records.length,hasMore:false});
     }
     throw Error('Unmocked '+url);
   };
@@ -321,6 +321,89 @@ test('historical and imported opinions change status individually without mutati
   assert.equal(JSON.stringify([original,verdict,legacy]),originalBytes);
   for(const id of ['earlier-feedback','imported-feedback'])assert.deepEqual(records.filter(r=>r.kind==='feedback'&&r.data.parent.id===id).map(r=>r.data.status),['unresolved','recheck','resolved']);
   w.close();
+});
+
+test('a full reload never reintroduces resolved pins while later record pages are still loading',async()=>{
+  const priorTarget={...feedbackTarget(),artifactHash:'a'.repeat(64)};
+  const originals=Array.from({length:3},(_,i)=>({...seedComment('resolved-before-reload-'+i,priorTarget),cursor:i+1}));
+  const open={...seedComment('leave-unresolved'),cursor:4};
+  const padding=Array.from({length:146},(_,i)=>({release:'MSG0585-R3',kind:'artifact',id:'other-screen-record-'+i,revision:1,cursor:i+5,action:'save',data:{target:{...feedbackTarget(),state:'closed'},evidenceRef:'pagination fixture'}}));
+  const sourceRecords=[...originals,open,...padding],sourceBytes=JSON.stringify(sourceRecords),resolvedIds=originals.map(r=>r.id);
+  const first=await hostHarness({initialRecords:sourceRecords});let saved;
+  try{
+    first.w.document.getElementById('points').click();first.w.document.querySelector('[data-comment-filter=all]').click();
+    for(const id of resolvedIds){
+      feedbackCard(first.w,id).querySelector('[data-feedback-state=resolved]').click();
+      await until(()=>feedbackCard(first.w,id)?.dataset.feedbackStatus==='resolved');
+    }
+    assert.deepEqual(first.records.slice(150).map(r=>[r.kind,r.data.status]),[['feedback','resolved'],['feedback','resolved'],['feedback','resolved']]);
+    assert.deepEqual(Array.from(first.messages.filter(m=>m.type==='pins').at(-1).payload,p=>p.id),[open.id]);
+    saved=[...first.records];
+  }finally{first.w.close();}
+  let releaseLastPage;const lastPage=new Promise(resolve=>releaseLastPage=resolve),reads=[];
+  const restored=await hostHarness({initialRecords:saved,recordPage:async({since,limit,records})=>{
+    reads.push({since,limit});
+    if(since===0)return {items:records.slice(0,150),nextCursor:150,hasMore:true};
+    assert.equal(since,150);await lastPage;
+    return {items:records.slice(150),nextCursor:153,hasMore:false};
+  }});
+  try{
+    await until(()=>reads.length===2);await tick();await tick();
+    const shownDuringReload=[...new Set(restored.messages.filter(m=>m.type==='pins').flatMap(m=>Array.from(m.payload,p=>p.id)).filter(id=>resolvedIds.includes(id)))];
+    releaseLastPage();
+    await until(()=>restored.messages.filter(m=>m.type==='pins').at(-1)?.payload.length===1&&restored.messages.filter(m=>m.type==='pins').at(-1).payload[0].id===open.id);
+    assert.deepEqual(shownDuringReload,[],'saved resolved pins must not flash as unresolved while the remaining 150-row pages load');
+    restored.w.document.getElementById('points').click();restored.w.document.querySelector('[data-comment-filter=all]').click();
+    for(const id of resolvedIds)assert.equal(feedbackCard(restored.w,id).dataset.feedbackStatus,'resolved');
+    assert.equal(feedbackCard(restored.w,open.id).dataset.feedbackStatus,'unresolved');
+    assert.equal(restored.writes.length,0,'reload restores stored decisions without writing new status events');
+    assert.equal(JSON.stringify(sourceRecords),sourceBytes,'original bodies, source hashes and anchors stay unchanged');
+  }finally{releaseLastPage();await tick();restored.w.close();}
+});
+
+test('a new artifact keeps previously resolved pins hidden without copying its review state, while explicit recheck and source reopening remain visible',async()=>{
+  const sourceTarget={...feedbackTarget(),artifactHash:'a'.repeat(64)},resolvedTarget={...feedbackTarget(),artifactHash:'b'.repeat(64)};
+  const originals=Array.from({length:3},(_,i)=>({...seedComment('previously-resolved-'+i,sourceTarget),cursor:i+1}));
+  const statuses=originals.map((source,i)=>({release:'MSG0585-R3',kind:'feedback',id:'previous-resolution-'+i,revision:1,cursor:i+4,action:'save',data:{target:resolvedTarget,parent:{origin:'current',id:source.id},status:'resolved'}}));
+  const verdict={release:'MSG0585-R3',kind:'review',id:'new-version-review',revision:1,cursor:7,action:'save',data:{target:feedbackTarget(),decision:'changes_requested'}};
+  const sourceBytes=JSON.stringify([originals,statuses,verdict]);
+  const explicit=status=>({...statuses[0],id:'current-'+status,cursor:8,data:{...statuses[0].data,target:feedbackTarget(),status}});
+  const cases=[
+    {name:'new artifact',extra:[],expected:[],previous:true},
+    {name:'recorded resolution artifact',extra:[],expected:[],viewHash:resolvedTarget.artifactHash,viewVersion:'prior-r3'},
+    {name:'current recheck beats a newer previous-artifact resolution',extra:[explicit('recheck'),{...statuses[0],revision:2,cursor:9}],expected:[originals[0].id],previous:true},
+    {name:'current unresolved',extra:[explicit('unresolved')],expected:[originals[0].id],previous:true},
+    {name:'later source reopen',extra:[{...originals[0],revision:2,cursor:8,action:'reopen',reason:'원댓글 재검토'}],expected:[originals[0].id],previous:true}
+  ];
+  for(const entry of cases){
+    const initialRecords=[...originals,...statuses,verdict,...entry.extra],before=JSON.stringify(initialRecords);
+    const h=await hostHarness({...entry,initialRecords}),{w,messages,writes}=h;
+    try{
+      w.document.getElementById('points').click();w.document.querySelector('[data-comment-filter=all]').click();
+      await until(()=>originals.every(source=>feedbackCard(w,source.id)));
+      const displayed=()=>messages.filter(message=>message.type==='pins').at(-1).payload;
+      assert.deepEqual(Array.from(displayed(),pin=>pin.id),entry.expected,entry.name);
+      const card=feedbackCard(w,originals[1].id);
+      assert.equal(card.dataset.feedbackStatus,entry.viewHash?'resolved':'unresolved','current-version processing state is not copied from a previous version');
+      assert.equal(Boolean(card.querySelector('[data-pin-previous-resolution]')),Boolean(entry.previous),entry.name);
+      if(entry.previous){
+        assert.match(card.querySelector('[data-pin-previous-resolution]').textContent,/이전 판에서 해결/);
+        assert.equal(new URL(card.querySelector('[data-pin-resolved-artifact]').href).searchParams.get('artifactHash'),resolvedTarget.artifactHash);
+      }
+      if(entry.viewHash)assert.ok([...card.querySelectorAll('[data-feedback-state]')].every(button=>button.disabled));
+      w.document.getElementById('show-resolved-pins').checked=true;w.document.getElementById('show-resolved-pins').onchange();
+      const shown=Array.from(displayed());assert.deepEqual(shown.map(pin=>pin.id),originals.map(source=>source.id));
+      for(const pin of shown){
+        const source=originals.find(value=>value.id===pin.id);
+        assert.equal(pin.resolved,!entry.expected.includes(pin.id),entry.name);
+        assert.equal(pin.sourceArtifactHash,sourceTarget.artifactHash);
+        assert.deepEqual({...pin.anchor,artifactHash:sourceTarget.artifactHash},source.data.anchor);
+      }
+      assert.equal(writes.length,0,'pin visibility and historical explanation never write comments, statuses or approvals');
+      assert.equal(JSON.stringify(initialRecords),before);assert.equal(JSON.stringify([originals,statuses,verdict]),sourceBytes);
+      assert.deepEqual(h.records.filter(record=>record.kind==='review'),[verdict]);
+    }finally{w.close();}
+  }
 });
 
 test('rework instructions attach to current, historical and imported unresolved opinions without changing originals, pins or verdicts',async()=>{

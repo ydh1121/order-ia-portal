@@ -98,6 +98,28 @@ test('evidence receives bounded masked pixels, actual isolated object readback, 
   assert.equal((await get(saved.evidenceId,'other')).status,404);const copy=await get(saved.evidenceId,'ops');assert.equal(copy.status,200);assert.match(copy.headers.get('Cache-Control'),/no-store/);assert.deepEqual(new Uint8Array(await copy.arrayBuffer()),pixel);
   assert.equal((await run('buyer','b',2,'attach',{evidenceId:saved.evidenceId})).case.state,'REVIEW');assert.equal((await run('ops','b',3,'verify')).case.state,'VERIFIED');
 });
+test('reprice attachment binds the uploaded receipt to its case and uploader without advancing rejected requests',async()=>{
+  const {sql,db,run,grant}=workspace();grant('buyer-2','BUYER','store','one');
+  sql.exec(`INSERT INTO r3_business_site VALUES('store','one','VERIFIED',1);
+    INSERT INTO r3_price_destination VALUES('store','one','r','v',NULL);
+    INSERT INTO r3_price_quote VALUES('q-reprice','buyer','store','one','farm',1,'2020-01-01','2999-01-01','key','hash','digest','{"destination":{"region_code":"r","region_version":"v"}}','{}');`);
+  for(const caseId of ['reprice-a','reprice-b'])assert.equal((await run('buyer',caseId,0,'create',{kind:'reprice',orgId:'store',siteId:'one',quoteId:'q-reprice'})).status,200);
+  const objects=new Map(),bucket={put:async(k,bytes)=>objects.set(k,new Uint8Array(bytes)),get:async k=>{const b=objects.get(k);return b&&{body:b,size:b.length}},delete:async k=>objects.delete(k)};
+  const pixel=new Uint8Array([79,82,80,88,1,1,0,2,0,2,255,0,255,0]);
+  const saved=await handleR3Role({request:new Request('https://ia.test/api/ia/r3-role/evidence?caseId=reprice-a',{method:'POST',headers:{Origin:'https://ia.test','X-IA-CSRF':'x','Content-Type':'application/vnd.order.masked-rasters','Idempotency-Key':'reprice-upload'},body:pixel}),env:{ORDER_QA_DB:db,ORDER_PRIVATE_EVIDENCE:bucket},actor:{id:'buyer',csrf:'x'}});
+  assert.equal(saved.status,200);const {evidenceId}=await saved.json();
+  const before=sql.prepare("SELECT id,state,revision,evidence_id FROM r3_case WHERE id IN ('reprice-a','reprice-b') ORDER BY id").all();
+  const eventsBefore=sql.prepare("SELECT count(*) n FROM r3_case_event WHERE case_id IN ('reprice-a','reprice-b')").get().n;
+  assert.equal((await run('buyer','reprice-b',1,'attach',{evidenceId})).status,409,'another case cannot reuse the receipt, even for its uploader');
+  assert.equal((await run('buyer-2','reprice-a',1,'attach',{evidenceId})).status,409,'another same-site buyer cannot attach the uploader’s receipt');
+  assert.deepEqual(sql.prepare("SELECT id,state,revision,evidence_id FROM r3_case WHERE id IN ('reprice-a','reprice-b') ORDER BY id").all(),before);
+  assert.equal(sql.prepare("SELECT count(*) n FROM r3_case_event WHERE case_id IN ('reprice-a','reprice-b')").get().n,eventsBefore);
+  assert.equal(objects.size,1,'rejected links preserve the uploaded object');
+  const attached=await run('buyer','reprice-a',1,'attach',{evidenceId});
+  assert.equal(attached.status,200);assert.equal(attached.case.state,'REVIEW');assert.equal(attached.case.evidenceId,evidenceId);
+  const readable=await handleR3Role({request:new Request('https://ia.test/api/ia/r3-role/evidence?caseId=reprice-a&id='+evidenceId),env:{ORDER_QA_DB:db,ORDER_PRIVATE_EVIDENCE:bucket},actor:{id:'ops'}});
+  assert.equal(readable.status,200);assert.deepEqual(new Uint8Array(await readable.arrayBuffer()),pixel);
+});
 test('signed IA route carries validated CSRF into the independently granted role handler',async()=>{
   const {issueSession,deriveVerifier}=await import('../src/server/owner-session.mjs');
   const {handleIaRequest}=await import('../src/server/router.mjs');

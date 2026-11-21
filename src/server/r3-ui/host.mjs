@@ -291,6 +291,18 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   function comments(){return [...records.values()].filter(r=>r.kind==='comment'&&(showTest()||!isTest(r))&&target&&match(r.data.target,target,target.viewport)&&r.action!=='delete');}
   const legacyPinId=id=>'legacy:'+id;
   const pinSourceKey=(view,hash)=>reviewKey(view,view.viewport)+'/'+hash;
+  function pinFeedback(parent,fallback,view){
+    // The current version's explicit state always controls its pins. In its
+    // absence, retain the original thread's last stored resolution for display
+    // only; this does not copy a feedback record or a current-version approval.
+    if(feedbackRecord(parent,view))return {resolved:feedbackState(parent,fallback,view)==='resolved'};
+    const source=parent.origin==='current'?records.get(localKey('comment',parent.id)):null;
+    const previous=[...records.values()].filter(r=>r.kind==='feedback'&&r.data.parent?.origin===parent.origin&&r.data.parent?.id===parent.id&&match(r.data.target,view,view.viewport)).sort((a,b)=>b.cursor-a.cursor)[0];
+    if(!previous)return {resolved:feedbackState(parent,fallback,view)==='resolved'};
+    // Reopening or editing the original after that resolution must show it again.
+    if(source&&source.cursor>previous.cursor)return {resolved:source.action==='resolve'};
+    return {resolved:previous.data.status==='resolved',...(previous.data.status==='resolved'?{resolvedInArtifact:previous.data.target.artifactHash}:{})};
+  }
   function reviewPins(view,document){
     if(!view)return [];
     const pins=[],past=legacy.get(reviewKey(view,view.viewport));
@@ -300,7 +312,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       if(typeof a.path!=='string'||![a.x,a.y].every(v=>Number.isFinite(v)&&v>=0&&v<=1))continue;
       pins.push({id:legacyPinId(c.id),origin:'legacy',previous:true,sourceArtifactHash:'legacy',legacyAnchor:a,
         anchor:{id:'unmapped-legacy',instance:view.screen,artifactHash:view.artifactHash,x:a.x,y:a.y,viewport:{width:view.viewport,height:844},scale:1,scroll:[],layers:[]},
-        resolved:feedbackState({origin:'legacy',id:c.id},c.status==='resolved'?'resolved':'unresolved',view)==='resolved'});
+        ...pinFeedback({origin:'legacy',id:c.id},c.status==='resolved'?'resolved':'unresolved',view)});
     }
     for(const r of records.values()){
       if(r.kind!=='comment'||r.action==='delete'||!match(r.data.target,view,view.viewport)||(!showTest()&&isTest(r))||!r.data.anchor)continue;
@@ -309,7 +321,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       pins.push({id:r.id,origin:'current',previous:document?.version!=='current'||sourceHash!==view.artifactHash,
         sourceArtifactHash:sourceHash,sameContent:sourceHash===document?.source?.contentHash,
         anchor:{...a,artifactHash:view.artifactHash},
-        resolved:feedbackState({origin:'current',id:r.id},r.action==='resolve'?'resolved':'unresolved',view)==='resolved'});
+        ...pinFeedback({origin:'current',id:r.id},r.action==='resolve'?'resolved':'unresolved',view)});
     }
     return pins.map((pin,i)=>({...pin,ordinal:i+1}));
   }
@@ -326,7 +338,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     }
   }
   function pinsForDisplay(view,document,post){
-    const pins=reviewPins(view,document);
+    // Original comments can arrive before their later status events. Wait for
+    // the complete initial snapshot before drawing them as unresolved pins.
+    const pins=reviewAvailable?reviewPins(view,document):[];
     loadPinSources(view,pins);
     const sources=[...new Set(pins.map(p=>p.sourceArtifactHash))].map(hash=>pinSources.get(pinSourceKey(view,hash))).filter(Boolean);
     post('pin-sources',sources);
@@ -350,6 +364,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   }
   function pinLocation(card,pin){
     if(!pin)return;
+    if(pin.resolvedInArtifact){
+      const prior=node('small','이전 판에서 해결된 위치 코멘트 · 이번 판 처리 상태는 별도입니다.');prior.dataset.pinPreviousResolution=pin.id;card.append(prior);
+      const original=node('a','해결한 판 열기'),url=sameOriginUrl(location.href);url.searchParams.set('version','recorded');url.searchParams.set('artifactHash',pin.resolvedInArtifact);original.href=url.href;original.dataset.pinResolvedArtifact=pin.resolvedInArtifact;card.append(original);
+    }
     const state=node('small');state.dataset.pinLocation=pin.id;card.append(state);
     const jump=btn('위치 보기',()=>jumpToPin(pin));jump.dataset.pinJump=pin.id;card.append(jump);
   }
@@ -670,9 +688,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
           if((records.get(key)?.revision??0)>=row.revision)continue;
           records.set(key,row);changed=true;
         }
-        cursor=Math.max(cursor,page.nextCursor);reviewAvailable=true;
+        cursor=Math.max(cursor,page.nextCursor);
         if(!page.hasMore)break;
       }
+      reviewAvailable=true;
       // Focusing a drawer control from the iframe must not replace the button
       // between pointerdown and click when its records already match the server.
       if(changed){list();syncPins();if(!drawer.hidden&&!editor&&shell?.activeTab()==='review')notes(subset);}

@@ -17,7 +17,7 @@ const origin='https://order-ia-portal.pages.dev';
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 async function until(check,label){const until=performance.now()+5000;while(!check()&&performance.now()<until)await new Promise(resolve=>setTimeout(resolve,5));assert.ok(check(),label);}
 
-async function mount(t,{qa=false,state='guest-2'}={}){
+async function mount(t,{qa=false,state='guest-2',reducedMotion=true}={}){
  const url=origin+'/ia?'+new URLSearchParams({view:qa?'qa-lab':'product-r3',screen:qa?'onboarding/'+state+'/email':'onboarding',state});
  let artifact,html;
  if(qa){
@@ -30,7 +30,7 @@ async function mount(t,{qa=false,state='guest-2'}={}){
  t.after(()=>{w.dispatchEvent(new w.Event('pagehide'));w.close();});
  Object.defineProperty(w,'crypto',{value:webcrypto});w.TextEncoder=TextEncoder;
  Object.defineProperty(w.document,'scrollingElement',{value:w.document.documentElement});
- w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
+ w.matchMedia=()=>({matches:reducedMotion,addEventListener(){},removeEventListener(){}});
  w.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}};
  w.HTMLElement.prototype.animate=()=>({finished:Promise.resolve(),cancel(){},pause(){},play(){}});
  w.HTMLElement.prototype.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};
@@ -58,6 +58,24 @@ test('canonical auth styles are scoped to the overlay rather than every current 
  const {css}=await getProductAuthSheetBootstrap();
  const inspect=rules=>{for(const rule of rules){if(rule.selectorText)assert.ok(rule.selectorText.startsWith('.ds .product-auth-sheet'),rule.selectorText);if(rule.cssRules)inspect(rule.cssRules);}};
  inspect(parse(css).cssRules);
+});
+
+test('the inline auth sheet has one transform motion owner while focus and the canonical form stay intact',async t=>{
+ const view=await mount(t,{state:'guest-1',reducedMotion:false}),{w}=view,flights=[];
+ const animate=w.HTMLElement.prototype.animate;
+ w.HTMLElement.prototype.animate=function(keyframes,options){
+  if(this.matches('.auth-sheet'))flights.push({element:this,keyframes,options});
+  return animate.call(this,keyframes,options);
+ };
+ view.open();const dialog=view.sheet().querySelector('.auth-sheet'),email=dialog.querySelector('[name=email]');
+ assert.equal(flights.length,1,'the canonical mount and overlay must not start separate entrance motions');
+ assert.equal(flights[0].element,dialog);assert.ok(flights[0].keyframes.every(frame=>'transform' in frame));
+ assert.equal(w.getComputedStyle(dialog).transition,'none','CSS modal transitions must not interpolate the same transform as the sheet animation and drag');
+ assert.ok(dialog.contains(w.document.activeElement));
+ email.value='kept@example.invalid';dialog.querySelector('[name=password]').focus();email.focus();
+ assert.equal(view.sheet().querySelector('.auth-sheet'),dialog);assert.equal(email.value,'kept@example.invalid');
+ assert.equal(flights.length,1,'focus changes keep the original sheet and its one entrance animation');
+ view.root.__orderAuthSheet.close({immediate:true});view.unchanged();
 });
 
 test('the product opens the canonical compact login over the same introduction and closes by Escape, scrim and drag',async t=>{
