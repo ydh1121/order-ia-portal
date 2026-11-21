@@ -44,7 +44,7 @@ window.adminAPI=installProductAdminMotion(window);window.workflow=installProduct
 window.stored={revision:0,data:{layout:[0,1,2].map(i=>({id:'widget-'+i,wide:false}))}};window.layoutWrites=[];window.quickRuns=[];
 window.originalBell=document.querySelector('#existing-bell');
 const passIcon='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5H20V19H4Z"/><path d="M8 9H16M8 13H14"/></svg>';
-const marketIcon='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2C8.6 2 5 9.1 5 14a7 7 0 0 0 14 0c0-4.9-3.6-12-7-12Z"/><path d="M9 9L15 16"/></svg>';
+const marketIcon='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 2C8.6 2 5 9.1 5 14a7 7 0 0 0 14 0c0-4.9-3.6-12-7-12Z"/><path data-currency="KRW" stroke-width="1.5" d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"/></svg>';
 window.options={data:fixture.data,loadLayout:async()=>structuredClone(stored),saveLayout:async(payload,{signal})=>{
  layoutWrites.push(structuredClone(payload));return new Promise((resolve,reject)=>{window.ackLayout=()=>{stored={revision:stored.revision+1,data:{layout:structuredClone(payload.layout)}};resolve(structuredClone(stored));};signal.addEventListener('abort',()=>reject(new DOMException('aborted','AbortError')),{once:true});});
 },trigger:originalBell,container:originalBell.parentElement,actions:[{id:'order-pass',label:'오더 패스',icon:passIcon,run:()=>quickRuns.push('manage.quotes')},{id:'market-price',label:'시세 알림',icon:marketIcon,run:()=>quickRuns.push('notifications')}]};

@@ -12,7 +12,7 @@
   const productIcon = simple => w.ORDER_INTRO_ICON ? w.ORDER_INTRO_ICON(simple) : icon('search',42);
   // Reuse the retained AnimateIcons Lucide Bell paths; the notification owner supplies behavior.
   const noticeIcon = '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="ob-notice-icon"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>';
-  const marketNoticeIcon = '<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="ob-market-notice-icon"><path d="M12 2C8.6 2 5 9.1 5 14a7 7 0 0 0 14 0c0-4.9-3.6-12-7-12Z"/><path d="M9 9L15 16"/></svg>';
+  const marketNoticeIcon = '<svg aria-hidden="true" focusable="false" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" class="ob-market-notice-icon"><path d="M12 2C8.6 2 5 9.1 5 14a7 7 0 0 0 14 0c0-4.9-3.6-12-7-12Z"/><path data-currency="KRW" stroke-width="1.5" d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"/></svg>';
   function illustration(step) {
     const first=step===1;
     return '<div class="ob-illustration"><img class="ob-art" alt="" width="287" height="226" data-intro-art>'+

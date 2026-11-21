@@ -98,7 +98,7 @@
 | 원형 항목 | 아이콘 | 기존 제품 동작 |
 | --- | --- | --- |
 | 오더 패스 | 공통 `deck` SVG | `brandMenu.open('manage.quotes')` → 기존 `delivery-request/ready`의 오더 패스 앞면·뒷면 |
-| 시세 알림 | 달걀 윤곽 안의 백슬래시 `\` SVG | `brandMenu.open('notifications')` → 기존 알림 조회·읽음 처리 |
+| 시세 알림 | 달걀 윤곽 안의 원화 기호 `₩` SVG | `brandMenu.open('notifications')` → 기존 알림 조회·읽음 처리 |
 
 기존 종 아이콘·미읽음 배지·인증 상태는 onboarding과 공유 계정 메뉴가 계속 관리한다. Gooey는 펼침 상태·키보드·Escape 초점 복귀·축소 모션·정리를 담당하며, 현재 알림 처리나 오더 패스의 업무 계약을 새로 만들지 않는다. 이 정정의 자동검사·실화면·배포·사용자 판정은 별도로 기록한다. 이전 Liquid Taffy 참조와 Libraries.dev Gooey 출처를 같은 라이브러리로 표기하지 않는다.
 

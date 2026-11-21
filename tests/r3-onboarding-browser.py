@@ -470,7 +470,7 @@ def check_notification_pin(page, screens):
     expect(actions).to_have_count(2)
     assert actions.evaluate_all('(els)=>els.map(el=>el.getAttribute("aria-label"))')==['오더 패스','시세 알림']
     assert actions.evaluate_all('(els)=>els.every(el=>!el.innerText.trim()&&el.querySelector("svg"))')
-    expect(actions.nth(1).locator('.ob-market-notice-icon path[d="M9 9L15 16"]')).to_have_count(1)
+    expect(actions.nth(1).locator('.ob-market-notice-icon path[data-currency="KRW"][d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"]')).to_have_count(1)
     bell.evaluate('el=>window.__gooeyOriginalBell=el')
     unread=bell.locator('.quick-unread').text_content()
     frame_click(page, bell)

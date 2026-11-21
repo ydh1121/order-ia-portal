@@ -20,7 +20,7 @@
 
 [최신 사용자 정정 원문](https://drive.google.com/file/d/1esSQDw-fnDXyXn7z_gjSBXO3p-dHW3tQ/view)은 기존 알림 플로팅 버튼 하나에 Gooey를 적용하고, 오더 패스와 시세 알림의 원형 아이콘 두 개만 부채꼴로 펼치도록 지정한다. 이 추가 정정은 위 21개 집계와 기존 검사 횟수에 합산하지 않는다.
 
-현재 [onboarding 원본](../scripts/r3/authored/onboarding.js)이 기존 종 버튼·컨테이너를 [admin motion][admin]의 `mountGooey`에 넘긴다. 오더 패스는 기존 `deck` SVG와 `brandMenu.open('manage.quotes')`를 사용하며, [제품 계정 패널](../src/server/product-account-panels.mjs)의 `delivery-request/ready` 오더 패스를 연다. 시세 알림은 달걀 안의 백슬래시 SVG와 기존 `brandMenu.open('notifications')`를 사용한다. 텍스트 박스·세로 목록·추가 일반 작업 버튼은 생성하지 않는다. 미읽음 배지·인증과 기존 데이터 처리 경로를 유지한다.
+현재 [onboarding 원본](../scripts/r3/authored/onboarding.js)이 기존 종 버튼·컨테이너를 [admin motion][admin]의 `mountGooey`에 넘긴다. 오더 패스는 기존 `deck` SVG와 `brandMenu.open('manage.quotes')`를 사용하며, [제품 계정 패널](../src/server/product-account-panels.mjs)의 `delivery-request/ready` 오더 패스를 연다. 시세 알림은 달걀 안의 원화 기호 `₩` SVG와 기존 `brandMenu.open('notifications')`를 사용한다. 텍스트 박스·세로 목록·추가 일반 작업 버튼은 생성하지 않는다. 미읽음 배지·인증과 기존 데이터 처리 경로를 유지한다.
 
 이 단락은 현재 소스 연결을 기록한다. 아래 기존 검사 결과를 이번 정정의 자동검사·실브라우저·배포·사용자 확인 결과로 재사용하지 않는다.
 

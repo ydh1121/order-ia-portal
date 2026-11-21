@@ -47,7 +47,7 @@ function existingBell(t){
  return {win,root,container,trigger,api:installProductAdminMotion(win),scheduled:()=>scheduled};
 }
 
-const icons=['<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6H20V18H4Z"/></svg>','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C7 3 4 12 4 16C4 23 20 23 20 16C20 12 17 3 12 3Z"/><path d="M9 9L15 16"/></svg>'];
+const icons=['<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6H20V18H4Z"/></svg>','<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3C7 3 4 12 4 16C4 23 20 23 20 16C20 12 17 3 12 3Z"/><path data-currency="KRW" stroke-width="1.5" d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"/></svg>'];
 function actions(run=()=>{}){return [{id:'order-pass',label:'오더 패스',icon:icons[0],run:()=>run('order-pass')},{id:'market-price',label:'시세 알림',icon:icons[1],run:()=>run('market-price')}];}
 function translation(button){
  const values=button.style.transform.match(/translate(?:3d)?\(\s*([-.\d]+)px,\s*([-.\d]+)px/);

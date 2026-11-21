@@ -37,7 +37,7 @@ The authored onboarding module owns the existing `.ob-quick` notification button
 It passes that button and container to `mountGooey` as `options.trigger` and
 `options.container`; the helper never creates another floating trigger. Exactly
 two circular, icon-only actions fan out: the existing deck icon opens the Order
-Pass through `manage.quotes`, and an egg with a backslash opens the existing
+Pass through `manage.quotes`, and an egg with the Korean won sign (₩) opens the existing
 `notifications` panel. The original bell, unread badge and authentication state
 remain owned by onboarding and the shared account menu. The registry, admin
 modules and embedded account/auth panels do not add generic floating actions.

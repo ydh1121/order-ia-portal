@@ -171,6 +171,8 @@ test('the existing notification bell offers only Order Pass and market notificat
   assert.equal(f.root.querySelectorAll('.ob-quick>button').length,1);
   assert.equal(quick.getAttribute('aria-controls'),f.root.querySelector('.pm-gooey-actions').id);
   assert.deepEqual(actions.map(button=>button.getAttribute('aria-label')),['오더 패스','시세 알림']);
+  assert.ok(actions[1].querySelector('.ob-market-notice-icon path[data-currency="KRW"]'),'the egg contains the Korean won mark requested by the user');
+  assert.equal(actions[1].querySelector('path[d="M9 9L15 16"]'),null,'a lone backslash is not the currency mark');
   assert.equal(f.root.querySelector('.pm-gooey-label'),null);
   quick.click();
   assert.equal(quick.getAttribute('aria-expanded'),'true');assert.deepEqual(rendered,[],'the bell opens the radial actions before any account panel');
