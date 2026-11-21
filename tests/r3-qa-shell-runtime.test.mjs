@@ -72,7 +72,9 @@ test('current purchase carries the canonical mount, controlled fixture and sourc
  assert.equal(document.fixture.scenario,'normal');
  assert.equal(document.source.mode,'controlled-qa');
  assert.equal(document.source.persistence,'frame-memory');
- assert.ok(document.source.files.includes('src/server/r3-ui/qa-mvp-runtime.mjs'));
+ assert.ok(document.source.files.includes('src/server/product-ui/modules.mjs'));
+ assert.ok(document.source.files.includes('src/server/product-ui/documents.mjs'));
+ assert.equal(document.source.files.includes('src/server/r3-ui/qa-mvp-runtime.mjs'),false);
  assert.ok(document.source.sharedFiles.includes('src/server/product-app-adapter.mjs'));
  assert.ok(document.source.sharedFiles.includes('src/server/r3-ui/qa-fixture-adapter.mjs'));
  assert.equal(document.exportHash,digest(document.editable));

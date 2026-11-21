@@ -32,7 +32,7 @@ def save_failure(page, name, error):
         if page is not None and not page.is_closed() and page.locator('#frame').count():
             REPORT['frame'] = page.frame_locator('#frame').locator('#order-single').evaluate('''root=>{
               const w=root.ownerDocument.defaultView;
-              return {fixture:w.ORDER_APP_ADAPTER?.fixture?.inspect(),frames:w.__workflowFrames||{},requests:w.__workflowRequests||[],signaturePackets:w.__signaturePackets||[],signatureAttachments:w.__signatureAttachments||[],activeElement:root.ownerDocument.activeElement?.outerHTML?.slice(0,600)};
+              return {fixture:w.ORDER_APP_ADAPTER?.fixture?.inspect(),frames:w.__workflowFrames||{},requests:w.__workflowRequests||[],signaturePackets:w.__signaturePackets||[],signatureAttachments:w.__signatureAttachments||[],signatureConfirmation:w.__signatureConfirmation||null,activeElement:root.ownerDocument.activeElement?.outerHTML?.slice(0,600)};
             }''', timeout=2000)
     except Exception as capture_error:
         REPORT['captureError'] = str(capture_error)
@@ -289,21 +289,16 @@ def check(page, origin, reduced, workflow):
     step('complete')
 
 
-def run_case(browser, fixture, workflow, reduced):
+def run_case(browser, fixture, workflow, reduced, login_state):
     name = workflow + ('-390-reduced' if reduced else '-390-motion')
     REPORT.clear()
-    REPORT.update({'case': name, 'workflow': workflow, 'width': 390, 'reducedMotion': reduced, 'scope': 'canonical product UI with a new browser context and isolated frame-memory QA transport', 'commercialWrites': 0, 'lastStep': 'login', 'errors': []})
+    REPORT.update({'case': name, 'workflow': workflow, 'width': 390, 'reducedMotion': reduced, 'scope': 'canonical product UI with a new browser context and isolated frame-memory QA transport', 'authentication': 'one verified host session; no shared origin storage or review fixture state', 'commercialWrites': 0, 'lastStep': 'opening authenticated context', 'errors': []})
     context = page = None
     try:
-        context = browser.new_context(viewport={'width': 390, 'height': 900}, reduced_motion='reduce' if reduced else 'no-preference')
+        context = browser.new_context(viewport={'width': 390, 'height': 900}, reduced_motion='reduce' if reduced else 'no-preference', storage_state=login_state)
         page = context.new_page()
         errors = REPORT['errors']
         page.on('pageerror', lambda error: errors.append(str(error)))
-        page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
-        page.locator('input[name=email]').fill(fixture['email'])
-        page.locator('input[name=password]').fill(fixture['pass'])
-        page.locator('button[type=submit]').click()
-        page.wait_for_url('**/ia?view=qa-lab**')
         check(page, fixture['url'], reduced, workflow)
         assert not REPORT['errors'], REPORT['errors']
         REPORT['result'] = 'PASS'
@@ -326,6 +321,25 @@ def run_case(browser, fixture, workflow, reduced):
     return dict(REPORT)
 
 
+def authenticate_once(browser, fixture):
+    # The host's real login throttle remains enabled. A verified session may be
+    # reused while every case still receives a new context and in-frame fixture.
+    context = browser.new_context(viewport={'width': 390, 'height': 900})
+    try:
+        page = context.new_page()
+        page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+        page.locator('input[name=email]').fill(fixture['email'])
+        page.locator('input[name=password]').fill(fixture['pass'])
+        page.locator('button[type=submit]').click()
+        page.wait_for_url('**/ia?view=qa-lab**')
+        expect(page.locator('#frame')).to_be_attached()
+        state = context.storage_state()
+        state['origins'] = []
+        return state
+    finally:
+        context.close()
+
+
 def main():
     host = subprocess.Popen(['node', 'tests/r3-browser-host.mjs'], cwd=ROOT, stdout=subprocess.PIPE, text=True)
     try:
@@ -334,9 +348,10 @@ def main():
             browser = pw.chromium.launch(executable_path=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium'))
             reports = []
             try:
+                login_state = authenticate_once(browser, fixture)
                 for reduced in (False, True):
                     for workflow in WORKFLOWS:
-                        reports.append(run_case(browser, fixture, workflow, reduced))
+                        reports.append(run_case(browser, fixture, workflow, reduced, login_state))
                         # Persist after every isolated case, including failures. A later
                         # infrastructure interruption must not erase earlier receipts.
                         OUT.mkdir(parents=True, exist_ok=True)

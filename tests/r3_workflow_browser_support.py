@@ -115,8 +115,28 @@ def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: N
     file.set_input_files({'name': 'synthetic-proof.png', 'mimeType': 'image/png', 'buffer': PNG})
     expect(frame.locator('canvas[aria-label="1쪽 가림 영역 선택"]')).to_be_visible()
     confirmation = frame.get_by_label('가림 처리한 모든 페이지를 확인했습니다.', exact=True)
-    confirmation.check()
+    on_step('signature explicit confirmation with trusted frame click')
+    expect(confirmation).not_to_be_checked()
+    confirmation.evaluate('''el=>{
+      const w=el.ownerDocument.defaultView;
+      w.__signatureConfirmation={before:{checked:el.checked,disabled:el.disabled},events:[]};
+      w.__signatureConfirmationInput=el;
+      for(const type of ['pointerdown','click'])el.addEventListener(type,e=>{
+        w.__signatureConfirmation.events.push({type:e.type,trusted:e.isTrusted,targetIsInput:e.target===el,checked:el.checked});
+      },{once:true});
+    }''')
+    frame_click(page, confirmation)
+    confirmation_state = confirmation.evaluate('''el=>{
+      const w=el.ownerDocument.defaultView;
+      w.__signatureConfirmation.after={checked:el.checked,disabled:el.disabled,sameInput:el===w.__signatureConfirmationInput};
+      return w.__signatureConfirmation;
+    }''')
+    expect(confirmation).to_be_checked()
+    assert confirmation_state['after'] == {'checked': True, 'disabled': False, 'sameInput': True}, confirmation_state
+    assert [event['type'] for event in confirmation_state['events']] == ['pointerdown', 'click'], confirmation_state
+    assert all(event['trusted'] and event['targetIsInput'] for event in confirmation_state['events']), confirmation_state
     submit = frame.locator('.wf-panel button').filter(has_text='가림 처리본 제출')
+    on_step('signature missing-signature rejection after explicit confirmation')
     frame_click(page, submit)
     expect(frame.locator('.wf-status')).to_contain_text('서명')
     assert not any(call['path'] == '/evidence' and call['method'] == 'POST' for call in inspect_fixture(frame)['calls'])
@@ -151,4 +171,4 @@ def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: N
     attachments = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signatureAttachments')
     assert len(attachments) == 1 and attachments[0]['context']['memo'] == '제출 증빙의 검수용 추가 요청'
     assert fixture['source']['persistent'] is False and fixture['source']['commercial'] is False
-    return {'scope': 'same product editor and canonical adapter with frame-memory QA transport', 'savedCase': case, 'packets': packets, 'attachments': attachments, 'missingSignatureBlocked': True, 'failureRetry': fail_first, 'pendingAwaited': True}
+    return {'scope': 'same product editor and canonical adapter with frame-memory QA transport', 'savedCase': case, 'packets': packets, 'attachments': attachments, 'confirmation': confirmation_state, 'missingSignatureBlocked': True, 'failureRetry': fail_first, 'pendingAwaited': True}

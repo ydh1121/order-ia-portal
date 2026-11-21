@@ -224,6 +224,19 @@ try:
             if width==1440:
                 f=screens.screen('admin-overview','normal')
                 panel=f.locator('#order-single')
+                # The product now reads its adapter's dashboard data. Keep exact
+                # checks against that response, not the former 21/83 demo totals.
+                dashboard=inspect_fixture(f)['data']['dashboard']
+                periods={period['id']:period for period in dashboard['periods']}
+                first_period,second_period=periods['7'],periods['30']
+                points=first_period['points']
+                assert len(points)>=2,dashboard
+                unit=dashboard['unit']
+                quantity=lambda value:f'{value:,}'+unit
+                point_text=lambda point:point['label']+' · '+quantity(point['value'])+(' · '+point['note'] if point.get('note') else '')
+                range_points=points[-2:]
+                range_total=sum(point['value'] for point in range_points)
+                range_text=range_points[0]['label']+' – '+range_points[-1]['label']+' · 합계 '+quantity(range_total)
                 collapse=panel.locator('[data-qa-action=collapse-sidebar]')
                 frame_click(page,collapse)
                 expect(collapse).to_have_attribute('aria-expanded','false')
@@ -235,22 +248,26 @@ try:
                 nav=panel.locator('.qa-admin-nav-item').nth(1)
                 nav.focus()
                 expect(panel.locator('.qa-admin-nav .pm-nav-indicator')).to_have_css('opacity','1')
-                expect(panel.locator('.pm-data-scope')).to_have_text('QA 샘플 사업장')
-                expect(panel.locator('[data-pm-stat] .pm-stat-value')).to_have_text('21건')
+                expect(panel.locator('.pm-data-scope')).to_have_text(dashboard['scopeLabel'])
+                expect(panel.locator('[data-pm-stat]')).to_have_attribute('data-period',first_period['id'])
+                expect(panel.locator('[data-pm-stat] .pm-stat-value')).to_have_text(quantity(first_period['total']))
                 frame_click(page,panel.locator('[data-pm-stat] [data-period="30"]'))
-                expect(panel.locator('[data-pm-stat] .pm-stat-value')).to_have_text('83건')
+                expect(panel.locator('[data-pm-stat]')).to_have_attribute('data-period',second_period['id'])
+                expect(panel.locator('[data-pm-stat] .pm-stat-value')).to_have_text(quantity(second_period['total']))
                 wheel=panel.locator('.pm-ring-wheel')
                 wheel.press('ArrowRight')
                 expect(wheel).to_have_attribute('aria-valuetext','농장 4건')
                 expect(panel.locator('.pm-ring-readout strong')).to_have_text('4건')
                 expect(panel.locator('.pm-ring-wheel g path')).to_have_count(3)
                 plot=panel.locator('[data-pm-metric] .pm-plot')
+                expect(panel.locator('[data-pm-metric]')).to_have_attribute('data-period',first_period['id'])
                 frame_click(page,plot,position={'x':2,'y':50})
-                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text('검토 1일 · 1건')
+                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text(point_text(points[0]))
                 plot.press('End')
-                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text('검토 7일 · 7건')
+                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text(point_text(points[-1]))
                 plot.press('Shift+ArrowLeft')
-                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text('검토 6일 – 검토 7일 · 합계 13건')
+                expect(panel.locator('[data-pm-metric] .pm-graph-tip')).to_have_text(range_text)
+                record['dashboardReadback']={'scopeLabel':dashboard['scopeLabel'],'periodTotals':{period['id']:period['total'] for period in (first_period,second_period)},'metricPeriod':first_period['id'],'firstPoint':points[0],'lastPoint':points[-1],'rangePoints':range_points,'rangeTotal':range_total}
                 grid=panel.locator('.qa-widget-grid')
                 first=grid.locator(':scope > [data-widget-id]').first.locator('h2').text_content()
                 frame_click(page,panel.get_by_role('button',name='위젯 배치'))

@@ -280,6 +280,26 @@ export function installProductAdminMotion(win = window) {
     refresh();ctx.cleanup(()=>{stop();rail.remove();region.parentElement?.classList.remove('pm-index-reading');});return {destroy:ctx.destroy,refresh,jump};
   }
 
+  function reserveGooeySpace(root, group, ctx) {
+    // A fixed action must leave a reachable tail in the content's own scroll
+    // surface. Padding on the outer QA/product root cannot extend a nested page.
+    const surface=(root.matches('.page,.ops-main')?root:[...root.querySelectorAll('.page,.ops-main')].find(el=>!el.closest('.product-panel-body,.product-auth-sheet,.obm-panel,[role=dialog],[role=alertdialog]')))||root;
+    const tail=element('div','pm-gooey-clearance');tail.setAttribute('aria-hidden','true');
+    tail.style.cssText='display:block;width:100%;flex:0 0 auto;grid-column:1 / -1;pointer-events:none';surface.append(tail);
+    let owner=null,prior=null,applied='';
+    const restore=()=>{if(owner&&owner.style.getPropertyValue('scroll-padding-bottom')===applied){if(prior.value)owner.style.setProperty('scroll-padding-bottom',prior.value,prior.priority);else owner.style.removeProperty('scroll-padding-bottom');}};
+    const refresh=()=>{
+      let next=surface;while(next&&next!==doc.documentElement){const style=win.getComputedStyle(next);if(/auto|scroll|overlay/.test(style.overflowY||style.overflow))break;next=next.parentElement;}
+      next=next&&next!==doc.documentElement?next:(doc.scrollingElement||doc.documentElement);
+      if(next!==owner){restore();owner=next;prior={value:owner.style.getPropertyValue('scroll-padding-bottom'),priority:owner.style.getPropertyPriority('scroll-padding-bottom'),minimum:parseFloat(win.getComputedStyle(owner).scrollPaddingBottom)||0};}
+      const style=win.getComputedStyle(group),clearance=Math.ceil((group.getBoundingClientRect().height||56)+(parseFloat(style.bottom)||16)+16);
+      const height=clearance+'px';if(tail.style.height!==height)tail.style.height=height;
+      applied=Math.max(prior.minimum,clearance)+'px';if(owner.style.getPropertyValue('scroll-padding-bottom')!==applied)owner.style.setProperty('scroll-padding-bottom',applied,prior.priority);
+    };
+    refresh();ctx.on(win,'resize',refresh);ctx.on(win.visualViewport,'resize',refresh);ctx.observe([group,surface],refresh);
+    ctx.cleanup(()=>{restore();tail.remove();});
+  }
+
   function mountGooey(root, actions, options = {}) {
     const available=(Array.isArray(actions)?actions:[]).filter(a=>a&&typeof a.run==='function'&&typeof a.label==='string').slice(0,4);
     if(!available.length||root.querySelector('[data-product-gooey]'))return {destroy(){}};
@@ -293,7 +313,17 @@ export function installProductAdminMotion(win = window) {
     const kick=loop(ctx,()=>[rotation,...items.flatMap(i=>[i.y,i.scale])],()=>{trigger.style.transform='rotate('+rotation.x.toFixed(2)+'deg)';for(const item of items){const scale=Math.max(0,item.scale.x);item.button.style.transform='translateY('+item.y.x.toFixed(2)+'px) scale('+scale.toFixed(4)+')';item.button.style.opacity=clamp(scale*2,0,1);item.button.style.visibility=open||scale>=.001?'visible':'hidden';item.blob.setAttribute('cy',(28+item.y.x).toFixed(2));item.blob.setAttribute('r',(24*scale).toFixed(3));}});
     function setOpen(next,focus=false){open=next;group.dataset.open=String(open);trigger.setAttribute('aria-expanded',String(open));trigger.setAttribute('aria-label',open?'빠른 작업 닫기':'빠른 작업 열기');rotation.t=open?45:0;items.forEach((item,i)=>{item.y.t=open?-(i+1)*66:0;item.scale.t=open?1:0;item.y.wait=item.scale.wait=open?i*.04:(items.length-1-i)*.025;item.button.tabIndex=open?0:-1;item.button.inert=!open;item.button.setAttribute('aria-hidden',String(!open));if(open)item.button.style.visibility='visible';});kick();if(focus)trigger.focus();}
     ctx.on(trigger,'click',()=>setOpen(!open));ctx.on(doc,'pointerdown',e=>{if(open&&!group.contains(e.target))setOpen(false);});ctx.on(group,'keydown',e=>{if(e.key==='Escape'&&open){e.preventDefault();setOpen(false,true);}if(['ArrowUp','ArrowDown','Home','End'].includes(e.key)){e.preventDefault();if(!open)setOpen(true);const i=items.findIndex(item=>item.button===e.target),next=e.key==='Home'?0:e.key==='End'?items.length-1:clamp(i+(e.key==='ArrowUp'?1:-1),0,items.length-1);items[next]?.button.focus();}});
-    setOpen(false);ctx.cleanup(()=>group.remove());return {destroy:ctx.destroy};
+    setOpen(false);reserveGooeySpace(root,group,ctx);
+    // A modal owns interaction until it closes. Its underlying page keeps the
+    // clearance, and the same Gooey returns when the modal releases the page.
+    const syncOverlay=()=>{
+      const blocked=[...root.querySelectorAll('dialog[open],[role=dialog][aria-modal=true],[role=alertdialog],.obm-panel,.qa-modal-layer,.functional-drawer[data-open=true]')].some(el=>!el.hidden&&!el.closest('[hidden]')&&win.getComputedStyle(el).display!=='none'&&win.getComputedStyle(el).visibility!=='hidden');
+      if(blocked&&open)setOpen(false);if(group.inert!==blocked)group.inert=blocked;
+      const visibility=blocked?'hidden':'';if(group.style.visibility!==visibility)group.style.visibility=visibility;
+      if(blocked){if(group.getAttribute('aria-hidden')!=='true')group.setAttribute('aria-hidden','true');}else if(group.hasAttribute('aria-hidden'))group.removeAttribute('aria-hidden');
+    };
+    if(win.MutationObserver){const observer=new win.MutationObserver(syncOverlay);observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['hidden','open','aria-hidden','inert','data-open']});ctx.cleanup(()=>observer.disconnect());}
+    syncOverlay();ctx.cleanup(()=>group.remove());return {destroy:ctx.destroy};
   }
 
   function mount(root, options = {}) {
