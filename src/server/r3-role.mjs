@@ -94,6 +94,11 @@ async function planTransition(db,actorId,input,now) {
   if(input.action==='attach' || input.action==='verify') {
     guard+=` AND ${evidencePredicate()}`;args.push(input.evidenceId||c.evidence_id||'',c.org_id,c.site_id,c.kind);
   }
+  if(c.kind==='reprice' && input.action==='attach'){
+    // A reprice submission may only link the receipt uploaded by this actor for this case.
+    guard+=` AND EXISTS(SELECT 1 FROM r3_evidence_object o WHERE o.id=? AND o.case_id=? AND o.actor_id=?)`;
+    args.push(input.evidenceId,c.id,actorId);
+  }
   if(c.kind==='delivery' && ['attach','document-review','settle'].includes(input.action)){
     guard+=` AND EXISTS (SELECT 1 FROM r3_evidence_object o JOIN r3_evidence_receipt e ON e.id=o.id
       WHERE o.case_id=? AND o.id=? AND e.purpose='delivery' AND e.state='MASKED_SCANNED')`;

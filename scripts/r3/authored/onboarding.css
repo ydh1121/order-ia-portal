@@ -128,5 +128,5 @@
 .ob .ob-brand-common{position:relative;display:flex;align-items:center;gap:8px;min-width:0;flex:1;color:#24292e;--obm-mark-offset-y:2.640637px}
 .ob.member .ob-brand-common{--obm-mark-offset-y:3.373893px}
 .ob .ob-brand-common .ob-wordmark{position:relative;top:2.5234375px;width:72px;height:25px;flex:none;font:900 25px/25px 'Arial Black',Arial,sans-serif;letter-spacing:0;background:none;color:#24292e}
-.ob .ob-brand-common .ob-period{position:absolute;left:70.625px;bottom:0}
+.ob .ob-brand-common .ob-period{position:absolute;left:73.625px;bottom:0}
 .ob.member .ob-brand-common .ob-period{display:none}

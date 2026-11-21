@@ -1,0 +1,36 @@
+{
+  "cutoff": 450,
+  "purpose": "Current09 targets first observed after446; earlier history remains in immutable prior epoch",
+  "targets": [
+    {
+      "target": {
+        "screen": "onboarding",
+        "state": "guest-1",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "5ee12e7bfbf591d7c1516c932d9afaf03975b777fed1cfbc2281a868a1d1cdc6"
+      },
+      "release": "MSG0585-R3",
+      "last_cursor": 447,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    },
+    {
+      "target": {
+        "screen": "onboarding",
+        "state": "company",
+        "variant": "email",
+        "viewport": 390,
+        "artifactHash": "21e77eb80199bf6511ecd900c78f434a062ca67deb042a78d8e0512c7f747df8"
+      },
+      "release": "MSG0585-R3",
+      "last_cursor": 450,
+      "baseline": {
+        "valid": true,
+        "status": 200
+      }
+    }
+  ]
+}

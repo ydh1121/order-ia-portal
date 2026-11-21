@@ -155,6 +155,113 @@ def check_auth_overlay(page, frame):
     print('PASS canonical auth overlay: original slide/DOM/hash retained, real provider assets, inner QA pin and restore, Escape/scrim/drag close')
 
 
+def check_auth_overlay_motion(page, origin, width):
+    """Observe each rendered entrance frame without pausing or replacing its motion."""
+    screens = ReviewScreens(page, origin, width)
+    frame = screens.screen('onboarding', 'guest-1')
+    root = frame.locator('#order-single')
+    digest = page.locator('#frame').get_attribute('data-test-ready-hash')
+    url = page.url
+    out = ROOT / 'artifacts' / 'r3-auth-motion'
+    out.mkdir(parents=True, exist_ok=True)
+    for screen, label in (('login', '로그인'), ('signup', '회원가입')):
+        opener = frame.get_by_role('button', name=label, exact=True)
+        opener.evaluate("""el=>{
+            const root=document.getElementById('order-single');
+            const before={document,root,main:root.querySelector('.ob-main'),
+                stage:root.querySelector('.ob-stage'),brand:root.querySelector('.ob-brand-common svg')};
+            window.__authOverlayMotion={done:false,trusted:false,samples:[],seenAnimations:0};
+            el.addEventListener('click',event=>{
+                const receipt=window.__authOverlayMotion,start=performance.now(),animations=new Set();
+                receipt.trusted=event.isTrusted;
+                let originalSheet=null;
+                function sample(phase){
+                    const sheet=root.querySelector('.product-auth-sheet .auth-sheet');
+                    if(sheet&&!originalSheet)originalSheet=sheet;
+                    const style=sheet&&getComputedStyle(sheet),rect=sheet?.getBoundingClientRect();
+                    const active=sheet?[...sheet.getAnimations()].map(animation=>{
+                        animations.add(animation);
+                        return {kind:animation.constructor.name,property:animation.transitionProperty||null,
+                            state:animation.playState,pending:animation.pending,
+                            transform:animation.effect.getKeyframes().some(key=>'transform' in key)};
+                    }):[];
+                    receipt.samples.push({phase,elapsed:performance.now()-start,present:Boolean(sheet),
+                        count:root.querySelectorAll('.product-auth-sheet .auth-sheet').length,
+                        sameSheet:sheet===originalSheet,
+                        sameIntro:before.document===document&&before.root===document.getElementById('order-single')&&
+                            before.main===root.querySelector('.ob-main')&&before.stage===root.querySelector('.ob-stage')&&
+                            before.brand===root.querySelector('.ob-brand-common svg'),
+                        rect:rect?{top:rect.top,bottom:rect.bottom,left:rect.left,width:rect.width,height:rect.height}:null,
+                        opacity:style?Number(style.opacity):null,display:style?.display,visibility:style?.visibility,
+                        transition:style?.transitionProperty,transform:style?.transform,
+                        focused:Boolean(sheet?.contains(document.activeElement)),viewport:innerHeight,active});
+                    receipt.seenAnimations=animations.size;
+                    if(performance.now()-start>=720){receipt.done=true;return;}
+                    requestAnimationFrame(()=>sample('frame'));
+                }
+                // Capture schedules the next rendered frame; the click's bubble
+                // handlers can finish canonical mount and focus without a probe
+                // microtask interleaving between individual event listeners.
+                requestAnimationFrame(()=>sample('frame'));
+            },{capture:true,once:true});
+        }""")
+        frame_click(page, opener)
+        receipt = root.evaluate("""()=>new Promise((resolve,reject)=>{
+            const start=performance.now();
+            function wait(){
+                if(window.__authOverlayMotion?.done)return resolve(window.__authOverlayMotion);
+                if(performance.now()-start>3000)return reject(Error('auth entrance frame trace did not finish'));
+                requestAnimationFrame(wait);
+            }
+            wait();
+        })""")
+        receipt.update({'width':width,'screen':screen,'artifactHash':digest,
+                        'source':'private QA browser fixture; trusted physical opener; unmodified normal motion'})
+        trace = out / f'auth-overlay-{screen}-{width}.json'
+        trace.write_text(json.dumps(receipt,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        samples = receipt['samples']
+        assert receipt['trusted'] and len(samples) >= 6, str(trace)
+        assert all(sample['present'] and sample['count'] == 1 and sample['sameSheet'] and sample['sameIntro']
+                   for sample in samples), str(trace)
+        assert all(sample['opacity'] == 1 and sample['display'] != 'none' and sample['visibility'] == 'visible'
+                   and sample['transition'] == 'none' for sample in samples), str(trace)
+        assert receipt['seenAnimations'] == 1, str(trace)
+        assert any(any(animation['transform'] and animation['state'] == 'running' for animation in sample['active'])
+                   for sample in samples), str(trace)
+        assert all(not any(animation['kind'] == 'CSSTransition' for animation in sample['active']) and
+                   sum(animation['transform'] and animation['state'] == 'running' for animation in sample['active']) <= 1
+                   for sample in samples), str(trace)
+        rects = [sample['rect'] for sample in samples]
+        assert max(rect['top'] for rect in rects) - rects[-1]['top'] > 30, str(trace)
+        assert any(rects[-1]['top'] + 2 < rect['top'] < rects[0]['top'] - 2 for rect in rects), str(trace)
+        assert all(current['top'] <= previous['top'] + .75 for previous,current in zip(rects,rects[1:])), str(trace)
+        for dimension in ('left','width','height'):
+            assert max(rect[dimension] for rect in rects) - min(rect[dimension] for rect in rects) <= 1, (dimension,str(trace))
+        assert abs(rects[-1]['bottom'] - samples[-1]['viewport']) <= 1, str(trace)
+        assert all(abs(rect['top'] - rects[-1]['top']) <= 1 for rect in rects[-3:]), str(trace)
+        assert samples[-1]['focused'], str(trace)
+        overlay = frame.locator('[data-product-auth-sheet]')
+        expect(overlay).to_have_attribute('data-auth-screen', screen)
+        if screen == 'login':
+            overlay.locator('[name=email]').press('Escape')
+        else:
+            sheet, grip = overlay.locator('.auth-sheet'), overlay.locator('.sheet-handle')
+            x, y = frame_pointer_position(page, grip)
+            travel = sheet.evaluate('el=>Math.max(120,el.getBoundingClientRect().height)*.5+12')
+            scale = page.locator('#frame').evaluate('el=>el.getBoundingClientRect().height/el.offsetHeight')
+            page.mouse.move(x, y)
+            page.mouse.down()
+            page.mouse.move(x, y + travel * scale, steps=12)
+            page.mouse.up()
+        expect(overlay).to_have_count(0)
+        expect(opener).to_be_focused()
+        expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
+        expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', '1')
+        expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
+        assert page.url == url
+    print('PASS auth entrance RAF trace: one stable canonical sheet, monotonic slide without opacity flicker or CSS transition, preserved focus and normal-motion Escape/drag close')
+
+
 def drag_intro(page, frame, *, forward, expected_step):
     title = frame.locator('.ob-copy h1')
     size = title.evaluate('el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})')
@@ -363,6 +470,7 @@ def main():
                 check(page,fixture["url"],width)
                 if width == 375:
                     page.emulate_media(reduced_motion="no-preference")
+                    check_auth_overlay_motion(page,fixture["url"],width)
                     check_auth_motion(page,fixture["url"],width)
                 context.close()
             browser.close()

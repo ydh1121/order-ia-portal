@@ -363,6 +363,45 @@ def check_duplicate_original(context, origin, result):
         page.close()
 
 
+def check_resolved_reload(page, current_hash, source_ids):
+    before = records(page)
+    page.locator("#points").click()
+    page.locator('[data-comment-filter="all"]').click()
+    for source_id in source_ids:
+        card = page.locator('#notes article[data-feedback-id="' + source_id + '"]')
+        if before[source_id]["data"]["target"]["artifactHash"] == current_hash:
+            page.once("dialog", lambda dialog: dialog.accept("합성 검수에서 해결 상태를 확인함"))
+        with page.expect_response(lambda response: response.request.method == "POST" and
+                response.url.endswith("/r3-qa/records") and
+                response.request.post_data_json.get("kind") == "feedback" and
+                response.request.post_data_json["data"]["parent"]["id"] == source_id) as saved:
+            card.get_by_role("button", name="의견 해결", exact=True).click()
+        assert saved.value.ok
+        assert saved.value.request.post_data_json["data"]["status"] == "resolved"
+        expect(card).to_have_attribute("data-feedback-status", "resolved")
+    frame = page.frame_locator("#frame")
+    expect(frame.locator(".r3-pin")).to_have_count(0)
+    expect(page.locator("#show-resolved-pins")).not_to_be_checked()
+    page.reload()
+    frame = ready(page, current_hash)
+    page.locator("#points").click()
+    page.locator('[data-comment-filter="all"]').click()
+    for source_id in source_ids:
+        expect(page.locator('#notes article[data-feedback-id="' + source_id + '"]')).to_have_attribute("data-feedback-status", "resolved")
+    expect(frame.locator(".r3-pin")).to_have_count(0)
+    after = records(page)
+    for source_id in source_ids:
+        assert after[source_id]["data"] == before[source_id]["data"], "Resolution preserves the original body, artifact and anchor"
+        if before[source_id]["data"]["target"]["artifactHash"] != current_hash:
+            assert after[source_id] == before[source_id], "An older source is resolved through feedback without rewriting its original event"
+    assert all(next(record for record in after.values() if record["kind"] == "feedback" and
+                    record["data"]["parent"]["id"] == source_id)["data"]["status"] == "resolved" for source_id in source_ids)
+    page.locator("#close-drawer").click()
+    page.screenshot(path=str(OUT / "resolved-after-reload.png"))
+    return {"sourceIds": source_ids, "resolvedAfterReload": True, "visiblePins": 0,
+            "originalBodiesAnchorsAndHashesPreserved": True}
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     host = subprocess.Popen(["node", "tests/r3-browser-host.mjs"], cwd=ROOT, stdout=subprocess.PIPE, text=True)
@@ -474,6 +513,7 @@ def main():
                 "priorGeometry": prior_geometry, "restoredGeometry": restored, "savedScrollX": saved_scroll,
                 "restoredPreviewScale": 1, "maximumScrollX": maximum_scroll,
                 "reload": True, "syntheticRecords": 3}
+            result["checks"]["resolvedReload"] = check_resolved_reload(page, current["hash"], [old_id, current_id, mixed_id])
             result["checks"]["legacy"] = check_legacy(context, fixture["url"], result)
             result["checks"]["duplicateOriginal"] = check_duplicate_original(context, fixture["url"], result)
             assert not result["pageErrors"], result["pageErrors"]

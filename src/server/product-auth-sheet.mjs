@@ -26,7 +26,8 @@ export function getProductAuthSheetBootstrap(){
 export const productAuthSheetCss=String.raw`
 .ds .product-auth-sheet{position:fixed;inset:0;z-index:80;isolation:isolate}
 .ds .product-auth-sheet>.auth-scene{position:absolute;inset:0;width:100%;height:100%;background:transparent}
-.ds .product-auth-sheet .auth-sheet{bottom:0;left:0;right:0;width:min(100%,460px);max-width:460px;max-height:calc(100% - 20px);margin-inline:auto;overscroll-behavior:contain}
+/* The canonical gesture and WAAPI own translation; generic modal transitions must not trail them. */
+.ds .product-auth-sheet .auth-sheet{bottom:0;left:0;right:0;width:min(100%,460px);max-width:460px;max-height:calc(100% - 20px);margin-inline:auto;overscroll-behavior:contain;transition:none}
 .ds .product-auth-sheet .sheet-dim{position:absolute;inset:0}
 .ds .product-auth-sheet .terms-page{padding:0;min-height:0}
 .ds .product-auth-sheet .terms-page .page-head{margin-top:0}
