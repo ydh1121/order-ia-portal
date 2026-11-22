@@ -195,13 +195,19 @@ def main():
 
         # Actual regular controls, writes and snapshots; no scenario hydration.
         quote = page.locator('#order-app-quote')
+        expect(quote.locator('#page-form')).to_have_css('filter', 'none')
         for field, value in [('housing', '1'), ('size', '대란'), ('pack', '30')]:
             quote.locator(f'[data-pick="{field}"][data-value="{value}"]:visible').click()
         wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0]?.pack==="30"')
-        quote.locator('.accordion-trigger[data-open="q2"]').click()
+        # The original initial-SKU commit already advances to Q2. Toggling its
+        # header here would close the real input owner before native typing.
+        expect(quote.locator('.accordion-trigger[data-open="q2"]')).to_have_attribute('aria-expanded', 'true')
+        expect(quote.locator('#body-q2 > *').first).to_have_js_property('inert', False)
         expect(quote.locator('[data-line-qty]')).to_be_visible()
         quote.locator('[data-line-qty]').fill('10')
+        expect(quote.locator('[data-line-qty]')).to_be_focused()
         quote.locator('[data-line-price]').fill('5000')
+        expect(quote.locator('[data-line-price]')).to_be_focused()
         quote.locator('[data-line-price]').press('Tab')
         wait_for_expression(page, '''(()=>{const line=ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0];
             return line?.qty==='10' && line?.price==='5000';})()''')

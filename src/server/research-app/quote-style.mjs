@@ -1,5 +1,6 @@
 export const researchQuoteCss=`
 [data-research-quote]{min-width:0;--max:720px;--blue:#315cf5;font-family:inherit;color:#17212f}
+#order-app-quote [data-research-quote] #app.t-page-slide > .t-page:is(#page-home,#page-form,#page-result){filter:none}
 [data-research-quote] .main{width:min(calc(100% - 40px),var(--max));margin:0 auto;padding-bottom:40px}
 [data-research-quote] #page-form{padding-top:22px}
 [data-research-quote] .accordion-trigger{min-height:68px}
