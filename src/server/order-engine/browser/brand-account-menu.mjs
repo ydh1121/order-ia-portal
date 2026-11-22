@@ -404,15 +404,7 @@ export function mountBrandAccountMenu(brand, initial = {}) {
 export const brandAccountMenuCss=String.raw`
 .obm-brand{position:relative;display:flex!important;align-items:center!important;gap:8px;min-width:0;flex:1;overflow:visible!important}
 .obm-brand .obm-wordmark{flex:none;line-height:1;white-space:nowrap}
-.obm-brand .obm-wordmark{background:none;color:inherit}
-/* Independently authored from the public pro-gradient-text preview's moving
-   colour washes. The word never moves; ORDER blue and warm orange pass through
-   only once per 24-second cycle, with a long neutral interval. */
-.obm-brand[data-authenticated=true] .obm-wordmark{color:transparent;background-image:radial-gradient(ellipse at center,#315de6 0%,#315de600 58%),radial-gradient(ellipse at center,#b65f12 0%,#b65f1200 58%),linear-gradient(var(--ink,#20272a),var(--ink,#20272a));background-size:160% 180%,180% 160%,100% 100%;background-repeat:no-repeat;background-position:-300% 0%,300% 100%,0 0;background-clip:text;-webkit-background-clip:text;animation:obm-wordmark-wash 24s linear -16s infinite}
-@keyframes obm-wordmark-wash{0%,76%,100%{background-position:-300% 0%,300% 100%,0 0}80%{background-position:-120% 20%,180% 70%,0 0}84%{background-position:0% 100%,100% 0%,0 0}88%{background-position:100% 0%,0% 100%,0 0}92%{background-position:220% 80%,-140% 20%,0 0}96%{background-position:300% 100%,-300% 0%,0 0}}
-.obm-brand[data-motion-paused=true] .obm-wordmark{animation-play-state:paused}
-.obm-brand[data-motion-reduced=true] .obm-wordmark,[data-review-reduced] .obm-brand .obm-wordmark{animation:none;background:none;color:inherit}
-@media(prefers-reduced-motion:reduce){.obm-brand[data-authenticated=true] .obm-wordmark{animation:none;background:none;color:inherit}}
+.obm-brand .obm-wordmark{animation:none;background:none;color:inherit}
 .obm-brand[data-authenticated=true] :is(.brand-dot,.ob-period){display:inline-block;width:0;overflow:hidden;opacity:0}
 .obm-brand[data-authenticated=false] :is(.brand-dot,.ob-period){opacity:1}
 .obm-brand .obm-trigger{position:relative;display:block;flex:none;width:var(--obm-trigger-w,51.874px);height:44px;min-height:44px;padding:0;border:0;border-radius:22px;background:transparent;box-shadow:none;color:inherit;cursor:pointer;touch-action:manipulation;translate:0 var(--obm-mark-offset-y,0px)}
@@ -528,7 +520,7 @@ export const brandAccountMenuCss=String.raw`
 /* ORDER geometry and surfaces; all recipe timing/shape/reveal hooks remain. */
 .obm-panel .obm-surface.t-morph{position:absolute;inset:0 0 auto auto;width:var(--obm-closed-w);height:var(--obm-closed-h);transform:translate(var(--obm-start-x),var(--obm-start-y));background:transparent;box-shadow:none;transition:width var(--morph-close-dur) var(--morph-close-ease),height var(--morph-close-dur) var(--morph-close-ease),border-radius var(--morph-close-dur) var(--morph-close-ease),transform var(--morph-close-dur) var(--morph-close-ease)}
 .obm-panel .obm-surface.t-morph[data-open="true"]{width:var(--obm-open-w);height:var(--obm-open-h);transform:translate(0,0);transition:width var(--morph-open-dur) var(--morph-ease),height var(--morph-open-dur) var(--morph-ease),border-radius var(--morph-open-dur) var(--morph-ease),transform var(--morph-open-dur) var(--morph-ease)}
-.obm-panel .obm-menu.t-morph-menu{width:var(--obm-open-w);height:var(--obm-open-h);padding:10px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;background:var(--paper,#fff);border-radius:var(--morph-r-open);box-shadow:0 8px 24px #182b481a}.obm-panel .obm-menu::-webkit-scrollbar{display:none}
+.obm-panel .obm-menu.t-morph-menu{width:var(--obm-open-w);height:var(--obm-open-h);padding:10px;overflow:auto;overscroll-behavior:contain;scrollbar-width:none;background:#f2f4f6;border-radius:var(--morph-r-open);box-shadow:inset 0 0 0 1px #b7c1ce,0 8px 24px #182b481a}.obm-panel .obm-menu::-webkit-scrollbar{display:none}
 /* Transitions.dev 08-page-side-by-side.md, scoped to this account panel. */
 .obm-panel .t-page-slide {
   position: relative;

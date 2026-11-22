@@ -2,19 +2,23 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createRequire} from 'node:module';
 import {gunzipSync} from 'node:zlib';
-import {catalog,frames} from '../src/server/r3-ui/catalog.gen.mjs';
+import {readFileSync} from 'node:fs';
+import {catalog,frames,cssGzip} from '../src/server/r3-ui/catalog.gen.mjs';
 import {runtimes} from '../src/server/r3-ui/runtime.gen.mjs';
+import {sharedCoreScript} from '../src/server/product-ui/assets.gen.mjs';
 import {mountSheetGesture} from '../scripts/r3/authored/sheet-motion.mjs';
 const require=createRequire(new URL('./build-tools/package.json',import.meta.url));
-const {JSDOM}=require('jsdom');
+const {JSDOM,VirtualConsole}=require('jsdom');
+const authoredAccount=readFileSync(new URL('../scripts/r3/authored/account.js',import.meta.url),'utf8');
+const authoredAccountCss=readFileSync(new URL('../scripts/r3/authored/account.css',import.meta.url),'utf8');
 function markup(screen,state){
   const row=catalog.find(row=>row.screen===screen&&row.state===state);
   return gunzipSync(Buffer.from(frames[row.current],'base64')).toString();
 }
-test('current login, signup and OTP exports retain only accessible error reasons',()=>{
+test('current login, signup and OTP exports retain accessible error reasons independently of decorative messages',()=>{
   for(const [screen,state] of [['login','email-error'],['signup','mismatch'],['password','request-error'],['otp','error'],['otp','expired']]){
     const doc=new JSDOM(markup(screen,state)).window.document;
-    assert.equal(doc.querySelectorAll('.inline-field-state').length,0);
+    for(const message of doc.querySelectorAll('.inline-field-state'))assert.equal(message.getAttribute('aria-hidden'),'true');
     const invalid=doc.querySelector('input[aria-invalid=true]');
     assert.ok(invalid,screen);
     const ids=invalid.getAttribute('aria-describedby').split(/\s+/);
@@ -22,6 +26,61 @@ test('current login, signup and OTP exports retain only accessible error reasons
     if(state==='expired')assert.equal(doc.querySelector('[data-otp-clock]').textContent,'00분 00초');
     doc.defaultView.close();
   }
+});
+
+function authoredLogin(state='empty'){
+  const dom=new JSDOM('<main id="order-single" class="ds"></main>',{runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:new VirtualConsole()}),w=dom.window,root=w.document.querySelector('main');
+  w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
+  let now=0,serial=0;const timers=new Map();
+  w.setTimeout=(callback,delay=0)=>{const id=++serial;timers.set(id,{at:now+delay,callback,delay});return id;};w.clearTimeout=id=>timers.delete(id);
+  const advance=ms=>{now+=ms;for(const[id,timer]of [...timers])if(timer.at<=now){timers.delete(id);timer.callback();}};
+  w.eval(sharedCoreScript);w.eval(authoredAccount);
+  const module=w.ORDER_DESIGN_MODULES.find(item=>item.id==='login');root.innerHTML=module.render(state,{variant:'email'});
+  // Authored mounting must also repair already shipped markup without this hook.
+  for(const display of root.querySelectorAll('.inline-field-state'))display.remove();
+  const legacyDom=new JSDOM(markup('login','email-error')),legacy=legacyDom.window.document.querySelector('#r3-auth-motion')?.textContent||'';legacyDom.window.close();
+  const style=w.document.createElement('style');style.textContent=gunzipSync(Buffer.from(cssGzip,'base64')).toString()+legacy+authoredAccountCss;w.document.head.append(style);
+  const requests=[],api={mode:'product',interactive:true,reduced:()=>true,select(){},performAction(action){requests.push({action,email:root.querySelector('[name=email]').value});return Promise.resolve({confirmed:false});}};
+  const sharedDispose=w.QAUI.sharedMount(root,api),dispose=module.mount(root,state,api);
+  return {w,root,timers,requests,advance,close(){dispose();sharedDispose();dom.window.close();}};
+}
+
+test('existing email error uses the shared 1800ms display and restores the same typed value and focus',()=>{
+  const f=authoredLogin('email-error');
+  try{
+    const input=f.root.querySelector('[name=email]'),field=input.closest('.field'),display=field.querySelector('.inline-field-state');input.focus();
+    assert.equal(display.textContent,'이메일 양식을 확인해 주세요.');assert.equal(field.classList.contains('shows-message'),true);assert.equal(f.w.getComputedStyle(display).display,'block');assert.equal(display.getAttribute('aria-hidden'),'true');
+    assert.equal(input.value,'my.order.ooo');assert.equal(input.type,'email');assert.equal(input.placeholder,'my@order.ooo');assert.ok([...f.timers.values()].some(timer=>timer.delay===1800));
+    f.advance(1799);assert.equal(field.classList.contains('shows-message'),true);f.advance(1);
+    assert.equal(field.classList.contains('shows-message'),false);assert.equal(f.w.getComputedStyle(display).display,'none');assert.equal(input.value,'my.order.ooo');assert.equal(input.placeholder,'my@order.ooo');assert.equal(f.w.document.activeElement,input);assert.equal(input.getAttribute('aria-invalid'),'true','the presentation timer does not claim the value is valid');
+  }finally{f.close();}
+});
+
+test('actual login submit and Enter use existing email validity before calling the product action',async()=>{
+  const f=authoredLogin();
+  try{
+    const email=f.root.querySelector('[name=email]'),password=f.root.querySelector('[name=password]'),button=f.root.querySelector('[data-action=submit-login]');email.value='bad@';password.value='preserved-password';
+    button.click();assert.equal(email.validity.typeMismatch,true);assert.equal(f.requests.length,0);assert.equal(email.closest('.field').querySelector('.inline-field-state').textContent,'이메일 양식을 확인해 주세요.');assert.equal(email.value,'bad@');assert.equal(password.value,'preserved-password');
+    const enter=new f.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true});email.dispatchEvent(enter);assert.equal(enter.defaultPrevented,true);assert.equal(f.requests.length,0);
+    email.value='valid@example.com';email.dispatchEvent(new f.w.InputEvent('input',{bubbles:true}));assert.equal(email.closest('.field').classList.contains('shows-message'),false);
+    email.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));await new Promise(resolve=>setImmediate(resolve));
+    assert.deepEqual(f.requests,[{action:'submit-login',email:'valid@example.com'}]);assert.equal(email.value,'valid@example.com');assert.equal(password.value,'preserved-password');assert.equal(email.getAttribute('aria-invalid'),'false');
+  }finally{f.close();}
+});
+
+test('shared temporary messages preserve selection and cancel on new input without restoring an old value',()=>{
+  const f=authoredLogin();
+  try{
+    const input=f.root.querySelector('[name=password]'),field=input.closest('.field');input.value='keep-this-password';input.focus();input.setSelectionRange(2,7,'backward');
+    f.w.QAUI.setFieldError(input,'입력한 내용을 확인해 주세요.');assert.equal(field.classList.contains('shows-message'),true);assert.equal(input.value,'keep-this-password');assert.equal(input.selectionStart,2);assert.equal(input.selectionEnd,7);assert.equal(input.selectionDirection,'backward');
+    f.advance(1000);f.w.QAUI.setFieldError(input,'다시 확인해 주세요.');f.advance(800);assert.equal(field.classList.contains('shows-message'),true,'the earlier message timer cannot hide a newer message');
+    f.advance(1000);assert.equal(field.classList.contains('shows-message'),false);assert.equal(input.value,'keep-this-password');assert.equal(input.selectionStart,2);assert.equal(input.selectionEnd,7);assert.equal(input.selectionDirection,'backward');assert.equal(f.w.document.activeElement,input);
+    f.w.QAUI.setFieldError(input,'다시 확인해 주세요.');input.value='edited-password';input.setSelectionRange(4,4);input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true}));
+    assert.equal(field.classList.contains('shows-message'),false);f.advance(1800);assert.equal(input.value,'edited-password');assert.equal(input.selectionStart,4);assert.equal(input.getAttribute('aria-invalid'),'false');assert.equal(f.w.document.activeElement,input);
+    f.w.QAUI.setFieldError(input,'입력한 내용을 확인해 주세요.');input.dispatchEvent(new f.w.CompositionEvent('compositionstart',{bubbles:true}));
+    assert.equal(field.classList.contains('shows-message'),false,'composition must immediately reveal native text without rewriting it');assert.equal(input.value,'edited-password');assert.equal(input.selectionStart,4);assert.equal(input.getAttribute('aria-invalid'),'true');
+    input.dispatchEvent(new f.w.CompositionEvent('compositionend',{bubbles:true}));
+  }finally{f.close();}
 });
 test('one sheet controller owns rubber band, short release, peek, cancel, close and page unlock',()=>{
   const dom=new JSDOM('<main><button id="grip"></button><section></section></main>');

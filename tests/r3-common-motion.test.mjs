@@ -10,7 +10,7 @@ function fixture(html='<main></main>',reduce=false){
  const dom=new JSDOM(html,{pretendToBeVisual:true,runScripts:'outside-only',virtualConsole:new VirtualConsole()}),w=dom.window,d=w.document;
  w.matchMedia=()=>({matches:reduce,addEventListener(){},removeEventListener(){}});
  const captures=[];
- w.HTMLElement.prototype.animate=function(frames,options){let resolve,reject;const finished=new Promise((a,b)=>{resolve=a;reject=b;});const a={target:this,frames,options,finished,cancel(){reject(new Error('cancelled'));},finish(){resolve();}};captures.push(a);return a;};
+ w.HTMLElement.prototype.animate=function(frames,options){let resolve,reject;const finished=new Promise((a,b)=>{resolve=a;reject=b;});const a={target:this,frames,options,finished,cancelled:false,cancel(){this.cancelled=true;reject(new Error('cancelled'));},finish(){resolve();}};captures.push(a);return a;};
  w.HTMLElement.prototype.getBoundingClientRect=function(){const left=Number(this.dataset.left)||0,top=Number(this.dataset.top)||0,width=Number(this.dataset.width)||160,height=Number(this.dataset.height)||44;return {left,top,width,height,right:left+width,bottom:top+height};};
  w.Range.prototype.getClientRects=function(){const el=this.startContainer.nodeType===3?this.startContainer.parentElement:this.startContainer;return [el.getBoundingClientRect()];};
  const common=createCommonMotion(w);return {w,d,common,captures,close(){common.destroy();w.close();}};
@@ -48,11 +48,61 @@ test('per-grapheme input motion preserves native selection and IME while masking
  try{
   const [input,password]=f.d.querySelectorAll('input');input.focus();input.setSelectionRange(1,1);
   input.dispatchEvent(new f.w.CompositionEvent('compositionstart',{bubbles:true}));input.value='가나';input.setSelectionRange(2,2);input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true,isComposing:true}));await tick();assert.equal(f.captures.length,0);
-  input.dispatchEvent(new f.w.CompositionEvent('compositionend',{bubbles:true,data:'나'}));input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true,inputType:'insertCompositionText'}));await tick();
+  input.dispatchEvent(new f.w.CompositionEvent('compositionend',{bubbles:true,data:'나'}));input.dispatchEvent(new f.w.InputEvent('beforeinput',{bubbles:true,inputType:'insertCompositionText'}));input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true,inputType:'insertCompositionText'}));await tick();
   assert.equal(input.value,'가나');assert.equal(input.selectionStart,2);assert.equal(input.selectionEnd,2);assert.ok(f.captures.some(a=>a.target.textContent==='나'&&a.frames[0].opacity===0));assert.equal(f.captures.some(a=>a.target===input),false);
   input.dispatchEvent(new f.w.InputEvent('beforeinput',{bubbles:true,inputType:'deleteContentBackward'}));input.value='가';input.setSelectionRange(1,1);input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true,inputType:'deleteContentBackward'}));await tick();assert.ok(f.captures.some(a=>a.target.textContent==='나'&&a.frames.at(-1).opacity===0));assert.equal(input.selectionStart,1);
   password.focus();password.value='secret한글';password.dispatchEvent(new f.w.InputEvent('input',{bubbles:true}));await tick();assert.equal(password.value,'secret한글');assert.equal(f.d.querySelector('.r3-input-mirror').textContent,'••••••••');assert.equal(f.d.body.textContent.includes('secret'),false);
  }finally{f.close();}
+});
+
+test('continuous typing and middle edits retain live glyphs and do not restart their entrances',async()=>{
+ const f=fixture('<form><input name="query" style="-webkit-text-fill-color:navy;caret-color:teal"></form>');
+ try{
+  Object.defineProperty(f.w.HTMLElement.prototype,'offsetLeft',{configurable:true,get(){return this.parentElement?.classList.contains('r3-input-glyphs')?Math.max(0,[...this.parentElement.children].filter(el=>el.tagName==='SPAN'&&!el.hasAttribute('data-input-exit')).indexOf(this))*10:0;}});
+  Object.defineProperty(f.w.HTMLElement.prototype,'offsetWidth',{configurable:true,get(){return this.parentElement?.classList.contains('r3-input-glyphs')?10:160;}});
+  let now=0,sequence=0;const frames=new Map();f.w.requestAnimationFrame=fn=>{frames.set(++sequence,fn);return sequence;};f.w.cancelAnimationFrame=id=>frames.delete(id);
+  const step=()=>{now+=16;const pending=[...frames.values()];frames.clear();pending.forEach(fn=>fn(now));};
+  const input=f.d.querySelector('input');input.focus();
+  const edit=async(value,position,type='insertText')=>{input.dispatchEvent(new f.w.InputEvent('beforeinput',{bubbles:true,inputType:type}));input.value=value;input.setSelectionRange(position,position);input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true,inputType:type}));await tick();};
+  await edit('a',1);const layer=f.d.querySelector('.r3-input-mirror'),a=layer.querySelector('.r3-input-glyphs>span'),first=f.captures.find(item=>item.target===a);
+  await edit('ab',2);const b=[...layer.querySelectorAll('.r3-input-glyphs>span')][1],second=f.captures.find(item=>item.target===b);
+  assert.equal(f.d.querySelector('.r3-input-mirror'),layer);assert.equal(layer.querySelector('.r3-input-glyphs>span'),a);assert.equal(first.cancelled,false);assert.equal(f.captures.filter(item=>item.target===a).length,1);
+  input.setSelectionRange(1,1);await edit('aZb',2);
+  assert.equal([...layer.querySelectorAll('.r3-input-glyphs>span')].at(-1),b);assert.equal(second.cancelled,false);
+  assert.ok(f.captures.some(item=>item.target===b&&item.frames[0].translate==='-10px 0px'),'the retained suffix moves from its previous position');
+  const inserted=[...layer.querySelectorAll('.r3-input-glyphs>span')][1];await edit('ab',1,'deleteContentBackward');
+  assert.equal(inserted.isConnected,true);assert.equal(inserted.hasAttribute('data-input-exit'),true);assert.ok(f.captures.some(item=>item.target===inserted&&item.frames.at(-1).opacity===0));assert.equal(second.cancelled,false);
+  assert.equal(input.value,'ab');assert.equal(new f.w.FormData(f.d.querySelector('form')).get('query'),'ab');assert.equal(input.selectionStart,1);assert.equal(input.selectionEnd,1);assert.equal(f.d.activeElement,input);
+  step();assert.ok(parseFloat(layer.querySelector('.r3-input-caret').style.width)>2,'the caret stretches while travelling');
+  for(const item of f.captures)item.finish();await tick();for(let i=0;i<200&&frames.size;i++)step();
+  assert.equal(frames.size,0);assert.equal(f.d.querySelector('.r3-input-mirror'),null);assert.equal(input.style.webkitTextFillColor,'navy');assert.equal(input.style.caretColor,'teal');assert.equal(input.value,'ab');assert.equal(input.selectionStart,1);
+ }finally{f.close();}
+});
+
+test('paste is grapheme based and native selection, password hiding and removal release the mirror',async()=>{
+ const f=fixture('<form><label class="field"><input name="password" type="text"><button type="button" data-action="password-visibility">숨기기</button></label><input type="email"></form>');
+ try{
+  const [input,email]=f.d.querySelectorAll('input');input.focus();input.value='가👨‍👩‍👧‍👦e\u0301';input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true,inputType:'insertFromPaste'}));await tick();
+  const glyphs=[...f.d.querySelectorAll('.r3-input-glyphs>span')];assert.deepEqual(glyphs.map(el=>el.textContent),['가','👨‍👩‍👧‍👦','e\u0301']);assert.deepEqual(f.captures.filter(item=>glyphs.includes(item.target)).map(item=>item.options.delay),[0,18,36]);
+  input.setSelectionRange(1,input.value.length,'backward');input.dispatchEvent(new f.w.Event('select',{bubbles:true}));
+  assert.equal(f.d.querySelector('.r3-input-mirror'),null);assert.equal(input.selectionDirection,'backward');assert.equal(input.selectionStart,1);assert.equal(input.value,'가👨‍👩‍👧‍👦e\u0301');
+  input.setSelectionRange(input.value.length,input.value.length);input.dispatchEvent(new f.w.InputEvent('beforeinput',{bubbles:true}));input.value+='x';input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true}));await tick();
+  assert.ok(f.d.querySelector('.r3-input-mirror'));f.d.querySelector('button').addEventListener('click',()=>{input.type='password';});f.d.querySelector('button').click();
+  assert.equal(f.d.querySelector('.r3-input-mirror'),null,'capture cleanup precedes the password visibility change');assert.equal(input.type,'password');assert.equal(input.value,'가👨‍👩‍👧‍👦e\u0301x');
+  email.focus();email.value='a@example.com';email.dispatchEvent(new f.w.InputEvent('input',{bubbles:true}));await tick();
+  assert.equal(email.type,'email');assert.equal(email.selectionStart,null);assert.ok(f.d.querySelector('.r3-input-mirror'));assert.equal(f.d.querySelector('.r3-input-caret'),null,'unsupported selection offsets keep the native email caret');
+  f.d.querySelector('form').remove();await tick();assert.equal(f.d.querySelector('.r3-input-mirror'),null);assert.equal(email.style.webkitTextFillColor,'');
+ }finally{f.close();}
+});
+
+test('field messages interrupt glyph paint and reduced motion keeps native text without an overlay',async()=>{
+ const f=fixture('<label class="field"><input value="saved"></label>');
+ try{
+  const input=f.d.querySelector('input');input.focus();input.dispatchEvent(new f.w.InputEvent('beforeinput',{bubbles:true}));input.value='saved!';input.dispatchEvent(new f.w.InputEvent('input',{bubbles:true}));await tick();assert.ok(f.d.querySelector('.r3-input-mirror'));
+  input.closest('.field').classList.add('shows-message');await tick();assert.equal(f.d.querySelector('.r3-input-mirror'),null);assert.equal(input.value,'saved!');assert.equal(f.d.activeElement,input);assert.equal(input.style.webkitTextFillColor,'');
+ }finally{f.close();}
+ const quiet=fixture('<input>',true);
+ try{const input=quiet.d.querySelector('input');input.focus();input.value='한글';input.setSelectionRange(1,1);input.dispatchEvent(new quiet.w.InputEvent('input',{bubbles:true}));await tick();assert.equal(quiet.captures.length,0);assert.equal(quiet.d.querySelector('.r3-input-mirror'),null);assert.equal(input.value,'한글');assert.equal(input.selectionStart,1);}finally{quiet.close();}
 });
 
 test('dropdown exit remains mounted until completion and a rapid reopen defeats its old cleanup',async()=>{

@@ -23,7 +23,7 @@ if(!process.argv[2])throw Error('Provide the immutable release10 baseline checko
 const baseline=resolve(process.argv[2]),here=fileURLToPath(new URL('.',import.meta.url));
 const commit=execFileSync('git',['rev-parse','HEAD'],{cwd:baseline,encoding:'utf8'}).trim();
 if(commit!=='e5f97029b58d1f1d90bb910bebfed7237e84e2bb')throw Error('Expected the verified release10 baseline, received '+commit);
-execFileSync('git',['diff','--quiet',commit,'--','src/server/r3-ui/catalog.gen.mjs','src/server/r3-ui/runtime.gen.mjs','src/server/r3-ui/qa-assets.gen.mjs','scripts/r3/authored/account.js','scripts/r3/authored/business.js','scripts/r3/authored/navigation.js','scripts/r3/authored/navigation.css','scripts/r3/authored/onboarding.js','scripts/r3/authored/admin-common.mjs','src/server/r3-customer-controls.mjs','src/server/r3-async-motion.mjs','src/server/order-engine/browser/brand-account-menu.mjs'],{cwd:baseline});
+execFileSync('git',['diff','--quiet',commit,'--','src/server/r3-ui/catalog.gen.mjs','src/server/r3-ui/runtime.gen.mjs','src/server/r3-ui/qa-assets.gen.mjs','scripts/r3/authored/account.js','scripts/r3/authored/account.css','scripts/r3/authored/business.js','scripts/r3/authored/navigation.js','scripts/r3/authored/navigation.css','scripts/r3/authored/onboarding.js','scripts/r3/authored/admin-common.mjs','src/server/r3-customer-controls.mjs','src/server/r3-async-motion.mjs','src/server/order-engine/browser/brand-account-menu.mjs'],{cwd:baseline});
 const old=relative=>import(pathToFileURL(join(baseline,relative)).href);
 const [source,engine,assets,brand,customer,asyncMotion,admin]=await Promise.all([
  'src/server/r3-ui/catalog.gen.mjs','src/server/r3-ui/runtime.gen.mjs','src/server/r3-ui/qa-assets.gen.mjs',
@@ -53,6 +53,20 @@ function refreshNavigationStyle(body,row){
   navigationStyleChanges++;return body.replace(owned[0][0],()=>navigationStyleAfter);
  }
  throw Error('Expected one exact baseline or owned current navigation style: '+row.id);
+}
+const accountScreens=new Set(['login','signup','password','otp','terms']);
+const accountCssBefore=(await readFile(join(baseline,'scripts/r3/authored/account.css'),'utf8')).trimEnd();
+const accountCssAfter=(await readFile(new URL('./authored/account.css',import.meta.url),'utf8')).trimEnd();
+let accountStyleChanges=0;
+function refreshAccountStyle(body,row){
+ if(!accountScreens.has(row.screen)||accountCssBefore===accountCssAfter)return body;
+ const owned=[...body.matchAll(/<style id="r3-qa-interaction-auth">([\s\S]*?)<\/style>/g)];
+ if(owned.length!==1)throw Error('Expected one owned current account style: '+row.id);
+ const present=owned[0][1].trimEnd();
+ if(present===accountCssAfter)return body;
+ if(present!==accountCssBefore)throw Error('Account style differs from verified baseline and authored source: '+row.id);
+ accountStyleChanges++;
+ return body.replace(owned[0][0],()=>'<style id="r3-qa-interaction-auth">'+accountCssAfter+'</style>');
 }
 const {JSDOM}=createRequire(new URL('../../tests/build-tools/package.json',import.meta.url))('jsdom');
 const authored=[];
@@ -148,6 +162,7 @@ const catalog=current.catalog.map(row=>{
  }
  body=body.replace(/<style id="r3-brand-account-menu">[\s\S]*?<\/style>/g,()=>'<style id="r3-brand-account-menu">'+brandAccountMenuCss+'</style>');
  body=refreshNavigationStyle(body,row);
+ body=refreshAccountStyle(body,row);
  const next=sha(body),family=row.runtimeFamily||fallback[row.screen],code=runtimes[family]||'';
  const changedBody=next!==row.current,changedRuntime=code!==(currentRuntimes[family]||'');
  if(!changedBody&&!changedRuntime)return row;
@@ -159,4 +174,4 @@ const catalog=current.catalog.map(row=>{
 });
 await updateGeneratedModule(new URL('../../src/server/product-ui/runtime.gen.mjs',import.meta.url),{runtimes});
 await updateGeneratedModule(new URL('../../src/server/product-ui/catalog.gen.mjs',import.meta.url),{catalog,frames});
-console.log(JSON.stringify({baseline:commit,bodyChanges,runtimeChanges,navigationStyleChanges,rendered:rebuilt.size,rebuiltFamilies,replacements:counts,hostWrites:0,frameWrites:0,historicalWrites:0}));
+console.log(JSON.stringify({baseline:commit,bodyChanges,runtimeChanges,navigationStyleChanges,accountStyleChanges,rendered:rebuilt.size,rebuiltFamilies,replacements:counts,hostWrites:0,frameWrites:0,historicalWrites:0}));

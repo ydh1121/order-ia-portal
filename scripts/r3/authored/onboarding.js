@@ -136,6 +136,7 @@
     });
     let paused=[];
     function connectPrimary(){
+      if(prefix==='guest'&&step===4)return null;
       const primary=stage.querySelector(prefix==='member'?'.ob-mode.detail':'.ob-mode.simple');
       return primary&&w.OrderMagneticAction?.(primary,{reducedMotion:api.reduced,fill:'var(--ob-blue)'});
     }
