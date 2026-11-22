@@ -114,19 +114,24 @@ def check_draft_recovery(context,page):
  # Exercise the real editor, interrupt just the response after one committed POST,
  # and replay from a reloaded document. The SQLite fixture receives actual requests.
  body='복구 검수용 의견'
+ save_error='서버가 저장을 완료하지 못했습니다. 입력은 이 탭에 보관했습니다.'
  draft=page.locator('#body-text')
  page.locator('#points').click()
  page.locator('#general').click()
  draft.fill(body)
  context.set_offline(True)
  page.locator('#save').click()
- expect(page.locator('#live')).to_contain_text('저장하지 못했습니다')
+ expect(page.locator('#live')).to_have_text(save_error)
+ expect(page.locator('#save-error')).to_be_visible()
+ expect(page.locator('#save-error')).to_have_text(save_error)
  expect(draft).to_have_value(body)
  context.set_offline(False)
  def recover():
   page.reload()
   page.get_by_role('button',name='저장하지 않은 의견 이어쓰기 · '+body).click()
   expect(draft).to_have_value(body)
+  expect(page.locator('#save-error')).to_be_visible()
+  expect(page.locator('#save-error')).to_have_text(save_error)
  recover()
  pattern='**/api/ia/r3-qa/records'
  seen=[]
@@ -136,7 +141,9 @@ def check_draft_recovery(context,page):
   route.abort()
  page.route(pattern,drop_committed_response)
  page.locator('#save').click()
- expect(page.locator('#live')).to_contain_text('저장하지 못했습니다')
+ expect(page.locator('#live')).to_have_text(save_error)
+ expect(page.locator('#save-error')).to_be_visible()
+ expect(page.locator('#save-error')).to_have_text(save_error)
  page.unroute(pattern,drop_committed_response)
  recover()
  with page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records')) as result:
