@@ -1,0 +1,168 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {createRequire} from 'node:module';
+import {resolve,join,posix} from 'node:path';
+import {webcrypto,createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
+import {quoteFiles} from '../src/server/r3-product-sources.mjs';
+import {extendQuoteSource} from '../src/server/r3-product-extensions.mjs';
+import {getResearchQuoteSource,getResearchQuoteMarkup,getResearchQuoteStyleSource,getResearchQuoteIntegrationSource} from '../src/server/research-app/quote-source-adapter.mjs';
+import {regularContactModuleSource} from '../src/server/research-app/regular-service-assets.mjs';
+const require=createRequire(join(resolve(process.env.R3_BUILD_TEST_TOOLS||'tests/build-tools'),'package.json'));
+const {build}=require('esbuild'),{JSDOM}=require('jsdom');
+const text=path=>gunzipSync(Buffer.from(quoteFiles[path],'base64')).toString();
+const served=path=>extendQuoteSource(path,text(path));
+const digest=value=>createHash('sha256').update(value).digest('hex');
+const sealedBefore=digest(JSON.stringify(quoteFiles));
+const parentSources=['bridge/contact-ui.mjs','web/address-contract.mjs','web/address-service.mjs','web/address-ui.mjs','src/engine/validation/email.mjs','src/engine/validation/phone.mjs'];
+const harness="export * from './src/server/research-app/quote-workspace.mjs';\nimport {createRegularServices} from './src/server/research-app/regular-services.mjs';\n"+parentSources.map((path,i)=>`import * as source${i} from '/ia/research-assets/${path}';`).join('\n')+`\nexport const createParentServices=environment=>createRegularServices({...environment,loadModule:path=>Promise.resolve({${parentSources.map((path,i)=>JSON.stringify(path)+':source'+i).join(',')}}[path])});`;
+const bundle=await build({stdin:{contents:harness,resolveDir:process.cwd()},bundle:true,write:false,platform:'browser',format:'iife',globalName:'QuoteWorkspaceTest',target:'es2022',logLevel:'silent',plugins:[{
+  name:'actual-sealed-regular-quote',setup(builder){
+    builder.onResolve({filter:/^\/ia\/research-assets\//},args=>({path:args.path.replace('/ia/research-assets/',''),namespace:'sealed'}));
+    builder.onResolve({filter:/^\./,namespace:'sealed'},args=>({path:posix.normalize(posix.join(posix.dirname(args.importer),args.path)),namespace:'sealed'}));
+    builder.onLoad({filter:/.*/,namespace:'sealed'},async args=>({contents:args.path==='bridge/contact-ui.mjs'?await regularContactModuleSource():args.path==='research/quote-integrations.mjs'?getResearchQuoteIntegrationSource():getResearchQuoteSource(args.path,served(args.path)),loader:'js'}));
+  }
+}]});
+
+function setup(){
+  const dom=new JSDOM('<!doctype html><html><head></head><body><header id="application-header"><span>Order.</span></header><div id="quote-workspace"></div><button id="outside">Outside</button></body></html>',{url:'https://research.example/ia/research?screen=quote-simple',runScripts:'outside-only',pretendToBeVisual:true});
+  const win=dom.window,failures=[],calls=[];
+  win.addEventListener('error',event=>{failures.push(event.error||event.message);event.preventDefault();});
+  Object.defineProperty(win,'crypto',{value:webcrypto});
+  win.structuredClone=value=>win.JSON.parse(win.JSON.stringify(value));win.TextEncoder=TextEncoder;win.TextDecoder=TextDecoder;
+  win.Request=Request;win.Response=Response;win.Headers=Headers;
+  win.fetch=async (url,init)=>{calls.push({url:String(url),init});return new Response('{}',{status:503,headers:{'content-type':'application/json'}});};
+  win.navigator.locks={request:async (name,_opts,callback)=>callback({name,mode:'exclusive'})};
+  win.CSS={escape:value=>String(value).replace(/["\\]/g,'\\$&')};
+  win.matchMedia=()=>Object.assign(new win.EventTarget(),{matches:true,media:'(prefers-reduced-motion: reduce)'});
+  win.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}};
+  win.IntersectionObserver=class{observe(){}unobserve(){}disconnect(){}};
+  win.scrollTo=()=>{};win.HTMLElement.prototype.scrollIntoView=()=>{};win.HTMLElement.prototype.scrollTo=()=>{};
+  win.Element.prototype.getAnimations=()=>[];
+  win.Element.prototype.animate=()=>({finished:Promise.resolve(),cancel(){},pause(){},play(){},finish(){},currentTime:0,startTime:0});
+  win.HTMLCanvasElement.prototype.getContext=()=>({font:'16px sans-serif',measureText:value=>({width:String(value).length*8,actualBoundingBoxLeft:0,actualBoundingBoxRight:String(value).length*8})});
+  win.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+  win.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new win.Event('close'));};
+  win.eval(bundle.outputFiles[0].text);
+  const root=win.document.getElementById('quote-workspace'),navigate=[];
+  const services={storage:{crypto:webcrypto,locks:win.navigator.locks},context:{authenticated:false},fetcher:win.fetch};
+  return {dom,win,root,failures,calls,navigate,services,
+    mount:(mode='simple',extra={})=>win.QuoteWorkspaceTest.mountResearchQuote(root,{mode,template:getResearchQuoteMarkup(),styles:false,partition:'a'.repeat(64),namespace:'test-account',services,onNavigate:value=>navigate.push(value),...extra}),
+    close(){dom.window.close();}
+  };
+}
+const settle=async()=>{for(let i=0;i<8;i++)await new Promise(resolve=>setImmediate(resolve));};
+const idle=async workspace=>{for(let i=0;i<100&&workspace.inspect().pending;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(workspace.inspect().pending,0);};
+const until=async predicate=>{for(let i=0;i<100&&!predicate();i++)await new Promise(resolve=>setTimeout(resolve,5));assert.ok(predicate());};
+
+test('research endpoint keeps sealed business modules exact and fails closed on changed integration seams',()=>{
+  for(const path of ['web/simple-quote-contract.mjs','web/quantity-contract.mjs','web/cadence-contract.mjs','web/q4-validation.mjs','web/address-contract.mjs','web/quote-result.mjs'])assert.equal(getResearchQuoteSource(path,served(path)),served(path),path);
+  const original=served('web/app.mjs'),adapted=getResearchQuoteSource('web/app.mjs',original);
+  for(const [from,to]of [['function simpleVerdict()','const buyerTotal='],['function complete(','function changeOpen('],['function finishQty()','$(\'start\').onclick=']]){
+    const begin=original.indexOf(from),end=original.indexOf(to,begin);assert.ok(begin>=0&&end>begin,from);assert.ok(adapted.includes(original.slice(begin,end)),from);
+  }
+  assert.throws(()=>getResearchQuoteSource('web/app.mjs',original.replace('const addressEditor=createAddressEditor({','const addressEditor = createAddressEditor({')),/SOURCE_MISMATCH/);
+  assert.equal(digest(JSON.stringify(quoteFiles)),sealedBefore);
+  assert.doesNotMatch(getResearchQuoteMarkup(),/<header class="header"|<script|<iframe/);
+  assert.match(getResearchQuoteStyleSource('web/styles.css',text('web/styles.css')),/^@scope \(\[data-research-quote\]\)/);
+});
+
+test('actual simple/detailed factories boot one header with Q1–Q4 and dispose every owned lifetime',async()=>{
+  const f=setup();try{
+    for(const mode of ['simple','detailed','simple']){
+      const workspace=await f.mount(mode);await settle();
+      assert.equal(workspace.inspect().mode,mode);assert.equal(workspace.inspect().ready,true);assert.equal(workspace.inspect().step,'q1');
+      assert.equal(f.win.document.querySelectorAll('#application-header').length,1);assert.equal(f.root.querySelectorAll('header.header,iframe').length,0);
+      for(const step of ['q1','q2','q3','q4'])assert.ok(f.root.querySelector('[data-open="'+step+'"]'),step);
+      assert.equal(f.win.document.documentElement.dataset.r3QuoteMode,undefined,'quote tokens stay inside the workspace');
+      workspace.dispose();await settle();assert.equal(f.root.childElementCount,0);assert.equal(f.win.OrderQ4Review,undefined);assert.equal(f.win.OrderModalShell,undefined);
+      const lifetime=workspace.inspect().lifecycle;assert.equal(lifetime.disposed,true);for(const field of ['timers','frames','observers','listeners','globals'])assert.equal(lifetime[field],0,field);
+    }
+    assert.deepEqual(f.failures,[]);assert.equal(f.calls.some(call=>call.url.includes('/api/order/features')),false,'regular header menu never mounts');
+  }finally{f.close();}
+});
+
+test('regular Q1→Q2 input and atomic mode copy survive remount without regular navigation or storage keys',async()=>{
+  const f=setup();try{
+    const initialURL=f.win.location.href,workspace=await f.mount();
+    for(const [field,value]of [['housing','1'],['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+    await idle(workspace);assert.equal(workspace.snapshot().lines.length,1,JSON.stringify({inspect:workspace.inspect(),errors:f.failures.map(e=>e.message),feedback:f.root.querySelector('#form-error').textContent}));assert.equal(workspace.snapshot().lines[0].pack,'30');
+    assert.equal(workspace.navigate({step:'q2'}),true);const field=f.root.querySelector('[data-line-qty]');assert.ok(field);
+    field.value='10';field.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:'10'}));await idle(workspace);
+    assert.equal(workspace.snapshot().lines[0].qty,'10');assert.equal((await workspace.save()).ok,true);
+    f.root.querySelector('#quote-mode-switch').click();await settle();const dialog=f.root.querySelector('#quote-mode-dialog');assert.equal(dialog.open,true);
+    const copy=dialog.querySelector('[data-mode-option]');assert.equal(copy.closest('label').hidden,false);copy.checked=true;dialog.querySelector('[data-mode-confirm]').click();await until(()=>f.navigate.some(value=>value.type==='mode'));
+    assert.equal(f.navigate.at(-1)?.type,'mode');assert.equal(f.navigate.at(-1)?.mode,'detailed');assert.equal(f.win.location.href,initialURL);
+    workspace.dispose();const detailed=await f.mount('detailed');assert.equal(detailed.snapshot().lines.length,1);assert.equal(detailed.snapshot().lines[0].qty,'10');detailed.dispose();
+    const restored=await f.mount('simple');assert.equal(restored.snapshot().lines[0].qty,'10');restored.dispose();
+    const keys=Object.keys(f.win.localStorage);assert.ok(keys.some(key=>key.endsWith('_simple')));assert.ok(keys.some(key=>key.endsWith('_detailed')));assert.ok(keys.every(key=>key.startsWith('order.app.test-account:')));
+    assert.deepEqual(f.failures,[]);assert.equal(digest(JSON.stringify(quoteFiles)),sealedBefore);
+  }finally{f.close();}
+});
+
+test('concurrent mount is one owner and modal back stays inside the quote workspace',async()=>{
+  const f=setup();try{
+    const [a,b]=await Promise.all([f.mount(),f.mount()]);assert.equal(a,b);assert.equal(f.root.querySelectorAll('#app').length,1);
+    f.root.querySelector('#quote-mode-switch').click();await settle();assert.equal(f.root.querySelector('#quote-mode-dialog').open,true,JSON.stringify({inspect:a.inspect(),errors:f.failures.map(e=>e.message),feedback:f.root.querySelector('#form-error').textContent}));
+    assert.equal(a.back(),true);await settle();assert.equal(f.root.querySelector('#quote-mode-dialog').open,false);assert.equal(a.back(),false);assert.equal(f.navigate.length,0);
+    a.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('QA scenarios hydrate the regular model in a distinct scope and open its actual editors',async()=>{
+  const f=setup();try{
+    let workspace=await f.mount('detailed');
+    await assert.rejects(workspace.applyScenario({screen:'q2',state:'filled'}),/SCOPE_REQUIRED/);
+    for(const [field,value]of [['housing','2'],['size','특란'],['pack','10']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+    await idle(workspace);const user=workspace.snapshot().lines[0];workspace.dispose();
+    for(const [screen,state,dialog]of [['q2','filled',null],['q1','edit','sku-dialog'],['q3','open','site-editor-dialog'],['q4','open','q4-regular-dialog'],['quote-review','filled',null]]){
+      workspace=await f.mount('detailed',{fixtureScope:true});const result=await workspace.applyScenario({screen,state});assert.equal(result.ok,true,JSON.stringify(result));await settle();
+      assert.equal(workspace.snapshot().lines[0].housing,'1');if(dialog)assert.equal(f.root.querySelector('#'+dialog).open,true,dialog);
+      workspace.dispose();
+    }
+    workspace=await f.mount('simple',{fixtureScope:true});assert.equal((await workspace.applyScenario({screen:'q2',state:'unknown'})).ok,true);assert.equal(workspace.snapshot().simpleQuote.specUnknown,true);workspace.dispose();
+    workspace=await f.mount('detailed');assert.equal(workspace.snapshot().lines[0].id,user.id);assert.equal(workspace.snapshot().lines[0].housing,'2');assert.equal(workspace.snapshot().lines[0].qty,'');workspace.dispose();
+    assert.ok(Object.keys(f.win.localStorage).some(key=>key.startsWith('order.app.test-account:fixtures:')));assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('quote import and disposal preserve the already installed application contact owner',async()=>{
+  const f=setup();let regular,release;try{
+    regular=await f.win.QuoteWorkspaceTest.createParentServices({document:f.win.document,origin:f.win.location.origin,crypto:webcrypto,fetcher:f.win.fetch});
+    release=regular.installRegularGlobals(f.win);const owner=f.win.OrderPhone,mail=f.win.OrderEmailUI;
+    const input=f.win.document.createElement('input');input.type='tel';f.win.document.body.append(input);const phone=regular.mountPhone(input);phone.set('02-1234-5678');
+    const workspace=await f.mount('detailed',{fixtureScope:true,services:{...f.services,regular}});
+    assert.equal(f.win.OrderPhone,owner);assert.equal(f.win.OrderEmailUI,mail);assert.equal(regular.hasRegularGlobals(f.win),true);
+    assert.equal((await workspace.applyScenario({screen:'q3',state:'open'})).ok,true);
+    const inside=f.root.querySelector('#site-contact-phone'),insideEmail=f.root.querySelector('#site-email'),original=f.win.OrderPhone.instance(inside),bound=regular.mountPhone(inside);
+    assert.ok(original);assert.equal(bound.get(),original.get());assert.equal(f.root.querySelectorAll('#site-contact-phone').length,1);
+    workspace.dispose();await settle();assert.equal(f.win.OrderPhone,owner);assert.equal(f.win.OrderEmailUI,mail);assert.equal(regular.hasRegularGlobals(f.win),true);assert.equal(phone.get(),'02-1234-5678');
+    assert.equal(mail.instance(insideEmail),undefined);assert.equal(owner.instance(inside),undefined);assert.equal(regular.inspect().mountedFields,1,'only the parent form owner remains');
+    phone.dispose();assert.deepEqual(f.failures,[]);
+  }finally{release?.();regular?.dispose();f.close();}
+});
+
+test('authenticated research sync and mode copy use regular storage only, picker uses the fixture adapter, and original restore rejects a stale record',async()=>{
+  const f=setup();try{
+    const domain=[],context={actor:{authenticated:true},endpoints:{role:'/__qa_fixture/role',price:'/__qa_fixture/price'}};
+    const adapter={context,ready:Promise.resolve(),request(){throw Error('REGULAR_PRODUCT_REQUEST_MUST_NOT_RUN');},async roleRequest(path){domain.push(path);return {businesses:[{id:'research-only',profile:{name:'연구 사업장',region:'서울특별시 종로구'}}]};}};
+    const otherSync={flush(){throw Error('OTHER_APPLICATION_SYNC_MUST_NOT_RUN');}};
+    f.win.ORDER_APP_ADAPTER=adapter;f.win.ORDER_APP_CONTEXT=context;f.win.ORDER_QUOTE_DRAFT_SYNC=otherSync;const services={...f.services,adapter,context};
+    let workspace=await f.mount('simple',{services});await workspace.sync.start();
+    assert.equal(f.win.ORDER_APP_ADAPTER,adapter,'workspace adapter is virtual and preserves the application owner');
+    assert.equal(f.win.ORDER_QUOTE_DRAFT_SYNC,otherSync,'mode copying must use this workspace sync, never a foreign global owner');
+    for(const [field,value]of [['housing','1'],['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+    await idle(workspace);workspace.navigate({step:'q2'});const quantity=f.root.querySelector('[data-line-qty]');quantity.value='10';quantity.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:'10'}));await idle(workspace);
+    assert.equal((await workspace.flush()).ok,true);assert.equal((await workspace.repository.request('/drafts/simple')).data.lines[0].qty,'10');
+    const saved=await workspace.repository.read('simple');quantity.value='12';quantity.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:'12'}));await idle(workspace);
+    assert.equal((await workspace.restoreDraft(saved)).status,'CONFLICT');assert.equal(workspace.snapshot().lines[0].qty,'12');
+    const current=await workspace.repository.read('simple');assert.equal((await workspace.restoreDraft(current)).ok,true);
+    workspace.navigate({step:'q3'});const trigger=f.root.querySelector('.r3-saved-business-actions button');assert.ok(trigger);trigger.click();await until(()=>f.root.querySelector('#saved-business-picker input[type=checkbox]'));
+    assert.deepEqual(domain,['/businesses']);assert.equal(f.root.querySelector('#saved-business-picker input').value,'research-only');
+    f.root.querySelector('#saved-business-picker [data-copy-cancel]').click();await settle();
+    f.root.querySelector('#quote-mode-switch').click();await settle();const dialog=f.root.querySelector('#quote-mode-dialog');dialog.querySelector('[data-mode-option]').checked=true;dialog.querySelector('[data-mode-confirm]').click();await until(()=>f.navigate.some(value=>value.type==='mode'));
+    workspace.dispose();workspace=await f.mount('detailed',{services});assert.equal(workspace.snapshot().lines[0].qty,'12');assert.equal((await workspace.repository.request('/drafts/detailed')).data.lines[0].qty,'12');
+    workspace.dispose();assert.equal(f.win.ORDER_APP_ADAPTER,adapter);assert.equal(f.win.ORDER_QUOTE_DRAFT_SYNC,otherSync);assert.equal(f.calls.length,0,'no regular API or undeclared native fetch can escape the quote environment');
+    assert.ok(Object.keys(f.win.localStorage).every(key=>key.startsWith('order.app.test-account:')));assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});

@@ -29,6 +29,8 @@ import * as supplementalHistory from './r3-ui/supplemental-history.gen.mjs';
 import {isProductLiveTarget} from './product-lab-page.mjs';
 import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-runtime.mjs';
 import {isReviewedEpochTarget,readReviewedEpochArtifact,readReviewedEpochBody} from './r3-qa-epoch-history.mjs';
+import {isResearchRow,researchArtifactHash,researchArtifact,archivedResearchTarget,archivedResearchArtifact} from './research-app/page.mjs';
+import {createResearchExportTools} from './research-app/export-snapshot.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
@@ -61,6 +63,9 @@ const frameStyle=`
 export async function isR3ReviewTarget(target,revision=release){
   if(revision!==release||!target||!approvedWidths.includes(target.viewport))return false;
   if(isProductLiveTarget(target))return true;
+  const researchRow=catalog.find(row=>row.id===[target.screen,target.state,target.variant].join('/'))||(await getQaSupplemental()).rows.find(row=>row.id===[target.screen,target.state,target.variant].join('/'));
+  if(isResearchRow(researchRow)&&await researchArtifactHash(researchRow,target.viewport)===target.artifactHash)return true;
+  if(await archivedResearchTarget(target))return true;
   if(await isReviewedEpochTarget(target,revision))return true;
   const preserved=supplementalHistory.supplementalHistoryRows[[target.screen,target.state,target.variant].join('/')];
   if(preserved?.hashes[target.viewport]===target.artifactHash)return true;
@@ -97,11 +102,20 @@ export async function serveR3Artifact(request,env){
       const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
       const contentHashes=await reviewHashes(row);
-      return {hashes:await qaReviewHashes(row,contentHashes),contentHashes,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':label,stateLabel,defaultWidth,phase,role,
+      const application=isResearchRow(row),hashes=application?Object.fromEntries(await Promise.all(approvedWidths.map(async width=>[width,await researchArtifactHash(row,width)]))):await qaReviewHashes(row,contentHashes);
+      return {hashes,contentHashes,application,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':screen==='q2'?'Q2 구매량·현재 가격':label,stateLabel,defaultWidth,phase,role,
         description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
         authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
     }));
     return json({release,items,navigationDefaults:defaultQaNavigation(items.map(row=>row.screen)),publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname)});
+  }
+  if(['current','recorded'].includes(q.get('version'))&&approvedWidths.includes(Number(q.get('width')))&&[...q.keys()].every(key=>['id','width','version','artifactHash'].includes(key))){
+    const row=(await getQaSupplemental()).rows.find(row=>row.id===q.get('id'))||catalog.find(row=>row.id===q.get('id'));
+    if(isResearchRow(row)){
+      const hash=await researchArtifactHash(row,Number(q.get('width'))),pinned=q.get('artifactHash');
+      if(pinned===hash||!pinned&&q.get('version')==='current')return json(await researchArtifact(row,Number(q.get('width')),env,new URL(request.url).origin));
+    }
+    if(q.has('artifactHash')){const saved=await archivedResearchArtifact(q.get('id'),Number(q.get('width')),q.get('artifactHash'),env,new URL(request.url).origin);if(saved)return json(saved);}
   }
   // An explicit pinned identity belongs to the captured release, even after
   // the current HTML, shared QA fixture runtime or source catalogue changes.
@@ -195,5 +209,5 @@ export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}
 ${buyerResultCss.replaceAll('#buyerResult','#snapshot')}</style></head><body>
 ${approvedShellBody()}
-<script nonce="${esc(nonce)}">(${browserFunction(installQaSession)})();(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})})</script></body></html>`;
+<script nonce="${esc(nonce)}">(${browserFunction(installQaSession)})();(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})},(${browserFunction(createResearchExportTools)}))</script></body></html>`;
 }

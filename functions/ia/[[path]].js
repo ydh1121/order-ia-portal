@@ -14,11 +14,12 @@ const base={
 export async function onRequest({request,env}){
  if(request.method!=='GET'&&request.method!=='HEAD')return new Response(null,{status:405,headers:{...base,Allow:'GET, HEAD'}});
  const url=new URL(request.url),view=url.searchParams.get('view');
- const productAsset=url.pathname.startsWith('/ia/r3-product/');
- const r3View=['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view) ? view : null;
+ if(url.pathname.startsWith('/ia/research-releases/'))return new Response(null,{status:404,headers:base});
+ const productAsset=url.pathname.startsWith('/ia/r3-product/'),researchAsset=url.pathname.startsWith('/ia/research-assets/');
+ const r3View=['qa-lab','research-r3','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view) ? view : null;
  let actor;try{actor=await (isBusinessSurface(url)?businessActor:requireActor)(request,env)}catch(error){
    if(error?.message==='SESSION_STORE_UNAVAILABLE')return new Response(null,{status:503,headers:base});
-   if(productAsset)return new Response(null,{status:403,headers:base});
+   if(productAsset||researchAsset)return new Response(null,{status:403,headers:base});
    const next=new URLSearchParams();
    if(r3View)next.set('returnView',r3View);
    if(url.searchParams.has('labRun')){
@@ -26,7 +27,7 @@ export async function onRequest({request,env}){
      if(/^[a-f0-9]{32}$/.test(run)&&['buyer','supplier','operator','guest'].includes(persona)){next.set('labRun',run);next.set('persona',persona);const documentId=url.searchParams.get('qaDocument');if(documentId&&/^[a-f0-9-]{36}$/.test(documentId))next.set('qaDocument',documentId);}
      else next.set('returnView','qa-lab');
    }
-   if(r3View==='product-r3')for(const name of ['screen','state','componentVariant']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))next.set(name,value);}
+   if(['product-r3','research-r3'].includes(r3View))for(const name of ['screen','state','componentVariant','mode']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))next.set(name,value);}
    if(r3View==='qa-lab'){
      const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
      if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
@@ -49,6 +50,12 @@ export async function onRequest({request,env}){
    return new Response(null,{status:302,headers:{...base,Location:next.size?'/login?'+next:'/login'}});
  }
  if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && isBusinessSurface(url)))return new Response(null,{status:403,headers:base});
+ if(researchAsset){
+   const {serveResearchAsset}=await import('../../src/server/research-app/page.mjs');
+   const response=await serveResearchAsset(url.pathname,env,url.origin),headers=new Headers(response.headers);
+   for(const [key,value]of Object.entries(base))headers.set(key,value);
+   return new Response(request.method==='HEAD'?null:response.body,{status:response.status,headers});
+ }
  if(productAsset){
    const {r3ProductAsset}=await import('../../src/server/r3-product-page.mjs');
    const response=await r3ProductAsset(url.pathname);
@@ -82,6 +89,11 @@ export async function onRequest({request,env}){
    const savedRun=['run','labRun'].some(key=>/^[a-f0-9]{32}$/.test(url.searchParams.get(key)||''));
    if(isArchivedQaRequest(url.searchParams)||!savedRun){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
    else html=renderProductLab(nonce,url.searchParams);
+ }else if(r3View==='research-r3'){
+   headers['X-Frame-Options']='SAMEORIGIN';
+   headers['Content-Security-Policy']=`default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dns.google https://cloudflare-dns.com; img-src 'self' data:; font-src 'self' data:; form-action 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`;
+   const {renderResearchApplication}=await import('../../src/server/research-app/page.mjs');
+   try{html=await renderResearchApplication(nonce,url.searchParams,env,url.origin);}catch(error){return new Response('이 연구 빌드를 열 수 없습니다.',{status:error.status||503,headers:{...base,'Content-Type':'text/plain; charset=utf-8'}});}
  }else if(r3View==='product-r3'){
    const screen=url.searchParams.get('screen')||'store-purchase',state=url.searchParams.get('state')||'default',componentVariant=url.searchParams.get('componentVariant')||null;
    if(screen==='component-library'){
@@ -111,7 +123,7 @@ export async function onRequest({request,env}){
    headers['Content-Security-Policy']=headers['Content-Security-Policy'].replace("script-src 'nonce-"+nonce+"'", "script-src 'nonce-"+nonce+"' 'strict-dynamic'")+"; worker-src 'self'; object-src 'none'";
    const {renderR3RolePage}=await import('../../src/server/r3-role-page.mjs');html=renderR3RolePage(nonce);
  }else html=v03OwnerHtml(nonce);
- if(r3View&&r3View!=='qa-lab'&&r3View!=='product-r3'){
+ if(r3View&&!['qa-lab','product-r3','research-r3'].includes(r3View)){
    const {injectProductContext}=await import('../../src/server/product-app-page.mjs');
    const {getProductPanelBootstrap}=await import('../../src/server/product-account-panels.mjs');
    html=injectProductContext(html,nonce,productContext,await getProductPanelBootstrap());

@@ -10,6 +10,7 @@ import {handleIaRequest} from '../src/server/router.mjs';
 import {onRequest} from '../functions/ia/[[path]].js';
 import {onRequest as features} from '../functions/api/order/features.js';
 import {deriveVerifier,issueSession} from '../src/server/owner-session.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const canonicalOrigin='https://order-ia-portal.pages.dev';
 export async function createLabTestSessionResponse(env,session){
@@ -33,7 +34,7 @@ const review=new DatabaseSync(':memory:'),lab=new DatabaseSync(':memory:');
 for(const name of fs.readdirSync('migrations').filter(n=>n.endsWith('.sql')).sort())review.exec(fs.readFileSync('migrations/'+name,'utf8'));
 lab.exec(fs.readFileSync('migrations/lab/0001_lab_registry.sql','utf8'));
 const storage=new Map(),bucket={async put(key,value){const b=new Uint8Array(await new Response(value).arrayBuffer());storage.set(key,b);},async get(key){const value=storage.get(key);return value?{size:value.length,body:value,arrayBuffer:async()=>value.slice().buffer}:null;},async delete(key){storage.delete(key);}};
-const env={ORDER_QA_DB:binding(review),ORDER_LAB_DB:binding(lab),ORDER_LAB_EVIDENCE:bucket,IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'browser-owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(32).toString('base64url')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),CF_PAGES_COMMIT_SHA:'ci-working-tree'};
+const env={ORDER_QA_DB:binding(review),ORDER_LAB_DB:binding(lab),ORDER_LAB_EVIDENCE:bucket,ASSETS:createPrivateResearchAssets(),IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'browser-owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(32).toString('base64url')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),CF_PAGES_COMMIT_SHA:'ci-working-tree'};
 const session=await issueSession(env);
 const server=createServer(async(req,res)=>{
  try{

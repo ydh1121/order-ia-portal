@@ -97,7 +97,7 @@ def check_business(page, frame, reduced):
         expect(field).to_have_attribute('aria-expanded', 'false')
         expect(frame.locator('#'+field.get_attribute('aria-controls'))).to_be_hidden()
     frame.locator('[type=file]').set_input_files({'name': 'synthetic-registration.png', 'mimeType': 'image/png', 'buffer': PNG})
-    expect(frame.locator('#order-single')).to_have_attribute('data-file-selected', 'true')
+    expect(frame.locator('#order-app-page, #order-single:not([data-research-application])')).to_have_attribute('data-file-selected', 'true')
     verify = frame.locator('[data-action=verify-business]')
     step('business provider failure and input retention')
     configure(frame, {'requests': {'product POST /business-verifications': {'scenario': 'error', 'errorCode': 'BUSINESS_PROVIDER_UNAVAILABLE', 'status': 503}}})
@@ -138,10 +138,11 @@ def fixture_persona_remount(frame, persona):
     frame.locator('#order-single').evaluate('''(root,persona)=>{
       const w=root.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER;
       if(a.fixture.inspect().source.persistent)throw Error('Fixture transport required');
-      const mounted=w.ORDER_WORKFLOW_MOTION.mount(root,{screen:'receipt',adapter:a});mounted.destroy();
+      const scope=root.querySelector('#order-app-page')||root;
+      const mounted=w.ORDER_WORKFLOW_MOTION.mount(scope,{screen:'receipt',adapter:a});mounted.destroy();
       a.fixture.configure({persona,requests:{},scenario:'normal'});
-      const motion=w.ORDER_ASYNC_MOTION.mount(root,{source:'qa-fixture'});
-      w.__workflowRemount=w.ORDER_WORKFLOW_MOTION.mount(root,{screen:'receipt',adapter:a,api:{adapter:a,motion}});
+      const motion=w.ORDER_ASYNC_MOTION.mount(scope,{source:'qa-fixture'});
+      w.__workflowRemount=w.ORDER_WORKFLOW_MOTION.mount(scope,{screen:'receipt',adapter:a,api:{adapter:a,motion}});
       w.addEventListener('pagehide',()=>{w.__workflowRemount.destroy();motion.destroy();},{once:true});
     }''', persona)
 
@@ -327,7 +328,7 @@ def authenticate_once(browser, fixture):
     context = browser.new_context(viewport={'width': 390, 'height': 900})
     try:
         page = context.new_page()
-        page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+        page.goto(fixture['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
         page.locator('input[name=email]').fill(fixture['email'])
         page.locator('input[name=password]').fill(fixture['pass'])
         page.locator('button[type=submit]').click()

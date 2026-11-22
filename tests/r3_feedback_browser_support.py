@@ -2,7 +2,10 @@
 import re
 
 import json
+from functools import lru_cache
 from pathlib import Path
+import subprocess
+from urllib.parse import parse_qs, urlencode, urlparse
 from uuid import uuid4
 from playwright.sync_api import expect
 
@@ -66,26 +69,72 @@ def prepare_frame_pointer(page):
     }""")
 
 
+def prepare_review_ready(page):
+    """Observe the served source's real origin and authenticated ready receipt."""
+    prepare_frame_pointer(page)
+    if getattr(page, "_qa_ready_installed", False):
+        return
+    page._qa_ready_installed = True
+    page.add_init_script("""if(window === top) window.addEventListener('message', event=>{
+        const frame = document.getElementById('frame');
+        const origin = frame?.hasAttribute('src') ? location.origin : 'null';
+        if(frame && event.source===frame.contentWindow && event.origin===origin &&
+           event.data?.scope==='ORDER_R3_FRAME' && event.data.type==='ready' &&
+           /^[0-9a-f]{64}$/.test(event.data.artifact||'')) {
+            frame.dataset.testReadyHash=event.data.artifact;
+        }
+    });""")
+
+
+def wait_review_frame(page, artifact):
+    expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", artifact["hash"], timeout=30000)
+    frame = page.frame_locator("#frame")
+    frame.locator("#r3-veil").wait_for(state="attached")
+    expect(page.locator("#frame")).to_have_js_property("inert", False)
+    if artifact.get("application"):
+        assert page.locator("#frame").get_attribute("src"), "The current app must execute its build URL"
+        assert page.locator("#frame").get_attribute("srcdoc") is None
+        page.wait_for_function("""hash=>{
+            const f=document.getElementById('frame'), root=f?.contentDocument?.getElementById('order-single');
+            const state=root?.__orderResearchInspector?.inspect();
+            return state?.active&&state.session.artifact===hash&&f.contentWindow.ORDER_RESEARCH_APP;
+        }""", arg=artifact["hash"])
+    else:
+        assert "allow-same-origin" not in (page.locator("#frame").get_attribute("sandbox") or "")
+    return frame
+
+
+def wait_review_session(page, screen=None, state=None):
+    """Wait until the actual app route and host inspection identity agree."""
+    page.wait_for_function("""expected=>{
+        const frame=document.getElementById('frame'),win=frame?.contentWindow;
+        const root=frame?.contentDocument?.getElementById('order-single');
+        const inspected=root?.__orderResearchInspector?.inspect(),route=win?.ORDER_RESEARCH_APP?.snapshot().route;
+        return inspected?.active&&route&&(!expected.screen||route.screen===expected.screen)&&
+            (!expected.state||route.state===expected.state)&&inspected.session.screen===route.screen&&
+            inspected.session.state===route.state&&inspected.session.variant===route.variant&&
+            frame.dataset.testReadyHash===inspected.session.artifact&&
+            document.getElementById('focus-unit')?.dataset.module===route.screen;
+    }""", arg={"screen":screen,"state":state})
+    return page.locator("#frame").evaluate("f=>f.contentDocument.getElementById('order-single').__orderResearchInspector.inspect().session")
+
+
 class ReviewScreens:
     def __init__(self, page, origin, width):
         self.page = page
-        prepare_frame_pointer(page)
+        self.origin = origin
+        prepare_review_ready(page)
         self.width = width
-        page.add_init_script("""if(window === top) window.addEventListener('message', event=>{
-            const frame = document.getElementById('frame');
-            if(frame && event.source===frame.contentWindow && event.origin==='null' &&
-               event.data?.scope==='ORDER_R3_FRAME' && event.data.type==='ready') {
-                frame.dataset.testReadyHash=event.data.artifact;
-            }
-        });""")
-        page.goto(f"{origin}/ia?view=qa-lab&archive=1&width={width}")
+        page.goto(f"{origin}/ia?view=qa-lab&width={width}")
         expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", re.compile(r'^[0-9a-f]{64}$'), timeout=30000)
         self.current_module = None
 
     def screen(self, module, state):
         page = self.page
         target = f"{module}/{state}/email"
-        if self.current_module == module:
+        # App-owned navigation also changes the focused module. A cached Python
+        # field cannot choose the right state buttons after that navigation.
+        if page.locator("#focus-unit").get_attribute("data-module") == module:
             control = page.locator(f'#state-buttons [data-state="{state}"]')
         else:
             if page.locator("#open").is_visible() and "nav-open" not in (page.locator("#lab").get_attribute("class") or ""):
@@ -93,17 +142,52 @@ class ReviewScreens:
             page.locator("#catalog-search").fill(target)
             control = page.locator(f'#catalog [data-module="{module}"]')
         expect(control).to_have_count(1)
-        with page.expect_response(lambda res: "/r3-qa/artifact?" in res.url
-                                  and f"id={module}%2F{state}%2Femail" in res.url
-                                  and f"width={self.width}&" in res.url) as pending:
+        def requested(res):
+            query = parse_qs(urlparse(res.url).query)
+            return "/r3-qa/artifact?" in res.url and query.get("id") == [target] and query.get("width") == [str(self.width)]
+        with page.expect_response(requested) as pending:
             control.click()
         response = pending.value
         assert response.ok, (target, self.width, response.status)
-        expect(page.locator("#frame")).to_have_attribute("data-test-ready-hash", response.json()["hash"])
-        frame = page.frame_locator("#frame")
-        frame.locator("#r3-veil").wait_for(state="attached")
+        frame = wait_review_frame(page, response.json())
         self.current_module = module
         return frame
+
+
+@lru_cache(maxsize=None)
+def preserved_review_identity(target, width):
+    """Resolve and verify one explicitly retained authored-document identity."""
+    script = """import {preservedReviewArtifact} from './tests/helpers/preserved-review-artifact.mjs';
+    const a=await preservedReviewArtifact(process.argv[1],{width:Number(process.argv[2])});
+    console.log(JSON.stringify({hash:a.hash,source:{contentHash:a.source.contentHash},version:a.version}));"""
+    result = subprocess.run(["node", "--input-type=module", "-e", script, target, str(width)],
+                            cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True)
+    return json.loads(result.stdout)
+
+
+class PreservedReviewScreens:
+    """Historical component gates only; never substitutes for current app checks."""
+    def __init__(self, page, origin, width):
+        self.page, self.origin, self.width = page, origin, width
+        prepare_review_ready(page)
+
+    def screen(self, module, state):
+        target = f"{module}/{state}/email"
+        identity = preserved_review_identity(target, self.width)
+        query = urlencode({"view":"qa-lab", "screen":target, "width":self.width,
+                           "version":"recorded", "artifactHash":identity["hash"]})
+        self.page.goto(f"{self.origin}/ia?{query}")
+        return wait_review_frame(self.page, identity)
+
+
+def open_version_controls(page):
+    if not page.locator("#drawer").is_visible():
+        page.locator("#points").click()
+    page.locator('[data-drawer-tab="settings"]').click()
+    details = page.locator("#version").locator("xpath=ancestor::details[1]")
+    if details.count() and details.get_attribute("open") is None:
+        details.locator("summary").click()
+    expect(page.locator("#version")).to_be_visible()
 
 
 def frame_pointer_position(page, locator, position=None):

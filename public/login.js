@@ -40,13 +40,13 @@ form.addEventListener('submit',async event=>{
     if(response.ok){
       const incoming=new URLSearchParams(location.search), view=incoming.get('returnView');
       const target=new URLSearchParams();
-      if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view))target.set('view',view);
+      if(['qa-lab','research-r3','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view))target.set('view',view);
       if(incoming.has('labRun')){
         const run=incoming.get('labRun'),persona=incoming.get('persona');
         if(/^[a-f0-9]{32}$/.test(run)&&['buyer','supplier','operator','guest'].includes(persona)){target.set('labRun',run);target.set('persona',persona);const documentId=incoming.get('qaDocument');if(documentId&&/^[a-f0-9-]{36}$/.test(documentId))target.set('qaDocument',documentId);}
         else target.set('view','qa-lab');
       }
-      if(view==='product-r3')for(const name of ['screen','state','componentVariant']){const value=incoming.get(name);if(value&&/^[-\w]{1,100}$/.test(value))target.set(name,value);}
+      if(['product-r3','research-r3'].includes(view))for(const name of ['screen','state','componentVariant','mode']){const value=incoming.get(name);if(value&&/^[-\w]{1,100}$/.test(value))target.set(name,value);}
       if(view==='qa-lab'){
         const screen=incoming.get('screen'),width=incoming.get('width');
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);

@@ -18,7 +18,7 @@ function identity(frame){
   const dom=new JSDOM(frame.srcdoc),text=dom.window.document.querySelector('script').textContent;dom.window.close();
   return JSON.parse(text.slice(text.lastIndexOf(')(')+2,-1));
 }
-async function harness(t,{hashes=[oldHash],unknown=false}={}){
+async function harness(t,{hashes=[oldHash],unknown=false,applicationSource=false}={}){
   const dom=new JSDOM(approvedShellBody(),{url:'https://order-ia-portal.pages.dev/ia?view=qa-lab&screen=onboarding%2Fguest-1%2Femail&width=390',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
   t.after(()=>w.close());
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
@@ -44,7 +44,7 @@ async function harness(t,{hashes=[oldHash],unknown=false}={}){
       if(hash){
         signals.push(options.signal);
         if(unknown)return Response.json({error:'UNKNOWN_REVIEW_TARGET'},{status:404});
-        return Response.json({release,hash,version:'current',html:html('원본'),editable:'',file:'source.html'});
+        return Response.json({release,hash,version:applicationSource?'recorded':'current',html:html('원본'),editable:'',file:'source.html',...(applicationSource?{application:{url:'/ia?view=research-r3&build=preserved-build&screen=onboarding&state=guest-1&variant=email',build:'preserved-build'}}:{})});
       }
       return Response.json({release,hash:row.hashes[390],version:'current',html:html(row.state),editable:'',file:'current.html'});
     }
@@ -94,6 +94,34 @@ test('reference frames require their exact window, opaque origin, channel, sourc
   h.snapshot(ref,'<main id="order-single">replacement</main>',{},ref.contentWindow);
   h.mainReady();await tick();assert.match(h.messages.filter(message=>message.type==='pin-sources').at(-1).payload[0].mountedHtml,/>mounted</,'late invalid payloads cannot replace cached evidence');
   assert.equal(h.requests.some(request=>request.method!=='GET'),false);
+});
+
+test('a versioned app source mounts in a hidden inert same-origin frame and snapshots only its ready product root',async t=>{
+  const h=await harness(t,{applicationSource:true});await until(()=>h.refs().length===1);
+  const ref=h.refs()[0],url=new URL(ref.src),params=url.searchParams;
+  assert.equal(params.get('build'),'preserved-build');assert.equal(params.get('inspect'),'1');assert.equal(params.get('version'),'recorded');assert.equal(params.get('artifact'),oldHash);
+  assert.equal(ref.srcdoc,'');assert.equal(ref.getAttribute('sandbox'),'allow-scripts allow-same-origin');assert.equal(ref.inert,true);assert.equal(ref.style.visibility,'hidden');
+  const doc=ref.contentDocument;doc.open();doc.write('<!doctype html><html><body><p>loading shell outside product</p><main id="order-single"><button id="original">mounted original</button></main></body></html>');doc.close();
+  const message={scope:'ORDER_R3_FRAME',type:'ready',channel:params.get('channel'),artifact:oldHash};
+  for(const [source,origin,data]of [[ref.contentWindow,'null',message],[{},url.origin,message],[ref.contentWindow,url.origin,{...message,artifact:currentHash}]])h.emit(ref,data,source,origin);
+  await tick();assert.equal(h.refs().length,1,'no snapshot starts from a forged or opaque ready');
+  h.emit(ref,message,ref.contentWindow,url.origin);
+  doc.getElementById('original').textContent='mounted after ready';
+  await until(()=>h.refs().length===0);
+  const source=h.messages.filter(message=>message.type==='pin-sources').at(-1).payload[0];
+  assert.equal(source.artifactHash,oldHash);assert.equal(source.sourceHash,oldHash);assert.match(source.mountedHtml,/>mounted after ready</);
+  assert.doesNotMatch(source.mountedHtml,/loading shell|<html|<body/);assert.equal(source.mountedUnavailable,undefined);
+  assert.equal(JSON.stringify(h.events),h.original);assert.equal(h.requests.some(request=>request.method!=='GET'),false);
+});
+
+test('changing review targets cancels a same-origin snapshot quiet period without caching the abandoned DOM',async t=>{
+  const h=await harness(t,{applicationSource:true});await until(()=>h.refs().length===1);
+  const ref=h.refs()[0],params=new URL(ref.src).searchParams,doc=ref.contentDocument;
+  doc.open();doc.write('<main id="order-single">abandoned source</main>');doc.close();
+  h.emit(ref,{scope:'ORDER_R3_FRAME',type:'ready',channel:params.get('channel'),artifact:oldHash},ref.contentWindow,new URL(ref.src).origin);
+  await h.select(h.rows[1]);await new Promise(resolve=>setTimeout(resolve,60));
+  assert.equal(h.refs().length,0);assert.equal(h.messages.some(message=>message.type==='pin-sources'&&message.payload.some(source=>source.mountedHtml?.includes('abandoned'))),false);
+  assert.equal(h.signals.every(signal=>signal.aborted),true);
 });
 
 test('reference concurrency is bounded and changing page cancels active and queued work without accepting late snapshots',async t=>{

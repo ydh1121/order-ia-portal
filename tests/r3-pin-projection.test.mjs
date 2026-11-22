@@ -6,6 +6,7 @@ import {installPinProjection} from '../src/server/r3-ui/pin-projection.mjs';
 import {mountApprovedMarkers} from '../src/server/r3-ui/approved-markers.mjs';
 import {frameCode} from '../src/server/r3-ui/runtime.gen.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const currentHash='a'.repeat(64),oldHash='b'.repeat(64);
@@ -66,13 +67,14 @@ function placeholder(h,id='legacy-missing'){
   return {id,instance:h.session.screen,artifactHash:h.session.artifact,x:0,y:0,viewport:{width:390,height:844},scroll:[],layers:[]};
 }
 
-test('actual recorded guest logo-period anchors require the exact mounted source and retain their coordinates and provenance',async t=>{
+test('recorded guest logo-period anchors project within the preserved R1 document only with exact mounted source evidence',async t=>{
   const inventory=[
     {cursor:393,hash:'887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36',x:0,y:.519375,scrollY:58},
     {cursor:415,hash:'887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36',x:0,y:.519375,scrollY:58},
     {cursor:435,hash:'5ee12e7bfbf591d7c1516c932d9afaf03975b777fed1cfbc2281a868a1d1cdc6',x:.5909943714821764,y:.679375,scrollY:0}
   ];
   const get=async hash=>{
+    if(!hash)return preservedReviewArtifact('onboarding/guest-1/email');
     const query=new URLSearchParams({id:'onboarding/guest-1/email',width:'390',version:hash?'recorded':'current'});if(hash)query.set('artifactHash',hash);
     const response=await serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-artifact?'+query),{});assert.equal(response.status,200);return response.json();
   };
@@ -127,8 +129,9 @@ test('conflicting static and mounted source evidence remains missing and neither
   assert.equal(forged.send('pins',[pin]).projected.payload[0].anchor.id,before,'another source hash cannot attach mounted evidence to an existing source');
 });
 
-test('the replaced legacy company section remains missing on current and restores only on its exact previous document',async t=>{
+test('the replaced legacy company section stays missing on the preserved R1 successor and restores on its exact previous document',async t=>{
   const get=async version=>{
+    if(version==='current')return preservedReviewArtifact('onboarding/company/email');
     const response=await serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-artifact?'+new URLSearchParams({id:'onboarding/company/email',width:'390',version})),{});
     assert.equal(response.status,200);return response.json();
   };

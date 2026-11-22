@@ -5,6 +5,17 @@ import {approvedShellStyle} from './approved-shell-style.mjs';
 const additions = `
 html,body{overflow:hidden}
 .lab-drawer:not([hidden]){visibility:visible;transform:translateX(0)}
+.lab-drawer{top:62px}
+.review-section-head{flex-wrap:wrap;gap:8px}
+.review-comment-actions{display:flex;flex-wrap:wrap;gap:5px}
+.review-comment-actions button{min-height:32px}
+#quote-candidates{padding:8px 12px;font-size:11px;color:#6b7684}
+#quote-candidates summary{cursor:pointer}
+#quote-candidates a{display:inline-block;margin:6px 10px 0 0}
+.qa-history-tools{margin:14px 0;font-size:12px}
+.qa-history-tools summary{cursor:pointer;color:#6b7684}
+@media(max-width:800px){.lab-drawer{top:86px}}
+@media(max-width:680px){.lab-drawer{top:83px}}
 .lab-stage iframe{display:block;width:100%;height:100%;border:0;background:white}
 .preview-bound{box-sizing:content-box}
 #focus-unit{max-width:100%}
@@ -91,7 +102,7 @@ export function approvedShellBody(){
     <nav class="lab-states" id="state-buttons" aria-label="화면 상태"></nav>
     <section class="lab-stage" id="surface" data-mode="focus" aria-label="화면 미리보기">
       <div class="lab-stage-heading"><span id="stage-hint">화면에서 직접 조작하거나 위치 코멘트를 남겨 주세요.</span><span class="prototype-pill" id="prototype-badge">디자인 예시</span></div>
-      <nav id="quote-candidates" hidden aria-label="실제 견적 입력"><a href="/ia?view=simple-r3#/form" target="_blank" rel="noopener">간편 견적 입력 열기</a> · <a href="/ia?view=detailed-r3#/form" target="_blank" rel="noopener">상세 견적 입력 열기</a></nav>
+      <details id="quote-candidates" hidden><summary>정규 원본 비교</summary><p>현재 정규본을 별도 창에서 참고합니다. 연구본 검토는 위 화면에서 이어집니다.</p><a href="/ia?view=simple-r3#/form" target="_blank" rel="noopener noreferrer">간편 견적 원본 (새 창)</a><a href="/ia?view=detailed-r3#/form" target="_blank" rel="noopener noreferrer">상세 견적 원본 (새 창)</a></details>
       <nav id="business-candidates" hidden aria-label="내 사업장"><a href="/ia?view=businesses-r3" target="_blank" rel="noopener">내 사업장 관리</a></nav>
       <nav id="consult-candidates" hidden aria-label="상담 업무"><a href="/ia?view=roles-r3&amp;menu=consult" target="_blank" rel="noopener">상담 예약·내역 관리</a><p>기존 업무 화면에서 희망일·상담 대상·답변·처리 이력을 확인합니다. 연결된 사업장과 업무 권한에 따라 표시됩니다.</p></nav>
       <section hidden id="buyer" aria-label="사업장 인증 견적"><button id="quote-open">내 견적 불러오기</button><select id="buyer-sites" aria-label="인증 사업장"></select><select id="buyer-quotes" aria-label="기존 견적"></select><section id="snapshot" aria-label="선택한 견적"></section></section>
@@ -115,7 +126,7 @@ export function approvedShellBody(){
         <button class="drawer-button" id="save-review-note">화면 의견 저장</button><output id="review-note-state" aria-live="polite"></output>
         <details id="history-details" hidden><summary>가져온 이전 기록</summary><div id="record-history"></div></details>
         <div id="other-width-history"></div>
-        <section class="review-comments"><div class="review-section-head"><h3>코멘트 <span id="comment-count"></span></h3><button id="general" data-lab-action="page-comment">전체 의견 추가</button></div>
+        <section class="review-comments"><div class="review-section-head"><h3>코멘트 <span id="comment-count"></span></h3><div class="review-comment-actions"><button id="drawer-new-location" data-lab-action="location-comment">위치 코멘트 추가</button><button id="general" data-lab-action="page-comment">전체 의견 추가</button></div></div>
           <div class="comment-filters"><button data-comment-filter="open" class="active">미해결</button><button data-comment-filter="recheck">재검토</button><button data-comment-filter="resolved">해결</button><button data-comment-filter="all">전체</button></div>
           <div class="pin-legend" aria-label="위치 핀 색상"><span class="previous">이전 핀 · 보라</span><span>이번 판 핀 · 파랑</span></div>
           <div id="notes"></div>
@@ -153,11 +164,11 @@ export function approvedShellBody(){
       <label class="check-setting"><input type="checkbox" id="motion-enabled" checked>모션 재생</label>
       <label class="check-setting"><input type="checkbox" id="show-resolved-pins">해결된 위치 코멘트 표시</label>
       <label class="sr-only" for="width">현재 검토 폭</label><select id="width" hidden><option value="0">원본 폭</option>${widthOptions(approvedWidths)}</select>
-      <label for="version">비교할 화면<select id="version"><option value="current">이번 판</option><option value="prior-r3">이전 R3 검토판</option><option value="previous">R2 화면</option></select></label><span class="sr-only" id="version-mark"></span>
+      <details class="qa-history-tools"><summary>이전 판 이력 확인</summary><label for="version">보존된 검토 화면<select id="version"><option value="current">현재 연구본</option><option value="prior-r3">보존된 R3 이력</option><option value="previous">보존된 R2 이력</option></select></label></details><span class="sr-only" id="version-mark"></span>
       <label class="check-setting"><input type="checkbox" id="audit-demo">실행 검증용 기록 포함</label>
       <button id="hide-pins" class="drawer-button" aria-pressed="false">핀 숨기기</button><button class="drawer-button" id="sync">다시 읽기</button>
       <h3>개별 파일</h3><button id="export-editable" class="drawer-button" data-lab-action="export-html">피그마 편집용 HTML</button><button id="export-runnable" class="drawer-button">실행용 HTML</button>
-      <h3>업무 화면</h3><a class="source-link" href="/ia?view=simple-r3">간편 견적</a><a class="source-link" href="/ia?view=detailed-r3">상세 견적</a><a class="source-link" href="/ia?view=pricing-r3">가격·배송</a><a class="source-link" href="/ia?view=roles-r3">역할별 업무</a>
+      <details class="qa-history-tools"><summary>정규 원본 비교 (새 창)</summary><a class="source-link" href="/ia?view=simple-r3" target="_blank" rel="noopener noreferrer">간편 견적 원본</a><a class="source-link" href="/ia?view=detailed-r3" target="_blank" rel="noopener noreferrer">상세 견적 원본</a><a class="source-link" href="/ia?view=pricing-r3" target="_blank" rel="noopener noreferrer">가격·배송 원본</a><a class="source-link" href="/ia?view=roles-r3" target="_blank" rel="noopener noreferrer">역할별 업무 원본</a></details>
     </div>
   </aside>
   <dialog id="choose"><div class="controls"><input class="lab-search" id="search" type="search" aria-label="화면·의견 검색" placeholder="화면 또는 의견 검색"><button class="qa-inline-button" id="close-choose">닫기</button></div><div id="tiles"></div></dialog>

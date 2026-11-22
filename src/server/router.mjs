@@ -16,6 +16,10 @@ export async function handleIaRequest(request,env,dependencies={}) {
   try {actor=await (isBusinessSurface(new URL(request.url))?businessActor:requireActor)(request,env,dependencies.fetcher||fetch,dependencies.now)}
   catch(error) {return error?.message==='SESSION_STORE_UNAVAILABLE'?json({error:'SESSION_STORE_UNAVAILABLE'},503):json({error:'IA_ACCESS_DENIED'},403)}
   const url=new URL(request.url);
+  if(url.pathname==='/api/ia/research-address'){
+    const {handleResearchAddress}=await import('./research-app/research-address-api.mjs');
+    return handleResearchAddress({request,env,actor},dependencies);
+  }
   const productRoute=url.pathname.match(/^\/api\/ia\/(lab|product)(\/.*)?$/);
   if(productRoute){
     if(productRoute[1]==='lab'&&actor.role!=='OWNER')return json({error:'IA_PERMISSION_DENIED'},403);

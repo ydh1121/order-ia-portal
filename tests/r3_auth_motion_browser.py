@@ -126,7 +126,7 @@ def check_guest_cards(page, screens):
     receipts = []
     for index in range(2):
         card = cards.nth(index)
-        x, y = frame_pointer_position(page, frame.locator(".ob-stage > header"))
+        x, y = frame_pointer_position(page, frame.locator("#order-app-header"))
         page.mouse.move(x, y)
         size = card.evaluate("el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})")
         points = [frame_pointer_position(page, card, {"x": size["width"] * x, "y": size["height"] * y})
@@ -181,7 +181,7 @@ def check_guest_cards(page, screens):
 def check_auth_motion(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
-    header = frame.locator(".ob-stage > header")
+    header = frame.locator("#order-app-header")
     expect(frame.locator(".ob-pages .ob-active-pill")).to_be_visible()
     # Figma 2009173058 requires random original motion on a guest click. The
     # shared trigger selects CODE1 idle/play or gather; neither is a fake event

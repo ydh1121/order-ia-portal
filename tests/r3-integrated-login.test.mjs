@@ -6,9 +6,10 @@ import {runInNewContext} from 'node:vm';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {mountIntegratedLogin} from '../scripts/r3/authored/integrated-login.mjs';
 import {runtimes} from '../src/server/r3-ui/runtime.gen.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 const assets = JSON.parse(await readFile(new URL('../scripts/r3/authored/login-provider-buttons.json',import.meta.url),'utf8'));
-const get = async (variant, width,version='current') => (await serveR3Artifact(new Request('https://private.invalid/artifact?'+new URLSearchParams({id:'login/empty/'+variant,width:String(width),version})))).json();
-test('integrated entry contains unchanged native provider button files and keeps explicitly selected account review artifacts',async()=>{
+const get = async (variant, width,version='current') => version==='current'?preservedReviewArtifact('login/empty/'+variant,{width}):(await serveR3Artifact(new Request('https://private.invalid/artifact?'+new URLSearchParams({id:'login/empty/'+variant,width:String(width),version})))).json();
+test('the preserved integrated entry retains native provider buttons and explicitly selected account review artifacts',async()=>{
   const integrated=await get('compact',390);
   assert.equal(integrated.mount,runtimes.integratedLogin);
   const body=integrated.editable.split('<body>')[1].split('<script')[0];
@@ -17,7 +18,7 @@ test('integrated entry contains unchanged native provider button files and keeps
     assert.ok(body.includes('data:image/png;base64,'+ref.png));
     assert.equal(createHash('sha256').update(Buffer.from(ref.png,'base64')).digest('hex'),ref.pngSha256);
   }
-  const signup=await (await serveR3Artifact(new Request('https://private.invalid/artifact?id=signup/empty/email&width=390&version=current'))).json();
+  const signup=await preservedReviewArtifact('signup/empty/email');
   for(const ref of Object.values(assets))assert.ok(signup.editable.includes('data:image/png;base64,'+ref.png));
   assert.match(signup.editable,/aria-label="간편 가입"/);
   assert.equal((await get('email',390,'prior-r3')).hash,'3ce1e61428ca87c7202fe73272ad0234f0d492cd15bdb81cafaca3b409354f36');

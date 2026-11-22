@@ -2,19 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
-import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 import {runtimes} from '../src/server/r3-ui/runtime.gen.mjs';
 
 const artwork = JSON.parse(await readFile(new URL('../scripts/r3/authored/onboarding-art.json',import.meta.url),'utf8'));
 const archivedArt = 'e04ba4e9';
 async function target(state,width=375) {
-  const query = new URLSearchParams({id:'onboarding/'+state+'/email',width:String(width),version:'current'});
-  const result = await serveR3Artifact(new Request('https://private.invalid/artifact?'+query));
-  assert.equal(result.status,200);
-  return result.json();
+  return preservedReviewArtifact('onboarding/'+state+'/email',{width});
 }
 const bodyOf = row => row.html.split('<body>')[1].split('<!--R3-FRAME-->')[0];
-test('eight intro states retain their own actions, artwork, cards and pagination', async ()=>{
+test('eight preserved R1 intro states retain their own actions, artwork, cards and pagination', async ()=>{
   const source = await readFile(new URL('../scripts/r3/authored/onboarding.js',import.meta.url),'utf8');
   assert.ok(runtimes.onboarding.endsWith(source));
   assert.equal(createHash('sha256').update(Buffer.from(artwork.data,'base64')).digest('hex'),artwork.sha256);
@@ -36,7 +33,7 @@ test('eight intro states retain their own actions, artwork, cards and pagination
   }
   assert.equal(identities.size,8);
 });
-test('company overlay has a labelled drawer, inert backdrop, all four destinations and qualified registrant fields',async()=>{
+test('the preserved R1 company overlay has a labelled drawer, inert backdrop, destinations and registrant fields',async()=>{
   const body=bodyOf(await target('company'));
   assert.match(body,/<div class="ob-stage" inert/);
   assert.match(body,/role="dialog" aria-modal="true" aria-label="사업자 정보"/);

@@ -25,6 +25,10 @@ jobs:
         run: node scripts/build-product-manifest.mjs --check
       - name: Verify R1 QA and product runtime sources agree
         run: node scripts/r3/build-qa-review-runtime.mjs --check
+      - name: Verify research application sources and immutable release packs
+        run: |
+          node scripts/build-research-app.mjs --check
+          node scripts/seal-research-release.mjs --check
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |
@@ -54,6 +58,11 @@ jobs:
           fc-match 'sans-serif:lang=ko' --format '%{family} | %{file}\n'
       - run: python -m pip install playwright==1.56.0
         id: browser-deps
+      - name: Check the standalone research app and the same app in the R1 shell
+        if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/research-application-browser.py
       - name: Check persisted MVP menus, component review, pass flip and withdrawal guards
         if: ${{ !cancelled() && steps.browser-deps.outcome == 'success' }}
         env:
@@ -170,6 +179,7 @@ jobs:
             artifacts/qa-mvp/
             artifacts/quote-draft/
             artifacts/frame-pointer/
+            artifacts/research-application/
           if-no-files-found: ignore
           retention-days: 7
   r1:
