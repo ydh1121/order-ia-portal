@@ -1,4 +1,4 @@
-"""Exercise detailed quote feedback through the QA host and its opaque child frame."""
+"""Preserve authored question gestures and current QA original-comparison controls."""
 import json
 import os
 from pathlib import Path
@@ -6,13 +6,15 @@ import shutil
 import subprocess
 
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
+from r3_feedback_browser_support import PreservedReviewScreens, ReviewScreens, frame_click, frame_pointer_position, open_version_controls
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def check(page, origin, width):
-    screen = ReviewScreens(page, origin, width).screen
+    # These selectors describe the retained R1 question components. The current
+    # app's reused regular quote flow is exercised in research-application-browser.
+    screen = PreservedReviewScreens(page, origin, width).screen
 
     def confirm(frame, label):
         dialog=frame.locator("[data-qf-confirm]")
@@ -136,25 +138,28 @@ def check(page, origin, width):
             confirm(frame, "해제")
     expect(action(frame, "finish-q4")).to_be_hidden()
 
+    screen = ReviewScreens(page, origin, width).screen
     for module, state in (("q2", "empty"), ("quote-review", "normal")):
         screen(module, state)
         links = page.locator("#quote-candidates")
         expect(links).to_be_visible()
+        expect(links.locator("summary")).to_have_text("정규 원본 비교")
+        if links.get_attribute("open") is None:
+            links.locator("summary").click()
         for mode in ("simple", "detailed"):
-            expect(links.locator(f'a[href="/ia?view={mode}-r3#/form"]')).to_be_visible()
-        page.locator("#points").click()
-        page.locator('[data-drawer-tab="settings"]').click()
+            link=links.locator(f'a[href="/ia?view={mode}-r3#/form"]')
+            expect(link).to_be_visible()
+            expect(link).to_have_attribute("target", "_blank")
+        open_version_controls(page)
         page.locator("#version").select_option("previous")
         expect(links).to_be_hidden()
         # Version selection persists while navigating the approved shell.
-        if not page.locator("#version").is_visible():
-            page.locator("#points").click()
-            page.locator('[data-drawer-tab="settings"]').click()
+        open_version_controls(page)
         page.locator("#version").select_option("current")
         expect(links).to_be_visible()
         if page.locator("#drawer").is_visible():
             page.locator("#close-drawer").click()
-    print(json.dumps({"width": width, "checks": ["q1_empty_add_edit_delete", "q1_tags_icons_errors", "q3_header_contacts", "q3_swipe_cancel_scoped_detach", "q3_empty_completion", "q4_venue_unlink", "q4_empty_completion", "q2_review_product_links"]}))
+    print(json.dumps({"width": width, "checks": ["preserved_q1_empty_add_edit_delete", "preserved_q1_tags_icons_errors", "preserved_q3_header_contacts", "preserved_q3_swipe_cancel_scoped_detach", "preserved_q3_empty_completion", "preserved_q4_venue_unlink", "preserved_q4_empty_completion", "current_q2_review_original_comparison_links"]}))
 
 
 def main():
@@ -168,7 +173,7 @@ def main():
                 page = context.new_page()
                 errors = []
                 page.on("pageerror", lambda error: errors.append(str(error)))
-                page.goto(fixture["url"]+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()

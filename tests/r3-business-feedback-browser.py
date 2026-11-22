@@ -220,7 +220,7 @@ def main():
                 ctx = browser.new_context(viewport={"width":width,"height":860},has_touch=width<600,
                                           is_mobile=width<600,reduced_motion="reduce")
                 page = ctx.new_page(); errors = []; page.on("pageerror",lambda error:(errors.append(str(error)),print(str(error),flush=True)))
-                page.goto(fixture["url"]+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()

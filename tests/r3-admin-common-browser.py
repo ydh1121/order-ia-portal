@@ -8,14 +8,22 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 from r3_feedback_browser_support import ReviewScreens, frame_click
 from r3_workflow_browser_support import inspect_fixture, configure, release
+from research_export_browser_support import research_snapshot_identity, check_research_snapshot_download
 
 
 def capture_commands(frame):
     """Observe the canonical adapter without replacing its transport or result."""
     frame.locator('#order-single').evaluate('''el=>{
-      const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER,request=a.request.bind(a);
-      w.__adminCommands=[];
-      a.request=(path,body,signal)=>{if(body)w.__adminCommands.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
+      const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER;
+      // Receipt and billing now retain one application and adapter. End the
+      // previous observation before starting another, so one real command is
+      // still counted once when the next route is selected.
+      w.__adminCommandObserver?.release();
+      const original=a.request,request=original.bind(a),records=[];
+      const observed=(path,body,signal)=>{if(body)records.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
+      w.__adminCommands=records;
+      w.__adminCommandObserver={release(){if(a.request===observed)a.request=original;}};
+      a.request=observed;
     }''')
 
 
@@ -307,12 +315,14 @@ try:
                 # actual print action; the host's script-free review export remains.
                 page.locator('#points').click()
                 page.locator('[data-drawer-tab=settings]').click()
-                with page.expect_download() as download:
+                export_frame=page.frame_locator('#frame')
+                export_target=research_snapshot_identity(export_frame)
+                with page.expect_download() as download, page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json.get('kind')=='figma' and r.request.post_data_json.get('data',{}).get('status')=='exported') as export_audit:
                     page.locator('#export-editable').click()
-                content=Path(download.value.path()).read_text()
-                assert 'frame-meta' in content and '영수증' in content and '<iframe' not in content
-                assert not re.search(r'<script(?! type="application/json")',content)
-                record['receiptDownload']={'type':'projected review HTML','name':download.value.suggested_filename,'commercialDocumentIssued':False}
+                raw=Path(download.value.path()).read_bytes()
+                assert '영수증' in raw.decode('utf-8')
+                export_proof=check_research_snapshot_download(export_frame,raw,export_audit.value,export_target)
+                record['receiptDownload']={'type':'research static snapshot','name':download.value.suggested_filename,'commercialDocumentIssued':False,**export_proof}
                 page.locator('#close-drawer').click()
             record['billing']=billing_workflow(page,screens.screen('admin-billing','draft'),width)
             assert not errors,errors

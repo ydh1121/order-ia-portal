@@ -5,14 +5,15 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
+from r3_feedback_browser_support import PreservedReviewScreens, ReviewScreens, frame_click, frame_pointer_position
 
 ROOT = Path(__file__).resolve().parents[1]
 def capture_reference_viewports(qa_page, folder):
     # Match the five preserved Figma artboards at the original 375 × 828 CSS pixels.
-    # Use the current editable export; issued customer numbers cannot enter this file.
+    # Use the exact current application build URL, with the same isolated result
+    # data. A module app must run on its authenticated origin, not set_content.
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
     page = qa_page.context.new_page()
@@ -24,9 +25,12 @@ def capture_reference_viewports(qa_page, folder):
             artifact = qa_page.evaluate('''async path => {
                 const response = await fetch(path, {credentials:'same-origin'});
                 if (!response.ok) throw Error('Protected export returned HTTP '+response.status);
-                return (await response.json()).editable;
+                return await response.json();
             }''', path)
-            page.set_content(artifact,wait_until='load')
+            assert artifact.get('application') and artifact['source']['kind']=='research-application'
+            origin=urlsplit(qa_page.url)
+            page.goto(f'{origin.scheme}://{origin.netloc}'+artifact['application']['url'])
+            expect(page.locator('html')).to_have_attribute('data-product-build',artifact['application']['build'])
             wrapper=page.locator('[data-review-result]')
             expect(wrapper).to_have_attribute('data-view',state)
             expect(wrapper).to_have_attribute('data-quote-fixture','figma-20261118')
@@ -180,19 +184,33 @@ def check_motion(page, origin):
 def run(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("q2","empty")
-    frame_click(page,frame.get_by_role("button",name="입력 내용 확인"))
-    expect(frame.locator('[name=qty]')).to_have_attribute('aria-invalid','true')
-    frame.locator('[name=qty]').fill('27')
-    frame.locator('[name=price]').fill('7300')
-    frame_click(page,frame.get_by_role("button",name="입력 내용 확인"))
-    expect(frame.locator('[data-summary-qty]')).to_have_text('월 27판')
-    expect(frame.locator('[data-summary-price]')).to_have_text('7,300원 / 판')
-    frame_click(page,frame.get_by_role('button',name='구매 조건 수정'))
-    expect(frame.locator('[name=qty]')).to_have_value('27')
-    frame_click(page,frame.locator('.journey-check'))
-    expect(frame.locator('[name=unknown]')).to_be_checked()
-    frame_click(page,frame.get_by_role("button",name="입력 내용 확인"))
-    expect(frame.locator('[data-summary-price]')).to_have_text('현재 구매가 모름')
+    quote=frame.locator('#order-app-quote')
+    quantity,price=quote.locator('[data-line-qty]').first,quote.locator('[data-line-price]').first
+    frame_click(page,quote.locator('#q2-next'))
+    expect(quote.locator('#err-q2')).to_be_visible()
+    quantity.fill('27');quantity.blur()
+    price.fill('7300');price.blur()
+    frame_click(page,quote.locator('#input-review-open'))
+    review=quote.locator('#input-review-dialog')
+    expect(review).to_be_visible()
+    expect(review.locator('#input-review-rows')).to_contain_text('월 27판')
+    expect(review.locator('#input-review-rows')).to_contain_text('포장당 7,300원')
+    frame_click(page,review.get_by_role('button',name='월 구매정보 수정',exact=True))
+    expect(review).not_to_be_visible()
+    expect(quantity).to_have_value('27')
+    expect(price).to_have_value(re.compile(r'7,?300'))
+    # The regular edit action schedules focus back to the opened accordion.
+    # Re-enter the price as a user would: the trusted pointer cancels that
+    # pending navigation, then native keys must actually clear the field.
+    frame_click(page,price)
+    expect(price).to_be_focused()
+    price.press('ControlOrMeta+A');price.press('Backspace')
+    expect(price).to_have_value('')
+    price.press('Tab')
+    expect(price).to_have_value('')
+    frame_click(page,quote.locator('#input-review-open'))
+    expect(review.locator('#input-review-rows')).to_contain_text('포장당 미입력')
+    frame_click(page,review.locator('#input-review-back'))
     for state in ['saving','new-detail','current-detail','new-only-detail','equal','current-lower','no-current','expired','recompare','no-result','locked']:
         frame = screens.screen('quote-result',state)
         wrapper=frame.locator('[data-review-result]')
@@ -216,7 +234,17 @@ def run(page, origin, width):
         if folder and width in (390,1440):
             path=Path(folder);path.mkdir(parents=True,exist_ok=True)
             view.screenshot(path=str(path / ('result-'+state+'-'+str(width)+'.png')))
-    print('PASS browser: Q2 → review → edit, 11 protected shared result states and viewport',width,flush=True)
+    # The former independent Q2 contract remains explicitly reproducible. Its
+    # unknown-price checkbox is not substituted for the regular app's model.
+    legacy=PreservedReviewScreens(page,origin,width).screen('q2','empty')
+    frame_click(page,legacy.get_by_role('button',name='입력 내용 확인'))
+    expect(legacy.locator('[name=qty]')).to_have_attribute('aria-invalid','true')
+    frame_click(page,legacy.locator('.journey-check'))
+    expect(legacy.locator('[name=unknown]')).to_be_checked()
+    expect(legacy.locator('[name=price]')).to_be_disabled()
+    frame_click(page,legacy.locator('.journey-check'))
+    expect(legacy.locator('[name=price]')).to_be_enabled()
+    print('PASS browser: current regular Q2 → input review → edit, 11 current shared result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
 if __name__=='__main__':
     host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:
@@ -226,7 +254,7 @@ if __name__=='__main__':
             for width in (320,390,1440):
                 context=browser.new_context(viewport={'width':width,'height':852},reduced_motion='reduce')
                 page=context.new_page()
-                page.goto(conf['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+                page.goto(conf['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
                 page.locator('input[name=email]').fill(conf['email'])
                 page.locator('input[name=password]').fill(conf['pass'])
                 page.locator('button[type=submit]').click()

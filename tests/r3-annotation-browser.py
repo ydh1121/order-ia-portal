@@ -2,6 +2,7 @@
 from pathlib import Path
 from math import dist
 from r3_feedback_browser_support import frame_click, prepare_frame_pointer
+from research_export_browser_support import research_snapshot_identity, check_research_snapshot_download
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
@@ -72,7 +73,7 @@ def check_rework_instruction(page,original):
 
 def check_previous_rework(page,base,width):
  current_url=page.url
- page.goto(base+'/ia?view=qa-lab&archive=1&screen=login/empty/email&width='+str(width)+'&version=previous')
+ page.goto(base+'/ia?view=qa-lab&screen=login/empty/email&width='+str(width)+'&version=previous')
  page.frame_locator('#frame').locator('#r3-veil').wait_for(state='attached')
  expect(page.locator('#version')).to_have_value('previous')
  page.locator('#points').click();page.locator('#general').click()
@@ -263,7 +264,7 @@ def check_zoomed_pin(page, context, origin, width):
     """Save a real pin on a wide canvas. Preserve its DOM attachment across view changes."""
     state = {320:"empty", 390:"filled", 1440:"email-error"}[width]
     page.set_viewport_size({"width":width, "height":870})
-    page.goto(f"{origin}/ia?view=qa-lab&archive=1&screen=login/{state}/email&width=1920")
+    page.goto(f"{origin}/ia?view=qa-lab&screen=login/{state}/email&width=1920")
     frame = page.frame_locator("#frame")
     veil = frame.locator("#r3-veil")
     veil.wait_for(state="attached")
@@ -343,12 +344,12 @@ def run():
    for width in (390,1440):
     ctx=browser.new_context(viewport={'width':width,'height':870},has_touch=width<600)
     page=ctx.new_page();prepare_frame_pointer(page);page.set_default_timeout(12000);errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
-    page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail')
+    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login%2Fempty%2Femail')
     page.locator('input[name=email]').fill(fixture['email']);page.locator('input[name=password]').fill(fixture['pass']);page.locator('button[type=submit]').click()
     page.wait_for_url('**/ia?view=qa-lab**')
     frame=page.frame_locator('#frame')
     frame.locator('#r3-veil').wait_for(state='attached')
-    page.goto(fixture['url']+'/ia?view=qa-lab&archive=1&screen=login/empty/email&width='+str(width))
+    page.goto(fixture['url']+'/ia?view=qa-lab&screen=login/empty/email&width='+str(width))
     frame.locator('#r3-veil').wait_for(state='attached')
     page.locator('#new').click()
     frame.locator('#r3-veil').wait_for(state='visible')
@@ -372,7 +373,11 @@ def run():
     expect(pin.first).to_have_text('1')
     expect(pin.first).to_have_attribute('data-cluster','+1')
     expect(pin.first).to_have_attribute('aria-label','위치 코멘트 1, 2번 열기')
-    frame_click(page,pin.first);assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
+    frame_click(page,pin.first)
+    # A trusted child-frame click posts the cluster to the host asynchronously.
+    # Wait for both original threads, retaining the same content assertion.
+    expect(page.locator('#notes')).to_contain_text('위치 0')
+    expect(page.locator('#notes')).to_contain_text('위치 1')
     parent=page.locator('#notes article').filter(has=page.get_by_text('위치 0',exact=True))
     parent.get_by_role('button',name='답글 작성').click()
     page.locator('#body-text').fill('저장한 답글');page.get_by_role('button',name='답글 저장').click()
@@ -394,12 +399,13 @@ def run():
                       'beforeRestore':before,'afterReload':on_reload,'afterRestore':after}),flush=True)
     page.locator('#points').click()
     page.locator('[data-drawer-tab=settings]').click()
-    with page.expect_download() as downloaded:
+    export_target=research_snapshot_identity(frame)
+    with page.expect_download() as downloaded, page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json.get('kind')=='figma' and r.request.post_data_json.get('data',{}).get('status')=='exported') as export_audit:
      page.locator('#export-editable').click()
     file=Path(downloaded.value.path());raw=file.read_bytes()
-    assert b'<iframe' not in raw and b'id="frame-meta"' in raw
+    export_proof=check_research_snapshot_download(frame,raw,export_audit.value,export_target)
     assert not errors,errors
-    print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'pageErrors':errors}))
+    print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'export':export_proof,'pageErrors':errors}))
     page.locator('#close-drawer').click()
     if width==390:
      check_draft_recovery(ctx,page)

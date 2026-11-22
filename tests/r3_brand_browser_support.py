@@ -54,7 +54,7 @@ class ArchivedBrandScreens:
 
     def screen(self, module, state):
         digest = brand_archive_hash(module, state, self.width)
-        query = {"view": "qa-lab", "archive": "1", "screen": f"{module}/{state}/email",
+        query = {"view": "qa-lab", "screen": f"{module}/{state}/email",
                  "width": self.width, "version": "recorded", "artifactHash": digest}
         page = self.page
         with page.expect_response(lambda res: "/r3-qa/artifact?" in res.url

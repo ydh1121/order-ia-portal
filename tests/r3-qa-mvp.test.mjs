@@ -14,6 +14,7 @@ import {getQaMvpRuntimeSource} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
 import {sharedCoreScript,commonMotionScript} from '../src/server/r3-ui/qa-assets.gen.mjs';
 import {createProductUiLab} from './helpers/product-ui-lab.mjs';
 import {qaSalesFixture} from '../src/server/r3-qa-sales.mjs';
+import {researchScene} from '../src/server/research-app/page.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const extras=await getQaSupplemental();
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -21,6 +22,7 @@ const activeDoms=new Set();afterEach(()=>{for(const dom of activeDoms)dom.window
 const artifact=async(id,options={})=>serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-qa/artifact?'+new URLSearchParams({id,width:'390',version:'current',...options})));
 function setup(body){const dom=new JSDOM(body,{url:'https://order-ia-portal.pages.dev/ia?view=qa-lab',runScripts:'outside-only',pretendToBeVisual:true});dom.window.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});activeDoms.add(dom);return dom;}
 async function settled(){for(let i=0;i<8;i++)await tick();}
+async function until(check,label){const deadline=Date.now()+5000;while(!check()&&Date.now()<deadline)await tick();assert.ok(check(),label);}
 async function mount(id,{adapter,sourceRuntime=false}={}){
   const source=extras.documents.get(id);assert.ok(source,id);const dom=setup(source.body),w=dom.window,calls=[];
   w.ORDER_APP_CONTEXT={mode:'lab',now:'2026-11-20T00:00:00.000Z'};if(adapter)w.ORDER_APP_ADAPTER=adapter;
@@ -82,7 +84,8 @@ test('new review assets have independent targets and prior delivery artifacts re
   const original=catalog.find(r=>r.id==='delivery-request/ready/email');
   const old=await(await artifact(original.id,{version:'recorded',artifactHash:original.hashes[390]})).json();
   assert.equal(old.hash,original.hashes[390]);assert.ok(old.html.includes(gunzipSync(Buffer.from(frames[original.current],'base64')).toString()));
-  const current=await(await artifact(original.id)).json();assert.notEqual(current.hash,old.hash);assert.match(current.html,/data-pass-card/);
+  const current=await(await artifact(original.id)).json();assert.notEqual(current.hash,old.hash);assert.ok(current.application);
+  const scene=await researchScene(original.screen,original.state,original.variant);assert.match(scene.html,/data-pass-card/);
   const allRows=[...catalog,...extras.rows];
   for(const [id,source] of extras.documents){
     const d=setup(source.body);for(const b of d.window.document.querySelectorAll('[data-qa-go]'))assert.ok(allRows.some(r=>r.screen===b.dataset.qaGo&&r.state===b.dataset.qaState),id+' → '+b.dataset.qaGo+'/'+b.dataset.qaState);d.window.close();
@@ -100,7 +103,8 @@ test('large Order Pass uses the shared ticket and flips in place; withdrawal wai
   fill('withdraw-phrase','회원탈퇴');assert.equal(button.disabled,true);fill('withdraw-reason','other');assert.equal(button.disabled,true);
   fill('withdraw-note','필요할 때 다시 가입할게요');assert.equal(button.disabled,false);fill('withdraw-phrase','회원탈퇴 ');assert.equal(button.disabled,true);fill('withdraw-phrase','회원탈퇴');
   button.click();assert.equal(root.querySelector('[data-withdraw-dialog]').hidden,false);assert.equal(calls.length,0);
-  root.querySelector('[data-withdraw-cancel]').click();assert.equal(calls.length,0);button.click();root.querySelector('[data-withdraw-confirm]').click();assert.equal(calls.length,0,'click alone cannot signal completion');await settled();assert.deepEqual(calls,[['account-settings','closed']]);
+  root.querySelector('[data-withdraw-cancel]').click();assert.equal(calls.length,0);button.click();root.querySelector('[data-withdraw-confirm]').click();assert.equal(calls.length,0,'click alone cannot signal completion');
+  await until(()=>calls.length>0,'the actual account handler must acknowledge withdrawal before navigation');assert.deepEqual(calls,[['account-settings','closed']]);
   assert.equal(adapter.calls.find(call=>call.body?.action==='withdraw').body.phrase,'회원탈퇴');cleanup();w.close();lab.close();
 });
 
@@ -167,7 +171,11 @@ test('sales is the discoverable first analytics state while original analytics a
   assert.deepEqual(analytics.slice(0,2).map(row=>row.state),['business-sales','campaign-sales']);assert.equal(analytics[0].label,'매출 현황');
   assert.deepEqual(analytics.filter(row=>!row.supplemental).map(row=>row.state),['normal','loading','partial','empty','denied']);
   for(const row of catalog.filter(row=>row.screen==='admin-analytics')){
-    const doc=await(await artifact(row.id)).json();assert.equal(doc.source.contentHash,row.hashes[390]);assert.equal(doc.hash,list.items.find(item=>item.id===row.id).hashes[390]);assert.equal(doc.html.includes(gunzipSync(Buffer.from(frames[row.current],'base64')).toString()),true);
+    const doc=await(await artifact(row.id)).json(),entry=list.items.find(item=>item.id===row.id);
+    assert.equal(entry.contentHashes[390],row.hashes[390]);assert.equal(doc.hash,entry.hashes[390]);
+    assert.equal(doc.source.kind,'research-application');assert.equal(doc.source.build,doc.application.build);
+    const url=new URL(doc.application.url,'https://order-ia-portal.pages.dev');assert.equal(url.searchParams.get('screen'),row.screen);assert.equal(url.searchParams.get('state'),row.state);
+    const scene=await researchScene(row.screen,row.state,row.variant);assert.equal(scene.html,gunzipSync(Buffer.from(frames[row.current],'base64')).toString(),'the current app still serves the selected original analytics scene');
   }
   const shell=setup(approvedShellBody()),link=shell.window.document.querySelector('#consult-candidates a');
   assert.equal(link.getAttribute('href'),'/ia?view=roles-r3&menu=consult');assert.equal(link.closest('iframe'),null);assert.equal(shell.window.document.querySelector('#frame').getAttribute('sandbox'),'allow-scripts');shell.window.close();

@@ -38,6 +38,9 @@ def check_qa_menu(page,url,width,dashboard_ready=False):
         expect(control).to_have_text(label)
     frame=qa_tab.frame_locator('#frame')
     frame.locator('#r3-veil').wait_for(state='attached')
+    assert qa_tab.locator('#frame').get_attribute('src') and qa_tab.locator('#frame').get_attribute('srcdoc') is None
+    expect(frame.locator('#order-app-header')).to_have_count(1)
+    expect(frame.locator('#order-single')).to_have_attribute('data-research-application','')
     pin=qa_tab.locator('#new[data-lab-action="pin-mode"]')
     expect(pin).to_have_text('위치 코멘트')
     pin.click()

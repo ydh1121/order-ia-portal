@@ -9,6 +9,7 @@ import {archivedRows,archivedScripts} from '../src/server/r3-ui/interaction-hist
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {approvedShellBody} from '../src/server/r3-ui/approved-shell.mjs';
 import {bootQaHost} from '../src/server/r3-ui/host.mjs';
+import {bootApprovedShell} from '../src/server/r3-ui/approved-controller.mjs';
 import {browserFunction} from '../src/server/browser-source.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const row=(state,variant='email')=>catalog.find(r=>r.id==='login/'+state+'/'+variant);
@@ -21,6 +22,7 @@ function setup(markup,url='https://order-ia-portal.pages.dev/ia?view=qa-lab'){
   Object.defineProperty(w.document,'scrollingElement',{value:w.document.documentElement,configurable:true});
   w.document.documentElement.scrollTo=()=>{};
   w.HTMLElement.prototype.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};
+  w.ResizeObserver=class{observe(){}disconnect(){}};
   w.TextEncoder=TextEncoder;Object.defineProperty(w,'crypto',{value:webcrypto});
   return {dom,w};
 }
@@ -83,9 +85,9 @@ test('the immediately preceding artifact hashes keep their exact body and execut
   }
 });
 
-async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,viewHash=null,viewVersion='current',initialDrafts=[],historicalArtifacts=null,canonicalHost=false}={}){
+async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,viewHash=null,viewVersion='current',initialDrafts=[],historicalArtifacts=null,canonicalHost=false,withShell=false,screenRows=null}={}){
   const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390'+(viewVersion==='current'?'':'&version=recorded&artifactHash='+viewHash));
-  const screens=['empty','closed'].map(state=>({...row(state),hashes:{390:state==='empty'&&viewHash||row(state).hashes[390]}})),screen=screens[0];
+  const screens=(screenRows||['empty','closed'].map(state=>row(state))).map(entry=>({...entry,hashes:{390:entry.state==='empty'&&viewHash||entry.hashes[390]}})),screen=screens[0];
   const artifact={hash:screen.hashes[390],version:viewVersion,html:'<!doctype html><html><head><!--R3-POLICY--></head><body><main id="order-single"></main><!--R3-FRAME--></body></html>',editable:'',file:'test.html'};
   const writes=[],records=[...initialRecords],messages=[];let failure=null;
   if(initialDrafts.length){
@@ -118,13 +120,15 @@ async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,vie
     throw Error('Unmocked '+url);
   };
   const shell={render(){},focusForPoint(){},setTab(){},historyLinks(){},reviewWidths(){return[];},activeTab(){return'review';}};
-  w.eval('('+(canonicalHost?browserFunction(bootQaHost):hostCode)+')')('qa-nonce','function fixtureFrame(){}',()=>shell,null,()=>({clear(){},show(){},gate(){}}),()=>{},{requirements:[]});
+  let hostContext,approvedShell;
+  const bootShell=context=>{hostContext=context;approvedShell=withShell?w.eval('('+browserFunction(bootApprovedShell)+')')(context):shell;return approvedShell;};
+  w.eval('('+(canonicalHost?browserFunction(bootQaHost):hostCode)+')')('qa-nonce','function fixtureFrame(){}',bootShell,null,()=>({clear(){},show(){},gate(){}}),()=>{},{requirements:[]});
   const frame=w.document.getElementById('frame');frame.contentWindow.postMessage=message=>messages.push(message);
   await until(()=>frame.srcdoc.includes('"channel"'));
   const params=JSON.parse(frame.srcdoc.match(/\)\((\{"channel"[\s\S]*?\})\)<\/script>/)[1]);
   const emit=(type,payload={})=>w.dispatchEvent(new w.MessageEvent('message',{origin:'null',source:frame.contentWindow,data:{scope:'ORDER_R3_FRAME',channel:params.channel,artifact:params.artifact,type,payload}}));
   emit('ready');await tick();
-  return {w,writes,records,messages,params,emit,setFailure(value){failure=value;}};
+  return {w,writes,records,messages,params,emit,hostContext,approvedShell,setFailure(value){failure=value;}};
 }
 
 test('the host acknowledges a component state change without resetting iframe srcdoc or navigating to a second page',async()=>{
@@ -371,7 +375,7 @@ test('a full reload never reintroduces resolved pins while later record pages ar
   }finally{releaseLastPage();await tick();restored.w.close();}
 });
 
-test('a new artifact keeps previously resolved pins hidden without copying its review state, while explicit recheck and source reopening remain visible',async()=>{
+test('a new artifact projects prior resolution consistently without writing a new review state, while explicit recheck and source reopening remain visible',async()=>{
   const sourceTarget={...feedbackTarget(),artifactHash:'a'.repeat(64)},resolvedTarget={...feedbackTarget(),artifactHash:'b'.repeat(64)};
   const originals=Array.from({length:3},(_,i)=>({...seedComment('previously-resolved-'+i,sourceTarget),cursor:i+1}));
   const statuses=originals.map((source,i)=>({release:'MSG0585-R3',kind:'feedback',id:'previous-resolution-'+i,revision:1,cursor:i+4,action:'save',data:{target:resolvedTarget,parent:{origin:'current',id:source.id},status:'resolved'}}));
@@ -387,14 +391,14 @@ test('a new artifact keeps previously resolved pins hidden without copying its r
   ];
   for(const entry of cases){
     const initialRecords=[...originals,...statuses,verdict,...entry.extra],before=JSON.stringify(initialRecords);
-    const h=await hostHarness({...entry,initialRecords}),{w,messages,writes}=h;
+    const h=await hostHarness({...entry,initialRecords,canonicalHost:true}),{w,messages,writes}=h;
     try{
       w.document.getElementById('points').click();w.document.querySelector('[data-comment-filter=all]').click();
       await until(()=>originals.every(source=>feedbackCard(w,source.id)));
       const displayed=()=>messages.filter(message=>message.type==='pins').at(-1).payload;
       assert.deepEqual(Array.from(displayed(),pin=>pin.id),entry.expected,entry.name);
       const card=feedbackCard(w,originals[1].id);
-      assert.equal(card.dataset.feedbackStatus,entry.viewHash?'resolved':'unresolved','current-version processing state is not copied from a previous version');
+      assert.equal(card.dataset.feedbackStatus,'resolved','the list uses the same inherited resolution as the pins, without writing a current-version decision');
       assert.equal(Boolean(card.querySelector('[data-pin-previous-resolution]')),Boolean(entry.previous),entry.name);
       if(entry.previous){
         assert.match(card.querySelector('[data-pin-previous-resolution]').textContent,/이전 판에서 해결/);
@@ -414,6 +418,96 @@ test('a new artifact keeps previously resolved pins hidden without copying its r
       assert.deepEqual(h.records.filter(record=>record.kind==='review'),[verdict]);
     }finally{w.close();}
   }
+});
+
+test('resolved history stays out of the default list, counts and next-unresolved path while its records remain intact',async()=>{
+  const source=seedComment('previously-done',{...feedbackTarget(),artifactHash:'a'.repeat(64)});
+  const legacy={sourceKey:'login/empty/email/390',data:{status:'fix',comments:[{id:'imported-done',body:'해결한 이전 의견',status:'open',anchor:{path:'button:nth-of-type(1)',tag:'button',x:.3,y:.4}}]}};
+  const resolution=(origin,id,cursor)=>({release:'MSG0585-R3',kind:'feedback',id:'resolved-'+id,revision:1,cursor,action:'save',data:{target:{...feedbackTarget(),artifactHash:'b'.repeat(64)},parent:{origin,id},status:'resolved'}});
+  const open=seedComment('still-open',{...feedbackTarget(),state:'closed',artifactHash:row('closed').hashes[390]});open.cursor=4;
+  const original=[source,resolution('current',source.id,2),resolution('legacy','imported-done',3),open],bytes=JSON.stringify([original,legacy]);
+  const h=await hostHarness({initialRecords:original,legacyItems:[legacy],canonicalHost:true,withShell:true}),{w,writes,messages}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();
+    assert.equal(feedbackCard(w,source.id),null);assert.equal(feedbackCard(w,'imported-done'),null);
+    assert.equal($('comment-count').textContent,'미해결 0개 · 전체 2개');
+    assert.equal($('open-total').textContent,'1');
+    assert.equal(w.document.querySelector('[data-module=login] .nav-comment-count').textContent,'1');
+    assert.equal(w.document.querySelector('#state-buttons [data-state=empty] small'),null);
+    assert.equal(w.document.querySelector('#state-buttons [data-state=closed] small').textContent,'1');
+    assert.equal(messages.filter(m=>m.type==='pins').at(-1).payload.length,0);
+    assert.equal($('review-records').textContent,'');
+    w.document.querySelector('[data-comment-filter=resolved]').click();
+    assert.equal(feedbackCard(w,source.id).dataset.feedbackStatus,'resolved');
+    assert.equal(feedbackCard(w,'imported-done').dataset.feedbackStatus,'resolved');
+    w.document.querySelector('[data-comment-filter=all]').click();
+    assert.ok(feedbackCard(w,source.id).textContent.includes(source.data.body));
+    assert.ok(feedbackCard(w,'imported-done').textContent.includes(legacy.data.comments[0].body));
+    await $('next').onclick();assert.equal(new URL(w.location.href).searchParams.get('screen'),'login/closed/email');
+    assert.equal(writes.length,0,'reading, counting and navigating never persist a processing state');
+    assert.equal(JSON.stringify([original,legacy]),bytes);
+  }finally{w.close();}
+});
+
+test('explicit current reopen restores the same thread in the list, pins and badges despite a newer historical resolution',async()=>{
+  const source=seedComment('reopened-actionable',{...feedbackTarget(),artifactHash:'a'.repeat(64)});
+  const current={release:'MSG0585-R3',kind:'feedback',id:'explicit-recheck',revision:1,cursor:2,action:'save',data:{target:feedbackTarget(),parent:{origin:'current',id:source.id},status:'recheck'}};
+  const historical={...current,id:'later-history',cursor:3,data:{...current.data,target:{...feedbackTarget(),artifactHash:'b'.repeat(64)},status:'resolved'}};
+  const input=[source,current,historical],bytes=JSON.stringify(input),h=await hostHarness({initialRecords:input,canonicalHost:true,withShell:true}),{w,messages,writes}=h;
+  try{
+    w.document.getElementById('points').click();
+    assert.equal(feedbackCard(w,source.id).dataset.feedbackStatus,'recheck');
+    assert.equal(w.document.getElementById('open-total').textContent,'1');
+    assert.equal(w.document.querySelector('#state-buttons [data-state=empty] small').textContent,'1');
+    assert.deepEqual(Array.from(messages.filter(m=>m.type==='pins').at(-1).payload,p=>p.id),[source.id]);
+    assert.equal(writes.length,0);assert.equal(JSON.stringify(input),bytes);
+  }finally{w.close();}
+});
+
+test('drawer location actions preserve the same draft body and return to its composer after selecting or cancelling',async()=>{
+  const h=await hostHarness({canonicalHost:true,withShell:true}),{w,emit,writes,params}=h,$=id=>w.document.getElementById(id);
+  const point={id:'screen',instance:'login',x:.3,y:.5,viewport:{width:390,height:844},scale:1,scroll:[],layers:[],artifactHash:params.artifact};
+  try{
+    $('points').click();assert.equal($('drawer').hidden,false);$('drawer-new-location').click();assert.equal($('drawer').hidden,true);
+    emit('point',point);assert.equal($('drawer').hidden,false);assert.equal($('authoring').hidden,false);
+    $('body-text').value='위치를 바꿔도 유지할 본문';$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));
+    const drafts=()=>Object.keys(w.sessionStorage).filter(k=>k.startsWith('order.qa.unsent.')).flatMap(k=>JSON.parse(w.sessionStorage.getItem(k)));
+    const id=drafts()[0][1].id;
+    $('reposition').click();assert.equal($('drawer').hidden,true);$('pick-cancel').click();
+    assert.equal($('drawer').hidden,false);assert.equal($('authoring').hidden,false);assert.equal($('body-text').value,'위치를 바꿔도 유지할 본문');
+    assert.equal(drafts()[0][1].id,id);assert.equal(drafts()[0][1].anchor.x,.3);
+    $('reposition').click();emit('point',{...point,x:.7});
+    assert.equal($('drawer').hidden,false);assert.equal($('body-text').value,'위치를 바꿔도 유지할 본문');assert.equal(w.document.activeElement,$('body-text'));
+    assert.equal(drafts()[0][1].id,id);assert.equal(drafts()[0][1].anchor.x,.7);assert.equal(writes.length,0);
+    await $('save').onclick();assert.equal(writes.length,1);assert.equal(writes[0].body.id,id);assert.equal(writes[0].body.data.body,'위치를 바꿔도 유지할 본문');assert.equal(writes[0].body.data.anchor.x,.7);
+    assert.equal($('drawer').hidden,false);assert.equal($('authoring').hidden,true,'drawer action is a single location comment, not an automatic next-pick loop');
+  }finally{w.close();}
+});
+
+test('rework composers cannot enter location editing or replace the original comment anchor',async()=>{
+  const original=seedComment('immutable-rework-anchor'),bytes=JSON.stringify(original);
+  const h=await hostHarness({initialRecords:[original],canonicalHost:true}),{w,messages,writes}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();feedbackCard(w,original.id).querySelector('.rework-action').click();
+    $('body-text').value='원래 위치에 대한 재작업';$('body-text').dispatchEvent(new w.Event('input',{bubbles:true}));
+    assert.equal($('reposition').hidden,true);const before=messages.filter(m=>m.type==='mode').length;
+    $('reposition').click();assert.equal(messages.filter(m=>m.type==='mode').length,before);assert.equal($('drawer').hidden,false);
+    assert.equal($('body-text').value,'원래 위치에 대한 재작업');assert.equal(JSON.stringify(original),bytes);assert.equal(writes.length,0);
+  }finally{w.close();}
+});
+
+test('Q2 is named in the QA navigation and original-product links remain explicit collapsed comparisons',async()=>{
+  const q2=catalog.find(r=>r.screen==='q2'&&r.state==='empty');assert.ok(q2);
+  const h=await hostHarness({canonicalHost:true,withShell:true,screenRows:[q2]}),{w,approvedShell}=h;
+  try{
+    assert.equal(w.document.querySelector('[data-module=q2] .nav-label').textContent,'Q2 구매량·현재 가격');
+    assert.equal(w.document.getElementById('caption').textContent,'Q2 구매량·현재 가격');
+    const comparisons=w.document.getElementById('quote-candidates');assert.equal(comparisons.tagName,'DETAILS');assert.equal(comparisons.open,false);assert.match(comparisons.querySelector('summary').textContent,/정규 원본 비교/);
+    assert.ok([...comparisons.querySelectorAll('a')].every(a=>a.target==='_blank'&&a.textContent.includes('원본')&&a.textContent.includes('새 창')));
+    assert.equal(w.document.getElementById('version').closest('details').open,false);
+    w.document.querySelector('.lab-topbar').getBoundingClientRect=()=>({bottom:83});approvedShell.render();
+    assert.equal(w.document.getElementById('drawer').style.top,'83px','drawer stays below the toolbar that contains the location action');
+  }finally{w.close();}
 });
 
 test('rework instructions attach to current, historical and imported unresolved opinions without changing originals, pins or verdicts',async()=>{

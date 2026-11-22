@@ -17,7 +17,8 @@ export function bootApprovedShell(h) {
   };
   const stage = byId('surface'), preview = byId('preview-list'), focus = byId('focus-unit');
   const query = new URL(location.href).searchParams;
-  let role = 'all', mode = ['board','dual'].includes(query.get('mode')) ? query.get('mode') : 'focus';
+  const previewMode=query.get('preview')||query.get('mode');
+  let role = 'all', mode = ['board','dual'].includes(previewMode) ? previewMode : 'focus';
   const expandedGroups = {mvp:true,future:false};
   const mvpSections=[
     ['첫 화면·견적',['onboarding','q1','q2','q3','q4','quote-review','quote-wait','quote-result','saved-quote']],
@@ -37,6 +38,7 @@ export function bootApprovedShell(h) {
   let pcWidth = pcChoices.includes(initialWidth) ? initialWidth : 1280;
   let renderKey = '', panel = 'review', previewEpoch = 0;
   const distinct = (rows, key) => [...new Map(rows.map(row => [row[key], row])).values()];
+  const label = row => h.label?.(row)||row.label;
   function openRow(row, width) {
     if (!row) return;
     byId('lab').classList.remove('nav-open');
@@ -81,7 +83,8 @@ export function bootApprovedShell(h) {
   function setMode(name) {
     if (name === mode) return;
     mode = name;
-    const url = new URL(location.href); url.searchParams.set('mode',name);
+    const url = new URL(location.href); url.searchParams.set('preview',name);
+    if(['focus','board','dual'].includes(url.searchParams.get('mode')))url.searchParams.delete('mode');
     history.replaceState(null,'',url);
     renderKey = '';
     const {current} = h.snapshot();
@@ -95,14 +98,7 @@ export function bootApprovedShell(h) {
     }
   }
   function rowCounts(rows, legacy, records) {
-    const counts = new Map();
-    const add = (key, n) => counts.set(key,(counts.get(key)||0)+n);
-    for (const [key, row] of legacy) {
-      const id = key.split('/')[0];
-      add(id,(row.comments||[]).filter(c => !c.deleted && c.status !== 'resolved').length);
-    }
-    for (const r of records.values()) if (r.kind === 'comment' && !['delete','resolve'].includes(r.action) && !h.isTest(r)) add(r.data.target.screen,1);
-    return counts;
+    return h.feedbackCounts?.(rows)||new Map();
   }
   function nav(s, counts) {
     const term = byId('catalog-search').value.trim().toLocaleLowerCase();
@@ -159,10 +155,10 @@ export function bootApprovedShell(h) {
         b.onkeydown=e=>{if(e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();move(row.screen,e.key==='ArrowLeft'?'mvp':'future');}};
         b.title='Alt+←: 1차 MVP · Alt+→: 향후 검토';
         if(s.current?.screen===row.screen){b.classList.add('active');b.setAttribute('aria-current','page');}
-        b.append(make('span','nav-label',row.label));
+        b.append(make('span','nav-label',label(row)));
         if(counts.get(row.screen))b.append(make('span','nav-comment-count',counts.get(row.screen)));
         b.append(make('span','nav-count',distinct(family,'state').length));wrap.append(b);
-        const transfer=button('↔','lab-nav-move',()=>move(row.screen,next));transfer.title=nextName+'로 이동';transfer.setAttribute('aria-label',row.label+' · '+nextName+'로 이동');transfer.dataset.moveModule=row.screen;transfer.disabled=!s.navigationReady||s.navigationPending;
+        const transfer=button('↔','lab-nav-move',()=>move(row.screen,next));transfer.title=nextName+'로 이동';transfer.setAttribute('aria-label',label(row)+' · '+nextName+'로 이동');transfer.dataset.moveModule=row.screen;transfer.disabled=!s.navigationReady||s.navigationPending;
         wrap.append(transfer);details.append(wrap);
       }
       if(!matches.length)details.append(make('p','lab-no-results','화면을 여기에 끌어 놓으세요.'));
@@ -181,12 +177,10 @@ export function bootApprovedShell(h) {
       const b = button('',item.state === row.state ? 'active' : '',()=>openRow(item));
       b.dataset.state = item.state;
       b.setAttribute('aria-pressed',String(item.state === row.state));
-      const past = s.legacy.get(item.id+'/'+width);
       const info = h.info(item,width);
-      if (past?.status === 'fix' || info.requested || info.approved) b.append(make('span','review-dot'+(info.approved?'':' fix')));
+      const count = (h.feedbackFor?.(item,width)||[]).filter(entry=>entry.actionable).length;
+      if (count || info.requested || info.approved) b.append(make('span','review-dot'+(info.approved&&!count?'':' fix')));
       b.append(document.createTextNode(item.stateLabel));
-      const count = (past?.comments||[]).filter(c=>!c.deleted && c.status!=='resolved').length +
-        (h.liveFor(item,width)||[]).filter(r=>r.kind==='comment' && !['resolve','delete'].includes(r.action) && !h.isTest(r)).length;
       if (count) b.append(make('small','',count));
       nodes.push(b);
     }
@@ -202,7 +196,12 @@ export function bootApprovedShell(h) {
     }
     strip.replaceChildren(...nodes);
   }
+  function positionDrawer() {
+    const toolbarBottom=document.querySelector('.lab-topbar')?.getBoundingClientRect().bottom;
+    if(toolbarBottom>0)byId('drawer').style.top=toolbarBottom+'px';
+  }
   function layout() {
+    positionDrawer();
     const available=Math.max(200,stage.clientWidth-(window.innerWidth<=680?20:48));
     for (const unit of all('.preview-unit:not([hidden])',preview)) {
       const width=Number(unit.dataset.width), height=Number(unit.dataset.height);
@@ -233,7 +232,7 @@ export function bootApprovedShell(h) {
   }
   function views(row,rows,width) {
     const version=byId('version').value;
-    const key=[row.id,width,version,mode,mobileWidth,pcWidth].join('|');
+    const key=[row.id,width,version,mode,row.mode||'simple',mobileWidth,pcWidth].join('|');
     if (renderKey===key) return;
     renderKey=key; const epoch=++previewEpoch;
     for (const old of all('.preview-unit',preview)) if (old!==focus) old.remove();
@@ -255,6 +254,7 @@ export function bootApprovedShell(h) {
   }
   function render() {
     const s=h.snapshot();
+    positionDrawer();
     nav(s,rowCounts(s.screens,s.legacy,s.records));
     if (!s.current) return;
     const row=s.current,width=h.width(row),future=(s.navigation?.layout?.assignments[row.screen]||(row.phase==='future'?'future':'mvp'))==='future';
@@ -264,7 +264,7 @@ export function bootApprovedShell(h) {
     if (pcChoices.includes(width)) pcWidth=width;
     byId('mobile-width').value=String(mobileWidth);
     byId('desktop-width').value=String(pcWidth);
-    byId('caption').textContent=row.label;
+    byId('caption').textContent=label(row);
     byId('current-description').textContent = (row.routeIds?.length?row.routeIds.join(' / ')+' · ':'')+(future?'향후 서비스 검토 · ':'')+(row.description||row.group);
     byId('current-case').textContent=row.stateLabel;
     byId('prototype-badge').textContent=future?'향후 검토 · 운영 미확정':'디자인 예시';
@@ -274,6 +274,7 @@ export function bootApprovedShell(h) {
     const wrap=byId('other-width-history'),s=h.snapshot();
     if(!wrap||!s.current) return;
     wrap.replaceChildren();
+    if(s.current.mode==='detailed')return;
     for (const key of s.legacy.keys()) {
       const cut=key.lastIndexOf('/'), other=Number(key.slice(cut+1));
       if(key.slice(0,cut)!==s.current.id || other===h.width(s.current))continue;

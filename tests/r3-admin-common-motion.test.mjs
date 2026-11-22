@@ -10,6 +10,7 @@ import {supplementalHistoryRows,supplementalHistoryBodies,supplementalHistoryScr
 import {gunzipSync} from 'node:zlib';
 import {createRequire} from 'node:module';
 import {createProductUiLab} from './helpers/product-ui-lab.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const url='https://order-ia-portal.pages.dev/api/ia/r3-qa/artifact';
 async function artifact(row,version='current',hash,width=390){
@@ -24,7 +25,7 @@ test('the 175 remaining archived-workbench admin/common states retain their isol
   const connected=new Set(['admin-shipments/packing/email']);
   assert.equal(subjects.filter(row=>connected.has(row.id)).length,1);
   for(const row of subjects.filter(row=>!connected.has(row.id))){
-    const result=await artifact(row);
+    const result=await preservedReviewArtifact(row.id);
     assert.ok(['adminCommon','adminLoading'].includes(row.runtimeFamily));
     assert.match(result.mount,/function mountReviewControls/);
     assert.doesNotMatch(result.mount,/1,284,000|1,119,000|12,540,000|\/api\/|\bfetch\s*\(/);
@@ -64,7 +65,7 @@ test('the preceding direct loading URLs still replay their own reviewed control'
     const row=catalog.find(r=>r.id===id),previous=await artifact(row,'recorded',entry.hashes[390]);
     assert.equal(previous.hash,entry.hashes[390]);assert.match(previous.mount,/mountReviewControls/);
     assert.doesNotMatch(previous.mount,/function mountSelectedLoading/);
-    assert.match((await artifact(row)).mount,/function mountSelectedLoading/);
+    assert.match((await preservedReviewArtifact(row.id)).mount,/function mountSelectedLoading/);
   }
 });
 test('pins from deployed 0624ca1 replay the original common and quote frames',async()=>{

@@ -27,7 +27,8 @@ OLD_BODY = "합성 이전 판 입력칸 위치 의견"
 NEW_BODY = "합성 현재 판 비밀번호 위치 의견"
 MIXED_BODY = "합성 현재 판 같은 입력칸 위치 의견"
 LOGO_SCREEN = "onboarding/guest-1/email"
-LOGO_DOT = ".obm-brand .obm-wordmark .ob-period.brand-dot"
+ARCHIVED_LOGO_DOT = ".obm-brand .obm-wordmark .ob-period.brand-dot"
+CURRENT_LOGO_DOT = "#order-app-header .order-product-brand .brand-word .brand-dot"
 LOGO_ARCHIVES = {
     390: "887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36",
     1280: "88d4658258af4b42213ba09c426ba7bf7ed8f7bfed31b2d6a70eea070411a186",
@@ -48,7 +49,7 @@ def install_probe(page):
     page.add_init_script("""if(window===top){
       window.__pinMessages=[];window.addEventListener('message',event=>{
         const frame=document.getElementById('frame'),m=event.data;
-        if(event.source!==frame?.contentWindow||m?.scope!=='ORDER_R3_FRAME')return;
+        if(event.source!==frame?.contentWindow||event.origin!==(frame?.hasAttribute('src')?location.origin:'null')||m?.scope!=='ORDER_R3_FRAME')return;
         if(['ready','point','openPins'].includes(m.type))window.__pinMessages.push(m);
         if(m.type==='ready'){window.__pinSession={channel:m.channel,artifact:m.artifact};frame.dataset.pinReadyHash=m.artifact;}
       });
@@ -393,6 +394,9 @@ def check_resolved_reload(page, current_hash, source_ids):
     page.reload()
     frame = ready(page, current_hash)
     page.locator("#points").click()
+    expect(page.locator('[data-comment-filter="open"]')).to_have_class('active')
+    for source_id in source_ids:
+        expect(page.locator('#notes article[data-feedback-id="' + source_id + '"]')).to_have_count(0)
     page.locator('[data-comment-filter="all"]').click()
     for source_id in source_ids:
         expect(page.locator('#notes article[data-feedback-id="' + source_id + '"]')).to_have_attribute("data-feedback-status", "resolved")
@@ -407,7 +411,7 @@ def check_resolved_reload(page, current_hash, source_ids):
     page.locator("#close-drawer").click()
     page.screenshot(path=str(OUT / "resolved-after-reload.png"))
     return {"sourceIds": source_ids, "resolvedAfterReload": True, "visiblePins": 0,
-            "originalBodiesAnchorsAndHashesPreserved": True}
+            "defaultActionableListExcludesResolved": True,"originalBodiesAnchorsAndHashesPreserved": True}
 
 
 def check_dynamic_logo_pins(context, origin, result):
@@ -435,13 +439,13 @@ def check_dynamic_logo_pins(context, origin, result):
         }""")
         try:
             page.goto(url(origin, "recorded", source_hash, width=width, screen=LOGO_SCREEN))
-            frame = ready(page, source_hash, LOGO_DOT)
+            frame = ready(page, source_hash, ARCHIVED_LOGO_DOT)
             endpoint = "/api/ia/r3-qa/artifact?" + urlencode({"id": LOGO_SCREEN, "width": width})
             archived = read_json(page, endpoint + "&version=recorded&artifactHash=" + source_hash)
             current = read_json(page, endpoint + "&version=current")
             assert archived["hash"] == source_hash and source_hash != current["hash"]
             actual_size(page)
-            anchor = capture_anchor(page, frame, LOGO_DOT, instance="onboarding")
+            anchor = capture_anchor(page, frame, ARCHIVED_LOGO_DOT, instance="onboarding")
             assert anchor["artifactHash"] == source_hash and anchor["viewport"]["width"] == width, anchor
             assert anchor["id"] == "a-45vv8m", "Capture the mounted logo dot's real fingerprint"
             body = "합성 이전 R1 로고 마침표 위치 의견 " + str(width)
@@ -456,12 +460,14 @@ def check_dynamic_logo_pins(context, origin, result):
             }""", backup_path)
 
             page.goto(url(origin, width=width, screen=LOGO_SCREEN))
-            frame = ready(page, current["hash"], LOGO_DOT)
+            frame = ready(page, current["hash"], CURRENT_LOGO_DOT)
+            assert current.get('application'), 'Historical logo pins must be tested against the current application'
+            assert page.locator('#frame').get_attribute('srcdoc') is None
             previous = frame.locator('.r3-pin.is-previous[data-previous-count="1"][data-current-count="0"]')
             expect(previous).to_have_count(1)
             expect(previous).to_be_visible()
             expect(previous).to_have_css("background-color", "rgb(124, 58, 237)")
-            aligned = geometry(frame, previous, LOGO_DOT, anchor)
+            aligned = geometry(frame, previous, CURRENT_LOGO_DOT, anchor)
             page.wait_for_function("window.__logoReferences.length>0")
             references = page.evaluate("window.__logoReferences")
             assert all(ref == {"sandbox": "allow-scripts", "inert": True, "ariaHidden": "true",
@@ -514,8 +520,13 @@ def main():
             current = read_json(page, endpoint + "&version=current")
             archived = read_json(page, endpoint + "&version=prior-r3")
             assert archived["version"] == "prior-r3"
-            assert archived["hash"] not in (current["hash"], current["source"]["contentHash"])
-            result["sources"] = {"archived": archived["hash"], "current": current["hash"], "content": current["source"]["contentHash"], "viewport": WIDTH}
+            assert current["version"] == "current" and current["source"]["kind"] == "research-application"
+            assert re.fullmatch(r"[0-9a-f]{64}", current["application"]["build"])
+            assert current["application"]["build"] == current["source"]["build"]
+            assert archived["hash"] != current["hash"]
+            result["sources"] = {"archived": archived["hash"], "current": current["hash"],
+                                 "currentBuild": current["application"]["build"],
+                                 "sourceKind": current["source"]["kind"], "viewport": WIDTH}
 
             page.goto(url(fixture["url"], "recorded", archived["hash"]))
             frame = ready(page, archived["hash"])

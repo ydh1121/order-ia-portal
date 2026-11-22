@@ -10,6 +10,7 @@ import {frameCode} from '../src/server/r3-ui/runtime.gen.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {supplementalHistoryRows,supplementalHistoryBodies,supplementalHistoryScripts} from '../src/server/r3-ui/supplemental-history.gen.mjs';
 import {createProductUiLab} from './helpers/product-ui-lab.mjs';
+import {researchScene,researchBuild} from '../src/server/research-app/page.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 let mounted=0,connected=0;
 async function connectedShipment(row,current){
@@ -40,7 +41,20 @@ async function connectedShipment(row,current){
 }
 for(const row of catalog.filter(r=>r.role==='admin'||['common','receipt'].includes(r.screen))){
   const path='https://order-ia-portal.pages.dev/api/ia/r3-qa/artifact?width=390&version=current&id='+encodeURIComponent(row.id);
-  const artifact=await (await serveR3Artifact(new Request(path))).json();
+  const response=await serveR3Artifact(new Request(path));assert.equal(response.status,200);
+  let artifact=await response.json();
+  if(artifact.application){
+    assert.equal(artifact.source.kind,'research-application');
+    assert.equal(artifact.application.build,researchBuild.digest);
+    assert.equal(artifact.source.build,researchBuild.digest);
+    const config=JSON.parse(artifact.html.match(/id="order-app-config">([\s\S]*?)<\/script>/)[1]);
+    assert.deepEqual([config.initial.screen,config.initial.state,config.initial.variant],[row.screen,row.state,row.variant]);
+    // This gate isolates each actual app scene's controls. The complete retained
+    // app and its parent/inspector lifecycle have separate DOM and browser gates.
+    // Read the current app composition, never an archive/source compatibility URL.
+    const scene=await researchScene(row.screen,row.state,row.variant);
+    assert.equal(scene.row.id,row.id);artifact={...artifact,html:scene.html,mount:scene.mount};
+  }
   if(row.id==='admin-shipments/packing/email'){
     await connectedShipment(row,artifact);mounted++;connected++;continue;
   }

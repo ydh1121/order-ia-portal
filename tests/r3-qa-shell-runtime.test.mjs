@@ -6,11 +6,13 @@ import {serveR3Artifact,isR3ReviewTarget} from '../src/server/r3-qa-page.mjs';
 import {catalog} from '../src/server/r3-ui/catalog.gen.mjs';
 import {supplementalHistoryRows} from '../src/server/r3-ui/supplemental-history.gen.mjs';
 import {frameCode,hostCode,runtimes} from '../src/server/r3-ui/runtime.gen.mjs';
-import {qaReviewRuntimeDigest,qaReviewRuntimeScript} from '../src/server/r3-ui/qa-review-runtime.gen.mjs';
 import {getQaSupplemental} from '../src/server/r3-qa-assets.mjs';
 import {deriveVerifier,issueSession} from '../src/server/owner-session.mjs';
 import {onRequest} from '../functions/ia/[[path]].js';
 import {qaFixtureForRow} from '../src/server/r3-qa-review-runtime.mjs';
+import {researchBuild,researchScene} from '../src/server/research-app/page.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const origin='https://order-ia-portal.pages.dev',endpoint=origin+'/api/ia/r3-qa/artifact';
@@ -38,57 +40,58 @@ test('QA authentication follows the screen semantics without confusing quote exp
  ])assert.equal(qaFixtureForRow({screen,state,role:'customer'}).authenticated,authenticated,screen+'/'+state);
 });
 
-test('current review identities join the catalog and source content while retaining width and fixture boundaries',async()=>{
+test('current review identities bind one research build to the selected catalog route and viewport',async()=>{
  const index=await read(),supplemental=await getQaSupplemental();
  for(const id of ['login/empty/email','store-purchase/select/email','onboarding/company/email']){
   const entry=index.items.find(row=>row.id===id),original=supplemental.documents.get(id)||catalog.find(row=>row.id===id);
   assert.ok(entry&&original,id);
   const document=await read(id);
   assert.equal(document.hash,entry.hashes[390]);
-  assert.equal(document.source.contentHash,original.hashes[390]);
-  assert.equal(document.source.contentHash,entry.contentHashes[390]);
-  assert.notEqual(document.hash,document.source.contentHash);
-  assert.equal(document.source.runtimeDigest,qaReviewRuntimeDigest);
-  if(id==='onboarding/company/email'){
-   assert.equal(document.fixture.authenticated,false,'the direct company state renders a guest header with signup');
-   assert.match(document.html,/class="ob guest footer-open"/);
-  }
+  assert.equal(entry.application,true);
+  assert.equal(entry.contentHashes[390],original.hashes[390],'the catalog still identifies its retained authored source');
+  assert.notEqual(document.hash,entry.contentHashes[390]);
+  assert.equal(document.source.kind,'research-application');
+  assert.equal(document.application.build,researchBuild.digest);
+  assert.equal(document.source.build,document.application.build);
+  const url=new URL(document.application.url,origin);
+  assert.equal(url.origin,origin);assert.equal(url.pathname,'/ia');assert.equal(url.searchParams.get('view'),'research-r3');
+  assert.equal(url.searchParams.get('screen'),entry.screen);assert.equal(url.searchParams.get('state'),entry.state);assert.equal(url.searchParams.get('variant'),entry.variant);
+  assert.equal(url.searchParams.get('build'),document.application.build);assert.equal(url.searchParams.has('archive'),false);
   const target={screen:entry.screen,state:entry.state,variant:entry.variant,viewport:390,artifactHash:document.hash};
   assert.equal(await isR3ReviewTarget(target),true);
   assert.equal(await isR3ReviewTarget({...target,viewport:1440}),false);
   const bookmarked=await read(id,{version:'recorded',artifactHash:document.hash});
   assert.equal(bookmarked.hash,document.hash);
-  assert.equal(bookmarked.qaRuntime,document.qaRuntime);
+  assert.deepEqual(bookmarked.application,document.application);
+  assert.equal(bookmarked.html,document.html);
  }
 });
 
-test('current purchase carries the canonical mount, controlled fixture and source-linked static export',async()=>{
+test('current purchase exports the standalone app with a pinned build and retains its canonical scene and fixture route',async()=>{
  const id='store-purchase/select/email',document=await read(id),source=(await getQaSupplemental()).documents.get(id);
- assert.equal(document.mount,source.mount,'QA transport must not rewrite the canonical page module');
- assert.equal(document.qaRuntime,qaReviewRuntimeScript);
- assert.ok(document.qaRuntime.length>0);
- assert.equal(document.fixture.authenticated,true);
- assert.equal(document.fixture.persona,'buyer');
- assert.equal(document.fixture.scenario,'normal');
- assert.equal(document.source.mode,'controlled-qa');
- assert.equal(document.source.persistence,'frame-memory');
- assert.ok(document.source.files.includes('src/server/product-ui/modules.mjs'));
- assert.ok(document.source.files.includes('src/server/product-ui/documents.mjs'));
- assert.equal(document.source.files.includes('src/server/r3-ui/qa-mvp-runtime.mjs'),false);
- assert.ok(document.source.sharedFiles.includes('src/server/product-app-adapter.mjs'));
- assert.ok(document.source.sharedFiles.includes('src/server/r3-ui/qa-fixture-adapter.mjs'));
+ const scene=await researchScene('store-purchase','select','email');
+ assert.equal(scene.html,source.body,'the research app consumes the canonical purchase scene');
+ assert.equal(scene.family,'product');
+ assert.equal(Object.hasOwn(document,'mount'),false);assert.equal(Object.hasOwn(document,'qaRuntime'),false);
+ assert.equal(document.source.environment,'research-fixture');
+ assert.equal(document.source.ownership,'application');assert.equal(document.source.promotion,'same-build');
+ for(const file of ['src/server/product-ui/assets.gen.mjs','src/server/product-ui/documents.mjs','src/server/product-app-adapter.mjs','src/server/research-app/application.mjs'])assert.ok(document.source.productSource[file],file);
+ const loading=await read('store-purchase/qa-loading/email');
+ assert.deepEqual(loading.fixture,{scenario:'loading'});assert.equal(new URL(loading.application.url,origin).searchParams.get('state'),'qa-loading');
  assert.equal(document.exportHash,digest(document.editable));
  const dom=new JSDOM(document.editable);
  try{
   const metadata=JSON.parse(dom.window.document.getElementById('frame-meta').textContent);
-  assert.equal(metadata.artifactHash,document.hash);
+  assert.equal(metadata.format,'order-research-route/v1');assert.equal(metadata.hash,document.hash);
   assert.equal(metadata.viewport,390);
   assert.deepEqual(metadata.source,document.source);
-  assert.deepEqual(metadata.fixture,document.fixture);
-  assert.equal(dom.window.document.querySelectorAll('iframe,script:not([type="application/json"])').length,0);
-  const policy=dom.window.document.querySelector('meta[http-equiv="Content-Security-Policy"]').content;
-  assert.match(policy,/default-src 'none'/);
-  assert.match(policy,/form-action 'none'/);
+  assert.deepEqual(metadata.route,{screen:'store-purchase',state:'select',variant:'email'});
+  const config=JSON.parse(dom.window.document.getElementById('order-app-config').textContent);
+  assert.equal(config.build,document.application.build);assert.equal(config.inspect,false);
+  assert.equal(config.initial.screen,'store-purchase');assert.equal(config.initial.state,'select');
+  assert.equal(dom.window.document.querySelectorAll('iframe').length,0);
+  assert.match(dom.window.document.querySelector('script[type="module"]').textContent,new RegExp('/ia/research-assets/'+document.application.build+'/research/application\\.mjs'));
+  for(const node of dom.window.document.querySelectorAll('script[src],link[href]'))assert.ok((node.getAttribute('src')||node.getAttribute('href')).startsWith('/ia/research-assets/'+document.application.build+'/'));
  }finally{dom.window.close();}
 });
 
@@ -115,14 +118,17 @@ test('pinned catalog and supplemental documents preserve exact HTML and mount by
    for(const key of ['qaRuntime','fixture','source'])assert.equal(Object.hasOwn(document,key),false,key);
   }
  }
- const login=await read(preserved[0].id);
- assert.equal(login.mount,runtimes.integratedLogin,'current review uses the current canonical login module');
+ const login=await preservedReviewArtifact(preserved[0].id);
+ assert.equal(login.mount,runtimes.integratedLogin,'the explicitly pinned R1 successor retains its canonical login module');
+ const current=await read(preserved[0].id);
+ assert.ok(current.application);assert.notEqual(current.hash,login.hash,'the default link selects the research app, independently of R1 replay');
 });
 
-test('the default route and a current page bookmark retain R1 review controls and an opaque network-disabled frame',async()=>{
+test('the default route and bookmark retain R1 review controls while the current app uses its authenticated same-origin route',async()=>{
  let labTouches=0;
  const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'qa-shell-test@example.invalid',
   IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(24).toString('base64url')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),
+  ASSETS:createPrivateResearchAssets(),
   ORDER_LAB_DB:{prepare(){labTouches++;throw Error('Default QA must not create a database workspace');}}};
  const session=await issueSession(env);
  for(const path of ['/ia?view=qa-lab','/ia?view=qa-lab&screen=store-purchase/card/email']){
@@ -140,12 +146,23 @@ test('the default route and a current page bookmark retain R1 review controls an
    assert.equal(document.querySelectorAll('#product-lab,#product-frame,#live-create').length,0);
   }finally{dom.window.close();}
  }
+ const application=await read('store-purchase/card/email');
+ const response=await onRequest({request:new Request(origin+application.application.url,{headers:{Cookie:session.cookie.split(';')[0]}}),env});
+ assert.equal(response.status,200);assert.match(response.headers.get('Content-Security-Policy'),/frame-ancestors 'self'/);
+ const app=new JSDOM(await response.text());
+ try{
+  assert.ok(app.window.document.querySelector('[data-research-application]'));
+  const config=JSON.parse(app.window.document.getElementById('order-app-config').textContent);
+  assert.equal(config.build,application.application.build);assert.equal(config.initial.state,'card');assert.equal(config.inspect,false);
+ }finally{app.window.close();}
  assert.equal(labTouches,0);
- assert.match(hostCode.replaceAll("\\'","'"),/connect-src 'none'/,'the host still injects a network-disabled srcdoc policy');
+ assert.match(hostCode,/INVALID_RESEARCH_APPLICATION_URL/,'the host rejects foreign application URLs');
+ assert.match(hostCode,/allow-scripts allow-same-origin allow-forms/,'current app assets execute on the authenticated origin');
+ assert.match(hostCode.replaceAll("\\'","'"),/connect-src 'none'/,'historical srcdoc replay retains its network-disabled policy');
 });
 
-test('the returned purchase frame runs the canonical card action with dummy state and keeps location comments available',async t=>{
- const document=await read('store-purchase/card/email'),messages=[],errors=[],network=[];
+test('the explicitly pinned R1 purchase frame retains its card action, dummy state and location comments',async t=>{
+ const document=await preservedReviewArtifact('store-purchase/card/email'),messages=[],errors=[],network=[];
  const virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',error=>errors.push(error.message));
  // JSDOM does not measure CSS animation. Use the returned frame DOM and scripts;
  // the hosted Chrome gate covers layout and animation rendering.

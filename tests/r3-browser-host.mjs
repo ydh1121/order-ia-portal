@@ -10,6 +10,7 @@ import {handleIaRequest} from '../src/server/router.mjs';
 import {onRequest as iaPage} from '../functions/ia/[[path]].js';
 import {onRequest as features} from '../functions/api/order/features.js';
 import {onRequest as login} from '../functions/login.js';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 const dir=resolve(import.meta.dirname,'..'), db=new DatabaseSync(':memory:');
 for(const file of readdirSync(resolve(dir,'migrations')).filter(n=>n.endsWith('.sql')).sort()){
   db.exec(readFileSync(resolve(dir,'migrations',file),'utf8'));
@@ -28,8 +29,10 @@ const sha='e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
 db.prepare('INSERT INTO qa_legacy_sources(sha256,original_bytes,chunk_count,record_count,normalization_version,complete) VALUES (?,0,0,0,1,1)').run(sha);
 const pass=randomBytes(32).toString('base64url'),email='test-owner@example.invalid';
 const mime={'.js':'application/javascript','.css':'text/css','.html':'text/html'};
+const privateResearchAssets=createPrivateResearchAssets();
 const assets=async(req)=>{
   const file=new URL(req.url).pathname;
+  if(file.startsWith('/ia/research-releases/'))return privateResearchAssets.fetch(req);
   if(!['/login.html','/login.js','/login.css'].includes(file))return new Response(null,{status:404});
   return new Response(readFileSync(resolve(dir,'public',file.slice(1))),{headers:{'Content-Type':mime[file.slice(file.lastIndexOf('.'))]}});
 };

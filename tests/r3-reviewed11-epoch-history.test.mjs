@@ -7,6 +7,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readReviewedEpochArtifact,isReviewedEpochTarget,reviewedEpochsMetadata} from '../src/server/r3-qa-epoch-history.mjs';
 import {serveR3Artifact,isR3ReviewTarget} from '../src/server/r3-qa-page.mjs';
 import {handleR3Review} from '../src/server/r3-review-store.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const capture=JSON.parse(gunzipSync(await readFile(new URL('./fixtures/reviewed-a36b41e2.capture.json.gz',import.meta.url))));
 const commit='a36b41e24f9c0b22672b61bab59b2ec39354a613';
@@ -86,7 +87,7 @@ test('an already open release11 screen can save rework without changing its sour
     assert.equal(unknown.status,400);assert.equal((await unknown.json()).error,'REVIEW_TARGET_UNAVAILABLE');
     const malformed=await send({...instruction,id:'invalid-target',idempotencyKey:'invalid-target',data:{...instruction.data,target:{...target,viewport:'390'}}});
     assert.equal(malformed.status,400);assert.equal((await malformed.json()).error,'INVALID_REVIEW_REQUEST');
-    const currentResponse=await serveR3Artifact(new Request(origin+'/api/ia/r3-qa/artifact?'+new URLSearchParams({id:row.id,width:'390',version:'current'})),{});
+    const currentResponse=await serveR3Artifact(new Request(origin+'/api/ia/r3-qa/artifact?'+new URLSearchParams({id:row.id,width:'390',version:'current'})),{ASSETS:createPrivateResearchAssets()});
     const current=await currentResponse.json();assert.notEqual(current.hash,target.artifactHash);
     const moved=await send({...instruction,expectedRevision:1,idempotencyKey:'rewrite-stored-target',data:{...instruction.data,target:{...target,artifactHash:current.hash}}});
     assert.equal(moved.status,400);assert.equal((await moved.json()).error,'INVALID_REVIEW_REQUEST','saved rework targets remain immutable');

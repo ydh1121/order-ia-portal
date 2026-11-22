@@ -21,7 +21,7 @@ export async function handlePreview(context,fetcher=fetch) {
     // Deep links normally enter at /ia. Keep the existing login return contract.
     const dest=new URL('/ia/',url.origin);
     const view=url.searchParams.get('returnView');
-    if(['qa-lab','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view)){
+    if(['qa-lab','research-r3','pricing-r3','roles-r3','workflow-r3','simple-r3','detailed-r3','businesses-r3','product-r3'].includes(view)){
       dest.searchParams.set('view',view);
       if(url.searchParams.has('labRun')){
         const run=url.searchParams.get('labRun'),persona=url.searchParams.get('persona');
@@ -29,8 +29,14 @@ export async function handlePreview(context,fetcher=fetch) {
         else dest.searchParams.set('view','qa-lab');
       }
       if(view==='product-r3')for(const name of ['screen','state','componentVariant']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))dest.searchParams.set(name,value);}
+      if(view==='research-r3'){
+        for(const name of ['screen','state','componentVariant','mode','variant']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))dest.searchParams.set(name,value);}
+        const build=url.searchParams.get('build');if(build&&/^[a-f0-9]{64}$/.test(build))dest.searchParams.set('build',build);
+      }
       if(view==='qa-lab'){
         const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
+        if(url.searchParams.get('mode')==='detailed')dest.searchParams.set('mode','detailed');
+        const preview=url.searchParams.get('preview')||url.searchParams.get('mode');if(['board','dual'].includes(preview))dest.searchParams.set('preview',preview);
         if(screen && /^[\w./:-]{1,200}$/.test(screen))dest.searchParams.set('screen',screen);
         if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))dest.searchParams.set('width',width);
         if(url.searchParams.get('archive')==='1')dest.searchParams.set('archive','1');

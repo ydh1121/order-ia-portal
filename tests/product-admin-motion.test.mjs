@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {readFile} from 'node:fs/promises';
 import {installProductAdminMotion,productAdminMotionCss} from '../src/server/product-admin-motion.mjs';
 import {mountReviewControls} from '../scripts/r3/authored/admin-common.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
@@ -176,10 +177,8 @@ test('terms reads published text/version safely, distinguishes QA text and canno
   delete adapter.fixture;view.root.innerHTML=terms.render('required');dispose=terms.mount(view.root,'required',{mode:'product',adapter});await flush();assert.equal(view.root.querySelector('[name=terms-check]').disabled,true,'a fixture cannot be treated as a published policy in the product');dispose();
 });
 
-test('authored overview consumes the same dashboard and preserves the QA layout transport',async t=>{
-  const {serveR3Artifact}=await import('../src/server/r3-qa-page.mjs');
-  const response=await serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-qa/artifact?width=390&version=current&id=admin-overview/normal/email'));
-  assert.equal(response.status,200);const artifact=await response.json(),view=setup(t),template=view.w.document.createElement('template');template.innerHTML=artifact.html;
+test('the preserved authored overview consumes the same dashboard and retains the R1 QA layout transport',async t=>{
+  const artifact=await preservedReviewArtifact('admin-overview/normal/email'),view=setup(t),template=view.w.document.createElement('template');template.innerHTML=artifact.html;
   view.root.innerHTML=template.content.querySelector('#order-single').innerHTML;const oldGrid=view.root.querySelector('.qa-widget-grid'),oldStats=view.root.querySelector('.qa-stats'),calls=[],saved=[];
   view.w.QAUI={};view.w.ORDER_DESIGN_MODULES=[{id:'admin-overview',states:['normal','loading']}];view.w.ORDER_APP_ADAPTER={fixture:{source:'dummy'},request:async path=>{calls.push(path);return supplied;}};
   view.w.__api={screen:'admin-overview',mode:'review',reduced:()=>true,select(){},saveReviewLayout:rows=>saved.push(rows),demoSuccess:async(button,done)=>{done();return true;}};

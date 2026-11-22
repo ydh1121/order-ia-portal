@@ -52,6 +52,9 @@ def check_email_message(page, screens):
         const field=input.closest('.field'),display=field.querySelector('.inline-field-state');
         if(!display)throw Error('The shared inline message hook is missing');
         const submit=document.querySelector('[data-action=submit-login]'),password=document.querySelector('[name=password]');
+        const emailController=window.OrderEmailUI?.instance(input),syntax=window.OrderEmail?.parse(input.value);
+        if(!emailController||input.type!=='text'||input.inputMode!=='email'||syntax?.valid!==false)
+            throw Error('The original regular email editor and parser are not connected');
         const fixture=window.ORDER_APP_ADAPTER?.fixture,fixtureBefore=fixture?.inspect();
         if(!fixtureBefore)throw Error('The canonical QA fixture inspector is missing');
         const fixtureData=JSON.stringify(fixtureBefore.data),mutations=snapshot=>snapshot.calls.filter(call=>!['GET','HEAD','OPTIONS'].includes(call.method)).length;
@@ -79,7 +82,9 @@ def check_email_message(page, screens):
                     mutationCalls:mutations(fixtureAfter)-mutations(fixtureBefore),operations:fixtureAfter.operations.length-fixtureBefore.operations.length};
                 state.after={value:input.value,placeholder:input.placeholder,type:input.type,start:input.selectionStart,end:input.selectionEnd,
                     sameInput:document.querySelector('[name=email]')===input,focused:document.activeElement===input,
-                    invalid:input.getAttribute('aria-invalid'),messageHidden:!visible,textHidden:transparent(cs.webkitTextFillColor)};
+                    invalid:input.getAttribute('aria-invalid'),messageHidden:!visible,textHidden:transparent(cs.webkitTextFillColor),
+                    sameController:window.OrderEmailUI.instance(input)===emailController,
+                    syntaxValid:window.OrderEmail.parse(input.value).valid,inputMode:input.inputMode};
                 state.done=true;controller.abort();return;
             }
             if(now-armed>6000){state.error='Shared email message did not visibly appear and restore';state.done=true;controller.abort();return;}
@@ -107,14 +112,17 @@ def check_email_message(page, screens):
     assert all(sample["sameInput"] and sample["value"] == "invalid-email.order.ooo" and sample["passwordPreserved"] for sample in receipt["samples"]), receipt
     after = receipt["after"]
     assert after["sameInput"] and after["focused"] and after["messageHidden"] and not after["textHidden"], receipt
-    assert after["invalid"] == "true" and after["type"] == "email", receipt
+    assert after["invalid"] == "true" and after["type"] == receipt["before"]["type"] == "text", receipt
+    assert after["sameController"] and not after["syntaxValid"] and after["inputMode"] == "email", receipt
     assert (after["value"], after["placeholder"], after["start"], after["end"]) == tuple(receipt["before"][key] for key in ("value", "placeholder", "start", "end")), receipt
     assert receipt["fixture"] == {"dataUnchanged": True, "authenticatedUnchanged": True, "mutationCalls": 0, "operations": 0}, receipt
     assert writes == [], writes
     expect(email).to_have_value("invalid-email.order.ooo")
     expect(email).to_have_attribute("aria-invalid", "true")
     expect(email).to_be_focused()
-    expect(frame.locator("[name=email]").locator("..").locator(".inline-field-state")).to_be_hidden()
+    message = frame.locator(".field").filter(has=email).locator(".inline-field-state")
+    expect(message).to_have_count(1)
+    expect(message).to_be_hidden()
     receipt["mutationRequests"] = writes
     return receipt
 
@@ -126,7 +134,7 @@ def check_guest_cards(page, screens):
     receipts = []
     for index in range(2):
         card = cards.nth(index)
-        x, y = frame_pointer_position(page, frame.locator(".ob-stage > header"))
+        x, y = frame_pointer_position(page, frame.locator("#order-app-header"))
         page.mouse.move(x, y)
         size = card.evaluate("el=>({width:el.getBoundingClientRect().width,height:el.getBoundingClientRect().height})")
         points = [frame_pointer_position(page, card, {"x": size["width"] * x, "y": size["height"] * y})
@@ -181,7 +189,7 @@ def check_guest_cards(page, screens):
 def check_auth_motion(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
-    header = frame.locator(".ob-stage > header")
+    header = frame.locator("#order-app-header")
     expect(frame.locator(".ob-pages .ob-active-pill")).to_be_visible()
     # Figma 2009173058 requires random original motion on a guest click. The
     # shared trigger selects CODE1 idle/play or gather; neither is a fake event
@@ -299,7 +307,9 @@ def check_auth_motion(page, origin, width):
     password = frame.locator("[name=password]")
     password.fill("a")
     expect(meter).to_have_attribute("data-level", "1")
-    password.evaluate("""el=>document.addEventListener('input',()=>{
+    # The canonical sheet stops input bubbling; observe on this same input after
+    # its already-mounted meter handler, before the enclosing sheet barrier.
+    password.evaluate("""el=>el.addEventListener('input',()=>{
        const bars=document.querySelector('.password-meter');
        window.__boundary=bars.getAnimations({subtree:true}).filter(a=>a.effect.target?.localName==='em');
        for(const animation of bars.getAnimations({subtree:true})){animation.pause();animation.currentTime=133;}

@@ -124,7 +124,13 @@ def compare(name, original, candidate, drawer, mode):
             require(abs(a[i]-b[i])<=tol,f"{what}.{('x','y','width','height')[i]}: {a[i]} / {b[i]}")
     for key in ("sidebar","main","bar","chips","stage","footer"):
         compare_box(key,original["geometry"][key],candidate["geometry"][key])
-    if drawer: compare_box("drawer",original["geometry"]["drawer"],candidate["geometry"]["drawer"])
+    if drawer:
+        a,b=original["geometry"]["drawer"],candidate["geometry"]["drawer"]
+        compare_box("drawer",a,b,axes=(0,2))
+        if a and b:
+            require(abs((a[1]+a[3])-(b[1]+b[3]))<=2,"drawer bottom changed")
+            bar=candidate["geometry"]["bar"]
+            require(bool(bar) and b[1]>=bar[1]+bar[3]-1,"drawer obscures the position-comment toolbar")
     require(len(original["cards"])==len(candidate["cards"]),f"preview count {len(original['cards'])}/{len(candidate['cards'])}")
     for i,(a,b) in enumerate(zip(original["cards"],candidate["cards"])):
         for key in ("screen","state","width","height"):require(a[key]==b[key],f"preview[{i}] {key}: {a[key]} / {b[key]}")

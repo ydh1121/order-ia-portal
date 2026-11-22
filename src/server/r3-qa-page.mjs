@@ -29,6 +29,8 @@ import * as supplementalHistory from './r3-ui/supplemental-history.gen.mjs';
 import {isProductLiveTarget} from './product-lab-page.mjs';
 import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-runtime.mjs';
 import {isReviewedEpochTarget,readReviewedEpochArtifact,readReviewedEpochBody} from './r3-qa-epoch-history.mjs';
+import {isResearchRow,researchArtifactHash,researchArtifact,archivedResearchTarget,archivedResearchArtifact} from './research-app/page.mjs';
+import {createResearchExportTools} from './research-app/export-snapshot.mjs';
 
 const utf8=new TextEncoder();
 // The product runtime is byte-identical. Shortcuts and marker decoration belong to the QA tool.
@@ -60,7 +62,13 @@ const frameStyle=`
 `;
 export async function isR3ReviewTarget(target,revision=release){
   if(revision!==release||!target||!approvedWidths.includes(target.viewport))return false;
-  if(isProductLiveTarget(target))return true;
+  if(Object.hasOwn(target,'mode')&&!['simple','detailed'].includes(target.mode))return false;
+  const mode=target.mode??'simple';
+  if(mode==='simple'&&isProductLiveTarget(target))return true;
+  const researchRow=catalog.find(row=>row.id===[target.screen,target.state,target.variant].join('/'))||(await getQaSupplemental()).rows.find(row=>row.id===[target.screen,target.state,target.variant].join('/'));
+  if(isResearchRow(researchRow)&&await researchArtifactHash(researchRow,target.viewport,mode)===target.artifactHash)return true;
+  if(await archivedResearchTarget(target))return true;
+  if(mode==='detailed')return false;
   if(await isReviewedEpochTarget(target,revision))return true;
   const preserved=supplementalHistory.supplementalHistoryRows[[target.screen,target.state,target.variant].join('/')];
   if(preserved?.hashes[target.viewport]===target.artifactHash)return true;
@@ -82,8 +90,10 @@ const json=(j,status=200)=>Response.json(j,{status,headers:apiHeaders});
 export async function serveR3Artifact(request,env){
   if(request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
   const q=new URL(request.url).searchParams;
+  const mode=q.get('mode')??'simple';
+  if(!['simple','detailed'].includes(mode)||q.getAll('mode').length>1)return json({error:'INVALID_REVIEW_MODE'},400);
   if(!q.has('id')){
-    if(q.size)return json({error:'INVALID_CATALOG_REQUEST'},400);
+    if(q.size&&!(q.size===1&&q.has('mode')))return json({error:'INVALID_CATALOG_REQUEST'},400);
     // Reference metadata belongs to the outer review tool. Rendered product documents keep their release identities.
     const additions=await getQaSupplemental(),byId=new Map(additions.rows.map(row=>[row.id,row]));
     const supplemental=additions.rows.filter(row=>row.supplemental),sales=supplemental.filter(row=>row.screen==='admin-analytics');
@@ -93,16 +103,29 @@ export async function serveR3Artifact(request,env){
       if(row.screen==='admin-analytics'&&!salesInserted){salesInserted=true;return [...sales,selected];}
       return [selected];
     }),...supplemental.filter(row=>row.screen!=='admin-analytics')];
-    const items=await Promise.all(inventory.map(async row=>{
+    const items=await Promise.all((mode==='detailed'?inventory.filter(isResearchRow):inventory).map(async row=>{
       const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
       const contentHashes=await reviewHashes(row);
-      return {hashes:await qaReviewHashes(row,contentHashes),contentHashes,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':label,stateLabel,defaultWidth,phase,role,
+      const application=isResearchRow(row),hashes=application?Object.fromEntries(await Promise.all(approvedWidths.map(async width=>[width,await researchArtifactHash(row,width,mode)]))):await qaReviewHashes(row,contentHashes);
+      return {hashes,contentHashes,application,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':screen==='q2'?'Q2 구매량·현재 가격':label,stateLabel,defaultWidth,phase,role,
         description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
         authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
     }));
-    return json({release,items,navigationDefaults:defaultQaNavigation(items.map(row=>row.screen)),publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname)});
+    return json({release,items,navigationDefaults:defaultQaNavigation(items.map(row=>row.screen)),publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname),...(mode==='detailed'?{mode}:{})});
   }
+  // An explicitly requested simple mode has the exact historical wire shape.
+  // Detailed mode may only resolve a mode-bound research artifact below.
+  if(mode==='simple')q.delete('mode');
+  if(['current','recorded'].includes(q.get('version'))&&approvedWidths.includes(Number(q.get('width')))&&[...q.keys()].every(key=>['id','width','version','artifactHash','mode'].includes(key))){
+    const row=(await getQaSupplemental()).rows.find(row=>row.id===q.get('id'))||catalog.find(row=>row.id===q.get('id'));
+    if(isResearchRow(row)){
+      const hash=await researchArtifactHash(row,Number(q.get('width')),mode),pinned=q.get('artifactHash');
+      if(pinned===hash||!pinned&&q.get('version')==='current')return json(await researchArtifact(row,Number(q.get('width')),env,new URL(request.url).origin,mode));
+    }
+    if(q.has('artifactHash')){const saved=await archivedResearchArtifact(q.get('id'),Number(q.get('width')),q.get('artifactHash'),env,new URL(request.url).origin,mode);if(saved)return json(saved);}
+  }
+  if(mode==='detailed')return json({error:'UNKNOWN_REVIEW_TARGET'},404);
   // An explicit pinned identity belongs to the captured release, even after
   // the current HTML, shared QA fixture runtime or source catalogue changes.
   if(['recorded','current'].includes(q.get('version'))&&q.has('artifactHash')&&[...q.keys()].every(k=>['id','width','version','artifactHash'].includes(k))){
@@ -195,5 +218,5 @@ export function renderR3Qa(nonce){
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · QA 검토</title><style>${shellStyles}
 ${buyerResultCss.replaceAll('#buyerResult','#snapshot')}</style></head><body>
 ${approvedShellBody()}
-<script nonce="${esc(nonce)}">(${browserFunction(installQaSession)})();(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})})</script></body></html>`;
+<script nonce="${esc(nonce)}">(${browserFunction(installQaSession)})();(${hostCode})(${js(nonce)},${js(reviewFrameCode)},(${browserFunction(bootApprovedShell)}),(${browserFunction(mountReviewDownloads)}),(${buyerResultClient}),(${browserFunction(projectBuyerResult)}),${js({product:quoteCommit,requirements:motionRequirements})},(${browserFunction(createResearchExportTools)}))</script></body></html>`;
 }

@@ -4,7 +4,7 @@ import {randomUUID,webcrypto} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {renderProductApplication} from '../src/server/product-app-page.mjs';
 import {getProductAuthSheetBootstrap} from '../src/server/product-auth-sheet.mjs';
-import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
+import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 import {frameCode} from '../src/server/r3-ui/runtime.gen.mjs';
 import {installQaReviewRuntime} from '../src/server/r3-ui/qa-review-runtime.mjs';
 import {installQaFixtureAdapter} from '../src/server/r3-ui/qa-fixture-adapter.mjs';
@@ -21,8 +21,7 @@ async function mount(t,{qa=false,state='guest-2',reducedMotion=true}={}){
  const url=origin+'/ia?'+new URLSearchParams({view:qa?'qa-lab':'product-r3',screen:qa?'onboarding/'+state+'/email':'onboarding',state});
  let artifact,html;
  if(qa){
-  const response=await serveR3Artifact(new Request(origin+'/api/ia/r3-qa/artifact?'+new URLSearchParams({id:'onboarding/'+state+'/email',width:'390',version:'current'})));
-  assert.equal(response.status,200);artifact=await response.json();html=artifact.html;
+  artifact=await preservedReviewArtifact('onboarding/'+state+'/email');html=artifact.html;
  }else html=await renderProductApplication('a'.repeat(32),{mode:'lab',runId:'auth-sheet-test',persona:'guest',actor:{id:'guest',authenticated:false}},'onboarding',state);
  const errors=[],navigation=[],calls=[],messages=[],console=new VirtualConsole();
  console.on('jsdomError',error=>{if(error.type==='css parsing')return;if(/^Not implemented: navigation/.test(error.message))navigation.push(error.message);else errors.push(error.message);});
@@ -143,7 +142,7 @@ test('product validation is canonical and an unavailable real auth adapter canno
  assert.equal(view.calls.some(call=>call.method==='POST'),false);view.unchanged();
 });
 
-test('QA auth uses the real controlled request, stays inside the current review frame and ignores completion after close',async t=>{
+test('preserved R1 QA auth uses the controlled request, stays inside its frame and ignores completion after close',async t=>{
  const view=await mount(t,{qa:true});view.open();view.fillLogin();view.scenario('delay');
  const submit=view.sheet().querySelector('[data-action=submit-login]');submit.click();
  assert.equal(submit.dataset.asyncPhase,'pending');assert.equal(submit.dataset.asyncSource,'controlled-qa');
@@ -159,7 +158,7 @@ test('QA auth uses the real controlled request, stays inside the current review 
  assert.deepEqual(view.calls,[]);view.unchanged();
 });
 
-test('controlled QA login completes only after its request and returns to the caller introduction step',async t=>{
+test('preserved R1 QA login completes only after its request and returns to the caller introduction step',async t=>{
  const view=await mount(t,{qa:true,state:'guest-2'});view.open();view.fillLogin();view.scenario('delay');
  view.sheet().querySelector('[data-action=submit-login]').click();await tick();
  assert.equal(view.sheet().dataset.authState,'empty');view.scenario('complete');
@@ -169,7 +168,7 @@ test('controlled QA login completes only after its request and returns to the ca
  assert.equal(view.sheet(),null);assert.deepEqual(view.calls,[]);view.unchanged();
 });
 
-test('signup, its terms draft and OTP use the same canonical modules within one sheet',async t=>{
+test('preserved R1 signup, its terms draft and OTP use the same canonical modules within one sheet',async t=>{
  const view=await mount(t,{qa:true});view.open('signup');
  view.sheet().querySelector('[name=email]').value='draft@example.invalid';view.sheet().querySelector('[name=password]').value='Dummy-test-123!';view.sheet().querySelector('[name=password-confirm]').value='Dummy-test-123!';
  view.sheet().querySelector('[data-action=open-terms]').click();assert.equal(view.sheet().dataset.authScreen,'terms');
@@ -187,7 +186,7 @@ test('signup, its terms draft and OTP use the same canonical modules within one 
  assert.equal(view.messages.filter(message=>message.type==='navigate').at(-1).payload.state,'member-2');assert.deepEqual(view.calls,[]);view.unchanged();
 });
 
-test('terms inside the signup sheet retain keyboard focus at both modal boundaries',async t=>{
+test('preserved R1 terms inside the signup sheet retain keyboard focus at both modal boundaries',async t=>{
  const view=await mount(t,{qa:true});view.open('signup');
  view.sheet().querySelector('[name=email]').value='draft@example.invalid';
  view.sheet().querySelector('[data-action=open-terms]').click();
@@ -202,7 +201,7 @@ test('terms inside the signup sheet retain keyboard focus at both modal boundari
  view.sheet().querySelector('.sheet-dim').click();assert.equal(view.sheet(),null);view.unchanged();assert.deepEqual(view.calls,[]);
 });
 
-test('password recovery keeps the introduction while using canonical validation and controlled completion',async t=>{
+test('preserved R1 password recovery keeps the introduction with canonical validation and controlled completion',async t=>{
  const view=await mount(t,{qa:true,state:'guest-3'});view.open();view.sheet().querySelector('[data-action=reset-password]').click();
  assert.equal(view.sheet().dataset.authScreen,'password');view.sheet().querySelector('[name=email]').value='member@example.invalid';view.scenario('complete');view.sheet().querySelector('[data-action=send-reset]').click();
  await until(()=>view.sheet()?.dataset.authState==='sent','controlled reset request');view.sheet().querySelector('[data-action=show-password]').click();

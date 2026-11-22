@@ -10,7 +10,8 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from playwright.sync_api import expect, sync_playwright
 
 from r3_auth_motion_browser import check_auth_motion
-from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position
+from browser_predicate_support import wait_for_expression
+from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position, wait_review_session
 from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def current_wordmark_typography(frame):
     """Read today's rendered QA wordmark; immutable archived frames keep their own styles."""
-    word = frame.locator(".ob-brand-common > .ob-wordmark")
+    word = frame.locator("#order-app-header .order-product-brand > .brand-word")
     expect(word).to_be_visible()
     typography = word.evaluate("e=>{const s=getComputedStyle(e);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
     assert typography["fontFamily"].split(",")[0].strip().strip("\"'") == "Arial Black", typography
@@ -28,7 +29,7 @@ def current_wordmark_typography(frame):
 
 
 def frame_identity(locator):
-    """Read the frozen frame's opaque identity for an actual DOM element."""
+    """Read the inspector's stable element identity from its actual DOM path."""
     return locator.evaluate("""el=>{
         const root=document.getElementById('order-single'),parts=[];
         const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
@@ -47,13 +48,14 @@ def pick_panel_point(page, frame, target, marker, *, native_popover=False):
     frame_pointer_position(page, target)
     expected_id = frame_identity(target)
     expected_layer = frame_identity(frame.locator(marker))
+    session = wait_review_session(page)
     page.evaluate("""()=>{
         window.__onboardingReviewPoint=null;
         if(window.__onboardingPointProbe)return;
         window.__onboardingPointProbe=true;
         addEventListener('message',event=>{
             const frame=document.getElementById('frame'),m=event.data;
-            if(event.source===frame?.contentWindow&&event.origin==='null'&&
+            if(event.source===frame?.contentWindow&&event.origin===(frame.hasAttribute('src')?location.origin:'null')&&
                m?.scope==='ORDER_R3_FRAME'&&m.type==='point'&&
                m.artifact===frame.dataset.testReadyHash)
                 window.__onboardingReviewPoint=m;
@@ -70,11 +72,11 @@ def pick_panel_point(page, frame, target, marker, *, native_popover=False):
     # after it has opened; frame_click maps this child point to the live canvas.
     point = target.evaluate("el=>{const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}")
     frame_click(page, veil, position=point)
-    page.wait_for_function('window.__onboardingReviewPoint!==null')
+    wait_for_expression(page, 'window.__onboardingReviewPoint!==null')
     envelope = page.evaluate('window.__onboardingReviewPoint')
     anchor = envelope['payload']
     assert anchor['id'] == expected_id and anchor['id'] != 'screen', anchor
-    assert anchor['instance'] == 'onboarding', anchor
+    assert anchor['instance'] == session['screen'], anchor
     assert expected_layer in anchor['layers'], anchor
     expect(page.locator('#point-state')).to_have_text('위치 지정됨')
     expect(page.locator('#body-text')).to_have_value('')
@@ -84,50 +86,85 @@ def pick_panel_point(page, frame, target, marker, *, native_popover=False):
 
 
 def restore_panel_point(page, envelope):
-    # Replay the captured, current-frame protocol without creating a comment.
-    page.evaluate("""m=>document.getElementById('frame').contentWindow.postMessage({
-        scope:'ORDER_R3_HOST',channel:m.channel,artifact:m.artifact,type:'restore',payload:m.payload
-    },'*')""", envelope)
+    # The original source must be selected first. Refresh only the transport
+    # channel after the app's route acknowledgement; keep the source/anchor exact.
+    session=wait_review_session(page)
+    assert session['artifact']==envelope['artifact'] and session['screen']==envelope['payload']['instance']
+    page.evaluate("""arg=>document.getElementById('frame').contentWindow.postMessage({
+        scope:'ORDER_R3_HOST',channel:arg.channel,artifact:arg.envelope.artifact,type:'restore',payload:arg.envelope.payload
+    },location.origin)""", {"channel":session['channel'],"envelope":envelope})
+
+
+def expect_auth_background(frame, opened):
+    """The app's retained parent owns inert; its nested introduction inherits it."""
+    for selector in ('#order-app-page', '#order-app-header'):
+        expect(frame.locator(selector)).to_have_js_property('inert', opened)
+    snapshot = frame.locator('#order-single').evaluate("""root=>{
+        const intro=root.querySelector('.ob.guest'),overlay=root.querySelector('[data-product-auth-sheet]');
+        return {width:innerWidth,parentInert:root.querySelector('#order-app-page').inert,
+            headerInert:root.querySelector('#order-app-header').inert,
+            introductionInertAncestor:intro.closest('[inert]')?.id||null,
+            overlayPresent:Boolean(overlay),overlayInert:Boolean(overlay?.closest('[inert]'))};
+    }""")
+    assert snapshot['introductionInertAncestor'] == ('order-app-page' if opened else None), snapshot
+    assert snapshot['overlayPresent'] is opened and snapshot['overlayInert'] is False, snapshot
+    return snapshot
 
 
 def check_auth_overlay(page, frame):
     url, digest = page.url, page.locator('#frame').get_attribute('data-test-ready-hash')
+    protection = []
     frame.locator('#order-single').evaluate("""root=>{
         window.__introOverlayBaseline={root,document:window.__qaPointerDocument,
             main:root.querySelector('.ob-main'),stage:root.querySelector('.ob-stage'),
-            brand:root.querySelector('.ob-brand-common svg')};
+            brand:root.querySelector('#order-app-header .order-product-brand svg')};
     }""")
 
     def unchanged():
-        assert page.url == url
-        expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
-        expect(page.locator('#state-buttons [data-state="guest-2"]')).to_have_class('active')
+        if overlay.count():
+            wait_review_session(page,overlay.get_attribute('data-auth-screen'),overlay.get_attribute('data-auth-state'))
+            assert parse_qs(urlsplit(page.url).query)['view']==['qa-lab']
+        else:
+            wait_review_session(page,'onboarding','guest-2')
+            assert page.url == url
+            expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
+            expect(page.locator('#state-buttons [data-state="guest-2"]')).to_have_class('active')
         expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', '2')
         assert frame.locator('#order-single').evaluate("""root=>{
             const before=window.__introOverlayBaseline;
             return before.document===window.__qaPointerDocument&&root===before.root&&
                 root.querySelector('.ob-main')===before.main&&root.querySelector('.ob-stage')===before.stage&&
-                root.querySelector('.ob-brand-common svg')===before.brand;
+                root.querySelector('#order-app-header .order-product-brand svg')===before.brand;
         }"""), 'Opening or closing auth must retain the introduction document, slide and brand'
+        protection.append(expect_auth_background(frame, overlay.count() > 0))
 
     overlay = frame.locator('[data-product-auth-sheet]')
-    frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
+    login = frame.get_by_role('button', name='로그인', exact=True)
+    frame_click(page, login)
     expect(overlay).to_be_visible()
     expect(overlay).to_have_attribute('data-auth-screen', 'login')
     expect(overlay).to_have_attribute('data-auth-state', 'empty')
     expect(overlay).to_have_attribute('data-auth-variant', 'compact')
-    expect(frame.locator('.ob.guest')).to_have_js_property('inert', True)
     expect(overlay.locator('.auth-background')).to_have_count(0)
     unchanged()
     for name in ('카카오 로그인', '네이버 로그인', 'Google 로그인'):
         expect(overlay.get_by_role('button', name=name).locator('img')).to_be_visible()
     expect(overlay.locator('[data-action="close-sheet"]')).to_have_count(0)
     email = overlay.locator('[name=email]')
+    expect(email).to_be_focused()
+    blocked = frame.locator('.ob.guest [data-mf-intro="2"]').evaluate("""button=>{
+        const before=document.activeElement;button.focus();
+        return document.activeElement===before&&before.closest('[data-product-auth-sheet]')!==null;
+    }""")
+    assert blocked, 'Native focus must remain inside the auth sheet when the background is inert'
+    expect(email).to_be_focused()
     envelope = pick_panel_point(page, frame, email, '#r3-panel-state-auth-login-empty')
     expect(email).to_have_value('')
     email.press('Escape')
     expect(overlay).to_have_count(0)
     unchanged()
+    expect(login).to_be_focused()
+    frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
     restore_panel_point(page, envelope)
     expect(email).to_be_focused()
     assert frame_identity(email) == envelope['payload']['id']
@@ -152,8 +189,13 @@ def check_auth_overlay(page, frame):
     page.mouse.up()
     expect(overlay).to_have_count(0)
     unchanged()
-    expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
-    print('PASS canonical auth overlay: original slide/DOM/hash retained, real provider assets, inner QA pin and restore, Escape/scrim/drag close')
+    out = ROOT / 'artifacts' / 'r3-auth-motion'
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f'auth-background-{protection[0]["width"]}.json').write_text(json.dumps({
+        'source':'current research app; retained parent and native browser focus',
+        'artifactHash':digest,'backgroundFocusBlocked':blocked,'openerFocusRestored':True,
+        'snapshots':protection},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+    print('PASS canonical auth overlay: original slide/DOM retained, acknowledged auth route and exact source return, real provider assets, inner QA pin and restore, Escape/scrim/drag close')
 
 
 def check_auth_overlay_motion(page, origin, width):
@@ -170,7 +212,7 @@ def check_auth_overlay_motion(page, origin, width):
         opener.evaluate("""el=>{
             const root=document.getElementById('order-single');
             const before={document,root,main:root.querySelector('.ob-main'),
-                stage:root.querySelector('.ob-stage'),brand:root.querySelector('.ob-brand-common svg')};
+                stage:root.querySelector('.ob-stage'),brand:root.querySelector('#order-app-header .order-product-brand svg')};
             window.__authOverlayMotion={done:false,trusted:false,samples:[],seenAnimations:0};
             el.addEventListener('click',event=>{
                 const receipt=window.__authOverlayMotion,start=performance.now(),animations=new Set();
@@ -191,7 +233,7 @@ def check_auth_overlay_motion(page, origin, width):
                         sameSheet:sheet===originalSheet,
                         sameIntro:before.document===document&&before.root===document.getElementById('order-single')&&
                             before.main===root.querySelector('.ob-main')&&before.stage===root.querySelector('.ob-stage')&&
-                            before.brand===root.querySelector('.ob-brand-common svg'),
+                            before.brand===root.querySelector('#order-app-header .order-product-brand svg'),
                         rect:rect?{top:rect.top,bottom:rect.bottom,left:rect.left,width:rect.width,height:rect.height}:null,
                         opacity:style?Number(style.opacity):null,display:style?.display,visibility:style?.visibility,
                         transition:style?.transitionProperty,transform:style?.transform,
@@ -243,6 +285,7 @@ def check_auth_overlay_motion(page, origin, width):
         assert samples[-1]['focused'], str(trace)
         overlay = frame.locator('[data-product-auth-sheet]')
         expect(overlay).to_have_attribute('data-auth-screen', screen)
+        expect_auth_background(frame, True)
         root.evaluate('''root=>{
             const holder=root.querySelector('[data-product-auth-sheet]'),dim=holder.querySelector('.sheet-dim');
             const record=window.__authBackdropExit={done:false,closeAt:null,trusted:false,samples:[]},start=performance.now();
@@ -292,7 +335,7 @@ def check_auth_overlay_motion(page, origin, width):
             assert abs(box['left']) <= 1 and abs(box['top']) <= 1 and abs(box['width']-viewport['width']) <= 1 and abs(box['height']-viewport['height']) <= 1, str(dim_trace)
         expect(overlay).to_have_count(0)
         expect(opener).to_be_focused()
-        expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
+        expect_auth_background(frame, False)
         expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', '1')
         expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
         assert page.url == url
@@ -420,8 +463,10 @@ def check_auth_overlay_internal_transition(page, origin, width):
                     assert animation['currentTime'] is not None and current['currentTime'] >= animation['currentTime'], transition
             else:
                 assert abs(after['opacity'] - before['opacity']) <= .02, transition
-            assert page.url == page_url
-            expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', report['artifactHash'])
+            session=wait_review_session(page,'signup','empty')
+            assert parse_qs(urlsplit(page.url).query)['view']==['qa-lab']
+            assert session['artifact']!=report['artifactHash'], 'The auth route needs its own inspection identity'
+            report['signupArtifactHash']=session['artifact']
             assert not errors, errors
             report['result'] = 'PASS'
         except Exception as error:
@@ -454,7 +499,7 @@ def drag_intro(page, frame, *, forward, expected_step):
     expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', str(expected_step))
     assert frame.locator('#order-single').evaluate("""root=>
         window.__introOverlayBaseline.document===window.__qaPointerDocument&&
-        window.__introOverlayBaseline.brand===root.querySelector('.ob-brand-common svg')""")
+        window.__introOverlayBaseline.brand===root.querySelector('#order-app-header .order-product-brand svg')""")
 
 
 def check_notification_pin(page, screens):
@@ -493,12 +538,22 @@ def check_notification_pin(page, screens):
     (out/f'gooey-geometry-{geometry["width"]}.json').write_text(json.dumps(geometry,ensure_ascii=False,indent=2)+'\n')
     frame_click(page,actions.nth(0))
     expect(panel).to_be_visible()
-    expect(panel.locator('[data-obm-page="manage.quotes"] [data-pass-card]')).to_be_visible()
+    pass_panel=panel.locator('[data-obm-page="manage.research.passes.grid"]')
+    expect(pass_panel.locator('.obm-heading')).to_have_text('오더 패스')
+    expect(pass_panel.locator('.research-scene-panel')).to_have_attribute('data-research-scene-connection','connected')
+    expect(pass_panel.locator('.pass-stage [data-pass-id]').first).to_be_visible()
+    expect(pass_panel.locator('[data-open-quote-draft]')).to_have_count(0)
+    wait_review_session(page,'passes','grid')
+    frame_click(page,pass_panel.locator('[data-view="deck"]'))
+    expect(pass_panel.locator('[data-view="deck"]')).to_have_attribute('aria-pressed','true')
+    frame_click(page,pass_panel.locator('[data-action="deck-next"]'))
+    expect(pass_panel.locator('.deck-position')).to_have_text('2 / 4')
     expect(bell).to_have_attribute('aria-expanded','false')
     expect(panel.locator('[data-product-gooey]')).to_have_count(0)
     expect(frame.locator('[data-product-gooey]')).to_have_count(1)
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
+    wait_review_session(page,'onboarding','member-1')
     expect(bell).to_be_visible()
     assert bell.evaluate('el=>el===window.__gooeyOriginalBell')
     assert bell.locator('.quick-unread').text_content()==unread
@@ -514,6 +569,9 @@ def check_notification_pin(page, screens):
     assert not any(call['method'] == 'POST' for call in after['calls']), after['calls']
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
+    wait_review_session(page,'onboarding','member-1')
+    frame_click(page,bell)
+    frame_click(page,actions.nth(1))
     restore_panel_point(page, envelope)
     expect(read).to_be_focused()
     assert frame_identity(read) == envelope['payload']['id']
@@ -526,7 +584,7 @@ def check_notification_pin(page, screens):
 def check_archived_entry(page, origin):
     old_hash = "bf83c284c019ab7306cb6ca2c75f7344e50e3dae825b414f26d776b02c5de68c"
     # The private release has an existing 320px email review anchor on this exact document.
-    query = {"view":"qa-lab","archive":"1","screen":"login/empty/email","width":320,
+    query = {"view":"qa-lab","screen":"login/empty/email","width":320,
              "version":"recorded","artifactHash":old_hash}
     page.goto(origin + "/ia?" + urlencode(query))
     frame = page.frame_locator("#frame")
@@ -556,13 +614,13 @@ def check_direct_company_state(page, screens, width):
     modal = frame.get_by_role('dialog', name='사업자 정보')
     expect(modal).to_be_visible()
     expect(frame.locator('.ob-stage')).to_have_js_property('inert', True)
-    expect(frame.locator('.ob-stage > header .obm-brand')).to_have_attribute('data-authenticated', 'false')
-    geometry = frame.locator('.ob-stage > header').evaluate("""async header=>{
+    expect(frame.locator('#order-app-header .obm-brand')).to_have_attribute('data-authenticated', 'false')
+    geometry = frame.locator('#order-app-header').evaluate("""async header=>{
         await document.fonts.ready;
         const rect=selector=>{const r=header.querySelector(selector).getBoundingClientRect();
             return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
         return {authenticated:window.ORDER_APP_ADAPTER.fixture.inspect().controls.authenticated,
-            word:rect('.ob-wordmark'),mark:rect('.obm-trigger svg'),signup:rect('.ob-join')};
+            word:rect('.brand-word'),mark:rect('.obm-trigger svg'),signup:rect('[data-app-auth]')};
     }""")
     assert geometry['authenticated'] is False, geometry
     assert all(geometry[key]['width'] > 0 and geometry[key]['height'] > 0 for key in ('word', 'mark', 'signup')), geometry
@@ -573,7 +631,7 @@ def check_direct_company_state(page, screens, width):
     modal.locator('[data-company-close]').press('Escape')
     expect(modal).to_be_hidden()
     expect(frame.locator('.ob-stage')).to_have_js_property('inert', False)
-    expect(frame.locator('.ob-stage > header .obm-brand')).to_have_attribute('data-authenticated', 'false')
+    expect(frame.locator('#order-app-header .obm-brand')).to_have_attribute('data-authenticated', 'false')
     return geometry
 
 
@@ -640,29 +698,31 @@ def check(page, origin, width):
     modal.get_by_role("button",name="문의하기").press("Escape")
     expect(modal).to_be_hidden()
     expect(frame.get_by_role("button",name="사업자 정보",exact=True)).to_be_focused()
-    # The CTA replaces the whole QA shell. Observe the browser's document request
-    # and the authenticated product it rendered after the source iframe is gone.
-    x, y = frame_pointer_position(page, frame.get_by_role("button",name="상세 견적"))
-    destination = origin + "/ia?view=detailed-r3"
-    def detailed_document(response):
-        request = response.request
-        return (response.url == destination and request.is_navigation_request()
-                and request.frame == page.main_frame and request.resource_type == "document")
-    with page.expect_response(detailed_document) as navigation:
-        if page.evaluate("navigator.maxTouchPoints > 0"):
-            page.touchscreen.tap(x, y)
-        else:
-            page.mouse.click(x, y)
-    assert navigation.value.status == 200, navigation.value.status
-    expect(page.locator("html")).to_have_attribute("data-r3-quote-mode","detailed")
-    expect(page.locator("html")).to_have_attribute("data-storage-ready","true")
-    expect(page.get_by_role("link",name="QA LAB으로")).to_be_visible()
+    # The real onboarding CTA enters the same staging app. The regular original
+    # remains a separate explicit comparison link, never the working journey.
+    frame.locator('#order-single').evaluate("root=>window.__quoteEntry={root,header:document.getElementById('order-app-header'),app:window.ORDER_RESEARCH_APP,document}")
+    windows=len(page.context.pages)
+    navigations=[]
+    on_navigation=lambda request: navigations.append(request.url) if request.is_navigation_request() and request.resource_type=='document' else None
+    page.on('request',on_navigation)
+    try:
+        frame_click(page,frame.get_by_role('button',name='상세 견적',exact=True))
+        wait_review_session(page,'q1')
+        frame.locator('#order-app-quote').wait_for(state='visible')
+        assert frame.locator('#order-single').evaluate("""root=>{
+            const before=window.__quoteEntry,route=window.ORDER_RESEARCH_APP.snapshot().route;
+            return before.root===root&&before.header===document.getElementById('order-app-header')&&
+                before.app===window.ORDER_RESEARCH_APP&&before.document===document&&route.mode==='detailed';
+        }"""), 'The detailed CTA must retain one app, header and document'
+        assert len(page.context.pages)==windows and not navigations,navigations
+    finally:
+        page.remove_listener('request',on_navigation)
     target_url = urlsplit(page.url)
     assert target_url.netloc == urlsplit(origin).netloc and target_url.path == "/ia"
-    assert parse_qs(target_url.query) == {"view":["detailed-r3"]}
+    assert parse_qs(target_url.query)['view'] == ['qa-lab']
     page.remove_listener('request', record_write)
     assert not review_writes, review_writes
-    print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"detailed-r3",
+    print(json.dumps({"width":width,"originalArtWidth":287,"authReturn":"guest-2","memberProduct":"same staging app / detailed quote",
                       "oldQuickMenu":"exact brand-history replay","currentBrand":"authenticated three-root menu",
                       "authOverlay":"same introduction, Escape/scrim/drag close","horizontalDrag":"2→1→2",
                       "wordTypography":{"guest":guest_typography,"member":member_typography},
@@ -680,7 +740,7 @@ def main():
             for width in ((390,) if focused_auth else (320,375,390,1440)):
                 context=browser.new_context(viewport={"width":width,"height":844},reduced_motion="reduce")
                 page=context.new_page()
-                page.goto(fixture["url"]+"/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail")
+                page.goto(fixture["url"]+"/ia?view=qa-lab&screen=login%2Fempty%2Femail")
                 page.locator("input[name=email]").fill(fixture["email"])
                 page.locator("input[name=password]").fill(fixture["pass"])
                 page.locator("button[type=submit]").click()
