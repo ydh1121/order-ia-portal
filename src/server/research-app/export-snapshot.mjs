@@ -66,10 +66,14 @@ export function createResearchExportTools(){
   }
   function cloneRoot(live){
     const {root,window,document}=live,clone=root.cloneNode(true),original=[root,...root.querySelectorAll('*')],copies=[clone,...clone.querySelectorAll('*')];
+    // Retained workspaces keep drafts for ordinary navigation. A current-screen
+    // download must not copy another hidden workspace's input or private rows.
+    clone.querySelectorAll('#order-app-page[hidden],#order-app-quote[hidden],#order-app-pricing[hidden]').forEach(node=>node.remove());
     const layout=['display','position','inset','top','right','bottom','left','width','height','max-width','max-height','margin','padding','box-sizing','gap','row-gap','column-gap','grid-template-columns','grid-template-rows','flex-direction','flex-wrap','align-items','justify-content','transform','opacity','z-index'];
     const freeze=(from,to)=>{const style=window.getComputedStyle(from);for(const key of layout){const value=style.getPropertyValue(key);if(value)to.style.setProperty(key,offlineCss(value));}};
     for(let index=0;index<original.length;index++){
       const from=original[index],to=copies[index],tag=from.localName;
+      if(to!==clone&&!clone.contains(to))continue;
       const sensitive=secret.test([from.getAttribute('name'),from.id,from.getAttribute('autocomplete')].filter(Boolean).join(' '));
       if(tag==='input'){
         if(from.type==='hidden'){to.remove();continue;}

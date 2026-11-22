@@ -4,8 +4,9 @@ import {createRequire} from 'node:module';
 import {posix} from 'node:path';
 import {webcrypto} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {renderResearchApplication,researchScene,serveResearchAsset,researchAssetBase,researchArtifact} from '../src/server/research-app/page.mjs';
+import {renderResearchApplication,researchScene,serveResearchAsset,researchAssetBase,researchArtifact,listResearchRows,isResearchRow} from '../src/server/research-app/page.mjs';
 import {catalog} from '../src/server/product-ui/catalog.gen.mjs';
+import {mvpScreens} from '../src/server/r3-qa-navigation.mjs';
 import {researchRoute} from '../src/server/research-app/routes.mjs';
 import {browserFunction} from '../src/server/browser-source.mjs';
 import {installResearchInspector} from '../src/server/research-app/review-inspector.mjs';
@@ -15,7 +16,7 @@ import {getProductAuthSheetBootstrap} from '../src/server/product-auth-sheet.mjs
 import {researchAuthSheetSource} from '../src/server/research-app/auth-sheet-source.mjs';
 const require=createRequire(new URL('./build-tools/package.json',import.meta.url));
 const {build}=require('esbuild'),{JSDOM,VirtualConsole}=require('jsdom');
-const paths=['bridge/contact-ui.mjs','bridge/business-directory.mjs','web/region-reference.mjs','web/address-contract.mjs','web/address-service.mjs','web/address-ui.mjs','src/engine/validation/email.mjs','src/engine/validation/phone.mjs'];
+const paths=['bridge/contact-ui.mjs','bridge/business-directory.mjs','web/region-reference.mjs','web/address-contract.mjs','web/address-service.mjs','web/address-ui.mjs','src/engine/validation/email.mjs','src/engine/validation/phone.mjs','research/price-integrations.mjs'];
 const contents=`export {mountResearchApplication} from '${researchAssetBase}research/application.mjs';\n`+paths.map((path,i)=>`import * as service${i} from '${researchAssetBase+path}';`).join('\n')+'\nexport const serviceModules={'+paths.map((path,i)=>JSON.stringify(path)+':service'+i).join(',')+'};';
 const compiled=await build({stdin:{contents,resolveDir:process.cwd()},bundle:true,write:false,platform:'browser',format:'iife',globalName:'ResearchTest',target:'es2022',logLevel:'silent',plugins:[{
  name:'served-research-application',setup(builder){
@@ -46,6 +47,7 @@ async function setup(initial={screen:'onboarding',state:'guest-2'}){
  const config=JSON.parse(doc.getElementById('order-app-config').textContent),environment=win.ORDER_CREATE_RESEARCH_ENV(config);
  environment.regular={loadModule:path=>Promise.resolve(win.ResearchTest.serviceModules[path]),crypto:webcrypto};
  environment.loadBusinessModule=path=>Promise.resolve(win.ResearchTest.serviceModules[path]);
+ environment.priceWorkspace={loadModule:path=>Promise.resolve(win.ResearchTest.serviceModules[path.startsWith(researchAssetBase)?path.slice(researchAssetBase.length):path])};
  environment.loadScene=async route=>{const source=await researchScene(route.screen,route.state,route.variant);assert.ok(source,route.screen);const previous=win.ORDER_DESIGN_MODULES;win.ORDER_DESIGN_MODULES=[];try{win.eval(source.mount);return {modules:win.ORDER_DESIGN_MODULES.slice(),scene:{screen:source.row.screen,state:source.row.state,html:source.html,styles:[]}};}finally{win.ORDER_DESIGN_MODULES=previous;}};
  const app=await win.ResearchTest.mountResearchApplication(config,environment);await settle();
  return {win,doc,app,environment,failures,async close(){app.dispose();await settle();dom.window.close();}};
@@ -559,7 +561,7 @@ test('receipt inspection configures the real operator workflow after a buyer sce
 });
 
 test('every current page group composes under one retained application header',async()=>{
- const f=await setup(),rows=[...new Map(catalog.filter(row=>row.phase!=='future'&&!['component-library','price-workspace','common'].includes(row.screen)&&researchRoute(row).kind==='page').map(row=>[row.screen,row])).values()];
+ const f=await setup(),rows=[...new Map(catalog.filter(row=>isResearchRow(row)&&researchRoute(row).kind==='page').map(row=>[row.screen,row])).values()];
  try{
   const header=f.doc.getElementById('order-app-header'),brand=header.querySelector('svg');
   for(const row of rows){
@@ -570,5 +572,87 @@ test('every current page group composes under one retained application header',a
    assert.equal(f.doc.querySelectorAll('.brand').length,1,row.id);
   }
   assert.deepEqual(f.failures,[]);assert.ok(rows.length>35);
+ }finally{await f.close();}
+});
+
+test('every MVP product family has a route in the same app, including campaign and pricing state owners',async()=>{
+ const rows=await listResearchRows(),families=new Set(rows.map(row=>row.screen));
+ for(const screen of mvpScreens)if(!['common','component-library'].includes(screen))assert.ok(families.has(screen),'Missing MVP product family: '+screen);
+ assert.deepEqual(rows.filter(row=>row.screen==='admin-campaigns').map(row=>row.state).sort(),['approved','denied','more','normal','reviewing']);
+ assert.deepEqual(rows.filter(row=>row.screen==='price-workspace').map(row=>row.state).sort(),['classification','consumer-products','costs','delivery','empty','error','guest','loading','store-products']);
+ assert.equal(researchRoute({screen:'admin-campaigns'}).state,'normal');
+ assert.equal(researchRoute({screen:'pricing-r3'}).kind,'pricing');
+ assert.equal(researchRoute({screen:'pricing-r3'}).state,'costs');
+ assert.equal(rows.filter(row=>['common','component-library'].includes(row.screen)).length,0);
+ assert.equal(rows.filter(row=>row.phase==='future'&&row.screen!=='admin-campaigns').length,0);
+});
+
+test('the original price editor retains its draft, menu and common header through auth and campaign routes',async()=>{
+ const f=await setup({screen:'price-workspace',state:'costs'});try{
+  await waitFor(()=>f.app.priceWorkspace?.workspace?.read());
+  const price=f.app.priceWorkspace,owner=f.doc.getElementById('price-workspace-app'),header=f.doc.getElementById('order-app-header'),brand=header.querySelector('svg'),transport=price.transport;
+  const raw=owner.querySelector('[data-cost="raw"]');assert.ok(raw);raw.focus();raw.value='6132';raw.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:'6132'}));
+  assert.equal(price.snapshot().model.dirty,true);
+  owner.querySelector('[data-section="products"]').click();await waitFor(()=>f.app.snapshot().route.state==='store-products');
+  owner.querySelector('[data-product-audience="consumer"]').click();await waitFor(()=>f.app.snapshot().route.state==='consumer-products');
+  const document=JSON.stringify(price.workspace.read());
+  await f.app.navigate({screen:'signup',state:'empty'});await settle();
+  assert.equal(f.doc.getElementById('order-app-pricing').inert,true);assert.equal(f.doc.getElementById('price-workspace-app'),owner);
+  f.doc.querySelector('.product-auth-sheet [name="email"]').dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  await waitFor(()=>f.app.snapshot().route.kind==='pricing');assert.equal(f.app.snapshot().route.state,'consumer-products');
+  await f.app.navigate({screen:'admin-campaigns'});assert.equal(f.app.snapshot().route.state,'normal');assert.equal(f.doc.getElementById('order-app-pricing').hidden,true);
+  const more=f.doc.querySelector('#order-app-page [data-action="more"]');assert.ok(more);more.click();await waitFor(()=>f.app.snapshot().route.state==='more');
+  await f.app.navigate({screen:'pricing-r3'});
+  assert.equal(f.app.snapshot().route.state,'consumer-products');assert.equal(f.app.priceWorkspace,price);assert.equal(price.transport,transport);
+  assert.equal(f.doc.getElementById('price-workspace-app'),owner);assert.equal(JSON.stringify(price.workspace.read()),document);
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.querySelector('svg'),brand);assert.equal(f.doc.querySelectorAll('#order-app-header').length,1);
+  assert.equal(f.doc.querySelectorAll('#order-single').length,1);assert.equal(f.doc.querySelectorAll('iframe').length,0);
+  assert.equal(await f.app.inspectRoute({screen:'price-workspace',state:'empty'}),false,'a QA reset must not discard the original unsaved draft');
+  assert.equal(f.app.snapshot().route.state,'consumer-products');assert.equal(JSON.stringify(price.workspace.read()),document);assert.equal(price.snapshot().model.dirty,true);
+  assert.equal(await f.app.inspectRoute({screen:'admin-campaigns',state:'normal'}),false,'a QA family selection must preserve the active unsaved price draft');
+  assert.equal(f.app.snapshot().route.screen,'price-workspace');assert.equal(f.app.snapshot().route.state,'consumer-products');
+  assert.equal(f.doc.getElementById('order-app-pricing').hidden,false);assert.equal(f.doc.getElementById('price-workspace-app'),owner);assert.equal(JSON.stringify(price.workspace.read()),document);
+  assert.match(f.doc.getElementById('order-app-status').textContent,/미저장 변경/);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('price loading is a live app owner and QA completion reaches its canonical transport without blocking inspection',async()=>{
+ const f=await setup({screen:'price-workspace',state:'loading'});let review;
+ try{
+  const price=f.app.priceWorkspace,owner=f.doc.getElementById('order-app-pricing'),header=f.doc.getElementById('order-app-header');
+  assert.equal(price.workspace.read(),null);assert.ok(price.snapshot().pendingRequests>0);
+  review=await attachTestReview(f);review.send('motionScenario',{mode:'complete'});
+  await waitFor(()=>price.workspace.read()&&price.snapshot().pendingRequests===0);
+  assert.equal(price.transport.inspect().mode,'qa-memory');assert.equal(f.app.priceWorkspace,price);assert.equal(f.doc.getElementById('order-app-pricing'),owner);assert.equal(f.doc.getElementById('order-app-header'),header);
+  assert.equal(f.doc.querySelectorAll('#price-workspace-app').length,1);assert.deepEqual(f.failures,[]);
+ }finally{review?.bridge.dispose();await f.close();}
+});
+
+test('a failed price module leaves the active page intact and a new request can mount the canonical editor',async()=>{
+ const f=await setup();try{
+  const before=f.app.snapshot().route,parent=f.doc.getElementById('order-app-page').firstElementChild,header=f.doc.getElementById('order-app-header'),load=f.environment.priceWorkspace.loadModule;
+  f.environment.priceWorkspace.loadModule=async()=>{throw Error('CONTROLLED_ASSET_UNAVAILABLE');};
+  assert.equal(await f.app.navigate({screen:'price-workspace'}),false);
+  assert.deepEqual(f.app.snapshot().route,before);assert.deepEqual(f.app.snapshot().pageRoute,before);
+  assert.equal(f.app.priceWorkspace,null);assert.equal(f.doc.getElementById('order-app-page').firstElementChild,parent);
+  assert.equal(f.doc.getElementById('order-app-page').hidden,false);assert.equal(f.doc.getElementById('order-app-pricing').hidden,true);
+  assert.equal(f.doc.querySelector('#price-workspace-app'),null);assert.match(f.doc.getElementById('order-app-status').textContent,/단가표를 불러오지 못했어요/);
+  f.environment.priceWorkspace.loadModule=load;
+  assert.equal(await f.app.navigate({screen:'price-workspace'}),true);await waitFor(()=>f.app.priceWorkspace.workspace.read());
+  assert.equal(f.app.snapshot().route.kind,'pricing');assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.doc.querySelectorAll('#price-workspace-app').length,1);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('QA cannot hide a live price editor dialog by selecting another product family',async()=>{
+ const f=await setup({screen:'price-workspace',state:'costs'});try{
+  await waitFor(()=>f.app.priceWorkspace.workspace.read());
+  const control=f.app.priceWorkspace,document=JSON.stringify(control.workspace.read()),route=f.app.snapshot().route;
+  f.doc.querySelector('#price-workspace-app [data-action="add-range"]').click();await settle();
+  const modal=f.doc.querySelector('#pw-workspace-dialog');assert.ok(modal?.open);assert.ok(control.modal.activeIds.length);
+  assert.equal(await f.app.inspectRoute({screen:'admin-campaigns',state:'normal'}),false);
+  assert.deepEqual(f.app.snapshot().route,route);assert.equal(f.doc.getElementById('order-app-pricing').hidden,false);assert.equal(modal.open,true);
+  assert.equal(JSON.stringify(control.workspace.read()),document);assert.match(f.doc.getElementById('order-app-status').textContent,/편집 창이나 저장 작업/);
+  control.modal.close(modal,{immediate:true});await settle();
+  assert.equal(await f.app.navigate({screen:'admin-campaigns'}),true);assert.equal(f.app.snapshot().route.screen,'admin-campaigns');assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });

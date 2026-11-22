@@ -9,6 +9,7 @@
 | `/ia?view=research-r3` → `functions/ia/[[path]].js` → `research-app/page.mjs` | 독립 실행 가능한 연구 앱 문서, 빌드가 고정된 자산 URL, 서버 접근 제어 |
 | `research-app/application.mjs`, `routes.mjs` | 한 document·앱 instance·공통 헤더·세션·라우터, 페이지와 부모 패널의 관계 |
 | `research-app/quote-workspace.mjs` | 같은 document 안에서 정규 견적 factory 장착, Q1–Q4 이동, 초안 연속성, 수명 정리 |
+| `research-app/price-workspace.mjs`, `price-source-adapter.mjs` | 원본 단가표 편집기·모델·가져오기·메뉴를 한 번 장착하고 같은 앱에서 유지, 환경별 transport 주입 |
 | `account-panels.mjs`, `business-panel.mjs`, `scene-panels.mjs`, `drawer.mjs` | 유지된 부모 화면 안에서 열리는 계정·사업장·하위 패널·시트 |
 | `/ia?view=qa-lab` → `r3-ui/host.mjs` | 기존 검토 셸, 목록·상태 선택·비교 보기·의견·위치 지정·명시적 이력 보기 |
 | `research-app/review-bridge.mjs`, `review-inspector.mjs` | 실행 중인 앱의 route·anchor 관찰과 검토 메시지 교환 |
@@ -20,6 +21,14 @@ QA랩의 프레임은 `research-r3` 앱 URL을 연다. 앱 내부에서 정규 �
 검토 목록·핀·미해결 개수는 기본적으로 해결된 의견을 제외한다. 기존 이벤트와 핀을 지우지 않으며 이력 보기와 재열기는 유지한다. 위치 지정은 검토 패널 안에서 시작하고 돌아오며 작성 중인 지시사항을 보존한다. 현재 검토의 화면 목록에는 Q2를 명시한다. 과거 검토 자산은 사용자가 이력을 열 때만 재생한다.
 
 QA의 모아 보기·모바일/PC 비교는 URL의 `preview` 값으로 구분하고, 견적의 `mode=simple|detailed`과 혼용하지 않는다. 기존 `mode=board|dual` 링크는 과거 보기 형식으로만 해석한다. 모아 보기의 보조 frame에서 자동 상태 전환이 발생해도 사용자가 선택한 주 검토 화면을 바꾸지 않는다.
+
+### 제품 화면 포함 기준
+
+2026-11-23 후속 구현에서는 MVP 목록에 있으나 과거 `phase=future`인 관리자 캠페인 5개 상태와 별도 문서였던 단가표 9개 상태를 같은 앱에 포함했다. 과거 phase·row ID·hash를 수정해서 분류를 맞추지 않는다. `isResearchRow()`는 관리자 캠페인의 실제 MVP 소속을 명시적으로 반영하며, 단가표는 별도 제품 workspace owner를 사용한다.
+
+병합 목록은 102개 화면군·548개 화면/상태·550개 variant 행이다. 연구 앱에는 80개 화면군·435개 화면/상태·437개 variant 행이 포함된다. 미래 단계 20개 화면군의 78행, 공통 컴포넌트 예시 5행, 컴포넌트 라이브러리 30행은 별도 검토 자료로 남는다. QA 탐색 그룹의 `future`와 과거 설계의 `phase=future`는 별도 값이며, 기존 연구 앱 안에 있던 98행을 탐색 그룹 이름 때문에 다시 제외하지 않는다. 이 수치는 실행 소유권의 범위이며 모든 업무 서비스가 연결됐다는 의미가 아니다.
+
+단가표의 정상 메뉴 이동, 인증 시트 열기·닫기, 캠페인 방문 후 복귀는 같은 편집기와 미저장 모델을 유지한다. `pricing-r3` 링크도 연구 앱 안에서는 같은 owner로 연결한다. 명시적인 QA 상태 초기화는 미저장 변경·저장 중 요청·열려 있는 가격 편집 창이 있으면 즉시 거절한다. 이때 host는 이전 화면·URL·caption·검토 target을 복원한다. 잠긴 iframe 안에 확인 창을 띄워 응답을 기다리지 않는다. 원본 편집기 자체의 저장·되돌리기·버전 선택 동작은 원본 controller가 담당한다.
 
 ## 정규 소스 재사용과 provenance
 
@@ -37,6 +46,7 @@ QA의 모아 보기·모바일/PC 비교는 URL의 `preview` 값으로 구분하
 | 모드별 저장·복사·복원 | 봉인 `web/storage.mjs`, 기존 `r3-quote-draft-client.mjs`, `quoteDraftBridge.restore` | 연구 namespace와 연구용 sync 저장 공간 주입 |
 | 저장 사업장 선택·관리 | 기존 `r3-saved-business-client.mjs`, 포털 `product-ui/business-directory.mjs` | 같은 adapter 사용, 공통 전화·이메일·주소 필드 연결, 비동기 검증 경계 |
 | 브랜드·공통 모션·기존 화면 | 포털 `order-engine/browser/*`, `product-ui/catalog.gen.mjs`, `runtime.gen.mjs` 등 | 앱 공통 헤더 소유, scene/runtime 분리와 부모 패널 장착 |
+| 단가표·비용·판매가·분류·운임·파일 가져오기 | 기존 `r3-price-workspace-{page,client,model,xlsx,import,tree,defaults,qa}.mjs` | 원본 factory 본문·계산·저장 규칙 보존, 공통 헤더·같은 앱 수명·주입된 transport 경계 |
 
 `regular-service-assets.mjs`의 `regularServiceSourceIdentity()`는 원본 SHA256과 봉인 후 제공 소스 SHA256을 함께 기록한다. `contact-ui.mjs`에는 기존 IANA URL 치환이 있으므로 두 해시가 같다고 가정하지 않는다. 사업장 bridge는 `BUSINESS_SOURCE_IDENTITY`에 원본 controller·연구 controller·markup 해시와 변경 경계를 기록한다. 주소 handler의 commit·Git blob·SHA256은 `research-address-api.mjs`의 `researchAddressOrigin`에 있다.
 
@@ -61,6 +71,8 @@ QA의 모아 보기·모바일/PC 비교는 URL의 `preview` 값으로 구분하
 
 `saved-quote-panel.mjs`는 간편·상세 각각의 현재 작성 내용만 읽는다. 이어 쓰기는 저장 당시 revision/token을 확인한 뒤 workspace의 `restoreDraft()` → 원본 `quoteDraftBridge.restore()`로 처리한다. 새로운 발급 견적이나 여러 버전의 이력을 만들어 표시하지 않는다. 오래된 record를 선택하면 충돌로 돌려주고 현재 입력을 보존한다.
 
+단가표는 기본 연구 환경에서 기존 `createPriceWorkspaceQaTransport()`의 메모리 문서·revision·idempotency·예약 규칙을 사용한다. 실제 운영 API로 자동 우회하지 않는다. `environment.priceWorkspace.createTransport`가 주입되면 그 transport만 사용하며, 연결 실패를 메모리 성공으로 대체하지 않는다. 원본 모달은 scoped owner에 설치해 견적의 전역 모달을 덮지 않고, workspace가 소유한 listener·timer·observer는 해제 시 정리한다. 의도적인 로딩 fixture가 있더라도 앱과 QA의 ready 교환은 컨트롤러 장착 단계에서 완료하며 실제 작업 응답은 별도 Promise로 관찰한다.
+
 주소 검색은 별도 서비스 경계다. `/api/ia/research-address`는 owner 세션·동일 출처·CSRF를 확인하고 정규 주소 handler를 호출한다. 서버의 고정 Kakao 주소·장소 endpoint만 사용하며 키를 브라우저로 내보내지 않는다. 이메일의 형식·도메인 판정은 계정 소유권 또는 주문 권한을 부여하지 않는다.
 
 ## 현재판과 기록판의 같은 빌드 보장
@@ -70,6 +82,8 @@ QA의 모아 보기·모바일/PC 비교는 URL의 `preview` 값으로 구분하
 실행 환경에서 index에 등록된 **현재 build와 이전 build 모두 봉인된 pack**을 사용한다. Worker 번들러의 `Function.toString()` 변환 때문에 현재 자산만 다시 직렬화하지 않는다. `env` 없는 raw 생성 경로는 봉인 수집·검사에 사용한다. 정규 배포의 검토·실행 경로는 `env`를 전달한다.
 
 `release-store.mjs`는 압축 bytes 길이·SHA256, source digest, row index, 허용 자산 경로를 검증한다. 저장한 빌드나 자산이 없으면 최신 것으로 대체하지 않는다. HTML 재생 시 바꾸는 것은 nonce와 검증된 route/inspection 설정이다. `current` 검사 표시는 서버가 확인한 현재 digest에만 허용한다.
+
+Cloudflare Workers의 `Request`에는 `redirect: 'manual'`을 사용한다. 200 이외의 응답과 redirect 응답은 거절하며, 임의 목적지로 따라가지 않는다. Node에서 생성 가능한 `redirect: 'error'`가 Workers에서도 생성된다고 가정하지 않는다. 이 경계는 301·302·303·307·308 응답 거절 및 후속 정상 재시도 검사와 실제 배포 화면 확인을 함께 적용한다.
 
 간편 견적과 mode가 없는 과거 검토 target hash는 기존 `['order-research-application/v1', build, row.id, width]`를 유지한다. 상세 검토만 이 배열 끝에 `'detailed'`를 추가하고 target·artifact·inspection에 `mode: 'detailed'`를 기록한다. 기록판 URL·실제 앱 시작 모드·검토 해시는 서로 일치해야 한다. 모드가 없는 과거 기록을 상세라고 추정하거나 수정하지 않는다. 기록판은 저장 당시 build를 연다. 압축 pack의 공개 URL은 404이며 인증된 Pages Function이 내부 `env.ASSETS` binding으로만 읽는다. 이력 조회가 기존 의견의 처리 상태나 사용자 판정을 바꾸지는 않는다.
 

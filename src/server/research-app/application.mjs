@@ -1,6 +1,7 @@
 import {createOrderBrand,mountOrderBrandElement} from '../order-engine/browser/brand.mjs';
 import {createRegularServices} from './regular-services.mjs';
 import {mountResearchQuote} from './quote-workspace.mjs';
+import {mountResearchPriceWorkspace} from './price-workspace.mjs';
 import {researchRoute,researchRouteUrl,AUTH_ROUTES,QUOTE_ROUTES} from './routes.mjs';
 import {mountResearchAccountPanel} from './account-panels.mjs';
 import {mountResearchBusinessPanel} from './business-panel.mjs';
@@ -15,9 +16,9 @@ export async function mountResearchApplication(config, environment) {
   const doc=environment.document||document, win=doc.defaultView, root=doc.getElementById('order-single');
   if(!root||root.__researchApplication)throw Error('RESEARCH_APPLICATION_ROOT');
   const controller=new win.AbortController(), signal=controller.signal, instance=win.crypto.randomUUID();
-  const header=doc.getElementById('order-app-header'), page=doc.getElementById('order-app-page'), quote=doc.getElementById('order-app-quote');
+  const header=doc.getElementById('order-app-header'), page=doc.getElementById('order-app-page'), quote=doc.getElementById('order-app-quote'), pricing=doc.getElementById('order-app-pricing');
   const status=doc.getElementById('order-app-status'), modules=new Map(), scenePromises=new Map(), fields=new Map();
-  let route=researchRoute(config.initial), pageRoute=null, epoch=0, pageDispose=null, sharedDispose=null, workspace=null, brandMenu=null, authSheet=null, drawerDispose=null, disposed=false,started=false,reviewSelecting=false,fixtureSelecting=false,navigating=0,activeAccountPanel=null;
+  let route=researchRoute(config.initial), pageRoute=null, epoch=0, pageDispose=null, sharedDispose=null, workspace=null, priceWorkspace=null, brandMenu=null, authSheet=null, drawerDispose=null, disposed=false,started=false,reviewSelecting=false,fixtureSelecting=false,navigating=0,activeAccountPanel=null;
   const notify=text=>{status.textContent=String(text||'');status.hidden=!text;};
   const assetUrl=path=>config.assetBase+path;
   const loadScene=async r=>{
@@ -108,7 +109,22 @@ export async function mountResearchApplication(config, environment) {
     for(const inner of scope.querySelectorAll('#order-single')){inner.removeAttribute('id');inner.dataset.applicationScene='';}
   }
   const retainsIntroduction=next=>pageRoute?.screen==='onboarding'&&next.screen==='onboarding'&&pageRoute.state.split('-')[0]===next.state.split('-')[0];
-  async function mountPage(next,sequence,{restartQuote=false,introScene=null}={}){
+  async function preparePrice(next){
+    if(priceWorkspace&&!priceWorkspace.snapshot().disposed)return priceWorkspace;
+    priceWorkspace=null;
+    const created=mountResearchPriceWorkspace(pricing,{assetBase:config.assetBase,state:next.state,environment:{...environment,priceWorkspace:{...environment.priceWorkspace,onNotice:message=>{notify(message);environment.priceWorkspace?.onNotice?.(message);}}},signal,
+      onState:state=>{if(!navigating&&!disposed&&route.kind==='pricing'&&state.state&&state.state!==route.state){route=researchRoute({screen:'price-workspace',state:state.state},route);pageRoute=route;updateLocation(true);emit();}}});
+    try{await created.ready;if(disposed)throw Error('RESEARCH_APPLICATION_DISPOSED');priceWorkspace=created;return created;}
+    catch(error){created.dispose();throw error;}
+  }
+  async function mountPage(next,sequence,{restartQuote=false,introScene=null,priceSelected=false}={}){
+    if(next.kind==='pricing'){
+      if(!priceWorkspace)await preparePrice(next);
+      else if(!priceSelected&&await priceWorkspace.select({state:next.state,scenario:fixtureSelecting})===false)return false;
+      if(sequence!==epoch||disposed)return false;
+      clearPage();page.hidden=true;quote.hidden=true;pricing.hidden=false;pricing.dataset.researchSceneConnection='connected';pageRoute=next;return true;
+    }
+    pricing.hidden=true;
     if(QUOTE_ROUTES.has(next.screen)){
       clearPage();page.hidden=true;quote.hidden=false;
       const fixtureScope=!restartQuote&&(reviewSelecting||Boolean(config.inspect&&!pageRoute));
@@ -144,7 +160,11 @@ export async function mountResearchApplication(config, environment) {
     if(!module)notify('이 화면의 동작은 아직 서비스에 연결되지 않았어요.');
   }
   async function navigate(input,{replace=false,history=true,scenario=false,restartQuote=false}={}){
-    const next=researchRoute(input,route), sequence=++epoch;notify('');
+    const requested=typeof input==='string'?{screen:input}:input;
+    // Returning to an existing workspace resumes its own menu and draft. A
+    // review scenario remains an explicit, guarded request for another state.
+    const resumePrice=!scenario&&priceWorkspace&&['price-workspace','pricing-r3'].includes(requested.screen)&&(!requested.state||requested.state==='default');
+    const next=researchRoute(resumePrice?{...requested,state:priceWorkspace.snapshot().state}:requested,route), sequence=++epoch;notify('');
     navigating++;
     const priorFixtureSelecting=fixtureSelecting;fixtureSelecting=scenario;
     try{
@@ -157,12 +177,28 @@ export async function mountResearchApplication(config, environment) {
       catch{if(sequence===epoch&&!disposed)notify('화면을 불러오지 못했어요. 다시 시도해 주세요.');return false;}
       if(sequence!==epoch||disposed)return false;
     }
+    const resetsQuote=next.kind==='quote'&&(restartQuote||scenario||workspace?.mode!==next.mode);
+    if(workspace&&(resetsQuote||(route.kind==='quote'||pageRoute?.kind==='quote')&&!['quote','auth','account','sheet'].includes(next.kind))&&!workspace.canLeave()){if(!history)updateLocation(true);return false;}
+    if(scenario&&priceWorkspace&&(route.kind==='pricing'||pageRoute?.kind==='pricing')&&next.kind!=='pricing'&&priceWorkspace.snapshot().model?.dirty){
+      notify('단가표의 미저장 변경을 먼저 저장하거나 되돌려 주세요. 현재 입력은 유지됩니다.');if(!history)updateLocation(true);return false;
+    }
+    if(priceWorkspace&&(route.kind==='pricing'||pageRoute?.kind==='pricing')&&next.kind!=='pricing'&&!priceWorkspace.canLeave()){
+      notify('단가표의 편집 창이나 저장 작업을 먼저 마쳐 주세요. 현재 입력은 유지됩니다.');if(!history)updateLocation(true);return false;
+    }
+    let priceSelected=false;
+    if(next.kind==='pricing'){
+      const existing=priceWorkspace;
+      try{
+        const prepared=await preparePrice(next);if(sequence!==epoch||disposed)return false;
+        if((existing||prepared.snapshot().state!==next.state)&&await prepared.select({state:next.state,scenario:scenario||!existing})===false){notify('단가표의 미저장 변경을 먼저 저장하거나 되돌려 주세요. 열려 있는 편집 창이나 저장 작업도 마쳐 주세요.');if(!history)updateLocation(true);return false;}
+      }catch{if(!disposed&&sequence===epoch)notify('단가표를 불러오지 못했어요. 현재 화면과 입력은 유지됩니다. 다시 선택해 주세요.');if(!history)updateLocation(true);return false;}
+      if(sequence!==epoch||disposed)return false;
+      priceSelected=true;
+    }
     if(brandMenu?.requestClose&&brandMenu.inspect().phase!=='closed'){
       const accepted=await brandMenu.requestClose({focus:false,immediate:true});
       if(!accepted||sequence!==epoch){if(!history)updateLocation(true);return false;}
     }
-    const resetsQuote=next.kind==='quote'&&(restartQuote||scenario||workspace?.mode!==next.mode);
-    if(workspace&&(resetsQuote||(route.kind==='quote'||pageRoute?.kind==='quote')&&!['quote','auth','account','sheet'].includes(next.kind))&&!workspace.canLeave()){if(!history)updateLocation(true);return false;}
     if(scenario&&environment.configure){await environment.configure(next,adapter,input.fixture);refreshBrand();}
     drawerDispose?.();drawerDispose=null;
     if(['auth','account','sheet'].includes(next.kind)){
@@ -190,7 +226,8 @@ export async function mountResearchApplication(config, environment) {
     }else{
       authSheet?.close?.({immediate:true});brandMenu?.close?.({immediate:true});
       const retained=!scenario&&!restartQuote&&pageRoute&&['screen','state','variant','mode'].every(key=>next[key]===pageRoute[key]);
-      route=next;if(!retained)await mountPage(next,sequence,{restartQuote,introScene});
+      const previousRoute=route;route=next;
+      if(!retained&&await mountPage(next,sequence,{restartQuote,introScene,priceSelected})===false){route=previousRoute;if(!history)updateLocation(true);return false;}
     }
     if(sequence!==epoch||disposed)return false;
     back.hidden=route.screen==='onboarding';header.dataset.appRoute=route.screen;
@@ -215,15 +252,17 @@ export async function mountResearchApplication(config, environment) {
     const anchor=event.target.closest('a[href]');if(!anchor||event.defaultPrevented)return;
     const href=new URL(anchor.href,win.location.href);if(href.origin!==win.location.origin)return;
     const view=href.searchParams.get('view');
-    if(['simple-r3','detailed-r3','product-r3','businesses-r3','roles-r3'].includes(view)){event.preventDefault();navigate({screen:view==='product-r3'?href.searchParams.get('screen'):view==='businesses-r3'?'store-settings':view==='roles-r3'?'role-'+(href.searchParams.get('menu')||'consult'):view,state:href.searchParams.get('state')});}
+    if(['simple-r3','detailed-r3','product-r3','businesses-r3','roles-r3','pricing-r3'].includes(view)){event.preventDefault();navigate({screen:view==='product-r3'?href.searchParams.get('screen'):view==='businesses-r3'?'store-settings':view==='roles-r3'?'role-'+(href.searchParams.get('menu')||'consult'):view,state:href.searchParams.get('state')});}
   },{signal});
   win.addEventListener('popstate',event=>{const p=new URL(win.location.href).searchParams;navigate(event.state?.route||Object.fromEntries(['screen','state','variant','mode'].map(key=>[key,p.get(key)])),{history:false});},{signal});
   const app={instance,build:config.build,services,adapter,repository,navigate,
-    snapshot:()=>({instance,build:config.build,route:{...route},pageRoute:{...pageRoute},quote:workspace?.snapshot?.()||null,environment:environment.kind||'injected',headerOwners:header.querySelectorAll('[data-order-brand-source]').length}),
+    get priceWorkspace(){return priceWorkspace;},
+    snapshot:()=>({instance,build:config.build,route:{...route},pageRoute:{...pageRoute},quote:workspace?.snapshot?.()||null,price:priceWorkspace?.snapshot?.()||null,environment:environment.kind||'injected',headerOwners:header.querySelectorAll('[data-order-brand-source]').length}),
     async inspectRoute(next){reviewSelecting=true;try{return await navigate(next,{replace:true,scenario:true});}finally{reviewSelecting=false;}},
-    dispose(){if(disposed)return;disposed=true;epoch++;controller.abort();observer.disconnect();drawerDispose?.();authSheet?.dispose();brandMenu?.destroy();workspace?.dispose();repository.dispose();clearPage();for(const field of fields.values())field.dispose();fields.clear();headerStyle.remove();releaseRegular();services.dispose();environment.dispose?.();delete root.__researchApplication;}
+    dispose(){if(disposed)return;disposed=true;epoch++;controller.abort();observer.disconnect();drawerDispose?.();authSheet?.dispose();brandMenu?.destroy();workspace?.dispose();priceWorkspace?.dispose();repository.dispose();clearPage();for(const field of fields.values())field.dispose();fields.clear();headerStyle.remove();releaseRegular();services.dispose();environment.dispose?.();delete root.__researchApplication;}
   };
   root.__researchApplication=app;win.ORDER_RESEARCH_APP=app;
   win.addEventListener('pagehide',()=>app.dispose(),{once:true,signal});
-  await navigate(route,{replace:true,scenario:Boolean(config.inspect)});started=true;mountFields();return app;
+  if(await navigate(route,{replace:true,scenario:Boolean(config.inspect)})===false){app.dispose();throw Error('RESEARCH_INITIAL_ROUTE_UNAVAILABLE');}
+  started=true;mountFields();return app;
 }
