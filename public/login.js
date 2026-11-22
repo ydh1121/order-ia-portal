@@ -47,8 +47,15 @@ form.addEventListener('submit',async event=>{
         else target.set('view','qa-lab');
       }
       if(['product-r3','research-r3'].includes(view))for(const name of ['screen','state','componentVariant','mode']){const value=incoming.get(name);if(value&&/^[-\w]{1,100}$/.test(value))target.set(name,value);}
+      if(view==='research-r3'){
+        const build=incoming.get('build'),variant=incoming.get('variant');
+        if(build&&/^[a-f0-9]{64}$/.test(build))target.set('build',build);
+        if(variant&&/^[-\w]{1,100}$/.test(variant))target.set('variant',variant);
+      }
       if(view==='qa-lab'){
         const screen=incoming.get('screen'),width=incoming.get('width');
+        if(incoming.get('mode')==='detailed')target.set('mode','detailed');
+        const preview=incoming.get('preview')||incoming.get('mode');if(['board','dual'].includes(preview))target.set('preview',preview);
         if(screen && /^[\w./:-]{1,200}$/.test(screen))target.set('screen',screen);
         if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))target.set('width',width);
         if(incoming.get('archive')==='1')target.set('archive','1');

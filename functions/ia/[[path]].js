@@ -28,8 +28,15 @@ export async function onRequest({request,env}){
      else next.set('returnView','qa-lab');
    }
    if(['product-r3','research-r3'].includes(r3View))for(const name of ['screen','state','componentVariant','mode']){const value=url.searchParams.get(name);if(value&&/^[-\w]{1,100}$/.test(value))next.set(name,value);}
+   if(r3View==='research-r3'){
+     const build=url.searchParams.get('build'),variant=url.searchParams.get('variant');
+     if(build&&/^[a-f0-9]{64}$/.test(build))next.set('build',build);
+     if(variant&&/^[-\w]{1,100}$/.test(variant))next.set('variant',variant);
+   }
    if(r3View==='qa-lab'){
      const screen=url.searchParams.get('screen'),width=url.searchParams.get('width');
+     if(url.searchParams.get('mode')==='detailed')next.set('mode','detailed');
+     const preview=url.searchParams.get('preview')||url.searchParams.get('mode');if(['board','dual'].includes(preview))next.set('preview',preview);
      if(screen && /^[\w./:-]{1,200}$/.test(screen))next.set('screen',screen);
      if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(width))next.set('width',width);
      if(url.searchParams.get('archive')==='1')next.set('archive','1');

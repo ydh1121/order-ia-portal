@@ -45,9 +45,9 @@ function client(t,{factory=createResearchExportTools,url=origin+'/ia?view=resear
   root.__orderResearchInspector={inspect:()=>({active,pendingRoute,session:{...session}})};
   w.ORDER_RESEARCH_APP={snapshot:()=>({build,instance,route:{...route}})};
   const frame={isConnected:true,inert:false,contentWindow:w,contentDocument:d};
-  const expected={build,artifact,channel,width:390,version:'current',screen:route.screen,state:route.state,variant:route.variant};
+  const expected={build,artifact,channel,width:390,version:'current',screen:route.screen,state:route.state,variant:route.variant,mode:'detailed'};
   const acknowledged={...expected,hash:artifact,application:build};
-  const args={frame,expected,acknowledged,origin,application:{build,url:'/ia?view=research-r3&screen=q2&state=filled&variant=email&mode=simple'}};
+  const args={frame,expected,acknowledged,origin,application:{build,url:'/ia?view=research-r3&screen=q2&state=filled&variant=email&mode=detailed'}};
   const tools=w.eval('('+browserFunction(factory)+')')();
   d.getElementById('phone').value='01012345678';d.getElementById('amount').value='10';
   d.getElementById('checked').checked=true;d.getElementById('unchecked').checked=false;
@@ -78,14 +78,14 @@ test('static export captures the confirmed app DOM, loaded CSS and current contr
 });
 
 test('export rejects missing acknowledgement, origin, route, inspector and build identity before reading input',async t=>{
-  for(const mutate of [h=>h.args.acknowledged.hash='c'.repeat(64),h=>h.args.origin='https://different.invalid',h=>h.route.screen='q3',h=>h.session.channel='different-channel',h=>h.d.documentElement.dataset.productBuild='c'.repeat(64),h=>h.setActive(false),h=>h.setPending({screen:'q3'}),h=>h.args.frame.inert=true]){
+  for(const mutate of [h=>h.args.acknowledged.hash='c'.repeat(64),h=>{delete h.args.acknowledged.mode;},h=>{delete h.session.mode;},h=>h.route.mode='simple',h=>h.args.expected.mode='unknown',h=>h.args.origin='https://different.invalid',h=>h.route.screen='q3',h=>h.session.channel='different-channel',h=>h.d.documentElement.dataset.productBuild='c'.repeat(64),h=>h.setActive(false),h=>h.setPending({screen:'q3'}),h=>h.args.frame.inert=true]){
     const h=client(t);let reads=0;Object.defineProperty(h.d.getElementById('phone'),'value',{get(){reads++;return 'PRIVATE';}});mutate(h);
     await assert.rejects(h.tools.snapshot(h.args),/RESEARCH_EXPORT_/);assert.equal(reads,0);assert.equal(h.network(),0);
   }
 });
 
 test('export refuses a route or application replacement while the downloaded bytes are hashed',async t=>{
-  for(const change of [h=>{h.route.screen='q3';},h=>h.setInstance('replacement')]){
+  for(const change of [h=>{h.route.screen='q3';},h=>{h.route.mode='simple';},h=>h.setInstance('replacement')]){
     const h=client(t);Object.defineProperty(h.w,'crypto',{value:{subtle:{async digest(...args){const result=await webcrypto.subtle.digest(...args);change(h);return result;}}}});
     await assert.rejects(h.tools.snapshot(h.args),/RESEARCH_EXPORT_(?:ROUTE_CHANGED|APPLICATION_CHANGED)/);
   }
@@ -107,6 +107,7 @@ test('execution download is an explicit immutable research build link, without a
   assert.equal(result.sha256,digest(result.html));assert.equal(h.network(),0);
   await assert.rejects(h.tools.link({...h.args,application:{build,url:'https://foreign.invalid/ia?view=research-r3'}}),/APPLICATION_URL/);
   await assert.rejects(h.tools.link({...h.args,application:{build,url:'/ia?view=research-r3&build='+artifact}}),/APPLICATION_URL/);
+  await assert.rejects(h.tools.link({...h.args,application:{build,url:'/ia?view=research-r3&mode=simple'}}),/APPLICATION_URL/);
 });
 
 test('export factory survives Worker keepNames serialization without a module-local closure',async t=>{
@@ -115,17 +116,18 @@ test('export factory survives Worker keepNames serialization without a module-lo
   const h=client(t,{factory:worker.createResearchExportTools}),result=await h.tools.snapshot(h.args);assert.equal(result.sha256,digest(result.html));
 });
 
-async function host(t,{research=true}={}){
-  const row={id:'q2/filled/email',screen:'q2',state:'filled',variant:'email',label:'Q2',stateLabel:'입력',group:'견적',role:'customer',phase:'current',application:research,defaultWidth:390,hashes:{390:artifact}};
-  const dom=new JSDOM(approvedShellBody(),{url:origin+'/ia?view=qa-lab&screen='+row.id+'&width=390',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
+async function host(t,{research=true,mode='simple'}={}){
+  const row={id:'q2/filled/email',screen:'q2',state:'filled',variant:'email',label:'Q2',stateLabel:'입력',group:'견적',role:'customer',phase:'current',application:research,defaultWidth:390,hashes:{390:artifact},...(mode==='detailed'?{mode}:{})};
+  const dom=new JSDOM(approvedShellBody(),{url:origin+'/ia?view=qa-lab&screen='+row.id+'&width=390'+(mode==='detailed'?'&mode=detailed':''),runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
   t.after(()=>w.close());Object.defineProperty(w,'crypto',{value:webcrypto});w.TextEncoder=TextEncoder;w.Blob=Blob;
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});Object.defineProperty(w.document,'scrollingElement',{value:w.document.documentElement});
   w.HTMLElement.prototype.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};w.HTMLAnchorElement.prototype.click=()=>{};
   const downloads=[],writes=[];w.URL.createObjectURL=value=>{downloads.push(value);return 'blob:export';};w.URL.revokeObjectURL=()=>{};
   const frame=w.document.getElementById('frame'),child=client(t),legacy='<!doctype html><html><body>LEGACY_SOURCE<!--R3-FRAME--></body></html>';
+  child.route.mode=mode;if(mode==='detailed')child.session.mode=mode;else delete child.session.mode;
   let context,src='',srcdoc='';Object.defineProperty(frame,'contentWindow',{get:()=>child.w});Object.defineProperty(frame,'contentDocument',{get:()=>child.d});
   child.w.postMessage=()=>{};
-  const ready=(currentChannel,hash)=>queueMicrotask(()=>w.dispatchEvent(new w.MessageEvent('message',{source:child.w,origin:research?origin:'null',data:{scope:'ORDER_R3_FRAME',channel:currentChannel,artifact:hash,type:'ready'}})));
+  const ready=(currentChannel,hash)=>queueMicrotask(()=>w.dispatchEvent(new w.MessageEvent('message',{source:child.w,origin:research?origin:'null',data:{scope:'ORDER_R3_FRAME',channel:currentChannel,artifact:hash,type:'ready',payload:{...(mode==='detailed'?{mode}:{})}}})));
   Object.defineProperty(frame,'src',{get:()=>src,set:value=>{src=value;const query=new URL(value).searchParams;child.session.channel=query.get('channel');ready(child.session.channel,artifact);}});
   Object.defineProperty(frame,'srcdoc',{get:()=>srcdoc,set:value=>{srcdoc=value;const match=value.match(/"channel":"([^"]+)"/);ready(match?.[1],artifact);}});
   w.fetch=async(raw,options={})=>{
@@ -134,7 +136,7 @@ async function host(t,{research=true}={}){
     if(url.pathname==='/api/ia/auth/me')return Response.json({csrf:'fixture',email:'fixture@example.invalid'});
     if(url.pathname==='/api/order/features')return Response.json({orderMenu:false});
     if(url.pathname.endsWith('/navigation'))return Response.json({revision:0,layout:{}});
-    if(url.pathname.endsWith('/artifact'))return Response.json(url.searchParams.has('id')?{hash:artifact,version:'current',html:legacy,file:'legacy.html',editable:'LEGACY_EDITABLE',exportHash:'c'.repeat(64),...(research?{application:{build,url:'/ia?view=research-r3&build='+build+'&screen=q2&state=filled&variant=email'}}:{})}:{items:[row],release:'MSG0585-R3'});
+    if(url.pathname.endsWith('/artifact'))return Response.json(url.searchParams.has('id')?{hash:artifact,version:'current',html:legacy,file:'legacy.html',editable:'LEGACY_EDITABLE',exportHash:'c'.repeat(64),...(mode==='detailed'?{mode}:{}),...(research?{application:{build,url:'/ia?view=research-r3&build='+build+'&screen=q2&state=filled&variant=email&mode='+mode}}:{})}:{items:[row],release:'MSG0585-R3',...(url.searchParams.get('mode')==='detailed'?{mode:'detailed'}:{})});
     if(url.pathname.endsWith('/legacy')||url.pathname.endsWith('/records'))return Response.json({items:[],hasMore:false,nextCursor:0});
     throw Error('Unexpected export host API '+url.pathname);
   };
@@ -153,9 +155,22 @@ test('host downloads confirmed current DOM and audits only the exact file hash; 
   assert.match(html,/01012345678/);assert.doesNotMatch(html,/PRIVATE_HOST_COMMENT|PRIVATE_BUYER_QUOTE|LEGACY_EDITABLE|oldFrame/);
   assert.equal(h.writes[0].data.evidenceRef,'sha256:'+digest(html));assert.deepEqual(Object.keys(h.writes[0].data).sort(),['evidenceRef','status','target']);
   assert.equal(h.writes[0].data.target.artifactHash,artifact);assert.doesNotMatch(JSON.stringify(h.writes),/01012345678|현재 입력한 메모/);
+  assert.equal(Object.hasOwn(h.writes[0].data.target,'mode'),false,'simple audit targets retain their historical shape');
   await d.getElementById('export-runnable').onclick();assert.equal(h.downloads.length,2);const link=await h.downloads[1].text();
   assert.match(link,/연구본 실행 링크/);assert.doesNotMatch(link,/oldFrame|01012345678/);assert.equal(h.writes[1].data.evidenceRef,'sha256:'+digest(link));
   h.child.setPending({screen:'q3'});await d.getElementById('export').onclick();assert.equal(h.downloads.length,2);assert.equal(h.writes.length,2);
+});
+
+test('detailed host exports and audit targets stay in the confirmed mode and reject an in-place mode change',async t=>{
+  const h=await host(t,{mode:'detailed'}),d=h.w.document;
+  await d.getElementById('export').onclick();assert.equal(h.downloads.length,1);
+  const saved=new JSDOM(await h.downloads[0].text());t.after(()=>saved.window.close());
+  const metadata=JSON.parse(saved.window.document.getElementById('order-export-metadata').content.textContent);
+  assert.equal(metadata.route.mode,'detailed');assert.equal(h.writes[0].data.target.mode,'detailed');
+  await d.getElementById('export-runnable').onclick();assert.equal(h.downloads.length,2);
+  const linked=new JSDOM(await h.downloads[1].text());t.after(()=>linked.window.close());
+  assert.equal(new URL(linked.window.document.querySelector('a').href).searchParams.get('mode'),'detailed');assert.equal(h.writes[1].data.target.mode,'detailed');
+  h.child.route.mode='simple';await d.getElementById('export').onclick();assert.equal(h.downloads.length,2);assert.equal(h.writes.length,2);
 });
 
 test('host keeps the existing source snapshot and standalone legacy export behavior',async t=>{

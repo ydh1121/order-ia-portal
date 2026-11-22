@@ -9,11 +9,14 @@ export function installResearchInspector(initialSession,options={}) {
   if(root.__orderResearchInspector){root.__orderResearchInspector.updateSession(initialSession);return root.__orderResearchInspector;}
   if(document.getElementById('r3-veil')||document.getElementById('r3-pins'))return null;
   const token=value=>typeof value==='string'&&/^[a-zA-Z0-9_.-]{1,128}$/.test(value);
+  const validMode=value=>value===undefined||value==='simple'||value==='detailed';
+  const modeOf=value=>value?.mode==='detailed'?'detailed':'simple';
+  const modeFields=value=>modeOf(value)==='detailed'?{mode:'detailed'}:{};
   const normalize=value=>{
     if(!value||typeof value!=='object'||!token(value.channel)||!token(value.screen)||!token(value.state)||!token(value.variant))return null;
     const artifact=value.artifact||value.hash,viewport=value.viewport??value.width??innerWidth,version=value.version||'current';
-    if(!/^[a-f0-9]{64}$/.test(artifact||'')||!Number.isInteger(viewport)||viewport<1||viewport>10000||!['current','recorded'].includes(version))return null;
-    return {channel:value.channel,artifact,screen:value.screen,state:value.state,variant:value.variant,version,viewport};
+    if(!/^[a-f0-9]{64}$/.test(artifact||'')||!Number.isInteger(viewport)||viewport<1||viewport>10000||!['current','recorded'].includes(version)||!validMode(value.mode))return null;
+    return {channel:value.channel,artifact,screen:value.screen,state:value.state,variant:value.variant,version,viewport,...modeFields(value)};
   };
   if(!normalize(initialSession))return null;
   const session={},parentOrigin=location.origin;
@@ -52,7 +55,7 @@ export function installResearchInspector(initialSession,options={}) {
     const now=Date.now();if(now-lastActivity<30000)return;lastActivity=now;send('userActivity');
   }
   for(const type of activityTypes)addEventListener(type,activity,{capture:true,passive:true});
-  const validAnchor=a=>a&&token(a.id)&&a.instance===session.screen&&a.artifactHash===session.artifact&&[a.x,a.y].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1);
+  const validAnchor=a=>a&&token(a.id)&&a.instance===session.screen&&a.artifactHash===session.artifact&&validMode(a.mode)&&modeOf(a)===modeOf(session)&&[a.x,a.y].every(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0&&v<=1);
   // Capture before the released projection/panel listeners. Their parent and
   // identity checks support either iframe origin; this research app also binds
   // messages to the same origin and the exact inspection-only allow-list.
@@ -79,6 +82,29 @@ export function installResearchInspector(initialSession,options={}) {
   }
   function identity(el){while(el&&root.contains(el)){const id=elementIds.get(el);if(id&&anchors.get(id)===el)return id;el=el.parentElement;}return 'screen';}
   function schedule(){if(!frame&&!disposed)frame=requestAnimationFrame(()=>{frame=0;paint();});}
+  const watchedAnimations=new WeakSet(),observedGeometry=new Set();
+  const resizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(schedule):null;
+  function followGeometry(){
+    const elements=new Set([root]);
+    for(const anchor of [...pins.map(pin=>pin.anchor),draftAnchor])if(validAnchor(anchor)){const el=anchors.get(anchor.id);if(el)elements.add(el);}
+    if(resizeObserver){
+      for(const el of observedGeometry)if(!elements.has(el)){resizeObserver.unobserve(el);observedGeometry.delete(el);}
+      for(const el of elements)if(!observedGeometry.has(el)){observedGeometry.add(el);resizeObserver.observe(el);}
+    }
+    if(!pins.length&&!draftAnchor)return;
+    // Web Animations move transformed sheets without DOM mutations, scroll or
+    // resize events. Follow finite motion and repaint once more when it settles.
+    const animations=root.getAnimations?.({subtree:true})||[];
+    for(const animation of animations){
+      const timing=animation.effect?.getComputedTiming?.();
+      if(timing?.iterations===Infinity)continue;
+      if(!watchedAnimations.has(animation)){
+        watchedAnimations.add(animation);
+        animation.finished?.then(schedule,schedule);
+      }
+      if(animation.pending||animation.playState==='running')schedule();
+    }
+  }
   function position(a){
     if(!validAnchor(a))return null;
     const el=anchors.get(a.id);if(!el?.getClientRects().length)return null;
@@ -106,6 +132,7 @@ export function installResearchInspector(initialSession,options={}) {
     }
     const signature=JSON.stringify(missing);if(signature!==previousMissing){previousMissing=signature;send('missing',{ids:missing});}
     const point=position(draftAnchor);if(point){draft.hidden=false;draft.style.left=point.x+'px';draft.style.top=point.y+'px';}
+    followGeometry();
   }
   function setPicking(on){
     picking=Boolean(active&&on);veil.hidden=!picking;
@@ -124,7 +151,7 @@ export function installResearchInspector(initialSession,options={}) {
     if(dirty)index();veil.style.pointerEvents='none';markers.style.visibility='hidden';
     let under;try{under=document.elementFromPoint(x,y);}finally{veil.style.pointerEvents='';markers.style.visibility='';}
     const id=identity(under),el=anchors.get(id),rect=el.getBoundingClientRect(),unit=n=>Math.max(0,Math.min(1,n));
-    const anchor={id,instance:session.screen,x:unit((x-rect.left)/Math.max(1,rect.width)),y:unit((y-rect.top)/Math.max(1,rect.height)),viewport:{width:innerWidth,height:innerHeight},scale:window.visualViewport?.scale||1,scroll:safeScroll(),layers:visibleLayers(),artifactHash:session.artifact};
+    const anchor={id,instance:session.screen,x:unit((x-rect.left)/Math.max(1,rect.width)),y:unit((y-rect.top)/Math.max(1,rect.height)),viewport:{width:innerWidth,height:innerHeight},scale:window.visualViewport?.scale||1,scroll:safeScroll(),layers:visibleLayers(),artifactHash:session.artifact,...modeFields(session)};
     send('point',anchor);
   }
   // Only the annotation veil consumes pointer input while the reviewer is
@@ -161,9 +188,9 @@ export function installResearchInspector(initialSession,options={}) {
   }
   function releaseHelpers(){projection?.dispose();panels?.dispose();projection=null;panels=null;}
   function routeData(value){
-    if(!value||!token(value.screen)||!token(value.state)||!token(value.variant))return null;
-    const route={screen:value.screen,state:value.state,variant:value.variant};
-    for(const key of ['mode','kind','build'])if(token(value[key]))route[key]=value[key];
+    if(!value||!token(value.screen)||!token(value.state)||!token(value.variant)||!validMode(value.mode))return null;
+    const route={screen:value.screen,state:value.state,variant:value.variant,mode:modeOf(value)};
+    for(const key of ['kind','build'])if(token(value[key]))route[key]=value[key];
     if(typeof value.parent==='string'&&/^[a-zA-Z0-9_./-]{1,240}$/.test(value.parent))route.parent=value.parent;
     else if(value.parent&&typeof value.parent==='object'){const p={};for(const key of ['screen','state','variant','mode','kind'])if(token(value.parent[key]))p[key]=value.parent[key];if(Object.keys(p).length)route.parent=p;}
     return route;
@@ -180,15 +207,15 @@ export function installResearchInspector(initialSession,options={}) {
     if(disposed)return false;
     const value=normalize(next);if(!value||document.getElementById('order-single')!==root||!root.isConnected)return false;
     if(next.routeRevision!==undefined&&next.routeRevision!==routeRevision)return false;
-    if(pendingRoute&&['screen','state','variant'].some(key=>pendingRoute[key]!==value[key]))return false;
+    if(pendingRoute&&(['screen','state','variant'].some(key=>pendingRoute[key]!==value[key])||modeOf(pendingRoute)!==modeOf(value)))return false;
     active=false;revision++;cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);releaseHelpers();removeEventListener('message',receive);
-    Object.assign(session,value);pendingRoute=null;pins=[];selection=[];draftAnchor=null;previousMissing='';dirty=true;setPicking(false);
+    delete session.mode;Object.assign(session,value);pendingRoute=null;pins=[];selection=[];draftAnchor=null;previousMissing='';dirty=true;setPicking(false);
     const states=Array.isArray(options.authStates)?options.authStates.slice():[];
     if(['login','signup','otp','password','terms'].includes(session.screen)&&!states.some(entry=>entry?.[0]===session.screen&&entry?.[1]===session.state))states.push([session.screen,session.state]);
     if(typeof options.installPanels==='function')panels=options.installPanels(session,states);
     projection=installPinProjection(session);addEventListener('message',receive);active=true;index();schedule();
     const expected=revision;
-    const ready=()=>{cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);readyFrame=0;readyTimer=0;if(!disposed&&active&&expected===revision)send('ready',{routeRevision,version:session.version});};
+    const ready=()=>{cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);readyFrame=0;readyTimer=0;if(!disposed&&active&&expected===revision)send('ready',{routeRevision,version:session.version,...modeFields(session)});};
     // Hidden evidence frames may not receive animation frames. The app has
     // already completed its module mount before this optional inspector starts.
     readyFrame=requestAnimationFrame(ready);readyTimer=setTimeout(ready,50);
@@ -196,13 +223,18 @@ export function installResearchInspector(initialSession,options={}) {
   }
   function changed(){dirty=true;schedule();}
   const observer=new MutationObserver(changed);observer.observe(root,{childList:true,subtree:true});
+  const geometryEvents=['animationstart','animationend','animationcancel','transitionrun','transitionend','transitioncancel','click','pointerdown','keydown','input','change'];
+  for(const type of geometryEvents)root.addEventListener(type,schedule,true);
+  document.fonts?.ready?.then(schedule,()=>{});document.fonts?.addEventListener('loadingdone',schedule);
   addEventListener('order:research-route',routeChanged);addEventListener('scroll',schedule,true);addEventListener('resize',schedule);
   root.addEventListener('r3-motion-identity-reset',changed);
   function dispose(){
-    if(disposed)return;disposed=true;active=false;revision++;cancelAnimationFrame(frame);cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);observer.disconnect();releaseHelpers();
+    if(disposed)return;disposed=true;active=false;revision++;cancelAnimationFrame(frame);cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);observer.disconnect();resizeObserver?.disconnect();observedGeometry.clear();releaseHelpers();
     removeEventListener('message',gate,true);removeEventListener('message',receive);removeEventListener('keydown',keyEvent,true);removeEventListener('order:research-route',routeChanged);removeEventListener('scroll',schedule,true);removeEventListener('resize',schedule);removeEventListener('pagehide',dispose);
     for(const type of pointerTypes)removeEventListener(type,pointEvent,true);root.removeEventListener('r3-motion-identity-reset',changed);
     for(const type of activityTypes)removeEventListener(type,activity,true);
+    for(const type of geometryEvents)root.removeEventListener(type,schedule,true);
+    document.fonts?.removeEventListener('loadingdone',schedule);
     veil.remove();markers.remove();draft.remove();style.remove();if(root.__orderResearchInspector===api)delete root.__orderResearchInspector;
   }
   const api={updateSession,dispose,inspect:()=>({active,picking,routeRevision,pendingRoute:pendingRoute?{...pendingRoute}:null,session:{...session}})};

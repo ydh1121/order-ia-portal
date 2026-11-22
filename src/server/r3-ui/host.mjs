@@ -35,6 +35,28 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   // while an artifact lookup or message is in flight. Keep the latter until a
   // newer authenticated ready/route proves that the same app adopted its token.
   let researchLive=null,researchPending=null,researchDocumentBuild=null,researchRouteRevision=0;
+  let reviewMode='simple',detailedCatalog=null,detailedCatalogRequest=null;
+  const modeOf=value=>value?.mode==='detailed'?'detailed':'simple';
+  const modeFields=mode=>mode==='detailed'?{mode:'detailed'}:{};
+  const validMode=value=>value===undefined||value==='simple'||value==='detailed';
+  const sameMode=(a,b)=>validMode(a?.mode)&&validMode(b?.mode)&&modeOf(a)===modeOf(b);
+  const atMode=(value,mode)=>({...value,mode});
+  const rowMode=row=>row?.mode||((row?.application)?reviewMode:'simple');
+  const rowHash=(row,width)=>rowMode(row)==='detailed'?detailedCatalog?.get(row.id)?.hashes?.[width]:row.hashes?.[width];
+  const rowView=(row,width)=>({screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:rowHash(row,width),...modeFields(rowMode(row))});
+  function modeUrl(url,mode){
+    const previous=url.searchParams.get('mode');
+    if(['focus','board','dual'].includes(previous)&&!url.searchParams.has('preview'))url.searchParams.set('preview',previous);
+    if(mode==='detailed')url.searchParams.set('mode','detailed');else url.searchParams.delete('mode');return url;
+  }
+  async function loadDetailedCatalog(){
+    if(detailedCatalog)return detailedCatalog;
+    if(!detailedCatalogRequest)detailedCatalogRequest=api(base+'/artifact?mode=detailed').then(result=>{
+      if(result.mode!=='detailed'||!Array.isArray(result.items))throw Error('INVALID_DETAILED_CATALOG');
+      detailedCatalog=new Map(result.items.map(row=>[row.id,row]));return detailedCatalog;
+    }).finally(()=>{detailedCatalogRequest=null;});
+    return detailedCatalogRequest;
+  }
   const researchCandidates=new Map();
   function rememberResearch(value){
     researchCandidates.set(value.channel,value);
@@ -51,9 +73,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     clearTimeout(transitionTimeout);researchPending=null;displayed=null;target=null;artifact=null;session='';frame.inert=false;
     status(message);
   }
-  function historyResearchNotice(row,width,hash){
+  function historyResearchNotice(row,width,hash,mode='simple'){
     status('이력 앱 안에서 이동했습니다. 원래 검토 화면으로 돌아와 위치 의견을 확인해 주세요.');clearTimeout(statusTimer);
-    if(row)$('live').append(document.createTextNode(' '),btn('이력 원화면 다시 열기',()=>{shell?.setActiveMode?.('focus');$('width').value=String(width);return select(row,'recorded',null,hash);}));
+    if(row)$('live').append(document.createTextNode(' '),btn('이력 원화면 다시 열기',()=>{shell?.setActiveMode?.('focus');$('width').value=String(width);return select(atMode(row,mode),'recorded',null,hash);}));
   }
   let returnMode=history.state?.orderReviewMode;
   function restoreOnboardingChoice(){
@@ -136,14 +158,14 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     if(!navigationReady)void loadNavigation();
     refresh().then(()=>status('다시 연결했어요. 작성 중인 의견을 계속 저장할 수 있어요.'));
   });
-  const reviewKey=(v,width)=>[v.screen,v.state,v.variant,width].join('/');
+  const reviewKey=(v,width)=>[v.screen,v.state,v.variant,width].join('/')+(modeOf(v)==='detailed'?'/detailed':'');
   const localKey=(kind,id)=>kind+'/'+id;
   function retainLatestRecord(kind,id,record){
     const key=localKey(kind,id),known=records.get(key);
     if(record?.id===id&&Number.isInteger(record.revision)&&(!known||record.revision>known.revision))records.set(key,record);
     return records.get(key);
   }
-  const match=(t,v,width)=>t&&t.screen===v.screen&&t.state===v.state&&t.variant===v.variant&&t.viewport===width;
+  const match=(t,v,width)=>t&&t.screen===v.screen&&t.state===v.state&&t.variant===v.variant&&t.viewport===width&&modeOf(t)===modeOf(v);
   const announceError=e=>status(e.status===401||e.status===403?'접근 권한을 확인해 주세요.':'불러오지 못했습니다. 다시 시도해 주세요.');
   async function api(url,options={}){
     const r=await fetch(url,{cache:'no-store',credentials:'same-origin',...options});
@@ -179,18 +201,18 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   }
   function showRecords(){const d=new Map();for(const r of records.values()){const t=r.data?.target;if(!t)continue;const k=reviewKey(t,t.viewport);if(!d.has(k))d.set(k,[]);d.get(k).push(r);}return d;}
   function stateInfo(row,width,index){
-    const key=reviewKey(row,width), past=legacy.get(key),live=index.get(key)||[];
-    const reviewed=live.find(r=>r.kind==='review'&&r.data.target.artifactHash===row.hashes?.[width]);
-    const changes=live.filter(r=>r.kind==='change'&&r.data.target.artifactHash===row.hashes?.[width]);
+    const view=rowView(row,width),key=reviewKey(view,width), past=legacy.get(key),live=index.get(key)||[];
+    const reviewed=live.find(r=>r.kind==='review'&&r.data.target.artifactHash===view.artifactHash);
+    const changes=live.filter(r=>r.kind==='change'&&r.data.target.artifactHash===view.artifactHash);
     const hasStatus=(...states)=>changes.some(r=>states.includes(r.data.status));
-    const oldApproval=past?.status==='okay'||live.some(r=>r.kind==='review'&&r.data.decision==='approved'&&r.data.target.artifactHash!==row.hashes?.[width]);
+    const oldApproval=past?.status==='okay'||live.some(r=>r.kind==='review'&&r.data.decision==='approved'&&r.data.target.artifactHash!==view.artifactHash);
     const changed=row.authoredChange||hasStatus('implemented','verified','recheck');
     return {implemented:hasStatus('implemented'),verified:hasStatus('verified'),blocked:hasStatus('blocked'),untouched:hasStatus('not_started'),previous:feedbackFor(row,width).some(item=>item.previous&&item.actionable),changed,approved:reviewed?.data.decision==='approved',unreviewed:!reviewed||reviewed.data.decision==='unreviewed',requested:reviewed?.data.decision==='changes_requested',needs:reviewed?.data.decision==='changes_requested'||(changed||oldApproval)&&!reviewed,unknown:hasStatus('unknown')||(!changes.length&&!row.authoredChange),oldApproval};
   }
   const filters=[['all','▤','전체'],['previous','↶','이전 수정 요청'],['changed','✎','이번 판 수정'],['approved','✓','사용자 통과'],['unreviewed','○','미검토'],['unknown','?','확인 전'],['needs','↻','재검토'],['untouched','…','미착수'],['verified','☑','구현 검증'],['blocked','Ⅱ','보류']];
   function widthFor(row){return Number($('width').value)||(row.defaultWidth>=768?1280:390);}
   const qaLabel=row=>row.screen==='q2'?'Q2 구매량·현재 가격':row.label;
-  function oldReviews(row){return [...legacy.entries()].filter(([key])=>key.slice(0,key.lastIndexOf('/'))===row.id);}
+  function oldReviews(row){return rowMode(row)==='detailed'?[]:[...legacy.entries()].filter(([key])=>key.slice(0,key.lastIndexOf('/'))===row.id);}
   function historyWidth(row){return actionableWidth(row,{previous:true});}
   function resultWidth(row){return filter==='previous'?historyWidth(row)||widthFor(row):widthFor(row);}
   function selectFiltered(row){const w=resultWidth(row);$('width').value=String(w);return select(row);}
@@ -199,7 +221,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const index=showRecords(),q=$('search').value.toLocaleLowerCase().trim();
     return screens.filter(row=>{
       const past=oldReviews(row).map(([,r])=>r);
-      const live=index.get(reviewKey(row,widthFor(row)))||[];
+      const live=index.get(reviewKey(rowView(row,widthFor(row)),widthFor(row)))||[];
       const search=[row.id,row.screen,row.label,row.stateLabel,row.group,...past.flatMap(r=>r.comments||[]).filter(c=>!c.deleted).flatMap(c=>[c.id,c.body]),...live.filter(r=>r.action!=='delete'&&!isTest(r)).flatMap(r=>[r.id,r.data.body,r.data.sourceCommentId,r.data.evidenceRef])].join(' ').toLocaleLowerCase();
       return (!q||search.includes(q))&&(filter==='all'||(filter==='previous'?Boolean(historyWidth(row)):stateInfo(row,widthFor(row),index)[filter]));
     });
@@ -322,7 +344,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   }
   function feedbackFor(row,width){
     if(!reviewAvailable||!row)return [];
-    const view={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:row.hashes?.[width]};
+    const view=rowView(row,width);
     const entries=[],past=legacy.get(reviewKey(view,width));
     for(const c of past?.comments||[]){
       if(c.deleted)continue;
@@ -338,7 +360,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   }
   function feedbackWidths(row){
     const widths=new Set(oldReviews(row).map(([key])=>Number(key.split('/').at(-1))));
-    for(const r of records.values())if(r.data?.target&&match(r.data.target,row,r.data.target.viewport))widths.add(r.data.target.viewport);
+    for(const r of records.values())if(r.data?.target&&match(r.data.target,rowView(row,r.data.target.viewport),r.data.target.viewport))widths.add(r.data.target.viewport);
     return [...widths].filter(Number.isFinite).sort((a,b)=>a-b);
   }
   function actionableWidth(row,{previous=false}={}){
@@ -410,7 +432,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     for(const r of records.values()){
       if(r.kind!=='comment'||r.action==='delete'||!match(r.data.target,view,view.viewport)||(!showTest()&&isTest(r))||!r.data.anchor)continue;
       const a=r.data.anchor,sourceHash=r.data.target.artifactHash;
-      if(a.instance!==view.screen||a.artifactHash!==sourceHash)continue;
+      if(a.instance!==view.screen||a.artifactHash!==sourceHash||modeOf(a)!==modeOf(view))continue;
       pins.push({id:r.id,origin:'current',previous:document?.version!=='current'||sourceHash!==view.artifactHash,
         sourceArtifactHash:sourceHash,sameContent:sourceHash===document?.source?.contentHash,
         anchor:{...a,artifactHash:view.artifactHash},
@@ -438,7 +460,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   function collectPinSource(identity){
     if(window===parent)return;
     let disposed=false,requested=false,quiet=0,deadline=0,observer=null;
-    const sameTarget=value=>value&&['screen','state','variant','viewport','height'].every(key=>value[key]===identity.target[key]);
+    const sameTarget=value=>value&&['screen','state','variant','viewport','height','mode'].every(key=>value[key]===identity.target[key]);
     function dispose(){disposed=true;clearTimeout(quiet);clearTimeout(deadline);observer?.disconnect();removeEventListener('message',receive);removeEventListener('pagehide',dispose);}
     function complete(stable){
       if(disposed)return;
@@ -504,12 +526,12 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const message=event.data;
     if(!request.frame.isConnected){finishPinSource(request);return true;}
     if(request.done||request.epoch!==pinSourceEpoch||event.origin!==(request.source.application?location.origin:'null')||message?.channel!==request.channel||message.artifact!==request.source.hash)return true;
-    if(message.scope==='ORDER_R3_FRAME'&&message.type==='ready'&&!request.snapshotRequested){
+    if(message.scope==='ORDER_R3_FRAME'&&message.type==='ready'&&!request.snapshotRequested&&(!request.source.application||modeOf(message.payload)===modeOf(request.target))){
       request.snapshotRequested=true;
       if(request.source.application)snapshotResearchPinSource(request);
       else request.frame.contentWindow.postMessage({scope:'ORDER_R3_PIN_SOURCE_HOST',type:'snapshot',channel:request.channel,artifact:request.source.hash,target:request.target},'*');
     }else if(!request.source.application&&message.scope==='ORDER_R3_PIN_SOURCE_FRAME'&&message.type==='snapshot'&&request.snapshotRequested&&
-      message.target&&['screen','state','variant','viewport','height'].every(key=>message.target[key]===request.target[key])){
+      message.target&&['screen','state','variant','viewport','height','mode'].every(key=>message.target[key]===request.target[key])){
       finishPinSource(request,validPinSourceSnapshot(message.html)?{mountedHtml:message.html}:{});
     }
     return true;
@@ -520,11 +542,12 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const request=pinSourceQueue.shift();if(request.done||pinSourceRequests.get(request.key)!==request)continue;
       pinSourceActive.add(request);request.timer=setTimeout(()=>finishPinSource(request),8000);
       const query=new URLSearchParams({id:[request.target.screen,request.target.state,request.target.variant].join('/'),width:String(request.target.viewport),version:request.hash==='legacy'?'previous':'recorded'});
+      if(modeOf(request.target)==='detailed')query.set('mode','detailed');
       if(request.hash!=='legacy')query.set('artifactHash',request.hash);
       api(base+'/artifact?'+query,{signal:request.controller.signal}).then(source=>{
         if(request.done||request.epoch!==pinSourceEpoch)return;
         if(source.release!==release||typeof source.html!=='string'||source.html.length>8000000||!/^[a-f0-9]{64}$/.test(source.hash)||
-          (request.hash==='legacy'?source.version!=='previous':source.hash!==request.hash))throw Error('UNKNOWN_PIN_SOURCE');
+          (request.hash==='legacy'?source.version!=='previous':source.hash!==request.hash)||modeOf(source)!==modeOf(request.target))throw Error('UNKNOWN_PIN_SOURCE');
         request.source=source;request.channel=crypto.randomUUID();
         const unit=node('iframe');request.frame=unit;unit.setAttribute('sandbox','allow-scripts');unit.setAttribute('aria-hidden','true');unit.tabIndex=-1;unit.inert=true;
         unit.dataset.pinSourceReference='';unit.style.cssText='position:fixed;left:-20000px;top:0;width:'+request.target.viewport+'px;height:'+request.target.height+'px;visibility:hidden;pointer-events:none;border:0';
@@ -547,7 +570,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       if(pinSourceRequests.has(key)||pinSourceAttempted.has(key))continue;
       if(pinSourceRequests.size>=64)break;
       const recordedHeight=pins.find(pin=>pin.sourceArtifactHash===hash&&Number.isInteger(pin.anchor?.viewport?.height)&&pin.anchor.viewport.height>0&&pin.anchor.viewport.height<=10000)?.anchor.viewport.height;
-      const request={key,hash,target:{screen:view.screen,state:view.state,variant:view.variant,viewport:view.viewport,height:recordedHeight||844},epoch:pinSourceEpoch,controller:new AbortController(),done:false};
+      const request={key,hash,target:{screen:view.screen,state:view.state,variant:view.variant,viewport:view.viewport,height:recordedHeight||844,...modeFields(modeOf(view))},epoch:pinSourceEpoch,controller:new AbortController(),done:false};
       pinSourceAttempted.add(key);pinSourceRequests.set(key,request);pinSourceQueue.push(request);
     }
     pumpPinSources();
@@ -566,7 +589,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   }
   function syncSecondaryPins(item){
     if(!item.frame.isConnected){secondary.delete(item.source);return;}
-    const view={screen:item.row.screen,state:item.row.state,variant:item.row.variant,viewport:item.width,artifactHash:item.hash};
+    const view={screen:item.row.screen,state:item.row.state,variant:item.row.variant,viewport:item.width,artifactHash:item.hash,...modeFields(modeOf(item.artifact))};
     pinsForDisplay(view,item.artifact,(type,payload)=>item.source.postMessage({scope:'ORDER_R3_HOST',channel:item.channel,artifact:item.hash,type,payload},'*'));
   }
   function syncPins(){
@@ -583,7 +606,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     if(!pin)return;
     if(pin.resolvedInArtifact){
       const prior=node('small','이전 판에서 해결됨 · 다시 검토하려면 미해결 또는 재검토를 선택하세요.');prior.dataset.pinPreviousResolution=pin.id;card.append(prior);
-      const original=node('a','해결한 판 열기'),url=sameOriginUrl(location.href);url.searchParams.set('version','recorded');url.searchParams.set('artifactHash',pin.resolvedInArtifact);original.href=url.href;original.dataset.pinResolvedArtifact=pin.resolvedInArtifact;card.append(original);
+      const original=node('a','해결한 판 열기'),url=sameOriginUrl(location.href);url.searchParams.set('version','recorded');url.searchParams.set('artifactHash',pin.resolvedInArtifact);modeUrl(url,modeOf(target));original.href=url.href;original.dataset.pinResolvedArtifact=pin.resolvedInArtifact;card.append(original);
     }
     const state=node('small');state.dataset.pinLocation=pin.id;card.append(state);
     const jump=btn('위치 보기',()=>jumpToPin(pin));jump.dataset.pinJump=pin.id;card.append(jump);
@@ -759,6 +782,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       if(!same && $('version').value==='current'){
         const old=document.createElement('a'), url=sameOriginUrl(location.href);
         url.searchParams.set('version','recorded');url.searchParams.set('artifactHash',r.data.target.artifactHash);
+        modeUrl(url,modeOf(r.data.target));
         old.href=url.href;old.textContent='의견을 남긴 화면 열기';card.append(old);
       }
       if(!same&&$('version').value==='current')card.append(btn('새 판에 위치 연결',()=>edit(null,{id:r.id,body:r.data.body},true)));
@@ -896,7 +920,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     if(researchExportPending)return;
     if(!artifact?.application||!current||!target||!displayed||!researchExports?.[kind]){status('현재 연구 화면이 확인된 뒤 다시 내보내기를 눌러 주세요.');return;}
     const item=artifact,snapshotTarget={...target},acknowledged={...displayed},epoch=generation,channel=session;
-    const expected={build:item.application.build,artifact:item.hash,channel,width:target.viewport,version:item.version,screen:current.screen,state:current.state,variant:current.variant};
+    const expected={build:item.application.build,artifact:item.hash,channel,width:target.viewport,version:item.version,screen:current.screen,state:current.state,variant:current.variant,...modeFields(modeOf(target))};
     researchExportPending=true;
     try{
       const file=await researchExports[kind]({frame,expected,acknowledged,origin:location.origin,application:item.application});
@@ -923,6 +947,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const url=new URL(a.application.url,location.origin);
     if(url.origin!==location.origin||url.pathname!=='/ia'||url.searchParams.get('view')!=='research-r3'||!/^[a-zA-Z0-9_.-]{1,128}$/.test(a.application.build||'')||url.searchParams.has('build')&&url.searchParams.get('build')!==a.application.build)throw Error('INVALID_RESEARCH_APPLICATION_URL');
     for(const [key,value]of Object.entries({inspect:'1',channel,artifact:a.hash,width,build:a.application.build,version:a.version==='current'?'current':'recorded'}))url.searchParams.set(key,String(value));
+    if(!validMode(a.mode)||!validMode(url.searchParams.get('mode')??undefined)||(url.searchParams.get('mode')||'simple')!==modeOf(a))throw Error('INVALID_RESEARCH_APPLICATION_MODE');
+    url.searchParams.set('mode',modeOf(a));
     return url;
   }
   function loadReviewDocument(unit,a,row,channel,width){
@@ -935,6 +961,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let authOriginStep = null, arrivalScreen = null;
   async function select(row,version=$('version').value,originStep=null,pinnedHash=null,appliedState=false,purchaseFixture=null,researchNavigation=null){
     if(!row)return;
+    const requestedMode=row.application?(researchNavigation?.mode??row.mode??reviewMode):'simple';
+    if(!validMode(requestedMode)){status('검토 모드를 확인할 수 없습니다.');return;}
+    remember();reviewMode=requestedMode;row=atMode(row,requestedMode);
     cancelPinSources();
     clearTimeout(transitionTimeout);exitAnimation?.cancel();
     const previous=displayed||researchLive;displayed=null;researchPending=null;
@@ -946,21 +975,24 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const url=sameOriginUrl(location.href);url.searchParams.set('screen',row.id);url.searchParams.set('width',width);
     if(version==='current')url.searchParams.delete('version');else url.searchParams.set('version',version);
     if(pinnedHash)url.searchParams.set('artifactHash',pinnedHash);else url.searchParams.delete('artifactHash');
+    modeUrl(url,requestedMode);
     history.replaceState(null,'',url);
     try{
-      const a=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version+(pinnedHash?'&artifactHash='+encodeURIComponent(pinnedHash):''));
+      if(requestedMode==='detailed'){await loadDetailedCatalog();if(n!==generation)return;}
+      const a=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version+(pinnedHash?'&artifactHash='+encodeURIComponent(pinnedHash):'')+(requestedMode==='detailed'?'&mode=detailed':''));
       if(n!==generation)return;
+      if(!validMode(a.mode)||modeOf(a)!==requestedMode)throw Error('RESEARCH_MODE_MISMATCH');
       if(a.fixture&&purchaseFixture)a.fixture={...a.fixture,data:{purchases:purchaseFixture.purchases},selectedPurchaseId:purchaseFixture.selectedPurchaseId};
       if(version==='recorded'||version!==a.version){version=a.version;$('version').value=version;url.searchParams.set('version',version);history.replaceState(null,'',url);for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=version==='prior-r3';}
-      artifact=a;presentExports();session=crypto.randomUUID();if(version==='current'&&!a.archivedSource){row.hashes??={};row.hashes[width]=a.hash;}
-      target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash};
-      const identity={channel:session,hash:a.hash,width,version:a.version,screen:row.screen,state:row.state,variant:row.variant,motion:$('motion-enabled').checked,runtimeDigest:a.source?.runtimeDigest||null,epoch:a.archivedSource?.epoch||null,application:a.application?.build||null,generation:n};
+      artifact=a;presentExports();session=crypto.randomUUID();if(version==='current'&&!a.archivedSource){const hashRow=requestedMode==='detailed'?detailedCatalog?.get(row.id):screens.find(item=>item.id===row.id)||row;if(hashRow){hashRow.hashes??={};hashRow.hashes[width]=a.hash;}}
+      target={screen:row.screen,state:row.state,variant:row.variant,viewport:width,artifactHash:a.hash,...modeFields(requestedMode)};
+      const identity={channel:session,hash:a.hash,width,version:a.version,screen:row.screen,state:row.state,variant:row.variant,motion:$('motion-enabled').checked,runtimeDigest:a.source?.runtimeDigest||null,epoch:a.archivedSource?.epoch||null,application:a.application?.build||null,generation:n,...modeFields(requestedMode)};
       const documentSwap=()=>{if(n!==generation)return;resetResearch();if(a.application){researchDocumentBuild=a.application.build;rememberResearch(identity);}loadReviewDocument(frame,a,row,session,width);};
       const onboarding=row.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(row.state)&&row.state.split('-')[0]===previous?.state.split('-')[0];
       const component=['login','signup','password','otp','terms'].includes(row.screen)&&row.runtimeFamily!=='snapshot';
       const sameRuntime=previous&&previous.runtimeDigest===(a.source?.runtimeDigest||null)&&previous.epoch===(a.archivedSource?.epoch||null);
       if(a.application&&researchDocumentBuild===a.application.build&&version==='current'&&!pinnedHash){
-        researchPending={generation:n,identity,from:null,payload:{channel:session,artifact:a.hash,hash:a.hash,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:'current',route:{screen:row.screen,state:row.state,variant:row.variant,...(researchNavigation?.mode?{mode:researchNavigation.mode}:{})},fixture:a.fixture||null,acknowledgeOnly:Boolean(researchNavigation),routeRevision:researchNavigation?.routeRevision}};
+        researchPending={generation:n,identity,from:null,payload:{channel:session,artifact:a.hash,hash:a.hash,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:'current',...modeFields(requestedMode),route:{screen:row.screen,state:row.state,variant:row.variant,mode:requestedMode},fixture:a.fixture||null,acknowledgeOnly:Boolean(researchNavigation),routeRevision:researchNavigation?.routeRevision}};
         sendResearchSelection();
         // A missing acknowledgement must not discard a live app's input by
         // silently replacing its document. Leave it available for recovery.
@@ -1031,36 +1063,36 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const item=secondary.get(e.source);
     if(item&&e.origin===(item.artifact.application?location.origin:'null')&&item.frame.isConnected&&m?.scope==='ORDER_R3_FRAME'&&m.channel===item.channel&&m.artifact===item.hash){
       if(item.artifact.application&&m.type==='researchRoute'){
-        if(item.artifact.version!=='current'){historyResearchNotice(item.row,item.width,item.hash);return;}
+        if(item.artifact.version!=='current'){historyResearchNotice(item.row,item.width,item.hash,modeOf(item.artifact));return;}
         const route=m.payload?.route,revision=m.payload?.routeRevision;
-        if(!route||!Number.isSafeInteger(revision)||revision<=0||route.build&&route.build!==item.artifact.application.build)return;
+        if(!route||!validMode(route.mode)||!Number.isSafeInteger(revision)||revision<=0||route.build&&route.build!==item.artifact.application.build)return;
         const row=screens.find(row=>row.application&&row.screen===route.screen&&row.state===route.state&&row.variant===route.variant);
-        if(row){item.frame.inert=true;shell.setActiveMode('focus');$('width').value=String(item.width);select(row,'current');}
+        if(row){item.frame.inert=true;shell.setActiveMode('focus');$('width').value=String(item.width);select(atMode(row,modeOf(route)),'current');}
         return;
       }
       if(m.type==='userActivity'){document.dispatchEvent(new Event('ia-session-activity'));return;}
-      if(m.type==='ready'){setSecondaryPick(item,wantsPoint);syncSecondaryPins(item);return;}
+      if(m.type==='ready'){if(!sameMode(m.payload,item.artifact))return;setSecondaryPick(item,wantsPoint);syncSecondaryPins(item);return;}
       if(m.type==='pinProjectionChanged'){syncSecondaryPins(item);return;}
       if(!wantsPoint&&m.type==='openPins'&&Array.isArray(m.payload?.ids)){
-        const view={screen:item.row.screen,state:item.row.state,variant:item.row.variant,viewport:item.width,artifactHash:item.hash};
+        const view={screen:item.row.screen,state:item.row.state,variant:item.row.variant,viewport:item.width,artifactHash:item.hash,...modeFields(modeOf(item.artifact))};
         const known=new Set(reviewPins(view,item.artifact).map(p=>p.id)),ids=m.payload.ids.filter(id=>known.has(id));
         if(!ids.length)return;
         shell.setActiveMode('focus');$('width').value=String(item.width);
-        select(item.row).then(()=>{if(target?.artifactHash===item.hash)notes(ids);});return;
+        select(atMode(item.row,modeOf(item.artifact))).then(()=>{if(target?.artifactHash===item.hash)notes(ids);});return;
       }
       if(wantsPoint&&m.type==='cancelPick'&&editor){stopPointMode();stage();return;}
-      if(wantsPoint&&m.type==='point'&&editor&&m.payload?.artifactHash===item.hash&&m.payload.instance===item.row.screen){
+      if(wantsPoint&&m.type==='point'&&editor&&m.payload?.artifactHash===item.hash&&m.payload.instance===item.row.screen&&sameMode(m.payload,item.artifact)){
         const a=m.payload;
         if(typeof a.id!=='string'||![a.x,a.y].every(v=>Number.isFinite(v)&&v>=0&&v<=1)||!Array.isArray(a.scroll)||!Array.isArray(a.layers))return;
-        if((editor.revision>0||editor.sourceKey) && (item.row.id!==current.id || item.width!==target.viewport)){
+        if((editor.revision>0||editor.sourceKey) && (item.row.id!==current.id || item.width!==target.viewport||!sameMode(item.artifact,target))){
           status('기존 의견은 같은 화면과 너비에서 위치를 선택해 주세요.');return;
         }
         const saved=editor, keepContinuous=continuousPoints, surface=$('surface');
-        const anchor={id:a.id,instance:a.instance,artifactHash:a.artifactHash,x:a.x,y:a.y,viewport:a.viewport,scale:a.scale,layers:a.layers,
+        const anchor={id:a.id,instance:a.instance,artifactHash:a.artifactHash,x:a.x,y:a.y,viewport:a.viewport,scale:a.scale,layers:a.layers,...modeFields(modeOf(item.artifact)),
           scroll:[...a.scroll.slice(0,22),{id:'host-surface',x:surface.scrollLeft,y:surface.scrollTop},{id:'host-document',x:0,y:0}]};
         send('mode',false);editor=null;wantsPoint=false;
         shell.setActiveMode('focus');$('width').value=String(item.width);
-        select(item.row).then(()=>{if(target?.artifactHash!==item.hash)return;continuousPoints=keepContinuous;saved.anchor=anchor;saved.dirty=true;edit(null,null,false,null,saved);send('mode',false);remember();});
+        select(atMode(item.row,modeOf(item.artifact))).then(()=>{if(target?.artifactHash!==item.hash)return;continuousPoints=keepContinuous;saved.anchor=anchor;saved.dirty=true;edit(null,null,false,null,saved);send('mode',false);remember();});
       }
       return;
     }
@@ -1068,7 +1100,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const known=researchCandidates.get(m.channel);
       if(known&&m.artifact===known.hash){
         if(known.generation<(researchLive?.generation??-1))return;
-        if(m.type==='ready'&&m.payload?.version!==undefined&&m.payload.version!==known.version)return;
+        if(m.type==='ready'&&(!sameMode(m.payload,known)||m.payload?.version!==undefined&&m.payload.version!==known.version))return;
         if(m.type==='ready'||m.type==='researchRoute'){
           researchLive=known;
           for(const [key,value]of researchCandidates)if(value.generation<known.generation)researchCandidates.delete(key);
@@ -1082,9 +1114,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
           const route=m.payload?.route,routeRevision=m.payload?.routeRevision;
           if(known.version!=='current'){
             const row=screens.find(row=>row.screen===known.screen&&row.state===known.state&&row.variant===known.variant);
-            researchFailed();historyResearchNotice(row,known.width,known.hash);return;
+            researchFailed();historyResearchNotice(row,known.width,known.hash,modeOf(known));return;
           }
-          if(!route||!Number.isSafeInteger(routeRevision)||routeRevision<=researchRouteRevision||route.build&&route.build!==known.application)return;
+          if(!route||!validMode(route.mode)||!Number.isSafeInteger(routeRevision)||routeRevision<=researchRouteRevision||route.build&&route.build!==known.application)return;
           const row=screens.find(row=>row.application&&row.screen===route.screen&&row.state===route.state&&row.variant===route.variant);
           if(!row){researchFailed();return;}
           researchRouteRevision=routeRevision;
@@ -1158,7 +1190,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       journeyDraft={basis:d.basis,qty:d.qty,unit:d.unit,price:d.price,unknown:d.unknown};
       select(screens.find(r=>r.id==='quote-review/normal/email'));return;
     }
-    if(m.type==='ready'){clearTimeout(transitionTimeout);frame.inert=false;displayed={channel:session,hash:artifact.hash,width:target.viewport,version:artifact.version,screen:current.screen,state:current.state,variant:current.variant,motion:$('motion-enabled').checked,runtimeDigest:artifact.source?.runtimeDigest||null,epoch:artifact.archivedSource?.epoch||null,application:artifact.application?.build||null};
+    if(m.type==='ready'){if(!sameMode(m.payload,target))return;clearTimeout(transitionTimeout);frame.inert=false;displayed={channel:session,hash:artifact.hash,width:target.viewport,version:artifact.version,screen:current.screen,state:current.state,variant:current.variant,motion:$('motion-enabled').checked,runtimeDigest:artifact.source?.runtimeDigest||null,epoch:artifact.archivedSource?.epoch||null,application:artifact.application?.build||null,...modeFields(modeOf(target))};
       if(artifact.application){syncPins();if(wantsPoint)send('mode',true);return;}
       if(isCurrent&&arrivalScreen===current.id){send('memberArrival',true);arrivalScreen=null;}
       if(isCurrent)restoreOnboardingChoice();
@@ -1169,11 +1201,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       if(input&&journeyDraft)send('journeyDraft',journeyDraft);
       if(isCurrent&&questionScreens.includes(current.screen))send('menuPublication',menuPublished);
       if(notices)send('noticeFixture',fixtureNotices);if(consultation)send('consultationFixture',consultationFixture);syncPins();if(wantsPoint)send('mode',true);return;}
-    if(m.type==='point'&&wantsPoint&&editor&&m.payload?.artifactHash===artifact.hash&&m.payload.instance===target.screen){
+    if(m.type==='point'&&wantsPoint&&editor&&m.payload?.artifactHash===artifact.hash&&m.payload.instance===target.screen&&sameMode(m.payload,target)){
       const {id,instance,x,y,viewport,scale,scroll,layers,artifactHash}=m.payload;
       if(typeof id!=='string'||!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>1||y<0||y>1||!Array.isArray(scroll)||!Array.isArray(layers))return;
       const track=(id,el)=>({id,x:Math.max(0,el.scrollLeft),y:Math.max(0,el.scrollTop)});
-      editor.anchor={id,instance,x,y,viewport,scale,layers,artifactHash,scroll:[...scroll.slice(0,22),track('host-surface',$('surface')),track('host-document',document.scrollingElement)]};editor.dirty=true;remember();$('point-state').textContent='위치 지정됨';stage();}
+      editor.anchor={id,instance,x,y,viewport,scale,layers,artifactHash,...modeFields(modeOf(target)),scroll:[...scroll.slice(0,22),track('host-surface',$('surface')),track('host-document',document.scrollingElement)]};editor.dirty=true;remember();$('point-state').textContent='위치 지정됨';stage();}
     if(m.type==='cancelPick'&&editor){stopPointMode();stage();}
     if(m.type==='openPins'&&Array.isArray(m.payload?.ids))notes(m.payload.ids);
     if(m.type==='missing'&&Array.isArray(m.payload?.ids)){missing=new Set(m.payload.ids);updatePinLocations();}
@@ -1356,20 +1388,26 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   shell=bootShell({
     snapshot:()=>({screens,current,records,legacy,navigation,navigationPending,navigationReady}),saveNavigation,select,notes,close:hideDrawer,width:widthFor,isTest,label:qaLabel,feedbackFor,feedbackCounts,
     leaveEditor:()=>{remember();editor=null;},info:(r,w)=>stateInfo(r,w,showRecords()),
-    liveFor:(r,w)=>showRecords().get(reviewKey(r,w))||[],
+    liveFor:(r,w)=>showRecords().get(reviewKey(rowView(r,w),w))||[],
     loadPreview:async(row,width,unit,board)=>{
-      const version=$('version').value, j=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version);
+      const mode=rowMode(row),version=$('version').value;
+      if(mode==='detailed')await loadDetailedCatalog();
+      const j=await api(base+'/artifact?id='+encodeURIComponent(row.id)+'&width='+width+'&version='+version+(mode==='detailed'?'&mode=detailed':''));
       if(!unit.isConnected)return;
+      if(!validMode(j.mode)||modeOf(j)!==mode)throw Error('RESEARCH_MODE_MISMATCH');
       for(const [source,stale] of secondary)if(!stale.frame.isConnected)secondary.delete(source);
       const channel=crypto.randomUUID();
       loadReviewDocument(unit,board&&!j.qaRuntime&&!j.application?{...j,mount:null}:j,row,channel,width);
-      const source=unit.contentWindow;secondary.set(source,{source,frame:unit,channel,hash:j.hash,row,width,board,artifact:j});
+      const source=unit.contentWindow;secondary.set(source,{source,frame:unit,channel,hash:j.hash,row:atMode(row,mode),width,board,artifact:j});
     }
   });
   for(const b of document.querySelectorAll('[data-review]'))b.onclick=async()=>{if(!target||$('version').value!=='current')return;const val=b.dataset.review,id='verdict/'+reviewKey(target,target.viewport)+'/'+target.artifactHash;const currentReview=records.get(localKey('review',id));if(await write('review',id,{target,decision:val},currentReview?.revision??0))notes();};
   (async()=>{try{
     const [me,a]=await Promise.all([api('/api/ia/auth/me'),api(base+'/artifact')]);csrf=me.csrf;document.dispatchEvent(new CustomEvent('ia-session-ready',{detail:me}));screens=a.items;publication=a.publication||null;navigation={revision:0,layout:a.navigationDefaults};await Promise.all([loadDrafts(me.email),loadNavigation()]);
     const u=new URL(location.href);if(['320','360','375','390','430','768','1024','1280','1440','1920'].includes(u.searchParams.get('width')))$('width').value=u.searchParams.get('width');
+    const requestedMode=u.searchParams.get('mode')??undefined;
+    if(!validMode(requestedMode)&&!['focus','board','dual'].includes(requestedMode))throw Error('INVALID_REVIEW_MODE');
+    reviewMode=requestedMode==='detailed'?'detailed':'simple';
     const requested=u.searchParams.get('version');
     if(['previous','prior-r3'].includes(requested))$('version').value=requested;
     const pinned=u.searchParams.get('artifactHash');

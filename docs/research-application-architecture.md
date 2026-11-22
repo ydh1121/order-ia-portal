@@ -65,11 +65,11 @@ QA랩의 프레임은 `research-r3` 앱 URL을 연다. 앱 내부에서 정규 �
 
 `release-store.mjs`는 압축 bytes 길이·SHA256, source digest, row index, 허용 자산 경로를 검증한다. 저장한 빌드나 자산이 없으면 최신 것으로 대체하지 않는다. HTML 재생 시 바꾸는 것은 nonce와 검증된 route/inspection 설정이다. `current` 검사 표시는 서버가 확인한 현재 digest에만 허용한다.
 
-검토 target hash는 `['order-research-application/v1', build, row.id, width]`에 결속된다. 기록판은 저장 당시 build를 연다. 압축 pack의 공개 URL은 404이며 인증된 Pages Function이 내부 `env.ASSETS` binding으로만 읽는다. 이력 조회가 기존 의견의 처리 상태나 사용자 판정을 바꾸지는 않는다.
+간편 견적과 mode가 없는 과거 검토 target hash는 기존 `['order-research-application/v1', build, row.id, width]`를 유지한다. 상세 검토만 이 배열 끝에 `'detailed'`를 추가하고 target·artifact·inspection에 `mode: 'detailed'`를 기록한다. 기록판 URL·실제 앱 시작 모드·검토 해시는 서로 일치해야 한다. 모드가 없는 과거 기록을 상세라고 추정하거나 수정하지 않는다. 기록판은 저장 당시 build를 연다. 압축 pack의 공개 URL은 404이며 인증된 Pages Function이 내부 `env.ASSETS` binding으로만 읽는다. 이력 조회가 기존 의견의 처리 상태나 사용자 판정을 바꾸지는 않는다.
 
 ## 화면 파일과 실행 링크
 
-연구 앱의 `현재 화면 HTML`은 호스트가 승인한 frame session·build·target hash·route·viewport와 현재 앱의 inspector를 대조한 뒤 `#order-single`을 복제한다. 같은 출처의 읽을 수 있는 CSS 규칙과 현재 입력·선택 상태를 담고, 네트워크 연결·스크립트·폼 제출·QA 표시를 제거한다. 비밀번호·인증 토큰·숨김 입력·선택한 파일 정보는 저장하지 않는다. 사용자에게 다운로드한 실제 HTML bytes의 SHA256과 검토 target만 감사 기록에 남긴다. 입력값이나 호스트의 코멘트·별도 구매 견적은 자동 전송하지 않는다.
+연구 앱의 `현재 화면 HTML`은 호스트가 승인한 frame session·build·target hash·route·mode·viewport와 현재 앱의 inspector를 대조한 뒤 `#order-single`을 복제한다. 같은 출처의 읽을 수 있는 CSS 규칙과 현재 입력·선택 상태를 담고, 네트워크 연결·스크립트·폼 제출·QA 표시를 제거한다. 비밀번호·인증 토큰·숨김 입력·선택한 파일 정보는 저장하지 않는다. 사용자에게 다운로드한 실제 HTML bytes의 SHA256과 검토 target만 감사 기록에 남긴다. 입력값이나 호스트의 코멘트·별도 구매 견적은 자동 전송하지 않는다.
 
 `연구본 실행 링크`는 검토한 불변 build URL을 여는 HTML이다. 인터넷 연결과 접근 권한이 필요하다고 표시하며, 오프라인 실행 파일로 설명하지 않는다. 기존 개별 source의 내보내기는 기존 경로를 유지한다. `research-export-snapshot.test.mjs`는 저장 파일을 다시 파싱하고 실제 host 분기·비밀값 제거·해시·Worker 직렬화·기존 export 회귀를 검사한다.
 

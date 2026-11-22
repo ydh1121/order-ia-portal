@@ -12,6 +12,7 @@ import {onRequest} from '../functions/ia/[[path]].js';
 import {qaFixtureForRow} from '../src/server/r3-qa-review-runtime.mjs';
 import {researchBuild,researchScene} from '../src/server/research-app/page.mjs';
 import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const origin='https://order-ia-portal.pages.dev',endpoint=origin+'/api/ia/r3-qa/artifact';
@@ -127,6 +128,7 @@ test('the default route and bookmark retain R1 review controls while the current
  let labTouches=0;
  const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'qa-shell-test@example.invalid',
   IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(24).toString('base64url')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),
+  ASSETS:createPrivateResearchAssets(),
   ORDER_LAB_DB:{prepare(){labTouches++;throw Error('Default QA must not create a database workspace');}}};
  const session=await issueSession(env);
  for(const path of ['/ia?view=qa-lab','/ia?view=qa-lab&screen=store-purchase/card/email']){

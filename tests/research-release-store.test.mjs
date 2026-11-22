@@ -127,12 +127,12 @@ test('recorded targets bind row, width and build and archived rendering changes 
   assert.equal(await f.store.findTarget({rowId:id,width:430,hash:artifact}),null);assert.equal(await f.store.findTarget({rowId:'q2/missing/email',width,hash:artifact}),null);
   assert.equal(await f.store.artifactHash(build,id,391),null);
   const release=await f.store.read(build,f.env,'https://order.example'),nonce='a'.repeat(36),channel='12345678-1234-1234-1234-123456789abc';
-  const parameters=new URLSearchParams({screen:'q2',state:'filled',variant:'email',mode:'detailed',inspect:'1',channel,artifact,width:String(width)});
+  const parameters=new URLSearchParams({screen:'q2',state:'filled',variant:'email',mode:'simple',inspect:'1',channel,artifact,width:String(width)});
   const html=await renderResearchReleaseApplication(release,nonce,parameters);
   assert.equal(html.includes('nonce="'+RESEARCH_RELEASE_NONCE+'"'),false);assert.equal(html.match(new RegExp('nonce="'+nonce+'"','g')).length,2);
   assert.ok(html.includes('window.release="first";'));assert.ok(html.includes('/ia/research-assets/'+build+'/research/application.mjs'));
   const config=JSON.parse(/id="order-app-config">([\s\S]*?)<\/script>/.exec(html)[1]);
-  assert.equal(config.initial.screen,'q2');assert.equal(config.initial.mode,'detailed');assert.equal(config.inspection.version,'recorded');assert.equal(config.inspection.artifact,artifact);
+  assert.equal(config.initial.screen,'q2');assert.equal(config.initial.mode,'simple');assert.equal(config.inspection.version,'recorded');assert.equal(config.inspection.artifact,artifact);assert.equal(Object.hasOwn(config.inspection,'mode'),false);
   parameters.set('version','current');
   assert.equal(configFrom(await renderResearchReleaseApplication(release,nonce,parameters)).inspection.version,'recorded','an untrusted URL cannot relabel an archived release');
   assert.equal(configFrom(await renderResearchReleaseApplication(release,nonce,parameters,{inspectionVersion:'current',currentBuild:build})).inspection.version,'current');
@@ -142,6 +142,32 @@ test('recorded targets bind row, width and build and archived rendering changes 
   parameters.set('artifact','0'.repeat(64));await assert.rejects(renderResearchReleaseApplication(release,nonce,parameters),/INVALID_RESEARCH_INSPECTION/);
   parameters.delete('inspect');parameters.set('state','unknown');await assert.rejects(renderResearchReleaseApplication(release,nonce,parameters),/ROUTE_NOT_FOUND/);
   await assert.rejects(renderResearchReleaseApplication(release,'"><script>bad</script>'),/NONCE_INVALID/);
+});
+
+test('simple historical hashes remain exact while detailed mode is explicit in target lookup and sealed inspection',async()=>{
+  const original=pack(),build=original.build.digest,id='q2/filled/email',width=390,nonce='a'.repeat(36),channel='12345678-1234-1234-1234-123456789abc';
+  for(const rowsFormat of [null,RESEARCH_RELEASE_ROW_IDENTITIES]){
+    const f=fixture(original);f.index[build]=encodeResearchRelease(original,{rowsFormat}).entry;
+    const simple=await f.store.artifactHash(build,id,width),detailed=await f.store.artifactHash(build,id,width,'detailed');
+    assert.equal(simple,hash(JSON.stringify(['order-research-application/v1',build,id,width])));
+    assert.equal(simple,await f.store.artifactHash(build,id,width,'simple'));assert.notEqual(detailed,simple);
+    assert.equal(detailed,hash(JSON.stringify(['order-research-application/v1',build,id,width,'detailed'])));
+    const legacy=await f.store.findTarget({rowId:id,width,hash:simple});assert.equal(Object.hasOwn(legacy,'mode'),false);
+    assert.equal(await f.store.findTarget({rowId:id,width,hash:detailed}),null,'absence never reverse-infers detailed mode');
+    assert.equal(await f.store.findTarget({rowId:id,width,hash:simple,mode:'detailed'}),null);
+    assert.equal((await f.store.findTarget({rowId:id,width,hash:detailed,mode:'detailed'})).mode,'detailed');
+    for(const mode of ['',null,'unknown']){
+      await assert.rejects(f.store.artifactHash(build,id,width,mode),/INVALID_RESEARCH_MODE/);
+      await assert.rejects(f.store.findTarget({rowId:id,width,hash:simple,mode}),/INVALID_RESEARCH_MODE/);
+    }
+    const release=await f.store.read(build,f.env,'https://order.example'),parameters=new URLSearchParams({screen:'q2',state:'filled',variant:'email',inspect:'1',channel,artifact:simple,width:String(width)});
+    const old=configFrom(await renderResearchReleaseApplication(release,nonce,parameters));assert.equal(old.initial.mode,'simple');assert.equal(Object.hasOwn(old.inspection,'mode'),false);
+    parameters.set('mode','detailed');await assert.rejects(renderResearchReleaseApplication(release,nonce,parameters),/INVALID_RESEARCH_INSPECTION/);
+    parameters.set('artifact',detailed);const current=configFrom(await renderResearchReleaseApplication(release,nonce,parameters));assert.equal(current.initial.mode,'detailed');assert.equal(current.inspection.mode,'detailed');
+    parameters.delete('mode');await assert.rejects(renderResearchReleaseApplication(release,nonce,parameters),/INVALID_RESEARCH_INSPECTION/);
+    parameters.set('mode','invalid');await assert.rejects(renderResearchReleaseApplication(release,nonce,parameters),/INVALID_RESEARCH_MODE/);
+    assert.deepEqual(release.rows,original.rows,'mode identity never rewrites a historical row or pack');
+  }
 });
 
 test('sealing is append-only, reproducible, read-only in check mode and detects damaged old packs',async()=>{
@@ -207,19 +233,26 @@ test('current Worker assets, page and HTML exports use the same sealed Node byte
       const direct=new URLSearchParams(input),rawInitial=configFrom(await source.renderResearchApplication(nonce,direct)).initial,sealedInitial=configFrom(await worker.renderResearchApplication(nonce,direct,f.env,'https://worker.example')).initial;
       for(const key of ['screen','state','variant','mode'])assert.equal(sealedInitial[key],rawInitial[key],'current route defaults remain available after sealing: '+key);
     }
-    const selected=rows.find(value=>value.id==='q2/filled/email'),artifact=await worker.researchArtifactHash(selected,390);
+    const selected=rows.find(value=>value.id==='q2/filled/email'),artifact=await worker.researchArtifactHash(selected,390,'detailed');
     parameters.set('inspect','1');parameters.set('channel','12345678-1234-1234-1234-123456789abc');parameters.set('artifact',artifact);parameters.set('width','390');
-    assert.equal(configFrom(await worker.renderResearchApplication(nonce,parameters,f.env,'https://worker.example')).inspection.version,'current');
+    const currentInspection=configFrom(await worker.renderResearchApplication(nonce,parameters,f.env,'https://worker.example')).inspection;
+    assert.equal(currentInspection.version,'current');assert.equal(currentInspection.mode,'detailed');
     parameters.set('build',current.digest);parameters.set('version','recorded');
     assert.equal(configFrom(await worker.renderResearchApplication(nonce,parameters,f.env,'https://worker.example')).inspection.version,'recorded');
     parameters.set('artifact','0'.repeat(64));await assert.rejects(worker.renderResearchApplication(nonce,parameters,f.env,'https://worker.example'),/INVALID_RESEARCH_INSPECTION/);
     parameters.set('build',previous.build.digest);parameters.set('version','current');
-    parameters.set('artifact',await f.store.artifactHash(previous.build.digest,selected.id,390));
+    parameters.set('artifact',await f.store.artifactHash(previous.build.digest,selected.id,390,'detailed'));
     assert.equal(configFrom(await worker.renderResearchApplication(nonce,parameters,f.env,'https://worker.example')).inspection.version,'recorded');
-    const archived=await worker.archivedResearchArtifact(selected.id,390,parameters.get('artifact'),f.env,'https://worker.example');
+    assert.equal(await worker.archivedResearchArtifact(selected.id,390,parameters.get('artifact'),f.env,'https://worker.example'),null);
+    const archived=await worker.archivedResearchArtifact(selected.id,390,parameters.get('artifact'),f.env,'https://worker.example','detailed');
     assert.equal(archived.application.build,previous.build.digest);assert.equal(archived.version,'recorded');assert.equal(archived.hash,parameters.get('artifact'));
     assert.equal(configFrom(archived.html).initial.screen,'q2','the actual archived artifact route needs only compact index identity');
+    assert.equal(configFrom(archived.html).initial.mode,'detailed');assert.equal(archived.mode,'detailed');assert.equal(new URL(archived.application.url,'https://worker.example').searchParams.get('mode'),'detailed');
+    const detailedExport=await worker.researchArtifact(selected,390,f.env,'https://worker.example','detailed');
+    assert.equal(detailedExport.mode,'detailed');assert.equal(detailedExport.hash,artifact);assert.equal(configFrom(detailedExport.html).initial.mode,'detailed');
+    assert.equal(new URL(detailedExport.application.url,'https://worker.example').searchParams.get('mode'),'detailed');
     const exported=await worker.researchArtifact(selected,390,f.env,'https://worker.example'),exportParameters=new URL(exported.application.url,'https://worker.example').searchParams;
+    assert.equal(Object.hasOwn(exported,'mode'),false);assert.notEqual(exported.hash,detailedExport.hash);
     assert.equal(exported.html,await renderResearchReleaseApplication(original,'0123456789abcdef0123456789abcdef',exportParameters));
     assert.ok(exported.editable.includes('<!-- sealed-node-shell -->'));assert.equal(exported.exportHash,hash(exported.editable));
   }finally{await rm(directory,{recursive:true,force:true});}
@@ -228,13 +261,17 @@ test('current Worker assets, page and HTML exports use the same sealed Node byte
 test('the unsealed current renderer binds inspection channel, exact catalog row, approved width and artifact hash',async()=>{
   const page=await import('../src/server/research-app/page.mjs'),nonce='b'.repeat(36),selected=(await page.listResearchRows()).find(value=>value.id==='q2/filled/email');
   assert.ok(selected);
-  const parameters=new URLSearchParams({screen:selected.screen,state:selected.state,variant:selected.variant,mode:'detailed',inspect:'1',channel:'12345678-1234-1234-1234-123456789abc',width:'390',artifact:await page.researchArtifactHash(selected,390)});
-  assert.equal(configFrom(await page.renderResearchApplication(nonce,parameters)).inspection.version,'current');
+  const parameters=new URLSearchParams({screen:selected.screen,state:selected.state,variant:selected.variant,mode:'detailed',inspect:'1',channel:'12345678-1234-1234-1234-123456789abc',width:'390',artifact:await page.researchArtifactHash(selected,390,'detailed')});
+  const inspection=configFrom(await page.renderResearchApplication(nonce,parameters)).inspection;assert.equal(inspection.version,'current');assert.equal(inspection.mode,'detailed');
   for(const [key,value]of [['channel','a'.repeat(36)],['artifact','0'.repeat(64)],['width','430']]){
     const invalid=new URLSearchParams(parameters);invalid.set(key,value);await assert.rejects(page.renderResearchApplication(nonce,invalid),/INVALID_RESEARCH_INSPECTION/,key);
   }
-  const width=new URLSearchParams(parameters);width.set('width','391');width.set('artifact',await page.researchArtifactHash(selected,391));
+  const wrongMode=new URLSearchParams(parameters);wrongMode.set('mode','simple');await assert.rejects(page.renderResearchApplication(nonce,wrongMode),/INVALID_RESEARCH_INSPECTION/);
+  wrongMode.delete('mode');await assert.rejects(page.renderResearchApplication(nonce,wrongMode),/INVALID_RESEARCH_INSPECTION/);
+  wrongMode.set('artifact',await page.researchArtifactHash(selected,390));assert.equal(Object.hasOwn(configFrom(await page.renderResearchApplication(nonce,wrongMode)).inspection,'mode'),false);
+  wrongMode.set('mode','unknown');await assert.rejects(page.renderResearchApplication(nonce,wrongMode),/INVALID_RESEARCH_MODE/);
+  const width=new URLSearchParams(parameters);width.set('width','391');width.set('artifact',await page.researchArtifactHash(selected,391,'detailed'));
   await assert.rejects(page.renderResearchApplication(nonce,width),/INVALID_RESEARCH_INSPECTION/);
-  const route=new URLSearchParams(parameters);route.set('state','not-in-catalog');route.set('artifact',await page.researchArtifactHash({...selected,id:'q2/not-in-catalog/email'},390));
+  const route=new URLSearchParams(parameters);route.set('state','not-in-catalog');route.set('artifact',await page.researchArtifactHash({...selected,id:'q2/not-in-catalog/email'},390,'detailed'));
   await assert.rejects(page.renderResearchApplication(nonce,route),/INVALID_RESEARCH_INSPECTION/);
 });

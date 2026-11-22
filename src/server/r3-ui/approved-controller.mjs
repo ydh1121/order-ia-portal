@@ -17,7 +17,8 @@ export function bootApprovedShell(h) {
   };
   const stage = byId('surface'), preview = byId('preview-list'), focus = byId('focus-unit');
   const query = new URL(location.href).searchParams;
-  let role = 'all', mode = ['board','dual'].includes(query.get('mode')) ? query.get('mode') : 'focus';
+  const previewMode=query.get('preview')||query.get('mode');
+  let role = 'all', mode = ['board','dual'].includes(previewMode) ? previewMode : 'focus';
   const expandedGroups = {mvp:true,future:false};
   const mvpSections=[
     ['첫 화면·견적',['onboarding','q1','q2','q3','q4','quote-review','quote-wait','quote-result','saved-quote']],
@@ -82,7 +83,8 @@ export function bootApprovedShell(h) {
   function setMode(name) {
     if (name === mode) return;
     mode = name;
-    const url = new URL(location.href); url.searchParams.set('mode',name);
+    const url = new URL(location.href); url.searchParams.set('preview',name);
+    if(['focus','board','dual'].includes(url.searchParams.get('mode')))url.searchParams.delete('mode');
     history.replaceState(null,'',url);
     renderKey = '';
     const {current} = h.snapshot();
@@ -230,7 +232,7 @@ export function bootApprovedShell(h) {
   }
   function views(row,rows,width) {
     const version=byId('version').value;
-    const key=[row.id,width,version,mode,mobileWidth,pcWidth].join('|');
+    const key=[row.id,width,version,mode,row.mode||'simple',mobileWidth,pcWidth].join('|');
     if (renderKey===key) return;
     renderKey=key; const epoch=++previewEpoch;
     for (const old of all('.preview-unit',preview)) if (old!==focus) old.remove();
@@ -272,6 +274,7 @@ export function bootApprovedShell(h) {
     const wrap=byId('other-width-history'),s=h.snapshot();
     if(!wrap||!s.current) return;
     wrap.replaceChildren();
+    if(s.current.mode==='detailed')return;
     for (const key of s.legacy.keys()) {
       const cut=key.lastIndexOf('/'), other=Number(key.slice(cut+1));
       if(key.slice(0,cut)!==s.current.id || other===h.width(s.current))continue;

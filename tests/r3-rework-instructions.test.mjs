@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import {randomBytes} from 'node:crypto';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {deriveVerifier,issueSession} from '../src/server/owner-session.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const db=new DatabaseSync(':memory:');
 for(const name of ['0001_r3_qa.sql','0013_owner_session_revocations.sql'])db.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
@@ -12,7 +13,7 @@ const binding={prepare(sql){return {bind(...args){const s=db.prepare(sql);return
   first:async()=>s.get(...args),all:async()=>({results:s.all(...args)}),run:async()=>({meta:s.run(...args)})};}};}};
 const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@example.invalid',
   IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(18).toString('hex')),
-  IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),ORDER_QA_DB:binding};
+  IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),ORDER_QA_DB:binding,ASSETS:createPrivateResearchAssets()};
 const origin='https://order-ia-portal.pages.dev',base=origin+'/api/ia/r3-qa',release='MSG0585-R3';
 const session=await issueSession(env),cookie=session.cookie.split(';')[0];
 const read=path=>handleIaRequest(new Request(base+path,{headers:{Cookie:cookie}}),env);

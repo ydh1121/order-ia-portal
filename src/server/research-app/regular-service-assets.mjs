@@ -1,4 +1,5 @@
 import {quoteCommit, quoteFiles, quoteSourceHashes} from '../r3-product-sources.mjs';
+import {REGULAR_IANA_REFERENCE_PROVENANCE} from './regular-iana-reference.mjs';
 
 export const REGULAR_RESEARCH_PREFIX = '/ia/research-assets/';
 const CONTACT_PATH = 'web/contact-ui.mjs';
@@ -27,6 +28,7 @@ export function regularServiceSourceIdentity() {
   return identityPromise ??= Promise.all(SOURCES.map(async path => ({path,
     originalSha256: quoteSourceHashes[path], servedSealedSha256: await sha256(await sealedText(path))
   }))).then(sources => ({repository: 'ydh1121/order', commit: quoteCommit, sources,
+    ianaReference: REGULAR_IANA_REFERENCE_PROVENANCE,
     contactAdaptation: 'Scoped environment and lifecycle only; sealed contact source includes its existing IANA URL substitution.',
     ownershipVerified: false, mailboxVerified: false}));
 }

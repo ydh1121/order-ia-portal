@@ -7,6 +7,7 @@ import {handleIaRequest} from '../src/server/router.mjs';
 import {deriveVerifier,issueSession} from '../src/server/owner-session.mjs';
 import {onRequest as page} from '../functions/ia/[[path]].js';
 import {v03OwnerHtml} from '../src/server/v03-owner-template.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const origin='https://order-ia-portal.pages.dev';
 const base=origin+'/api/ia/r3-qa';
@@ -15,7 +16,7 @@ db.exec(readFileSync(new URL('../migrations/0001_r3_qa.sql',import.meta.url),'ut
 db.exec(readFileSync(new URL('../migrations/0013_owner_session_revocations.sql',import.meta.url),'utf8'));
 const binding={prepare(sql){return {bind(...args){const st=db.prepare(sql);return {
   first:async()=>st.get(...args),all:async()=>({results:st.all(...args)}),run:async()=>({meta:st.run(...args)})};}};}};
-const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(18).toString('hex')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),ORDER_QA_DB:binding};
+const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(randomBytes(18).toString('hex')),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),ORDER_QA_DB:binding,ASSETS:createPrivateResearchAssets()};
 const session=await issueSession(env),cookie=session.cookie.split(';')[0];
 const artifact=await handleIaRequest(new Request(base+'/artifact?id=login%2Fempty%2Femail&version=current&width=390',{headers:{Cookie:cookie}}),env);
 const verified=await artifact.json();

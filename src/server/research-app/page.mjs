@@ -11,6 +11,7 @@ import {browserFunction} from '../browser-source.mjs';
 import {r3ProductAsset} from '../r3-product-page.mjs';
 import {quoteFiles} from '../r3-product-sources.mjs';
 import {regularContactModuleSource,regularServiceSourceIdentity} from './regular-service-assets.mjs';
+import {regularIanaReferenceJson} from './regular-iana-reference.mjs';
 import {getResearchQuoteSource,getResearchQuoteMarkup,getResearchQuoteStyleSource,getResearchQuoteIntegrationSource} from './quote-source-adapter.mjs';
 import {createResearchEnvironment} from './environment.mjs';
 import {researchRoute} from './routes.mjs';
@@ -21,7 +22,7 @@ import {researchSceneSource} from './scene-source-adapter.mjs';
 import {getResearchBusinessPanelSource} from './business-panel-source.mjs';
 import {researchAuthSheetSource} from './auth-sheet-source.mjs';
 import {researchBrandSource} from './brand-source-adapter.mjs';
-import {RESEARCH_RELEASE_WIDTHS,readResearchRelease,serveResearchReleaseAsset,renderResearchReleaseApplication,findResearchReleaseTarget,hasResearchRelease} from './release-store.mjs';
+import {RESEARCH_RELEASE_WIDTHS,readResearchRelease,serveResearchReleaseAsset,renderResearchReleaseApplication,findResearchReleaseTarget,hasResearchRelease,researchReviewIdentity,researchReviewMode} from './release-store.mjs';
 
 const js=value=>JSON.stringify(value).replaceAll('<','\\u003c');
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -81,6 +82,7 @@ export async function serveResearchAsset(path,env,origin='https://order-ia-porta
   else if(name==='research/inspector-panels.mjs')body=getResearchInspectorPanelsModule();
   else if(name==='bridge/contact-ui.mjs')body=await regularContactModuleSource();
   else if(name==='bridge/business-directory.mjs')body=await getResearchBusinessPanelSource();
+  else if(name==='assets/iana-reference.json'){body=regularIanaReferenceJson;type='application/json; charset=utf-8';}
   else if(name==='research/quote-document.html'){body=await getResearchQuoteMarkup();type='text/html; charset=utf-8';}
   else if(name==='research/quote-integrations.mjs')body=getResearchQuoteIntegrationSource();
   else if(/^runtime\/[\w-]+\.mjs$/.test(name)){
@@ -115,6 +117,7 @@ function researchFoundation(){return foundation??=(async()=>{
 })();}
 
 export async function renderResearchApplication(nonce,parameters=new URLSearchParams(),env,origin='https://order-ia-portal.pages.dev'){
+  if(parameters.has('mode'))researchReviewMode(parameters.get('mode'));
   const build=parameters.get('build')||researchBuild.digest,current=build===researchBuild.digest;
   if(!current||env!==undefined&&hasResearchRelease(build)){
     const saved=hasResearchRelease(build)?await readResearchRelease(build,env,origin):null;if(!saved)throw Object.assign(Error('RESEARCH_BUILD_NOT_FOUND'),{status:404});
@@ -126,29 +129,29 @@ export async function renderResearchApplication(nonce,parameters=new URLSearchPa
   const inspect=parameters.get('inspect')==='1',channel=parameters.get('channel'),artifact=parameters.get('artifact'),width=Number(parameters.get('width')||390);
   if(inspect){
     const id=[initial.screen,initial.state,initial.variant].join('/'),row=(await listResearchRows()).find(value=>value.id===id);
-    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(channel||'')||!RESEARCH_RELEASE_WIDTHS.includes(width)||!row||artifact!==await researchArtifactHash(row,width))throw TypeError('INVALID_RESEARCH_INSPECTION');
+    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(channel||'')||!RESEARCH_RELEASE_WIDTHS.includes(width)||!row||artifact!==await researchArtifactHash(row,width,initial.mode))throw TypeError('INVALID_RESEARCH_INSPECTION');
   }
-  const config={build:researchBuild.digest,assetBase:researchAssetBase,initial,inspect,inspection:inspect?{channel,artifact,screen:initial.screen,state:initial.state,variant:initial.variant,viewport:width,version:parameters.get('version')==='recorded'?'recorded':'current'}:null};
+  const config={build:researchBuild.digest,assetBase:researchAssetBase,initial,inspect,inspection:inspect?{channel,artifact,screen:initial.screen,state:initial.state,variant:initial.variant,viewport:width,version:parameters.get('version')==='recorded'?'recorded':'current',...(initial.mode==='detailed'?{mode:'detailed'}:{})}:null};
   return '<!doctype html><html lang="ko" data-product-runtime="research-application" data-product-build="'+researchBuild.digest+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · 연구본</title><link rel="stylesheet" href="'+researchAssetBase+'research/application.css"><script nonce="'+esc(nonce)+'" src="'+researchAssetBase+'research/bootstrap.js"></script></head><body><main id="order-single" class="ds" data-research-application><header id="order-app-header"><button data-app-back type="button" aria-label="이전 화면" hidden>‹</button><div data-app-brand></div><button data-app-auth type="button">회원가입</button></header><p id="order-app-status" role="status" hidden></p><section id="order-app-page"></section><section id="order-app-quote" hidden></section></main><script type="application/json" id="order-app-config">'+js(config)+'</script><script type="module" nonce="'+esc(nonce)+'">import {mountResearchApplication} from "'+researchAssetBase+'research/application.mjs";const config=JSON.parse(document.getElementById("order-app-config").textContent);try{const app=await mountResearchApplication(config,window.ORDER_CREATE_RESEARCH_ENV(config));if(config.inspect){const {attachResearchReview}=await import("'+researchAssetBase+'research/review-bridge.mjs");await attachResearchReview(app,config);}}catch(error){const status=document.getElementById("order-app-status");status.hidden=false;status.textContent="화면을 불러오지 못했어요. 새로고침 후 다시 확인해 주세요.";console.error(error);}</script></body></html>';
 }
 
-export async function researchArtifactHash(row,width){return sha(JSON.stringify(['order-research-application/v1',researchBuild.digest,row.id,width]));}
-export async function researchArtifact(row,width,env,origin='https://order-ia-portal.pages.dev'){
-  const hash=await researchArtifactHash(row,width),url=new URL('/ia','https://order.invalid');url.search=new URLSearchParams({view:'research-r3',screen:row.screen,state:row.state,variant:row.variant,mode:'simple',build:researchBuild.digest});
+export async function researchArtifactHash(row,width,mode='simple'){return sha(JSON.stringify(researchReviewIdentity(researchBuild.digest,row.id,width,mode)));}
+export async function researchArtifact(row,width,env,origin='https://order-ia-portal.pages.dev',mode='simple'){
+  const hash=await researchArtifactHash(row,width,mode),url=new URL('/ia','https://order.invalid');url.search=new URLSearchParams({view:'research-r3',screen:row.screen,state:row.state,variant:row.variant,mode,build:researchBuild.digest});
   const provenance=await regularServiceSourceIdentity();
   const source={kind:'research-application',build:researchBuild.digest,productSource:researchBuild.sources,regular:provenance,environment:'research-fixture',ownership:'application',promotion:'same-build'};
   const html=await renderResearchApplication('0123456789abcdef0123456789abcdef',url.searchParams,env,origin);
-  const editable=html.replace('</body>','<script type="application/json" id="frame-meta">'+js({format:'order-research-route/v1',source,route:{screen:row.screen,state:row.state,variant:row.variant},viewport:width,hash})+'</script></body>');
-  return {release:'MSG0585-R3',version:'current',hash,viewport:width,...(row.fixture?{fixture:row.fixture}:{}),application:{url:url.pathname+url.search,build:researchBuild.digest},source,
-    html,editable,exportHash:await sha(editable),file:'ORDER_research_'+row.id.replaceAll('/','_')+'_'+width+'.html'};
+  const editable=html.replace('</body>','<script type="application/json" id="frame-meta">'+js({format:'order-research-route/v1',source,route:{screen:row.screen,state:row.state,variant:row.variant,...(mode==='detailed'?{mode}:{})},viewport:width,hash})+'</script></body>');
+  return {release:'MSG0585-R3',version:'current',hash,viewport:width,...(mode==='detailed'?{mode}:{}),...(row.fixture?{fixture:row.fixture}:{}),application:{url:url.pathname+url.search,build:researchBuild.digest},source,
+    html,editable,exportHash:await sha(editable),file:'ORDER_research_'+row.id.replaceAll('/','_')+'_'+(mode==='detailed'?'detailed_':'')+width+'.html'};
 }
 
-export async function archivedResearchTarget(target){return findResearchReleaseTarget({rowId:[target.screen,target.state,target.variant].join('/'),width:target.viewport,hash:target.artifactHash});}
-export async function archivedResearchArtifact(rowId,width,hash,env,origin){
-  const target=await findResearchReleaseTarget({rowId,width,hash});if(!target)return null;
+export async function archivedResearchTarget(target){return findResearchReleaseTarget({rowId:[target.screen,target.state,target.variant].join('/'),width:target.viewport,hash:target.artifactHash,mode:target.mode});}
+export async function archivedResearchArtifact(rowId,width,hash,env,origin,mode='simple'){
+  const target=await findResearchReleaseTarget({rowId,width,hash,mode});if(!target)return null;
   const saved=await readResearchRelease(target.build,env,origin),row=target.row;
-  const parameters=new URLSearchParams({view:'research-r3',build:target.build,screen:row.screen,state:row.state,variant:row.variant,mode:'simple',version:'recorded'});
+  const parameters=new URLSearchParams({view:'research-r3',build:target.build,screen:row.screen,state:row.state,variant:row.variant,mode,version:'recorded'});
   const html=await renderResearchReleaseApplication(saved,'a'.repeat(36),parameters),source={kind:'research-application',build:target.build,productSource:saved.build.sources,environment:'research-fixture',archived:true};
-  const editable=html.replace('</body>','<script type="application/json" id="frame-meta">'+js({source,hash,viewport:width,route:row.id})+'</script></body>');
-  return {release:'MSG0585-R3',version:'recorded',hash,viewport:width,application:{url:'/ia?'+parameters,build:target.build},source,archivedSource:{epoch:'research-'+target.build},html,editable,exportHash:await sha(editable),file:'ORDER_research_'+row.id.replaceAll('/','_')+'_'+width+'.html'};
+  const editable=html.replace('</body>','<script type="application/json" id="frame-meta">'+js({source,hash,viewport:width,route:row.id,...(mode==='detailed'?{mode}:{})})+'</script></body>');
+  return {release:'MSG0585-R3',version:'recorded',hash,viewport:width,...(mode==='detailed'?{mode}:{}),application:{url:'/ia?'+parameters,build:target.build},source,archivedSource:{epoch:'research-'+target.build},html,editable,exportHash:await sha(editable),file:'ORDER_research_'+row.id.replaceAll('/','_')+'_'+(mode==='detailed'?'detailed_':'')+width+'.html'};
 }

@@ -20,6 +20,18 @@ const bytes64=value=>Uint8Array.from(atob(value),char=>char.charCodeAt(0));
 const fail=code=>{throw Object.assign(new Error(code),{code,status:503});};
 const deepFreeze=value=>{if(value&&typeof value==='object'&&!Object.isFrozen(value)){for(const child of Object.values(value))deepFreeze(child);Object.freeze(value);}return value;};
 
+export function researchReviewMode(mode='simple'){
+  if(mode!=='simple'&&mode!=='detailed')throw TypeError('INVALID_RESEARCH_MODE');
+  return mode;
+}
+/** Missing mode is the historical simple identity, never an inferred detailed
+ * review. Preserve its bytes; append the mode only for explicit detailed work. */
+export function researchReviewIdentity(build,id,width,mode='simple'){
+  const identity=['order-research-application/v1',build,id,width];
+  if(researchReviewMode(mode)==='detailed')identity.push('detailed');
+  return identity;
+}
+
 async function boundedBytes(stream,limit){
   if(!stream)fail('RESEARCH_RELEASE_EMPTY');
   const reader=stream.getReader(),parts=[];let size=0;
@@ -98,14 +110,16 @@ export function createResearchReleaseStore(index=researchReleases,{maxCachedRele
     return pending;
   }
   async function findRow(build,id){return (await rows(build))?.find(row=>row.id===id)||null;}
-  async function artifactHash(build,id,width){
+  async function artifactHash(build,id,width,mode='simple'){
+    const identity=researchReviewIdentity(build,id,Number(width),mode);
     if(!RESEARCH_RELEASE_WIDTHS.includes(Number(width))||!await findRow(build,id))return null;
-    return textHash(JSON.stringify(['order-research-application/v1',build,id,Number(width)]));
+    return textHash(JSON.stringify(identity));
   }
-  async function findTarget({build,id,rowId=id,width,hash:expected}){
+  async function findTarget({build,id,rowId=id,width,hash:expected,mode='simple'}){
+    researchReviewMode(mode);
     if(!HEX.test(expected||''))return null;
     for(const candidate of build?[build]:Object.keys(index)){
-      const actual=await artifactHash(candidate,rowId,width);if(actual&&actual===expected)return {build:candidate,row:await findRow(candidate,rowId),width:Number(width),hash:actual};
+      const actual=await artifactHash(candidate,rowId,width,mode);if(actual&&actual===expected)return {build:candidate,row:await findRow(candidate,rowId),width:Number(width),hash:actual,...(mode==='detailed'?{mode}:{})};
     }
     return null;
   }
@@ -115,7 +129,7 @@ const store=createResearchReleaseStore();
 export const readResearchRelease=(build,env,origin)=>store.read(build,env,origin);
 export const listResearchReleaseRows=build=>store.rows(build);
 export const findResearchReleaseRow=(build,id)=>store.findRow(build,id);
-export const researchReleaseArtifactHash=(build,id,width)=>store.artifactHash(build,id,width);
+export const researchReleaseArtifactHash=(build,id,width,mode='simple')=>store.artifactHash(build,id,width,mode);
 export const findResearchReleaseTarget=target=>store.findTarget(target);
 export const hasResearchRelease=build=>store.has(build);
 export const listResearchReleaseBuilds=()=>store.builds();
@@ -139,14 +153,14 @@ export async function renderResearchReleaseApplication(release,nonce,parameters=
   const build=release.build.digest,base='/ia/research-assets/'+build+'/';
   if(prior.build!==build||prior.assetBase!==base)fail('RESEARCH_RELEASE_SHELL_IDENTITY_INVALID');
   if(!['current','recorded'].includes(inspectionVersion)||inspectionVersion==='current'&&currentBuild!==build)throw TypeError('RESEARCH_RELEASE_INSPECTION_VERSION_INVALID');
-  const initial={screen:parameters.get('screen')||prior.initial.screen,state:parameters.get('state')||prior.initial.state,variant:parameters.get('variant')||prior.initial.variant,mode:parameters.get('mode')||prior.initial.mode||'simple'};
+  const initial={screen:parameters.get('screen')||prior.initial.screen,state:parameters.get('state')||prior.initial.state,variant:parameters.get('variant')||prior.initial.variant,mode:researchReviewMode(parameters.has('mode')?parameters.get('mode'):'simple')};
   const row=release.rows.find(value=>value.id===[initial.screen,initial.state,initial.variant].join('/'));
   if(!row||!['simple','detailed'].includes(initial.mode))throw Object.assign(new Error('RESEARCH_RELEASE_ROUTE_NOT_FOUND'),{status:404});
   const inspect=parameters.get('inspect')==='1',width=Number(parameters.get('width')||390),channel=parameters.get('channel'),artifact=parameters.get('artifact');
   if(!RESEARCH_RELEASE_WIDTHS.includes(width))throw TypeError('RESEARCH_RELEASE_WIDTH_INVALID');
-  const expected=await textHash(JSON.stringify(['order-research-application/v1',build,row.id,width]));
+  const expected=await textHash(JSON.stringify(researchReviewIdentity(build,row.id,width,initial.mode)));
   if(inspect&&(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(channel||'')||artifact!==expected))throw TypeError('INVALID_RESEARCH_INSPECTION');
-  const config={...prior,build,assetBase:base,initial,inspect,inspection:inspect?{channel,artifact,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:inspectionVersion}:null};
+  const config={...prior,build,assetBase:base,initial,inspect,inspection:inspect?{channel,artifact,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:inspectionVersion,...(initial.mode==='detailed'?{mode:'detailed'}:{})}:null};
   const nonceAttribute='nonce="'+token+'"';if(!html.includes(nonceAttribute))fail('RESEARCH_RELEASE_NONCE_MISSING');
   return html.replaceAll(nonceAttribute,'nonce="'+nonce+'"').replace(blocks[0][0],'<script type="application/json" id="order-app-config">'+json(config)+'</script>');
 }

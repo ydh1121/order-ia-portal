@@ -148,7 +148,9 @@ async function loginDestination(t,search){
 test('expired-session, login client and preview return paths retain the same lab run, role, document and QA selection',async t=>{
   const cases=[
     {view:'product-r3',labRun:runId,persona:'buyer',qaDocument:documentId,screen:'store-purchase',state:'default'},
-    {view:'qa-lab',run:runId,page:'admin-shipments',persona:'supplier',width:'390'}
+    {view:'qa-lab',run:runId,page:'admin-shipments',persona:'supplier',width:'390'},
+    {view:'qa-lab',screen:'q2/empty/email',width:'390',mode:'detailed',preview:'dual',version:'recorded',artifactHash:'a'.repeat(64)},
+    {view:'research-r3',screen:'q2',state:'empty',variant:'email',mode:'detailed',build:'b'.repeat(64)}
   ];
   for(const expected of cases){
     const request=new Request(origin+'/ia?'+new URLSearchParams({...expected,ignored:'discard-me'}));

@@ -8,6 +8,7 @@ import {project,CANONICAL_SCREEN_IDS} from '../src/server/projection.mjs';
 import {readFileSync, readdirSync} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {researchReleases} from '../src/server/research-app/releases.gen.mjs';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const domain='https://ia-testing.cloudflareaccess.com',audience='R0PLACEHOLDER_1234567890';
 const kp=generateKeyPairSync('rsa',{modulusLength:2048});
@@ -44,10 +45,14 @@ test('service account OAuth + fixed Google batchGet uses readonly scope',async()
  let urls=[];const fetcher=async(url,opt)=>{urls.push(url);if(url.includes('oauth2.googleapis.com')){const assertion=new URLSearchParams(opt.body).get('assertion');const [,body]=assertion.split('.');assert.equal(JSON.parse(Buffer.from(body,'base64url').toString()).scope,'https://www.googleapis.com/auth/spreadsheets.readonly');return Response.json({access_token:'fake-access',token_type:'Bearer'})}assert.ok(url.includes('%27')||url.includes('ranges='));assert.equal(opt.headers.Authorization,'Bearer fake-access');return Response.json({valueRanges:[{values:screenRows}]})};
  const d=await fetchTab({IA_GOOGLE_READ_ENABLED:'true',IA_GOOGLE_SERVICE_ACCOUNT_JSON:JSON.stringify(account),IA_GOOGLE_SHEET_ID:'abc_12345678901234567890'},'screens',fetcher);assert.equal(d.length,77);assert.equal(urls.length,2);
 });
-test('public output contract only single nonconfidential static index',()=>{
+test('public entry remains nonconfidential and private releases are confined to indexed pack paths',()=>{
  const publicRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../public');
  // Inspect the packaged public/index.html relative to this test file.
- const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','owner.css','owner.js','price-template.xlsx','vendor']);
+ const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','owner.css','owner.js','price-template.xlsx','vendor']);
+ assert.deepEqual(readdirSync(join(publicRoot,'ia')),['research-releases']);
+ assert.deepEqual(readdirSync(join(publicRoot,'ia','research-releases')).sort(),Object.keys(researchReleases).map(build=>build+'.json.gz').sort());
+ // The HTTP-denial and exact internal binding bytes are independently exercised
+ // in research-browser-assets.test.mjs; no public index links to these packs.
  assert.deepEqual(readdirSync(join(publicRoot,'vendor')),['r3-pdf']);
  assert.deepEqual(readdirSync(join(publicRoot,'vendor','r3-pdf')).sort(),['LICENSE.txt','SOURCE.txt','pdf.min.mjs','pdf.worker.min.mjs']);
  for(const term of ['PENDING-','/src/internal','docs.google.com','drive.google.com','F17','사업자등록증','sk_live_'])assert.ok(!entry.includes(term));

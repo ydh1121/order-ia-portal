@@ -216,6 +216,21 @@ test('QA empty and loading scenarios remain selectable without erasing the resea
  }finally{await f.close();}
 });
 
+test('receipt inspection configures the real operator workflow after a buyer scene',async()=>{
+ const f=await setup();try{
+  await f.app.inspectRoute({screen:'store-purchase',state:'select'});await settle();
+  assert.equal(f.app.adapter.fixture.inspect().controls.persona,'buyer');
+  const header=f.doc.getElementById('order-app-header');
+  await f.app.inspectRoute({screen:'receipt',state:'default'});await settle();
+  const state=f.app.adapter.fixture.inspect();
+  assert.equal(state.controls.persona,'operator');assert.equal(state.controls.authenticated,true);
+  assert.ok(state.calls.some(call=>call.path==='/receipt-options'&&call.status===200));
+  assert.equal(state.calls.some(call=>call.path==='/receipt-options'&&call.status===403),false);
+  assert.equal(f.doc.querySelector('button[data-label="영수증 발급"]').disabled,false);
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
 test('every current page group composes under one retained application header',async()=>{
  const f=await setup(),rows=[...new Map(catalog.filter(row=>row.phase!=='future'&&!['component-library','price-workspace','common'].includes(row.screen)&&researchRoute(row).kind==='page').map(row=>[row.screen,row])).values()];
  try{

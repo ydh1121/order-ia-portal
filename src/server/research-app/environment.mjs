@@ -26,7 +26,7 @@ export function createResearchEnvironment(config, installFixture, installAdapter
       const selectedScenario=fixture?.scenario||scenario;
       if(selectedScenario==='empty'&&!scenarioBackup)scenarioBackup=current.fixture.inspect().data;
       const restore=selectedScenario!=='empty'&&scenarioBackup?scenarioBackup:null;
-      current.fixture.releasePending({authenticated,persona:authenticated?(route.screen.startsWith('admin-')||route.screen==='member-email-templates'?'operator':route.screen.startsWith('supplier-')?'supplier':'buyer'):'guest',scenario,...(restore?{data:restore}:{}),...(fixture||{})});
+      current.fixture.releasePending({authenticated,persona:authenticated?(route.screen.startsWith('admin-')||route.screen==='member-email-templates'||route.screen==='receipt'?'operator':route.screen.startsWith('supplier-')?'supplier':'buyer'):'guest',scenario,...(restore?{data:restore}:{}),...(fixture||{})});
       if(restore)scenarioBackup=null;
       await current.refreshSession?.();
     },

@@ -11,7 +11,7 @@ const hash='c'.repeat(64),oldHash='a'.repeat(64),origin='https://order-ia-portal
 const initial={channel:'11111111-1111-4111-8111-111111111111',artifact:hash,screen:'onboarding',state:'guest-1',variant:'email',viewport:390};
 const frame=w=>new Promise(resolve=>w.requestAnimationFrame(()=>w.requestAnimationFrame(resolve)));
 async function until(check,w){for(let i=0;i<12&&!check();i++)await frame(w);assert.ok(check(),'inspection work settled');}
-function harness(t,{panels=false,animationFrames=true,markup='<main id="order-single"><header><button class="obm-brand">오더</button></header><form id="business"><label>전화<input name="phone" value="01012345678"></label><button id="continue" type="button">다음</button></form></main>'}={}){
+function harness(t,{panels=false,animationFrames=true,initialSession=initial,setup=()=>{},markup='<main id="order-single"><header><button class="obm-brand">오더</button></header><form id="business"><label>전화<input name="phone" value="01012345678"></label><button id="continue" type="button">다음</button></form></main>'}={}){
   const dom=new JSDOM(markup,{url:origin+'/ia/research?inspect=1',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window,root=w.document.getElementById('order-single'),sent=[],parent={postMessage(message,targetOrigin){sent.push({message,targetOrigin});}};
   Object.defineProperty(w,'parent',{value:parent});Object.defineProperty(w,'innerWidth',{value:390,configurable:true});Object.defineProperty(w,'innerHeight',{value:844,configurable:true});
   Object.defineProperty(w.document,'scrollingElement',{value:w.document.documentElement});
@@ -21,10 +21,11 @@ function harness(t,{panels=false,animationFrames=true,markup='<main id="order-si
   w.HTMLElement.prototype.scrollTo=function(x,y){this.scrollLeft=x;this.scrollTop=y;};
   let hit=root.querySelector('#continue')||root.querySelector('button')||root;
   w.document.elementFromPoint=()=>hit;
+  setup(w,root);
   w.eval('var installPinProjection = '+browserFunction(installPinProjection)+';');
   w.eval(getResearchInspectorPanelsModule().replace('export const installResearchReviewPanels =','window.installResearchReviewPanels ='));
   const install=w.eval('('+browserFunction(installResearchInspector)+')');
-  const api=install(initial,{root,...panels?{installPanels:w.installResearchReviewPanels}:{}});
+  const api=install(initialSession,{root,...panels?{installPanels:w.installResearchReviewPanels}:{}});
   assert.ok(api);
   t.after(()=>{api.dispose();w.close();});
   const session=()=>api.inspect().session;
@@ -147,4 +148,47 @@ test('the research panel source adaptation does not change the released helper f
   const path=new URL('../src/server/r3-ui/review-panels.mjs',import.meta.url),before=readFileSync(path);
   const output=getResearchInspectorPanelsModule();assert.match(output,/export const installResearchReviewPanels/);assert.match(output,/return \{dispose\(\)\{dispose\(\)/);
   assert.deepEqual(readFileSync(path),before);
+});
+
+test('detailed mode binds the route, ready and anchor; returning to simple removes the optional field',async t=>{
+  const h=harness(t),{w,api,send,messages}=h;await until(()=>messages('ready').length===1,w);
+  assert.equal(Object.hasOwn(api.inspect().session,'mode'),false);
+  w.dispatchEvent(new w.CustomEvent('order:research-route',{detail:{origin:'application',screen:'q1',state:'empty',variant:'email',mode:'detailed'}}));
+  const detailed={...initial,screen:'q1',state:'empty',channel:'22222222-2222-4222-8222-222222222222',artifact:'d'.repeat(64),routeRevision:1};
+  assert.equal(api.updateSession(detailed),false,'a simple acknowledgement cannot label a detailed route');
+  assert.equal(api.updateSession({...detailed,mode:'detailed'}),true);
+  await until(()=>messages('ready').length===2,w);
+  assert.equal(messages('ready').at(-1).payload.mode,'detailed');assert.equal(api.inspect().session.mode,'detailed');
+  const anchor=h.point();assert.equal(anchor.mode,'detailed');
+  const wrong={...anchor};delete wrong.mode;
+  send('pins',[{id:'wrong-mode',anchor:wrong}]);await frame(w);assert.equal(w.document.querySelector('.r3-pin'),null);
+  send('pins',[{id:'detailed-point',anchor}]);await until(()=>w.document.querySelector('.r3-pin'),w);
+  w.dispatchEvent(new w.CustomEvent('order:research-route',{detail:{origin:'application',screen:'q1',state:'empty',variant:'email',mode:'simple'}}));
+  assert.equal(api.updateSession({...detailed,mode:'detailed',routeRevision:2}),false);
+  assert.equal(api.updateSession({...detailed,artifact:'e'.repeat(64),channel:'33333333-3333-4333-8333-333333333333',routeRevision:2}),true);
+  await until(()=>messages('ready').length===3,w);
+  assert.equal(Object.hasOwn(api.inspect().session,'mode'),false);assert.equal(Object.hasOwn(messages('ready').at(-1).payload,'mode'),false);
+  assert.equal(Object.hasOwn(h.point(),'mode'),false);assert.equal(api.updateSession({...initial,mode:null}),false);
+});
+
+test('pins track Web Animation geometry through completion, element resize and font settlement without a DOM mutation',async t=>{
+  let top=40,finishMotion,finishFonts,resize,disconnected=false;
+  const observed=new Set(),motion={playState:'running',pending:false,effect:{getComputedTiming:()=>({iterations:1})},finished:new Promise(resolve=>{finishMotion=resolve;})};
+  const h=harness(t,{setup(w,root){
+    root.getAnimations=()=>motion.playState==='running'?[motion]:[];
+    root.querySelector('#continue').getBoundingClientRect=()=>({x:20,y:top,left:20,top,right:120,bottom:top+50,width:100,height:50});
+    w.ResizeObserver=class {constructor(callback){resize=callback;}observe(el){observed.add(el);}unobserve(el){observed.delete(el);}disconnect(){disconnected=true;observed.clear();}};
+    const fonts=new w.EventTarget();fonts.ready=new Promise(resolve=>{finishFonts=resolve;});Object.defineProperty(w.document,'fonts',{value:fonts});
+  }}),{w,root,send}=h,anchor=h.point(),html=root.innerHTML;
+  send('pins',[{id:'moving-pin',anchor}]);send('pin-view',{draft:anchor,selected:[]});
+  await until(()=>w.document.querySelector('.r3-pin'),w);
+  const y=()=>Number.parseFloat(w.document.querySelector('.r3-pin').style.top);
+  assert.equal(y(),70);assert.ok(observed.has(root.querySelector('#continue')));
+  top=47.125;await until(()=>y()===77.125,w);assert.equal(Number.parseFloat(w.document.querySelector('.approval-draft-pin').style.top),77.125);
+  top=40;motion.playState='finished';finishMotion();await until(()=>y()===70,w);
+  assert.equal(root.innerHTML,html,'the app never mutated its DOM or emitted scroll/resize during the animation');
+  top=52;resize([{target:root.querySelector('#continue')}]);await until(()=>y()===82,w);
+  top=30;finishFonts();await until(()=>y()===60,w);
+  top=35;w.document.fonts.dispatchEvent(new w.Event('loadingdone'));await until(()=>y()===65,w);
+  h.api.dispose();assert.equal(disconnected,true);assert.equal(observed.size,0);assert.equal(w.document.querySelector('.r3-pin'),null);
 });

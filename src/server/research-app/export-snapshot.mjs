@@ -4,15 +4,18 @@
 export function createResearchExportTools(){
   const hex=/^[a-f0-9]{64}$/,token=/^[a-zA-Z0-9_.-]{1,128}$/;
   const fail=code=>{throw Error(code);};
+  const reviewMode=value=>value===undefined?'simple':value==='detailed'?'detailed':fail('RESEARCH_EXPORT_MODE_INVALID');
   const sha=async text=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(value=>value.toString(16).padStart(2,'0')).join('');
   function confirm({frame,expected,acknowledged,origin}){
     if(!expected||!acknowledged||!hex.test(expected.build||'')||!hex.test(expected.artifact||'')||!token.test(expected.channel||'')||!['screen','state','variant'].every(key=>token.test(expected[key]||''))||!Number.isInteger(expected.width)||expected.width<1||expected.width>10000||!['current','recorded'].includes(expected.version))fail('RESEARCH_EXPORT_IDENTITY_REQUIRED');
     for(const [key,other]of [['channel','channel'],['artifact','hash'],['build','application'],['width','width'],['version','version'],['screen','screen'],['state','state'],['variant','variant']])if(expected[key]!==acknowledged[other])fail('RESEARCH_EXPORT_NOT_ACKNOWLEDGED');
+    const mode=reviewMode(expected.mode);if(mode!==reviewMode(acknowledged.mode))fail('RESEARCH_EXPORT_NOT_ACKNOWLEDGED');
     if(!frame?.isConnected||frame.inert)fail('RESEARCH_EXPORT_NOT_READY');
     let window,document;try{window=frame.contentWindow;document=frame.contentDocument;if(!window||!document||window.location.origin!==origin||document.defaultView!==window)fail('RESEARCH_EXPORT_ORIGIN');}catch{fail('RESEARCH_EXPORT_ORIGIN');}
     const roots=document.querySelectorAll('#order-single'),root=roots[0],snapshot=window.ORDER_RESEARCH_APP?.snapshot?.(),inspection=root?.__orderResearchInspector?.inspect?.();
     if(roots.length!==1||window.innerWidth!==expected.width||document.documentElement.dataset.productBuild!==expected.build||snapshot?.build!==expected.build||typeof snapshot.instance!=='string'||!inspection?.active||inspection.pendingRoute)fail('RESEARCH_EXPORT_NOT_READY');
     for(const key of ['screen','state','variant'])if(snapshot.route?.[key]!==expected[key]||inspection.session?.[key]!==expected[key])fail('RESEARCH_EXPORT_ROUTE_CHANGED');
+    if(snapshot.route?.mode!==mode||reviewMode(inspection.session?.mode)!==mode)fail('RESEARCH_EXPORT_ROUTE_CHANGED');
     if(inspection.session.channel!==expected.channel||inspection.session.artifact!==expected.artifact||inspection.session.viewport!==expected.width||inspection.session.version!==expected.version)fail('RESEARCH_EXPORT_SESSION_CHANGED');
     return {window,document,root,snapshot,instance:snapshot.instance};
   }
@@ -120,7 +123,7 @@ export function createResearchExportTools(){
   async function finish(arguments_,live,output,data,suffix){
     const html='<!doctype html>\n'+output.documentElement.outerHTML,sha256=await sha(html),after=confirm(arguments_);
     if(after.root!==live.root||after.instance!==live.instance)fail('RESEARCH_EXPORT_APPLICATION_CHANGED');
-    return {html,sha256,metadata:data,file:'ORDER_research_'+data.route.screen+'_'+data.route.state+'_'+data.viewport.width+'_'+suffix+'.html'};
+    return {html,sha256,metadata:data,file:'ORDER_research_'+data.route.screen+'_'+data.route.state+'_'+(data.route.mode==='detailed'?'detailed_':'')+data.viewport.width+'_'+suffix+'.html'};
   }
   async function snapshot(arguments_){
     const live=confirm(arguments_),data=metadata(live,arguments_.expected,'order-research-static-snapshot/v1'),loaded=styles(live),root=cloneRoot(live),output=documentFor(live,'Order · 현재 화면',data);
@@ -131,6 +134,7 @@ export function createResearchExportTools(){
   async function link(arguments_){
     const live=confirm(arguments_),data=metadata(live,arguments_.expected,'order-research-execution-link/v1'),application=arguments_.application,url=new URL(application?.url||'',arguments_.origin);
     if(application?.build!==data.build||url.origin!==arguments_.origin||url.pathname!=='/ia'||url.searchParams.get('view')!=='research-r3'||url.searchParams.has('build')&&url.searchParams.get('build')!==data.build)fail('RESEARCH_EXPORT_APPLICATION_URL');
+    if((url.searchParams.has('mode')?url.searchParams.get('mode'):'simple')!==data.route.mode)fail('RESEARCH_EXPORT_APPLICATION_URL');
     url.search=new URLSearchParams({view:'research-r3',build:data.build,...data.route});url.hash='';data.url=url.href;
     const output=documentFor(live,'Order · 연구본 실행 링크',data),style=output.createElement('style');style.textContent='body{max-width:560px;margin:64px auto;padding:24px;font:16px/1.7 system-ui,sans-serif;color:#182238}h1{font-size:24px}a{display:inline-block;padding:12px 20px;border-radius:12px;background:#315de6;color:white;text-decoration:none}';output.head.append(style);
     const title=output.createElement('h1');title.textContent='연구본 실행 링크';const description=output.createElement('p');description.textContent='검토한 연구 빌드를 엽니다. 인터넷 연결과 접근 권한이 필요합니다.';const action=output.createElement('a');action.textContent='연구본 열기';action.href=url.href;action.rel='noopener noreferrer';output.body.append(title,description,action);

@@ -113,6 +113,7 @@ def wait_review_session(page, screen=None, state=None):
         return inspected?.active&&route&&(!expected.screen||route.screen===expected.screen)&&
             (!expected.state||route.state===expected.state)&&inspected.session.screen===route.screen&&
             inspected.session.state===route.state&&inspected.session.variant===route.variant&&
+            (inspected.session.mode||'simple')===(route.mode||'simple')&&
             frame.dataset.testReadyHash===inspected.session.artifact&&
             document.getElementById('focus-unit')?.dataset.module===route.screen;
     }""", arg={"screen":screen,"state":state})

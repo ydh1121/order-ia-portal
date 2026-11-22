@@ -1,7 +1,7 @@
 const sourceSha = 'e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
 const kinds = new Set(['comment','reply','draft','review','change','figma','artifact','screen','feedback']);
 const actions = new Set(['save','relocate','resolve','delete','reopen']);
-const viewFields = new Set(['id','instance','x','y','viewport','scale','scroll','layers','artifactHash']);
+const viewFields = new Set(['id','instance','x','y','viewport','scale','scroll','layers','artifactHash','mode']);
 const pointId = x => typeof x === 'string' && /^[\w.:-]{1,120}$/u.test(x);
 const recordId = x => typeof x === 'string' && /^[\w./:-]{1,240}$/u.test(x);
 const sha = x => typeof x === 'string' && /^[0-9a-f]{64}$/u.test(x);
@@ -17,13 +17,15 @@ const json = (body,status=200) => Response.json(body,{status,headers:{
   'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie, Cf-Access-Jwt-Assertion',
   'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"}});
 const invalid = () => json({error:'INVALID_REVIEW_REQUEST'},400);
+const validMode = x => !Object.hasOwn(x,'mode') || ['simple','detailed'].includes(x.mode);
+const reviewMode = x => x.mode ?? 'simple';
 
 function validTarget(x) {
-  return keys(x,allowed('screen','state','variant','viewport','artifactHash')) &&
+  return keys(x,allowed('screen','state','variant','viewport','artifactHash','mode')) && validMode(x) &&
     [x.screen,x.state,x.variant].every(pointId) && integer(x.viewport,240,8192) && sha(x.artifactHash);
 }
 function validAnchor(x) {
-  return keys(x,viewFields) && pointId(x.id) && pointId(x.instance) && sha(x.artifactHash) &&
+  return keys(x,viewFields) && validMode(x) && pointId(x.id) && pointId(x.instance) && sha(x.artifactHash) &&
     number(x.x,0,1) && number(x.y,0,1) && number(x.scale,.1,5) &&
     keys(x.viewport,allowed('width','height')) && integer(x.viewport.width,1,8192) && integer(x.viewport.height,1,16384) &&
     Array.isArray(x.scroll) && x.scroll.length<=24 && x.scroll.every(s=>keys(s,allowed('id','x','y')) &&
@@ -47,9 +49,12 @@ function validData(kind,d) {
   if ('sourceCommentId' in d && !recordId(d.sourceCommentId)) return false;
   if ('evidenceRef' in d && (!text(d.evidenceRef,512) || !d.evidenceRef.trim())) return false;
   if ('body' in d && !text(d.body,kind==='screen'?8000:10000)) return false;
-  if (d.anchor!=null && (!validAnchor(d.anchor) || d.anchor.artifactHash!==d.target.artifactHash)) return false;
+  if (d.anchor!=null && (!validAnchor(d.anchor) || d.anchor.artifactHash!==d.target.artifactHash || reviewMode(d.anchor)!==reviewMode(d.target))) return false;
   if ('parent' in d && (!keys(d.parent,allowed('origin','id')) ||
       !['current','legacy'].includes(d.parent.origin) || !recordId(d.parent.id))) return false;
+  // Historical records without a mode remain the original simple review. A
+  // detailed review may not relabel a legacy comment or its processing state.
+  if (d.parent?.origin==='legacy' && reviewMode(d.target)!=='simple') return false;
   if ('purpose' in d && (d.purpose!=='rework'||!d.parent)) return false;
   if (d.purpose==='rework') {
     if (d.parent.origin==='current' ? !sha(d.sourceArtifactHash) : 'sourceArtifactHash' in d) return false;
@@ -91,17 +96,19 @@ function reworkParent(b) {
         AND json_extract(v.data,'$.target.state')=json_extract(p.data,'$.target.state')
         AND json_extract(v.data,'$.target.variant')=json_extract(p.data,'$.target.variant')
         AND json_extract(v.data,'$.target.viewport')=json_extract(p.data,'$.target.viewport')
+        AND coalesce(json_extract(v.data,'$.target.mode'),'simple')=coalesce(json_extract(p.data,'$.target.mode'),'simple')
         AND json_extract(v.data,'$.target.artifactHash')=?)
       WHERE p.release=? AND p.kind='comment' AND p.id=? AND p.revision=(
         SELECT max(n.revision) FROM qa_review_events n WHERE n.release=p.release AND n.kind=p.kind AND n.id=p.id)
       AND p.action<>'delete' AND json_extract(p.data,'$.target.screen')=? AND json_extract(p.data,'$.target.state')=?
       AND json_extract(p.data,'$.target.variant')=? AND json_extract(p.data,'$.target.viewport')=?
+      AND coalesce(json_extract(p.data,'$.target.mode'),'simple')=?
       AND json_extract(p.data,'$.target.artifactHash')=?
       AND CASE WHEN json_extract(p.data,'$.target.artifactHash')=? AND (f.cursor IS NULL OR p.cursor>f.cursor)
         THEN CASE WHEN p.action='resolve' THEN 'resolved' ELSE 'unresolved' END
         ELSE coalesce(json_extract(f.data,'$.status'),CASE WHEN p.action='resolve' THEN 'resolved' ELSE 'unresolved' END)
         END IN ('unresolved','recheck'))`,
-    args:[target.artifactHash,b.release,parent.id,target.screen,target.state,target.variant,target.viewport,sourceArtifactHash,target.artifactHash]
+    args:[target.artifactHash,b.release,parent.id,target.screen,target.state,target.variant,target.viewport,reviewMode(target),sourceArtifactHash,target.artifactHash]
   };
 }
 async function readJson(request,limit=32768) {
@@ -176,13 +183,14 @@ async function write(db,actor,b) {
         AND p.action NOT IN (${b.kind==='feedback'?"'delete'":"'delete','resolve'"})
         AND json_extract(p.data,'$.target.screen')=? AND json_extract(p.data,'$.target.state')=?
         AND json_extract(p.data,'$.target.variant')=? AND json_extract(p.data,'$.target.viewport')=?
+        AND coalesce(json_extract(p.data,'$.target.mode'),'simple')=?
         ${b.kind==='feedback'?`AND (json_extract(p.data,'$.target.artifactHash')<>? OR
           (?='resolved' AND p.action='resolve') OR (?<>'resolved' AND p.action<>'resolve'))`
           :"AND json_extract(p.data,'$.target.artifactHash')=?"})`;
       // The same-artifact status follows the latest source action atomically.
       // A late second request must not conceal a concurrent resolve or reopen.
       // Comments from older artifacts keep their independent review status.
-      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,target.artifactHash,
+      parentArgs=[b.release,parent.id,target.screen,target.state,target.variant,target.viewport,reviewMode(target),target.artifactHash,
         ...(b.kind==='feedback'?[b.data.status,b.data.status]:[])];
     }
   }
