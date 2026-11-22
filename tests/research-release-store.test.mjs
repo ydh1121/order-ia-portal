@@ -112,6 +112,24 @@ test('pack checksum, source identity, row index and unavailable storage fail clo
   const unavailable=fixture(original);unavailable.files.clear();await assert.rejects(unavailable.store.read(build,unavailable.env,'https://order.example'),/NOT_AVAILABLE/);
 });
 
+test('private pack requests use Workers-compatible manual redirects and reject every redirect without following it',async()=>{
+  const original=pack(),build=original.build.digest;
+  for(const status of [301,302,303,307,308]){
+    const f=fixture(original),requests=[];let redirect=true;
+    const env={ASSETS:{fetch:async request=>{
+      assert.equal(request.redirect,'manual','Workers rejects the Fetch-standard error mode before a request is sent');
+      assert.equal(request.method,'GET');assert.equal(request.headers.get('Accept-Encoding'),'identity');
+      assert.equal(request.headers.has('Cookie'),false);assert.equal(request.headers.has('Authorization'),false);
+      requests.push(request.url);
+      return redirect?new Response(null,{status,headers:{Location:'https://other.example/release'}}):f.env.ASSETS.fetch(request);
+    }}};
+    await assert.rejects(f.store.read(build,env,'https://order.example'),/RESEARCH_RELEASE_NOT_AVAILABLE/);
+    assert.deepEqual(requests,['https://order.example/ia/research-releases/'+build+'.json.gz']);
+    redirect=false;assert.equal((await f.store.read(build,env,'https://order.example')).build.digest,build);
+    assert.equal(requests.length,2,'a rejected redirect must not poison the verified-release cache');
+  }
+});
+
 test('archive memory cache is bounded while simultaneous reads of one build share a verified fetch',async()=>{
   const packs=[pack('first'),pack('second'),pack('third')],f=fixture(...packs);
   const [a,b]=await Promise.all([f.store.read(packs[0].build.digest,f.env,'https://order.example'),f.store.read(packs[0].build.digest,f.env,'https://order.example')]);assert.equal(a,b);assert.equal(f.calls.length,1);

@@ -97,7 +97,7 @@ export function createResearchReleaseStore(index=researchReleases,{maxCachedRele
     if(releases.has(build)){const existing=releases.get(build);releases.delete(build);releases.set(build,existing);return existing;}
     let pending;pending=(async()=>{
       const url=new URL('/ia/research-releases/'+build+'.json.gz',base);
-      const response=await env.ASSETS.fetch(new Request(url,{method:'GET',redirect:'error',headers:{'Accept':'application/gzip','Accept-Encoding':'identity'}}));
+      const response=await env.ASSETS.fetch(new Request(url,{method:'GET',redirect:'manual',headers:{'Accept':'application/gzip','Accept-Encoding':'identity'}}));
       if(response.status!==200||response.redirected)fail('RESEARCH_RELEASE_NOT_AVAILABLE');
       const bytes=await boundedBytes(response.body,Math.min(MAX_COMPRESSED,record.bytes));
       if(bytes.byteLength!==record.bytes||await hash(bytes)!==record.packSha256)fail('RESEARCH_RELEASE_CHECKSUM_MISMATCH');
