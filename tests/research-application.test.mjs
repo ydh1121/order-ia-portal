@@ -3,9 +3,16 @@ import {test} from 'node:test';
 import {createRequire} from 'node:module';
 import {posix} from 'node:path';
 import {webcrypto} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {renderResearchApplication,researchScene,serveResearchAsset,researchAssetBase,researchArtifact} from '../src/server/research-app/page.mjs';
 import {catalog} from '../src/server/product-ui/catalog.gen.mjs';
 import {researchRoute} from '../src/server/research-app/routes.mjs';
+import {browserFunction} from '../src/server/browser-source.mjs';
+import {installResearchInspector} from '../src/server/research-app/review-inspector.mjs';
+import {installPinProjection} from '../src/server/r3-ui/pin-projection.mjs';
+import {getResearchInspectorPanelsModule} from '../src/server/research-app/inspector-panels-source.mjs';
+import {getProductAuthSheetBootstrap} from '../src/server/product-auth-sheet.mjs';
+import {researchAuthSheetSource} from '../src/server/research-app/auth-sheet-source.mjs';
 const require=createRequire(new URL('./build-tools/package.json',import.meta.url));
 const {build}=require('esbuild'),{JSDOM,VirtualConsole}=require('jsdom');
 const paths=['bridge/contact-ui.mjs','bridge/business-directory.mjs','web/region-reference.mjs','web/address-contract.mjs','web/address-service.mjs','web/address-ui.mjs','src/engine/validation/email.mjs','src/engine/validation/phone.mjs'];
@@ -43,6 +50,86 @@ async function setup(initial={screen:'onboarding',state:'guest-2'}){
  const app=await win.ResearchTest.mountResearchApplication(config,environment);await settle();
  return {win,doc,app,environment,failures,async close(){app.dispose();await settle();dom.window.close();}};
 }
+
+async function attachTestReview(f,{version='current',standalone=false}={}){
+ const w=f.win,messages=[],parent={postMessage(message,targetOrigin){messages.push({message,targetOrigin});}};
+ if(!standalone)Object.defineProperty(w,'parent',{value:parent,configurable:true});
+ w.eval('var installPinProjection='+browserFunction(installPinProjection)+';');
+ w.eval('var installResearchInspector='+browserFunction(installResearchInspector)+';');
+ w.eval(getResearchInspectorPanelsModule().replace('export const installResearchReviewPanels =','var installResearchReviewPanels ='));
+ const bridgeSource=readFileSync(new URL('../src/server/research-app/review-bridge.mjs',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replace('export async function attachResearchReview','async function attachResearchReview');
+ w.eval(bridgeSource+'\nwindow.attachResearchReview=attachResearchReview;');
+ const route=f.app.snapshot().route,session={channel:'11111111-1111-4111-8111-111111111111',artifact:'a'.repeat(64),screen:route.screen,state:route.state,variant:route.variant,viewport:390,version,...route.mode==='detailed'?{mode:'detailed'}:{}};
+ const bridge=await w.attachResearchReview(f.app,{inspection:session});
+ await waitFor(()=>messages.some(entry=>entry.message.type==='ready'));
+ const inspector=()=>f.doc.getElementById('order-single').__orderResearchInspector;
+ const send=(type,payload,overrides={})=>{const current=inspector().inspect().session;w.dispatchEvent(new w.MessageEvent('message',{origin:overrides.origin??w.location.origin,source:overrides.source??parent,data:{scope:'ORDER_R3_HOST',channel:current.channel,artifact:current.artifact,type,payload,...overrides.data}}));};
+ return {bridge,inspector,send,messages,parent,session};
+}
+
+test('review motion commands reach the actual admin loading owner and its normal/error navigation',async()=>{
+ for(const [mode,state,selector] of [['complete','normal','.qa-widget-grid'],['offline','error','[data-qa-action="retry-overview"]']]){
+  const f=await setup({screen:'admin-overview',state:'loading'});let review;
+  try{
+   const owner=f.doc.getElementById('order-app-page'),header=f.doc.getElementById('order-app-header');
+   await waitFor(()=>owner.querySelector('[data-async-region="pending"]'));
+   review=await attachTestReview(f);const received=[];owner.addEventListener('r3-motion-scenario',event=>received.push(event.detail.mode));
+   for(const overrides of [{origin:'null'},{origin:'https://foreign.invalid'},{source:{}},{data:{scope:'foreign'}},{data:{channel:'foreign'}},{data:{artifact:'b'.repeat(64)}}])review.send('motionScenario',{mode},overrides);
+   review.send('motionScenario',{mode:'unknown'});await settle();
+   assert.deepEqual(received,[]);assert.equal(f.app.snapshot().route.state,'loading');
+   review.send('motionScenario',{mode});await waitFor(()=>f.app.snapshot().route.state===state&&owner.querySelector(selector)&&new URL(f.win.location.href).searchParams.get('state')===state);
+   assert.deepEqual(received,[mode]);assert.equal(new URL(f.win.location.href).searchParams.get('state'),state);
+   assert.equal(f.doc.getElementById('order-app-page'),owner);assert.equal(f.doc.getElementById('order-app-header'),header);assert.deepEqual(f.failures,[]);
+  }finally{review?.bridge.dispose();await f.close();}
+ }
+});
+
+test('review wait responses use the active scene request and result replay uses the retained result owner',async()=>{
+ const f=await setup({screen:'quote-wait',state:'entry'});let review;
+ try{
+  const owner=f.doc.getElementById('order-app-page'),root=f.doc.getElementById('order-single');await waitFor(()=>owner.dataset.waitRequest);
+  const waitScene=owner.querySelector('[data-wait-scene]');assert.ok(waitScene);
+  review=await attachTestReview(f);const responses=[];owner.addEventListener('order:quote-response',event=>responses.push({...event.detail}));
+  const first=owner.dataset.waitRequest;review.send('motionScenario',{mode:'offline'});await waitFor(()=>owner.querySelector('[data-wait-scene]').dataset.phase==='offline');
+  assert.equal(responses.at(-1).requestId,first);assert.equal(root.dataset.waitRequest,undefined);
+  review.send('motionScenario',{mode:'replay'});await waitFor(()=>owner.dataset.waitRequest!==first&&owner.querySelector('[data-wait-scene]').dataset.phase==='entry');
+  const second=owner.dataset.waitRequest;review.send('motionScenario',{mode:'complete',requestId:first});
+  // The route changes before its async scene load finishes. Observe the actual
+  // result controller mount before checking the old wait controller's teardown.
+  await waitFor(()=>f.app.snapshot().route.screen==='quote-result'&&f.app.snapshot().pageRoute.screen==='quote-result'&&owner.querySelector('[data-review-result] .oq-plot'));
+  assert.equal(responses.at(-1).requestId,second,'the optional bridge never forwards a caller-supplied stale request id');
+  assert.equal(responses.at(-1).status,'success');assert.equal(waitScene.isConnected,false);assert.equal(owner.dataset.waitRequest,undefined);assert.equal(f.doc.getElementById('order-app-page'),owner);assert.deepEqual(f.failures,[]);
+ }finally{review?.bridge.dispose();await f.close();}
+ const result=await setup({screen:'quote-result',state:'equal'});let replay;
+ try{
+  const owner=result.doc.getElementById('order-app-page'),plot=owner.querySelector('.oq-plot');assert.ok(plot);
+  replay=await attachTestReview(result);const events=[];owner.addEventListener('r3-result-state',event=>events.push({...event.detail}));
+  replay.send('motionScenario',{mode:'replay'});await settle();
+  assert.deepEqual(events,[{state:'equal',replay:true}]);assert.equal(owner.querySelector('.oq-plot'),plot);assert.equal(result.app.snapshot().route.state,'equal');assert.deepEqual(result.failures,[]);
+ }finally{replay?.bridge.dispose();await result.close();}
+});
+
+test('review motion rejects hidden, recorded, standalone and pending-selection owners',async()=>{
+ const f=await setup({screen:'admin-overview',state:'loading'});let review,release;
+ try{
+  review=await attachTestReview(f);const owner=f.doc.getElementById('order-app-page'),received=[];owner.addEventListener('r3-motion-scenario',event=>received.push(event.detail.mode));
+  for(const [set,reset] of [[()=>owner.hidden=true,()=>owner.hidden=false],[()=>owner.inert=true,()=>owner.inert=false],[()=>owner.style.visibility='hidden',()=>owner.style.visibility=''],[()=>owner.setAttribute('aria-hidden','true'),()=>owner.removeAttribute('aria-hidden')]]){
+   set();review.send('motionScenario',{mode:'complete'});await settle();reset();
+  }
+  assert.deepEqual(received,[]);assert.equal(f.app.snapshot().route.state,'loading');
+  const inspect=f.app.inspectRoute.bind(f.app);let started=false;const hold=new Promise(resolve=>{release=resolve;});f.app.inspectRoute=async next=>{started=true;await hold;return inspect(next);};
+  review.send('researchSelect',{channel:'22222222-2222-4222-8222-222222222222',artifact:'b'.repeat(64),screen:'admin-overview',state:'normal',variant:'email',viewport:390,version:'current',route:{screen:'admin-overview',state:'normal',variant:'email',mode:'simple',kind:'page'}});
+  await waitFor(()=>started);review.send('motionScenario',{mode:'complete'});await settle();assert.deepEqual(received,[]);assert.equal(f.app.snapshot().route.state,'loading');
+  release();await waitFor(()=>review.inspector().inspect().session.artifact==='b'.repeat(64));
+  review.send('motionScenario',{mode:'complete'},{data:{channel:review.session.channel,artifact:review.session.artifact}});await settle();assert.deepEqual(received,[]);
+  await f.app.navigate({screen:'admin-overview',state:'loading'});assert.equal(review.inspector().inspect().active,false);
+  review.send('motionScenario',{mode:'complete'});await settle();assert.equal(f.app.snapshot().route.state,'loading');assert.deepEqual(received,[],'an app route awaiting host acknowledgement cannot accept a QA motion command');
+ }finally{release?.();review?.bridge.dispose();await f.close();}
+ const recorded=await setup({screen:'admin-overview',state:'loading'});let past;
+ try{past=await attachTestReview(recorded,{version:'recorded'});past.send('motionScenario',{mode:'complete'});await settle();assert.equal(recorded.app.snapshot().route.state,'loading');}finally{past?.bridge.dispose();await recorded.close();}
+ const standalone=await setup({screen:'admin-overview',state:'loading'});
+ try{await assert.rejects(()=>attachTestReview(standalone,{standalone:true}),/INSPECTION_UNAVAILABLE/);assert.equal(standalone.app.snapshot().route.state,'loading');}finally{await standalone.close();}
+});
 
 test('standalone research application retains the common header, parent and session through intro/auth/quote routes',async()=>{
  const f=await setup();try{
@@ -84,6 +171,43 @@ test('actual introduction and auth controls retain email focus through regular m
   assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.querySelector('svg'),brand);
   assert.equal(f.doc.querySelectorAll('#order-single').length,1);assert.equal(f.doc.querySelectorAll('iframe').length,0);assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
+});
+
+test('research auth source adapter rejects a missing or duplicated email validation seam',async()=>{
+ const source=(await getProductAuthSheetBootstrap()).script,marker='input.validity.typeMismatch';
+ assert.match(researchAuthSheetSource(source),/!w\.OrderEmail\.parse\(input\.value\)\.valid/);
+ assert.throws(()=>researchAuthSheetSource(source.replace(marker,'false')),/RESEARCH_AUTH_EMAIL_SOURCE_CHANGED/);
+ assert.throws(()=>researchAuthSheetSource(source+'\n'+marker),/RESEARCH_AUTH_EMAIL_SOURCE_CHANGED/);
+});
+
+test('auth sheets reuse the regular email parser and shared transient error without losing input or focus',async()=>{
+ for(const [screen,state,action]of [['login','filled','submit-login'],['signup','filled','submit-signup'],['password','request','send-reset']]){
+  const f=await setup({screen,state});try{
+   let providerCalls=0;f.environment.auth={perform(){providerCalls++;throw Error('Invalid syntax reached the authentication provider');}};
+   const input=f.doc.querySelector('[name=email]'),submit=f.doc.querySelector('[data-action="'+action+'"]');
+   const editor=f.win.OrderEmailUI.instance(input),field=input.closest('.field'),display=field.querySelector('.inline-field-state');
+   assert.ok(editor);assert.equal(input.type,'text');assert.equal(input.inputMode,'email');
+   const type=(element,value)=>{element.focus();element.value=value;element.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));};
+   type(input,'invalid-email.order.ooo');input.setSelectionRange(3,9,'backward');
+   for(const password of f.doc.querySelectorAll('input[name*=password]'))type(password,'NativeOnly!2026');
+   const before={value:input.value,placeholder:input.placeholder,type:input.type,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection};
+   const fixture=f.app.adapter.fixture,beforeData=JSON.stringify(fixture.inspect().data);
+   const mutations=()=>fixture.inspect().calls.filter(call=>!['GET','HEAD','OPTIONS'].includes(call.method)).length,beforeMutations=mutations();
+   assert.equal(input.validity.typeMismatch,false,'a text editor cannot supply native email validation');
+   assert.equal(f.win.OrderEmail.parse(input.value).valid,false);assert.equal(f.win.OrderEmail.parse('buyer@example.com').valid,true);
+   submit.focus();submit.click();await settle();
+   assert.equal(display.textContent,'이메일 양식을 확인해 주세요.');assert.equal(field.classList.contains('shows-message'),true);
+   assert.equal(input.getAttribute('aria-invalid'),'true');assert.equal(f.doc.activeElement,input);
+   assert.equal(submit.hasAttribute('aria-busy'),false,'syntax failure must remain in the authored field-error path');
+   await waitFor(()=>!field.classList.contains('shows-message'));
+   assert.equal(f.doc.querySelector('[name=email]'),input);assert.equal(f.win.OrderEmailUI.instance(input),editor);
+   assert.equal(f.doc.activeElement,input);assert.equal(input.getAttribute('aria-invalid'),'true');
+   assert.deepEqual({value:input.value,placeholder:input.placeholder,type:input.type,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection},before);
+   for(const password of f.doc.querySelectorAll('input[name*=password]'))assert.equal(password.value,'NativeOnly!2026');
+   assert.equal(field.querySelector('.research-field-error').textContent,'');assert.equal(providerCalls,0);
+   assert.equal(JSON.stringify(fixture.inspect().data),beforeData);assert.equal(mutations(),beforeMutations);assert.deepEqual(f.failures,[]);
+  }finally{await f.close();}
+ }
 });
 
 test('introduction transitions retain exact source artwork and existing shell, pagination and header owners',async()=>{

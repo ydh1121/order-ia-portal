@@ -2,6 +2,7 @@
 from pathlib import Path
 from math import dist
 from r3_feedback_browser_support import frame_click, prepare_frame_pointer
+from research_export_browser_support import research_snapshot_identity, check_research_snapshot_download
 from playwright.sync_api import sync_playwright,expect
 import json, subprocess, os, shutil, tempfile, hashlib
 root=Path(__file__).resolve().parents[1]
@@ -398,12 +399,13 @@ def run():
                       'beforeRestore':before,'afterReload':on_reload,'afterRestore':after}),flush=True)
     page.locator('#points').click()
     page.locator('[data-drawer-tab=settings]').click()
-    with page.expect_download() as downloaded:
+    export_target=research_snapshot_identity(frame)
+    with page.expect_download() as downloaded, page.expect_response(lambda r:r.request.method=='POST' and r.url.endswith('/r3-qa/records') and r.request.post_data_json.get('kind')=='figma' and r.request.post_data_json.get('data',{}).get('status')=='exported') as export_audit:
      page.locator('#export-editable').click()
     file=Path(downloaded.value.path());raw=file.read_bytes()
-    assert b'<iframe' not in raw and b'id="frame-meta"' in raw
+    export_proof=check_research_snapshot_download(frame,raw,export_audit.value,export_target)
     assert not errors,errors
-    print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'pageErrors':errors}))
+    print(json.dumps({'width':width,'restorePixelError':error,'overlapCount':2,'exportSHA256':hashlib.sha256(raw).hexdigest(),'export':export_proof,'pageErrors':errors}))
     page.locator('#close-drawer').click()
     if width==390:
      check_draft_recovery(ctx,page)

@@ -17,6 +17,76 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-application'
 
 
+def install_quote_diagnostics(page):
+    """Observe original numeric events; never publish edits or replace handlers."""
+    page.evaluate(r'''() => {
+        const events=[], probeErrors=[], lineKeys=['id','housing','size','pack','qty','price','qtyUnit','qtyDisplayUnit'];
+        const pickLine=line=>line && Object.fromEntries(lineKeys.filter(key=>Object.hasOwn(line,key)).map(key=>[key,line[key]]));
+        const pickQuote=quote=>quote && ({lines:(quote.lines||[]).map(pickLine),current:quote.current,
+            open:quote.open,allocationRevision:quote.allocationRevision,
+            locationCount:quote.locations?.length,allocationCount:quote.allocations?.length});
+        const element=node=>node && ({tag:node.tagName,id:node.id,type:node.getAttribute?.('type'),
+            step:node.getAttribute?.('data-open'),connected:node.isConnected,hidden:node.hidden,inert:node.inert});
+        function sample(){
+            const app=window.ORDER_RESEARCH_APP, snapshot=app?.snapshot(), line=snapshot?.quote?.lines?.[0];
+            return {route:snapshot?.route && Object.fromEntries(['screen','state','variant','mode','kind'].map(key=>[key,snapshot.route[key]])),
+                build:snapshot?.build,quote:pickQuote(snapshot?.quote),
+                originalLine:line && pickLine(window.OrderValidationState?.line?.(line.id)),
+                fields:[...document.querySelectorAll('#order-app-quote [data-line-qty],#order-app-quote [data-line-price]')].map(node=>({
+                    ...element(node),field:node.hasAttribute('data-line-qty')?'qty':'price',value:node.value,
+                    numericState:node.dataset.numericState,disabled:node.disabled,readOnly:node.readOnly})),
+                activeElement:element(document.activeElement)};
+        }
+        function observe(event){
+            const node=event.target?.closest?.('#order-app-quote [data-line-qty],#order-app-quote [data-line-price],#order-app-quote .accordion-trigger[data-open]');
+            if(!node)return;
+            try{
+                events.push({type:event.type,phase:event.eventPhase,key:event.type==='keydown'?event.key:undefined,
+                    inputType:event.inputType,trusted:event.isTrusted,defaultPrevented:event.defaultPrevented,
+                    numeric:event.orderNumeric && Object.fromEntries(['valid','value','accepted','phase','reason'].filter(key=>Object.hasOwn(event.orderNumeric,key)).map(key=>[key,event.orderNumeric[key]])),
+                    ...sample()});
+                if(events.length>40)events.shift();
+            }catch(error){probeErrors.push(String(error));if(probeErrors.length>5)probeErrors.shift();}
+        }
+        for(const type of ['beforeinput','input','change','keydown','focusin','focusout','click']){
+            document.addEventListener(type,observe,true);window.addEventListener(type,observe);
+        }
+        window.__researchQuoteDiagnostic={sample,pickQuote,element,events,probeErrors};
+    }''')
+
+
+def capture_quote_diagnostics(page):
+    """Read only quote fields and layout; omit credentials, contacts and tokens."""
+    return page.evaluate(r'''async () => {
+        const probe=window.__researchQuoteDiagnostic;
+        if(!probe)return {available:false};
+        const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+        const layout=node=>{const css=getComputedStyle(node);return {...probe.element(node),rect:rect(node),
+            display:css.display,visibility:css.visibility,opacity:css.opacity,filter:css.filter,
+            backdropFilter:css.backdropFilter,pointerEvents:css.pointerEvents,position:css.position,
+            overflow:css.overflow,scrollTop:node.scrollTop,scrollHeight:node.scrollHeight};};
+        const report={available:true,...probe.sample(),events:probe.events,probeErrors:probe.probeErrors,
+            viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY,
+                visual:visualViewport && {width:visualViewport.width,height:visualViewport.height,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}},
+            layout:['#order-single','#order-app-quote','[data-research-quote]','#app','#page-form','#section-q2','#q2-lines']
+                .flatMap(selector=>[...document.querySelectorAll(selector)].map(node=>({selector,...layout(node)}))),
+            dialogs:[...document.querySelectorAll('dialog')].map(node=>({...layout(node),open:node.open,
+                modal:node.matches(':modal'),backdropFilter:getComputedStyle(node,'::backdrop').backdropFilter})),
+            storage:[...document.querySelectorAll('[data-research-quote]')].map(node=>({pending:node.dataset.storagePending,status:node.dataset.storageStatus}))};
+        try{
+            const mode=report.route?.mode;
+            if(['simple','detailed'].includes(mode)){
+                let timer;
+                const stored=await Promise.race([window.ORDER_RESEARCH_APP.repository.read(mode),
+                    new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Diagnostic storage read timed out')),1000);})]).finally(()=>clearTimeout(timer));
+                report.stored={ok:stored.ok,status:stored.status,mode:stored.mode,revision:stored.revision,
+                    schemaVersion:stored.schemaVersion,source:stored.source,data:probe.pickQuote(stored.data)};
+            }
+        }catch(error){report.storedError=String(error);}
+        return report;
+    }''')
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     log = (OUT / 'host.stderr.log').open('w')
@@ -92,6 +162,10 @@ def main():
         page.evaluate('''window.__researchHeader=document.querySelector('#order-app-header');
             window.__researchBrand=document.querySelector('.order-product-brand svg');
             window.__researchInstance=ORDER_RESEARCH_APP.instance;''')
+        try:
+            install_quote_diagnostics(page)
+        except Exception as diagnostic_error:
+            receipt.setdefault('diagnosticErrors', []).append(safe(diagnostic_error))
         same_app(page)
         receipt['checks'].append('standalone application runs without a QA parent')
         page.screenshot(path=str(OUT / 'onboarding-390.png'), full_page=True)
@@ -223,6 +297,13 @@ def main():
         if browser:
             for context_index, context in enumerate(browser.contexts):
                 for page_index, page in enumerate(context.pages):
+                    try:
+                        diagnostic = capture_quote_diagnostics(page)
+                        name = f'failure-{context_index}-{page_index}-quote.json'
+                        (OUT / name).write_text(json.dumps(diagnostic, ensure_ascii=False, indent=2))
+                        receipt.setdefault('quoteDiagnostics', []).append(name)
+                    except Exception as diagnostic_error:
+                        receipt.setdefault('diagnosticErrors', []).append(safe(diagnostic_error))
                     try:
                         page.screenshot(path=str(OUT / f'failure-{context_index}-{page_index}.png'), full_page=True)
                     except Exception as capture_error:

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {createHash,webcrypto} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
 import {createResearchExportTools} from '../src/server/research-app/export-snapshot.mjs';
 import {browserFunction} from '../src/server/browser-source.mjs';
 import {bootQaHost} from '../src/server/r3-ui/host.mjs';
@@ -177,4 +178,13 @@ test('host keeps the existing source snapshot and standalone legacy export behav
   const h=await host(t,{research:false}),d=h.w.document;assert.equal(d.getElementById('export-runnable').textContent,'실행용 HTML');
   await d.getElementById('export').onclick();assert.equal(await h.downloads[0].text(),'LEGACY_EDITABLE');assert.equal(h.writes[0].data.evidenceRef,'sha256:'+'c'.repeat(64));
   await d.getElementById('export-runnable').onclick();const html=await h.downloads[1].text();assert.match(html,/LEGACY_SOURCE/);assert.match(html,/oldFrame/);assert.doesNotMatch(html,/if\(window===parent\)return/);assert.equal(h.writes[1].data.evidenceRef,'sha256:'+digest(html));
+});
+
+test('the browser download validator accepts the real host file and rejects identity, audit and active-content mismatches',async t=>{
+ const h=await host(t,{mode:'detailed'});await h.w.document.getElementById('export').onclick();
+ const html=await h.downloads[0].text(),audit=h.writes[0].data;
+ const expected={build,artifactHash:artifact,version:'current',route:{screen:'q2',state:'filled',variant:'email',mode:'detailed'},viewport:{width:390,height:844}};
+ const program=`import sys,json,copy\nsys.path.insert(0,'tests')\nfrom research_export_browser_support import validate_research_snapshot\np=json.load(sys.stdin)\nraw=p['html'].encode('utf-8'); expected=p['expected']; audit=p['audit']\nproof=validate_research_snapshot(raw,expected,audit)\nfailures=[]\nfor key,value in [('build','c'*64),('artifactHash','c'*64),('route',{**expected['route'],'mode':'simple'}),('viewport',{'width':1440,'height':844})]:\n altered=copy.deepcopy(expected);altered[key]=value;failures.append((raw,altered,audit))\nfailures.append((raw,expected,{**audit,'evidenceRef':'sha256:'+'c'*64}))\nfor tag in ['iframe','form','script']:\n changed=raw.replace(b'</body>',('<'+tag+'></'+tag+'></body>').encode());failures.append((changed,expected,audit))\nfailures.append((raw.replace(b'order-research-static-snapshot/v1',b'order-research-execution-link/v1'),expected,audit))\nfailures.append((raw.replace(b'order-export-metadata',b'frame-meta'),expected,audit))\nfor entry in failures:\n try:validate_research_snapshot(*entry)\n except (AssertionError,KeyError,ValueError):pass\n else:raise AssertionError('Invalid download passed browser contract')\nprint(json.dumps({'proof':proof,'rejected':len(failures)}))\n`;
+ const run=spawnSync('python3',['-c',program],{cwd:fileURLToPath(new URL('..',import.meta.url)),input:JSON.stringify({html,expected,audit}),encoding:'utf8'});
+ assert.equal(run.status,0,run.stderr);const result=JSON.parse(run.stdout);assert.equal(result.proof.sha256,digest(html));assert.equal(result.proof.auditHashExact,true);assert.equal(result.rejected,10);
 });

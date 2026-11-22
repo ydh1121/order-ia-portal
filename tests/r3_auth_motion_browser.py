@@ -52,6 +52,9 @@ def check_email_message(page, screens):
         const field=input.closest('.field'),display=field.querySelector('.inline-field-state');
         if(!display)throw Error('The shared inline message hook is missing');
         const submit=document.querySelector('[data-action=submit-login]'),password=document.querySelector('[name=password]');
+        const emailController=window.OrderEmailUI?.instance(input),syntax=window.OrderEmail?.parse(input.value);
+        if(!emailController||input.type!=='text'||input.inputMode!=='email'||syntax?.valid!==false)
+            throw Error('The original regular email editor and parser are not connected');
         const fixture=window.ORDER_APP_ADAPTER?.fixture,fixtureBefore=fixture?.inspect();
         if(!fixtureBefore)throw Error('The canonical QA fixture inspector is missing');
         const fixtureData=JSON.stringify(fixtureBefore.data),mutations=snapshot=>snapshot.calls.filter(call=>!['GET','HEAD','OPTIONS'].includes(call.method)).length;
@@ -79,7 +82,9 @@ def check_email_message(page, screens):
                     mutationCalls:mutations(fixtureAfter)-mutations(fixtureBefore),operations:fixtureAfter.operations.length-fixtureBefore.operations.length};
                 state.after={value:input.value,placeholder:input.placeholder,type:input.type,start:input.selectionStart,end:input.selectionEnd,
                     sameInput:document.querySelector('[name=email]')===input,focused:document.activeElement===input,
-                    invalid:input.getAttribute('aria-invalid'),messageHidden:!visible,textHidden:transparent(cs.webkitTextFillColor)};
+                    invalid:input.getAttribute('aria-invalid'),messageHidden:!visible,textHidden:transparent(cs.webkitTextFillColor),
+                    sameController:window.OrderEmailUI.instance(input)===emailController,
+                    syntaxValid:window.OrderEmail.parse(input.value).valid,inputMode:input.inputMode};
                 state.done=true;controller.abort();return;
             }
             if(now-armed>6000){state.error='Shared email message did not visibly appear and restore';state.done=true;controller.abort();return;}
@@ -107,14 +112,17 @@ def check_email_message(page, screens):
     assert all(sample["sameInput"] and sample["value"] == "invalid-email.order.ooo" and sample["passwordPreserved"] for sample in receipt["samples"]), receipt
     after = receipt["after"]
     assert after["sameInput"] and after["focused"] and after["messageHidden"] and not after["textHidden"], receipt
-    assert after["invalid"] == "true" and after["type"] == "email", receipt
+    assert after["invalid"] == "true" and after["type"] == receipt["before"]["type"] == "text", receipt
+    assert after["sameController"] and not after["syntaxValid"] and after["inputMode"] == "email", receipt
     assert (after["value"], after["placeholder"], after["start"], after["end"]) == tuple(receipt["before"][key] for key in ("value", "placeholder", "start", "end")), receipt
     assert receipt["fixture"] == {"dataUnchanged": True, "authenticatedUnchanged": True, "mutationCalls": 0, "operations": 0}, receipt
     assert writes == [], writes
     expect(email).to_have_value("invalid-email.order.ooo")
     expect(email).to_have_attribute("aria-invalid", "true")
     expect(email).to_be_focused()
-    expect(frame.locator("[name=email]").locator("..").locator(".inline-field-state")).to_be_hidden()
+    message = frame.locator(".field").filter(has=email).locator(".inline-field-state")
+    expect(message).to_have_count(1)
+    expect(message).to_be_hidden()
     receipt["mutationRequests"] = writes
     return receipt
 

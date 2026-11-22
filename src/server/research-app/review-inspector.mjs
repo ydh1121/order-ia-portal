@@ -20,7 +20,7 @@ export function installResearchInspector(initialSession,options={}) {
   };
   if(!normalize(initialSession))return null;
   const session={},parentOrigin=location.origin;
-  const allowed=new Set(['mode','pins','pin-sources','pin-view','visible','restore']);
+  const allowed=new Set(['mode','pins','pin-sources','pin-view','visible','restore','motionScenario']);
   const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
   const anchors=new Map(),pinButtons=new Map();let elementIds=new WeakMap();
   let active=false,disposed=false,picking=false,shown=true,dirty=true,pins=[],selection=[],draftAnchor=null,keyPoint=null;
