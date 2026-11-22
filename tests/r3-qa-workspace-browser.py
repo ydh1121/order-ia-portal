@@ -1,7 +1,8 @@
-"""R1 opaque review frames run canonical pricing UI with disposable QA data.
+"""R1 observes the shared research app's canonical pricing workspace.
 
 The existing owner-login host has only ORDER_QA_DB, no business or product lab DB.
 No browser fetch mocks or completion timers are installed by this test.
+The explicitly pinned earlier source retains its opaque-frame security checks.
 """
 import json
 import os
@@ -18,6 +19,9 @@ STATES = {
     "classification": "상품 분류", "delivery": "배송수단 및 운임", "loading": "불러오는 중",
     "error": "불러오기 실패", "empty": "가격 미입력", "guest": "로그인 확인",
 }
+# Last independent workspace source at candidate 38208acb, before shared-app
+# composition. This is a fixed recorded identity, never the new current hash.
+RECORDED_PRICE_HASH = "a88c8035b29c0cf1f9991b667b5be273a33a2e072b0600b12d36f81380b1711a"
 
 
 def target_url(origin, state="consumer-products", width=1280):
@@ -27,8 +31,12 @@ def target_url(origin, state="consumer-products", width=1280):
 def ready_frame(page, state="consumer-products"):
     expect(page.locator("#focus-unit")).to_have_attribute("data-state", state)
     frame = page.frame_locator("#frame")
-    # Playwright's rendered-text matcher skips nodes inside <head>.
-    expect(frame.locator("title")).to_have_js_property("textContent", "단가표 · " + STATES[state])
+    expect(frame.locator("html")).to_have_attribute("data-product-runtime", "research-application")
+    expect(frame.locator("html")).to_have_attribute("data-product-screen", "price-workspace")
+    expect(frame.locator("html")).to_have_attribute("data-product-state", state)
+    expect(frame.locator("#order-app-header")).to_have_count(1)
+    expect(frame.locator("#order-single")).to_have_count(1)
+    expect(frame.locator("iframe")).to_have_count(0)
     frame.locator("#r3-veil").wait_for(state="attached")
     expect(frame.locator("#price-workspace-app")).to_have_attribute("data-workspace-storage", "qa-memory")
     expect(page.locator("#frame")).to_have_js_property("inert", False)
@@ -36,10 +44,21 @@ def ready_frame(page, state="consumer-products"):
 
 
 def choose_state(page, state):
+    page.evaluate("""() => {
+      const frame=document.querySelector('#frame'), doc=frame.contentDocument;
+      window.__priceReviewBefore={frame,doc,app:frame.contentWindow.ORDER_RESEARCH_APP,
+        header:doc.querySelector('#order-app-header'),brand:doc.querySelector('.order-product-brand svg')};
+    }""")
     button = page.locator('#state-buttons button[data-state="' + state + '"]')
     button.click()
     expect(button).to_have_attribute("aria-pressed", "true")
-    return ready_frame(page, state)
+    frame = ready_frame(page, state)
+    assert page.evaluate("""() => {
+      const before=window.__priceReviewBefore, frame=document.querySelector('#frame'), doc=frame.contentDocument;
+      return frame===before.frame && doc===before.doc && frame.contentWindow.ORDER_RESEARCH_APP===before.app &&
+        doc.querySelector('#order-app-header')===before.header && doc.querySelector('.order-product-brand svg')===before.brand;
+    }"""), "Selecting a QA state must keep the running application document and common header"
+    return frame
 
 
 def product_row(frame, name):
@@ -58,7 +77,7 @@ def settled_dialog(frame):
         throw Error('Price modal did not settle');
     }""")
     expect(dialog).to_have_attribute("data-modal-role", "editor")
-    assert dialog.evaluate("() => [...window.OrderModalShell.activeIds]") == ["pw-workspace-dialog"]
+    assert dialog.evaluate("() => [...window.ORDER_RESEARCH_APP.priceWorkspace.modal.activeIds]") == ["pw-workspace-dialog"]
     return dialog
 
 
@@ -77,7 +96,22 @@ def submit_dialog(frame):
 
 
 def memory_state(frame):
-    return frame.locator("#order-single").evaluate("root=>{const s=root.priceWorkspaceQa.transport.inspect();return {mode:s.mode,scenario:s.scenario,revision:s.revision,pending:s.pending,calls:s.calls};}")
+    return frame.locator("#order-app-pricing").evaluate("""root=>{
+      const control=window.ORDER_RESEARCH_APP.priceWorkspace;
+      if(!control || root.priceWorkspaceQa?.workspace!==control.workspace)throw Error('PRICE_WORKSPACE_OWNER');
+      const s=control.transport.inspect();
+      return {mode:s.mode,scenario:s.scenario,revision:s.revision,pending:s.pending,calls:s.calls};
+    }""")
+
+
+def review_identity(page):
+    return page.evaluate("""() => {
+      const doc=document.querySelector('#frame').contentDocument;
+      const inspector=doc.querySelector('#order-single').__orderResearchInspector.inspect();
+      return {url:location.href,caption:document.querySelector('#caption').textContent,
+        width:document.querySelector('#width').value,version:document.querySelector('#version').value,
+        session:inspector.session,routeRevision:inspector.routeRevision,pendingRoute:inspector.pendingRoute};
+    }""")
 
 
 def main():
@@ -113,11 +147,14 @@ def main():
             assert page.locator(".lab-topbar button[data-mode]").all_text_contents() == ["집중 보기", "상태 한눈에", "모바일·PC"]
             assert set(page.locator("#state-buttons button[data-state]").evaluate_all("els=>els.map(el=>el.dataset.state)")) == set(STATES)
             sandbox = page.locator("#frame").get_attribute("sandbox").split()
-            assert "allow-scripts" in sandbox and "allow-same-origin" not in sandbox
-            assert page.locator("#frame").evaluate("frame=>frame.contentDocument===null"), "host must not read the opaque frame DOM"
-            security = frame.locator("html").evaluate("root=>({origin:window.origin,policy:root.querySelector('meta[http-equiv=\"Content-Security-Policy\"]').content})")
-            assert security["origin"] == "null" and "connect-src 'none'" in security["policy"], security
-            result["checks"]["opaqueInlineFrame"] = security
+            assert "allow-scripts" in sandbox and "allow-same-origin" in sandbox
+            assert page.locator("#frame").evaluate("frame=>frame.contentDocument!==null")
+            ownership = frame.locator("html").evaluate("""root=>({origin:window.origin,
+              build:root.dataset.productBuild,runtime:root.dataset.productRuntime,
+              appInstance:window.ORDER_RESEARCH_APP.instance,headerCount:document.querySelectorAll('#order-app-header').length})""")
+            assert ownership["origin"] == fixture["url"] and ownership["runtime"] == "research-application", ownership
+            assert ownership["headerCount"] == 1 and ownership["build"], ownership
+            result["checks"]["sharedApplicationFrame"] = ownership
             expect(frame.locator("[data-sales-product]")).to_have_count(160)
             expected_specs = {f"{shell}번 {grade} {pack}구" for shell in (1, 2, 3, 4)
                               for grade in ("왕란", "특란", "대란", "중란", "소란")
@@ -171,7 +208,44 @@ def main():
             result["checks"]["consumer"] = {"businessRows": 160, "consumerRows": 160, "percent": 8800, "amount": 8250, "manualSavedAndReloaded": 7999, "blankBaseSkipped": True}
 
             frame.locator("[data-section=carriers]").click()
+            frame = ready_frame(page, "delivery")
             frame.locator("[data-action=add-carrier]").first.click()
+            dialog = settled_dialog(frame)
+            dialog.locator("[name=name]").fill("QA 편집 중인 운송사")
+            before_editor = frame.locator("#order-app-pricing").evaluate("() => ORDER_RESEARCH_APP.priceWorkspace.snapshot()")
+            assert before_editor["model"]["dirty"] is False, "open editor alone must block QA replacement even when the saved document is clean"
+            dialog.evaluate("""dialog => {
+              const control=window.ORDER_RESEARCH_APP.priceWorkspace;
+              window.__qaOpenPriceEditor={dialog,control,workspace:control.workspace};
+            }""")
+            before_target = review_identity(page)
+            # The dialog lives in the app; outside R1 controls must not destroy
+            # it or bind the inspector to a target that the app rejected.
+            for destination in ("state", "campaign"):
+                if destination == "state":
+                    page.locator('#state-buttons [data-state="empty"]').click()
+                else:
+                    page.locator('.lab-role-filter [data-role="all"]').click()
+                    page.locator('#catalog-search').fill('admin-campaigns')
+                    page.locator('#catalog button[data-module="admin-campaigns"]').click()
+                frame = ready_frame(page, "delivery")
+                expect(page.locator('#live')).to_contain_text('현재 화면과 입력은 유지됩니다')
+                expect(page.locator('#state-buttons [data-state="delivery"]')).to_have_attribute('aria-pressed', 'true')
+                expect(page.locator('#points')).to_be_enabled()
+                assert review_identity(page) == before_target
+                dialog = settled_dialog(frame)
+                expect(dialog.locator('[name=name]')).to_have_value('QA 편집 중인 운송사')
+                assert dialog.evaluate("""dialog => {
+                  const before=window.__qaOpenPriceEditor,control=window.ORDER_RESEARCH_APP.priceWorkspace;
+                  return dialog===before.dialog && control===before.control && control.workspace===before.workspace;
+                }""")
+                current_editor = frame.locator("#order-app-pricing").evaluate("() => ORDER_RESEARCH_APP.priceWorkspace.snapshot()")
+                assert current_editor['document'] == before_editor['document']
+                assert current_editor['model'] == before_editor['model']
+            page.locator('#catalog-search').fill('price-workspace')
+            result["checks"]["openEditorQaBoundary"] = {"cleanDocument": True, "sameModalAndOwner": True,
+                "stateChangeRefused": True, "campaignChangeRefused": True, "captionUrlTargetAndInspectorRestored": True}
+            dialog.locator('[name=name]').fill('')
             frame.locator(".pw-dialog button[type=submit]").click()
             expect(frame.locator(".pw-dialog")).to_be_visible()
             assert frame.locator(".pw-dialog [name=name]").evaluate("input=>input.validity.valueMissing")
@@ -215,7 +289,7 @@ def main():
 
             frame = choose_state(page, "consumer-products")
             expect(product_row(frame, "1번 왕란 30구").locator("[data-product-price]")).to_have_value("")
-            assert memory_state(frame)["revision"] == 0, "new review frames start with independent data"
+            assert memory_state(frame)["revision"] == 0, "explicit QA scenarios reset only their disposable pricing data"
             page.locator("#new").click()
             expect(frame.locator("#r3-veil")).to_be_visible()
             expect(page.locator("#new")).to_have_attribute("aria-pressed", "true")
@@ -234,6 +308,27 @@ def main():
             assert geometry["width"] == 320 and geometry["left"] >= 0 and geometry["right"] <= 321 and geometry["document"] <= 321, geometry
             page.locator("#frame").screenshot(path=str(OUT / "consumer-modal-320.png"))
             result["checks"]["mobileModal"] = geometry
+
+            # The old renderer remains isolated only on its explicit recorded
+            # identity. Current pricing must never fall back to this document.
+            recorded_url = fixture["url"] + "/ia?" + urlencode({
+                "view": "qa-lab", "screen": "price-workspace/consumer-products/email", "width": 1280,
+                "version": "recorded", "artifactHash": RECORDED_PRICE_HASH,
+            })
+            page.goto(recorded_url)
+            recorded = page.frame_locator("#frame")
+            expect(recorded.locator("title")).to_have_js_property("textContent", "단가표 · " + STATES["consumer-products"])
+            recorded.locator("#r3-veil").wait_for(state="attached")
+            expect(recorded.locator("#price-workspace-app")).to_have_attribute("data-workspace-storage", "qa-memory")
+            expect(recorded.locator("[data-sales-product]")).to_have_count(160)
+            expect(page.locator("#frame")).to_have_js_property("inert", False)
+            sandbox = page.locator("#frame").get_attribute("sandbox").split()
+            assert "allow-scripts" in sandbox and "allow-same-origin" not in sandbox
+            assert page.locator("#frame").evaluate("frame=>frame.contentDocument===null"), "host must not read the recorded opaque frame DOM"
+            security = recorded.locator("html").evaluate("root=>({origin:window.origin,policy:root.querySelector('meta[http-equiv=\"Content-Security-Policy\"]').content,sharedApp:!!window.ORDER_RESEARCH_APP})")
+            assert security["origin"] == "null" and "connect-src 'none'" in security["policy"], security
+            assert not security["sharedApp"], security
+            result["checks"]["opaqueInlineFrame"] = {"version": "recorded", "artifactHash": RECORDED_PRICE_HASH, **security}
             result["chromium"] = browser.version
             assert not result["businessRequests"], result["businessRequests"]
             assert not result["externalRequests"], result["externalRequests"]
@@ -245,7 +340,7 @@ def main():
         host.terminate()
         host.wait(timeout=5)
         (OUT / "receipt.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print("PASS R1 workspace: opaque frame, three R1 modes, 160-spec catalog, real price/delivery modals, memory save/reload, controlled states and position pins; zero business API requests.")
+    print("PASS R1 workspace: one current application/header, recorded opaque source, three R1 modes, 160-spec catalog, real price/delivery modals, memory save/reload, controlled states and position pins; zero business API requests.")
 
 
 if __name__ == "__main__":

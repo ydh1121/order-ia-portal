@@ -34,7 +34,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   // Desired review target and the live app's acknowledged session can differ
   // while an artifact lookup or message is in flight. Keep the latter until a
   // newer authenticated ready/route proves that the same app adopted its token.
-  let researchLive=null,researchPending=null,researchDocumentBuild=null,researchRouteRevision=0;
+  let researchLive=null,researchPending=null,researchConfirmed=null,researchDocumentBuild=null,researchRouteRevision=0;
   let reviewMode='simple',detailedCatalog=null,detailedCatalogRequest=null;
   const modeOf=value=>value?.mode==='detailed'?'detailed':'simple';
   const modeFields=mode=>mode==='detailed'?{mode:'detailed'}:{};
@@ -62,7 +62,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     researchCandidates.set(value.channel,value);
     while(researchCandidates.size>32){const key=researchCandidates.keys().next().value;if(key===researchLive?.channel){const live=researchCandidates.get(key);researchCandidates.delete(key);researchCandidates.set(key,live);}else researchCandidates.delete(key);}
   }
-  function resetResearch(){researchLive=null;researchPending=null;researchDocumentBuild=null;researchRouteRevision=0;researchCandidates.clear();}
+  function resetResearch(){researchLive=null;researchPending=null;researchConfirmed=null;researchDocumentBuild=null;researchRouteRevision=0;researchCandidates.clear();}
   function sendResearchSelection(){
     const next=researchPending,live=researchLive;
     if(!next||next.generation!==generation||!live||live.application!==next.identity.application||next.from===live.channel)return;
@@ -72,6 +72,19 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   function researchFailed(message='검토 화면 정보를 불러오지 못했습니다. 앱의 입력은 유지됩니다. 화면을 다시 선택해 주세요.'){
     clearTimeout(transitionTimeout);researchPending=null;displayed=null;target=null;artifact=null;session='';frame.inert=false;
     status(message);
+  }
+  function researchCancelled(){
+    const pending=researchPending,prior=pending?.rollback;
+    if(!prior?.displayed||!prior.artifact||prior.displayed.channel!==researchLive?.channel||prior.artifact.hash!==researchLive?.hash){researchFailed();return;}
+    clearTimeout(transitionTimeout);researchCandidates.delete(pending.identity.channel);researchPending=null;
+    current=prior.current;artifact=prior.artifact;target=prior.target;session=prior.session;displayed=prior.displayed;reviewMode=prior.mode;
+    frame.inert=false;$('version').value=prior.version;$('width').value=String(prior.width);$('surface').style.setProperty('--width',prior.width+'px');
+    $('caption').textContent=current.label+' · '+current.stateLabel;$('version-mark').textContent='이번 판';
+    $('quote-candidates').hidden=!['q1','q2','q3','q4','quote-review'].includes(current.screen);$('buyer').hidden=current.screen!=='quote-result';
+    document.querySelectorAll('[data-review]').forEach(button=>button.disabled=false);
+    for(const id of ['new','general','figma-stage','figma-url','figma-memo','link-figma'])$(id).disabled=false;
+    history.replaceState(null,'',prior.url);presentExports();shell?.render();list();syncPins();
+    status('선택한 상태로 전환하지 않았습니다. 현재 화면과 입력은 유지됩니다. 미저장 변경과 열려 있는 편집 창을 먼저 확인해 주세요.');
   }
   function historyResearchNotice(row,width,hash,mode='simple'){
     status('이력 앱 안에서 이동했습니다. 원래 검토 화면으로 돌아와 위치 의견을 확인해 주세요.');clearTimeout(statusTimer);
@@ -961,6 +974,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let authOriginStep = null, arrivalScreen = null;
   async function select(row,version=$('version').value,originStep=null,pinnedHash=null,appliedState=false,purchaseFixture=null,researchNavigation=null){
     if(!row)return;
+    // A second selection may arrive while the first lookup has cleared the
+    // transient fields. Roll back to the last acknowledged live inspection.
+    const rollback=researchConfirmed;
     const requestedMode=row.application?(researchNavigation?.mode??row.mode??reviewMode):'simple';
     if(!validMode(requestedMode)){status('검토 모드를 확인할 수 없습니다.');return;}
     remember();reviewMode=requestedMode;row=atMode(row,requestedMode);
@@ -992,7 +1008,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const component=['login','signup','password','otp','terms'].includes(row.screen)&&row.runtimeFamily!=='snapshot';
       const sameRuntime=previous&&previous.runtimeDigest===(a.source?.runtimeDigest||null)&&previous.epoch===(a.archivedSource?.epoch||null);
       if(a.application&&researchDocumentBuild===a.application.build&&version==='current'&&!pinnedHash){
-        researchPending={generation:n,identity,from:null,payload:{channel:session,artifact:a.hash,hash:a.hash,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:'current',...modeFields(requestedMode),route:{screen:row.screen,state:row.state,variant:row.variant,mode:requestedMode},fixture:a.fixture||null,acknowledgeOnly:Boolean(researchNavigation),routeRevision:researchNavigation?.routeRevision}};
+        researchPending={generation:n,identity,from:null,rollback,payload:{channel:session,artifact:a.hash,hash:a.hash,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:'current',...modeFields(requestedMode),route:{screen:row.screen,state:row.state,variant:row.variant,mode:requestedMode},fixture:a.fixture||null,acknowledgeOnly:Boolean(researchNavigation),routeRevision:researchNavigation?.routeRevision}};
         sendResearchSelection();
         // A missing acknowledgement must not discard a live app's input by
         // silently replacing its document. Leave it available for recovery.
@@ -1110,7 +1126,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
         }
         if(m.type==='userActivity'){document.dispatchEvent(new Event('ia-session-activity'));return;}
         if(m.type==='researchError'){
-          if(researchPending&&m.payload?.channel===researchPending.identity.channel)researchFailed();
+          if(researchPending&&m.payload?.channel===researchPending.identity.channel){if(m.payload.code==='INSPECTION_NAVIGATION_CANCELLED')researchCancelled();else researchFailed();}
           return;
         }
         if(m.type==='researchRoute'){
@@ -1194,7 +1210,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       select(screens.find(r=>r.id==='quote-review/normal/email'));return;
     }
     if(m.type==='ready'){if(!sameMode(m.payload,target))return;clearTimeout(transitionTimeout);frame.inert=false;displayed={channel:session,hash:artifact.hash,width:target.viewport,version:artifact.version,screen:current.screen,state:current.state,variant:current.variant,motion:$('motion-enabled').checked,runtimeDigest:artifact.source?.runtimeDigest||null,epoch:artifact.archivedSource?.epoch||null,application:artifact.application?.build||null,...modeFields(modeOf(target))};
-      if(artifact.application){syncPins();if(wantsPoint)send('mode',true);return;}
+      if(artifact.application){researchConfirmed={current,artifact,target,session,displayed,mode:reviewMode,version:displayed.version,width:displayed.width,url:location.href};syncPins();if(wantsPoint)send('mode',true);return;}
       if(isCurrent&&arrivalScreen===current.id){send('memberArrival',true);arrivalScreen=null;}
       if(isCurrent)restoreOnboardingChoice();
       if(isCurrent&&['profile','onboarding'].includes(current.screen))send('noticeCountFixture',sampleUnread);

@@ -17,8 +17,8 @@ export async function attachResearchReview(app,config){
     if(selecting||!inspection.active||inspection.pendingRoute||session.version!=='current'||inspection.session.version!=='current'||
       inspection.session.channel!==session.channel||inspection.session.artifact!==session.artifact||!sameRoute(inspection.session,session))return null;
     const snapshot=app.snapshot(),route=snapshot?.route,pageRoute=snapshot?.pageRoute;
-    if(route?.kind!=='page'||pageRoute?.kind!=='page'||!sameRoute(route,session)||!sameRoute(pageRoute,session))return null;
-    const owner=document.getElementById('order-app-page');
+    if(!['page','pricing'].includes(route?.kind)||pageRoute?.kind!==route.kind||!sameRoute(route,session)||!sameRoute(pageRoute,session))return null;
+    const owner=document.getElementById(route.kind==='pricing'?'order-app-pricing':'order-app-page');
     if(!owner?.isConnected||owner.closest('#order-single')!==root||owner.dataset.researchSceneConnection!=='connected')return null;
     for(let node=owner;node;node=node.parentElement){
       if(node.hidden||node.inert===true||node.getAttribute('aria-hidden')==='true')return null;
@@ -59,7 +59,7 @@ export async function attachResearchReview(app,config){
       }
       session={...session,...next,artifact:next.artifact||next.hash};
       if(modeOf(next)==='simple')delete session.mode;
-    }catch(error){if(generation===sequence)parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type:'researchError',payload:{code:'SCENE_UNAVAILABLE',channel:next.channel}},location.origin);console.error(error);}
+    }catch(error){const cancelled=error?.message==='INSPECTION_NAVIGATION_CANCELLED';if(generation===sequence)parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type:'researchError',payload:{code:cancelled?'INSPECTION_NAVIGATION_CANCELLED':'SCENE_UNAVAILABLE',channel:next.channel}},location.origin);if(!cancelled)console.error(error);}
     finally{if(generation===sequence)selecting=false;}
   },{signal:controller.signal});
   window.addEventListener('pagehide',()=>{controller.abort();inspector.dispose();},{once:true,signal:controller.signal});

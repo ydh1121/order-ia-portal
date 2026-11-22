@@ -87,6 +87,82 @@ def capture_quote_diagnostics(page):
     }''')
 
 
+def price_snapshot(surface):
+    """Read the original workspace model through its application owner."""
+    return surface.locator('#order-app-pricing').evaluate('''root => {
+        const control=window.ORDER_RESEARCH_APP.priceWorkspace;
+        if(!control || root.priceWorkspaceQa?.workspace!==control.workspace)throw Error('PRICE_WORKSPACE_OWNER');
+        return control.snapshot();
+    }''')
+
+
+def remember_review_application(page):
+    page.evaluate('''() => {
+        const frame=document.querySelector('#frame'), doc=frame.contentDocument;
+        window.__researchScopeBefore={frame,doc,app:frame.contentWindow.ORDER_RESEARCH_APP,
+            header:doc.querySelector('#order-app-header'),brand:doc.querySelector('.order-product-brand svg')};
+    }''')
+
+
+def same_review_application(page, frame):
+    assert page.evaluate('''() => {
+        const before=window.__researchScopeBefore, frame=document.querySelector('#frame'), doc=frame.contentDocument;
+        return frame===before.frame && doc===before.doc && frame.contentWindow.ORDER_RESEARCH_APP===before.app &&
+            doc.querySelector('#order-app-header')===before.header && doc.querySelector('.order-product-brand svg')===before.brand;
+    }'''), 'MVP routes must retain the same review iframe, application document and common header'
+    expect(frame.locator('#order-single')).to_have_count(1)
+    expect(frame.locator('#order-app-header')).to_have_count(1)
+    expect(frame.locator('.order-product-brand')).to_have_count(1)
+    expect(frame.locator('iframe')).to_have_count(0)
+
+
+def ready_review_route(page, frame, screen, state):
+    expect(frame.locator('html')).to_have_attribute('data-product-screen', screen, timeout=30000)
+    expect(frame.locator('html')).to_have_attribute('data-product-state', state, timeout=30000)
+    expect(page.locator('#focus-unit')).to_have_attribute('data-module', screen, timeout=30000)
+    expect(page.locator('#focus-unit')).to_have_attribute('data-state', state, timeout=30000)
+    expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
+    same_review_application(page, frame)
+
+
+def review_target_snapshot(page):
+    """Observe the acknowledged target, including its inspector identity."""
+    return page.evaluate('''() => {
+        const frame=document.querySelector('#frame'), root=frame.contentDocument.querySelector('#order-single');
+        const inspection=root.__orderResearchInspector.inspect();
+        return {url:location.href,caption:document.querySelector('#caption').textContent,
+            width:document.querySelector('#width').value,version:document.querySelector('#version').value,
+            session:inspection.session,routeRevision:inspection.routeRevision,pendingRoute:inspection.pendingRoute};
+    }''')
+
+
+def capture_product_scope_diagnostics(page):
+    """Read app ownership/layout only; omit account fields and private payloads."""
+    return page.evaluate('''() => {
+        const frame=document.querySelector('#frame');
+        let win=window, doc=document;
+        if(frame){if(!frame.contentDocument)return {available:false,opaque:true};win=frame.contentWindow;doc=frame.contentDocument;}
+        const app=win.ORDER_RESEARCH_APP;if(!app)return {available:false};
+        const price=app.priceWorkspace?.snapshot(), box=node=>{
+            const r=node.getBoundingClientRect(),css=win.getComputedStyle(node);
+            return {id:node.id,hidden:node.hidden,inert:node.inert,display:css.display,filter:css.filter,
+                pointerEvents:css.pointerEvents,rect:{x:r.x,y:r.y,width:r.width,height:r.height}};
+        };
+        return {available:true,build:app.build,route:app.snapshot().route,
+            frame:frame && {inert:frame.inert,src:frame.getAttribute('src')},
+            headerCount:doc.querySelectorAll('#order-app-header').length,
+            price:price && {state:price.state,scenario:price.scenario,source:price.source,model:price.model,
+                ready:price.ready,error:price.error,pendingRequests:price.pendingRequests,pendingWrites:price.pendingWrites,
+                transportMode:price.transportMode,disposed:price.disposed},
+            layout:['#order-app-header','#order-app-page','#order-app-pricing','#pw-main','#pw-nav']
+                .flatMap(selector=>[...doc.querySelectorAll(selector)].map(node=>({selector,...box(node)}))),
+            dialogs:[...doc.querySelectorAll('dialog')].map(node=>({...box(node),open:node.open})),
+            activeElement:{id:doc.activeElement?.id,tag:doc.activeElement?.tagName},
+            appStatus:doc.querySelector('#order-app-status')?.textContent,
+            priceStatus:doc.querySelector('#pw-notice')?.textContent};
+    }''')
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     log = (OUT / 'host.stderr.log').open('w')
@@ -94,6 +170,7 @@ def main():
                             stdout=subprocess.PIPE, stderr=log, text=True)
     driver = browser = None
     errors, console_errors, failed, aborted, review_writes, outside_writes = [], [], [], [], [], []
+    operating_writes, price_api_requests = [], []
     receipt = {'status': 'RUNNING', 'commercialAcceptance': False, 'checks': []}
     cfg, phase = {}, 'owner-login'
 
@@ -111,11 +188,15 @@ def main():
                            'resource': response.request.resource_type})
 
     def request_sent(request):
+        path = urlsplit(request.url).path
+        if path.startswith('/api/ia/r3-price'):
+            price_api_requests.append({'method': request.method, 'path': path})
         if request.method in ('GET', 'HEAD', 'OPTIONS'):
             return
-        path = urlsplit(request.url).path
         if path == '/api/ia/r3-qa/records':
             review_writes.append({'method': request.method, 'path': path})
+        if path.startswith('/api/') and not path.startswith(('/api/ia/auth/', '/api/ia/r3-qa/')):
+            operating_writes.append({'method': request.method, 'path': path})
         if urlsplit(request.url).netloc != urlsplit(cfg['url']).netloc:
             outside_writes.append({'method': request.method, 'url': safe(request.url)})
 
@@ -289,12 +370,235 @@ def main():
         receipt['checks'].append('drawer location picking returns to the same unsaved text without creating a QA record')
         page.screenshot(path=str(OUT / 'qa-shell-1440.png'), full_page=True)
 
+        # The remaining MVP product families use this same running app. Their
+        # canonical phase metadata and explicit QA scenarios remain separate.
+        phase = 'qa-product-scope'
+        catalog_response = page.evaluate('''async () => {
+            const response=await fetch('/api/ia/r3-qa/artifact',{credentials:'same-origin'});
+            return {status:response.status,body:await response.json()};
+        }''')
+        assert catalog_response['status'] == 200, catalog_response
+        catalog = catalog_response['body']['items']
+        campaigns = [row for row in catalog if row['screen'] == 'admin-campaigns']
+        pricing = [row for row in catalog if row['screen'] == 'price-workspace']
+        campaign_states = ['normal', 'more', 'reviewing', 'approved', 'denied']
+        price_states = ['costs', 'store-products', 'consumer-products', 'classification',
+                        'delivery', 'loading', 'error', 'empty', 'guest']
+        assert len(campaigns) == 5 and {row['state'] for row in campaigns} == set(campaign_states)
+        assert all(row['application'] is True and row['phase'] == 'future' for row in campaigns)
+        assert len(pricing) == 9 and {row['state'] for row in pricing} == set(price_states)
+        assert all(row['application'] is True for row in pricing)
+        # The first pricing mount can fail before it has any document. An
+        # ordinary return must retry that same product owner without treating
+        # the forced QA provider error as a successful load.
+        phase = 'qa-pricing-initial-error'
+        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=price-workspace/error/email&width=1280')
+        wait_for_expression(page, 'document.querySelector("#frame")?.src.includes("view=research-r3")', timeout=30000)
+        frame = page.frame_locator('#frame')
+        frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
+        expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
+        remember_review_application(page)
+        ready_review_route(page, frame, 'price-workspace', 'error')
+        expect(frame.locator('#pw-notice')).to_contain_text('저장소에 연결하지 못했습니다')
+        initial_error = price_snapshot(frame)
+        assert initial_error['document'] is None and initial_error['error'] == 'SERVICE_UNAVAILABLE'
+        frame.locator('#order-app-pricing').evaluate('''root => {
+            const control=window.ORDER_RESEARCH_APP.priceWorkspace;
+            window.__failedPriceOwner={control,workspace:control.workspace,transport:control.transport};
+        }''')
+        calls_before_retry = frame.locator('#order-app-pricing').evaluate("() => ORDER_RESEARCH_APP.priceWorkspace.transport.inspect().calls.length")
+        assert frame.locator('#order-single').evaluate("() => ORDER_RESEARCH_APP.navigate({screen:'admin-campaigns',state:'normal'})")
+        ready_review_route(page, frame, 'admin-campaigns', 'normal')
+        campaign_target = review_target_snapshot(page)
+        assert frame.locator('#order-single').evaluate("() => ORDER_RESEARCH_APP.navigate({screen:'price-workspace',state:'costs'})") is False
+        ready_review_route(page, frame, 'admin-campaigns', 'normal')
+        assert review_target_snapshot(page) == campaign_target
+        retried = price_snapshot(frame)
+        assert retried['document'] is None and retried['error'] == 'SERVICE_UNAVAILABLE'
+        assert frame.locator('#order-app-pricing').evaluate('''root => {
+            const before=window.__failedPriceOwner,control=window.ORDER_RESEARCH_APP.priceWorkspace;
+            return control===before.control && control.workspace===before.workspace && control.transport===before.transport;
+        }''')
+        assert frame.locator('#order-app-pricing').evaluate("() => ORDER_RESEARCH_APP.priceWorkspace.transport.inspect().calls.length") > calls_before_retry
+        page.locator('.lab-role-filter [data-role="all"]').click()
+        page.locator('#catalog-search').fill('price-workspace')
+        page.locator('#catalog button[data-module="price-workspace"]').click()
+        ready_review_route(page, frame, 'price-workspace', 'costs')
+        expect(frame.locator('[data-cost="raw"]').first).to_be_visible()
+        assert price_snapshot(frame)['ready'] is True
+        receipt['checks'].append('initial price provider failure retries on ordinary return without false success; explicit QA recovery keeps the same app and header')
+
+        phase = 'qa-product-scope'
+        page.locator('.lab-role-filter [data-role="all"]').click()
+        page.locator('#catalog-search').fill('admin-campaigns')
+        page.locator('#catalog button[data-module="admin-campaigns"]').click()
+        ready_review_route(page, frame, 'admin-campaigns', 'normal')
+        for state in campaign_states:
+            page.locator('#state-buttons [data-state="' + state + '"]').click()
+            ready_review_route(page, frame, 'admin-campaigns', state)
+            expect(frame.locator('#order-app-page')).to_contain_text('공동구매 실적심사')
+            if state == 'denied':
+                expect(frame.locator('#order-app-page')).to_contain_text('접근 권한이 없어요')
+            else:
+                expect(frame.locator('#order-app-page [data-action="approve-performance"]')).to_be_visible()
+        receipt['checks'].append('all five MVP campaign states retain one app and header without rewriting their future-phase metadata')
+
+        phase = 'qa-pricing-draft'
+        page.locator('#catalog-search').fill('price-workspace')
+        page.locator('#catalog button[data-module="price-workspace"]').click()
+        ready_review_route(page, frame, 'price-workspace', 'costs')
+        page.locator('#state-buttons [data-state="store-products"]').click()
+        ready_review_route(page, frame, 'price-workspace', 'store-products')
+        expect(frame.locator('#price-workspace-app')).to_have_attribute('data-workspace-storage', 'qa-memory')
+        expect(frame.locator('[data-sales-product]')).to_have_count(160)
+        price_root = frame.locator('#order-app-pricing')
+        price_root.evaluate('''root => {
+            const control=window.ORDER_RESEARCH_APP.priceWorkspace;
+            window.__researchPriceOwner={root,control,workspace:control.workspace,transport:control.transport};
+        }''')
+        product = frame.locator('.pw-product-table tbody tr').filter(has=frame.get_by_text('1번 왕란 30구', exact=True))
+        price_input = product.locator('[data-product-price]')
+        product_id = price_input.get_attribute('data-product-price')
+        price_input.fill('8123')
+        expect(price_input).to_have_value('8123')
+        frame.locator('#pw-nav [data-section="costs"][aria-current]').click()
+        ready_review_route(page, frame, 'price-workspace', 'costs')
+        frame.locator('[data-shell="2"]').click()
+        expect(frame.locator('[data-shell="2"]')).to_have_attribute('aria-pressed', 'true')
+        raw_input = frame.locator('[data-cost="raw"]').first
+        row_id, grade_id = raw_input.get_attribute('data-row-id'), raw_input.get_attribute('data-grade-id')
+        raw_input.fill('6200')
+        packing_input = frame.locator('[data-cost="packing"][data-row-id="' + row_id + '"][data-grade-id="' + grade_id + '"]')
+        packing_input.fill('145')
+        expect(raw_input).to_have_value('6200')
+        expect(packing_input).to_have_value('145')
+        frame.locator('#pw-nav [data-section="classification"]').click()
+        ready_review_route(page, frame, 'price-workspace', 'classification')
+        frame.locator('[data-class-tab="fees"]').click()
+        expect(frame.locator('[data-class-tab="fees"]')).to_have_attribute('aria-pressed', 'true')
+        draft = price_snapshot(frame)
+        assert draft['source'] == 'canonical-price-workspace' and draft['transportMode'] == 'qa-memory'
+        assert draft['model']['dirty'] is True and draft['model']['section'] == 'classification'
+        assert next(row for row in draft['document']['products'] if row['id'] == product_id)['price'] == '8123'
+        cost = next(row for row in draft['document']['costs']['2'] if row['id'] == row_id)['prices'][grade_id]
+        assert cost['raw'] == '6200' and cost['packing'] == '145'
+
+        # Normal application navigation must not hydrate a new QA fixture.
+        # The route seam opens the actual shared auth sheet; Escape is native.
+        assert frame.locator('#order-single').evaluate("() => ORDER_RESEARCH_APP.navigate({screen:'login',state:'empty'})")
+        ready_review_route(page, frame, 'login', 'empty')
+        expect(frame.locator('.product-auth-sheet')).to_be_visible()
+        expect(price_root).to_be_visible()
+        frame.locator('.product-auth-sheet [name="email"]:visible').press('Escape')
+        expect(frame.locator('.product-auth-sheet')).not_to_be_visible()
+        ready_review_route(page, frame, 'price-workspace', 'classification')
+        assert price_snapshot(frame)['document'] == draft['document']
+
+        assert frame.locator('#order-single').evaluate("() => ORDER_RESEARCH_APP.navigate({screen:'admin-campaigns',state:'normal'})")
+        ready_review_route(page, frame, 'admin-campaigns', 'normal')
+        expect(price_root).to_be_hidden()
+        frame.locator('#order-app-page [data-action="more"]').click()
+        ready_review_route(page, frame, 'admin-campaigns', 'more')
+        frame.locator('#order-app-page [data-action="approve-performance"]').click()
+        expect(frame.locator('#order-app-status')).to_contain_text('연결된 서비스의 응답을 확인하지 못했어요')
+        ready_review_route(page, frame, 'admin-campaigns', 'more')
+        assert frame.locator('#order-single').evaluate("() => ORDER_RESEARCH_APP.navigate({screen:'price-workspace',state:'classification'})")
+        ready_review_route(page, frame, 'price-workspace', 'classification')
+        expect(price_root).to_be_visible()
+        expect(frame.locator('[data-class-tab="fees"]')).to_have_attribute('aria-pressed', 'true')
+        expect(frame.locator('[data-shell="2"]')).to_have_attribute('aria-pressed', 'true')
+        retained = price_snapshot(frame)
+        assert retained['document'] == draft['document'] and retained['model'] == draft['model']
+        assert price_root.evaluate('''root => {
+            const saved=window.__researchPriceOwner, control=window.ORDER_RESEARCH_APP.priceWorkspace;
+            return root===saved.root && control===saved.control && control.workspace===saved.workspace && control.transport===saved.transport;
+        }''')
+        assert len(context.pages) == 1
+        receipt['checks'].append('original price and cost edits, menu and model survive auth and campaign return in the same application')
+
+        # The QA shell may ask for another scenario, but it may not silently
+        # replace a dirty original document or leave its frame inert on refusal.
+        phase = 'qa-pricing-scenario-boundary'
+        dirty_target = review_target_snapshot(page)
+        page.locator('#state-buttons [data-state="empty"]').click()
+        expect(frame.locator('#order-app-status')).to_contain_text('미저장 변경을 먼저 저장하거나 되돌려 주세요')
+        ready_review_route(page, frame, 'price-workspace', 'classification')
+        expect(page.locator('#state-buttons [data-state="classification"]')).to_have_attribute('aria-pressed', 'true')
+        expect(page.locator('#points')).to_be_enabled()
+        expect(frame.locator('[data-class-tab="fees"]')).to_have_attribute('aria-pressed', 'true')
+        refused = price_snapshot(frame)
+        assert refused['document'] == draft['document'] and refused['model'] == draft['model']
+        assert refused['state'] == retained['state'] and refused['scenario'] == retained['scenario']
+        assert review_target_snapshot(page) == dirty_target
+        # A different catalog family is also a QA scenario change. Ordinary
+        # app navigation above may retain this draft; QA fixture replacement
+        # must refuse it and restore the exact previous review target.
+        page.locator('#catalog-search').fill('admin-campaigns')
+        page.locator('#catalog button[data-module="admin-campaigns"]').click()
+        ready_review_route(page, frame, 'price-workspace', 'classification')
+        expect(page.locator('#live')).to_contain_text('현재 화면과 입력은 유지됩니다')
+        assert review_target_snapshot(page) == dirty_target
+        assert price_snapshot(frame)['document'] == draft['document']
+        assert price_snapshot(frame)['model'] == draft['model']
+        page.locator('#catalog-search').fill('price-workspace')
+        # Exercise the recovered inspector, leaving no review record behind.
+        page.locator('#new').click()
+        expect(frame.locator('#r3-veil')).to_be_visible()
+        frame.locator('#r3-veil').press('Escape')
+        expect(frame.locator('#r3-veil')).to_be_hidden()
+        expect(page.locator('#new')).to_have_attribute('aria-pressed', 'false')
+        expect(page.locator('#drawer')).to_be_visible()
+        page.locator('#close-drawer').click()
+        expect(page.locator('#drawer')).to_be_hidden()
+
+        frame.locator('#price-workspace-app [data-action="draft"]').click()
+        expect(frame.locator('#pw-notice')).to_contain_text('임시저장했습니다')
+        saved = price_snapshot(frame)
+        assert saved['model']['dirty'] is False and saved['model']['revision'] == 1
+        assert saved['transportMode'] == 'qa-memory' and saved['pendingWrites'] == 0
+        assert next(row for row in saved['document']['products'] if row['id'] == product_id)['price'] == '8123'
+        saved_cost = next(row for row in saved['document']['costs']['2'] if row['id'] == row_id)['prices'][grade_id]
+        assert saved_cost['raw'] == '6200' and saved_cost['packing'] == '145'
+        page.locator('#state-buttons [data-state="empty"]').click()
+        ready_review_route(page, frame, 'price-workspace', 'empty')
+        expect(frame.locator('[data-sales-product]')).to_have_count(160)
+        assert frame.locator('[data-product-price]').evaluate_all("nodes => nodes.every(node => node.value==='')")
+        assert price_snapshot(frame)['model']['revision'] == 0
+        receipt['checks'].append('dirty QA state and cross-family selections restore caption, URL, source target and inspector; original memory-only draft save permits explicit reset')
+
+        for state in price_states:
+            page.locator('#state-buttons [data-state="' + state + '"]').click()
+            ready_review_route(page, frame, 'price-workspace', state)
+            if state == 'loading':
+                expect(frame.locator('#pw-main')).to_contain_text('불러오는 중')
+                expect(frame.locator('#pw-main')).to_have_js_property('inert', True)
+            elif state == 'error':
+                expect(frame.locator('#pw-notice')).to_contain_text('저장소에 연결하지 못했습니다')
+            elif state == 'guest':
+                expect(frame.locator('#pw-notice')).to_contain_text('계정 권한을 확인해 주세요')
+                expect(frame.locator('#pw-login')).to_have_count(0)
+            elif state in ('store-products', 'consumer-products', 'empty'):
+                expect(frame.locator('[data-sales-product]')).to_have_count(160)
+                if state == 'empty':
+                    assert frame.locator('[data-product-price]').evaluate_all("nodes => nodes.every(node => node.value==='')")
+            assert price_snapshot(frame)['transportMode'] == 'qa-memory'
+        receipt['checks'].append('all nine price QA scenarios keep the same app document and header with local canonical transport')
+        receipt['productScope'] = {'campaignStates': campaign_states, 'campaignPhase': 'future',
+                                  'priceStates': price_states, 'sameApplicationDocument': True,
+                                  'retainedDraft': {'productId': product_id, 'price': '8123', 'shell': '2',
+                                                    'rowId': row_id, 'gradeId': grade_id, 'raw': '6200', 'packing': '145',
+                                                    'section': 'classification', 'classTab': 'fees'},
+                                  'qaDraftRevision': saved['model']['revision'], 'commercialAcceptance': False}
+        page.screenshot(path=str(OUT / 'product-scope-1440.png'), full_page=True)
+
         critical = [item for item in failed if item['phase'] != 'owner-login' and (
             item['resource'] in ('document', 'script', 'stylesheet') or item['path'].startswith('/ia/research-assets/'))]
         assert not errors, errors
         assert not critical, critical
         assert not review_writes, review_writes
         assert not outside_writes, outside_writes
+        assert not operating_writes, operating_writes
+        assert not price_api_requests, price_api_requests
         receipt['build'] = build
         receipt['status'] = 'PASS'
     except Exception as error:
@@ -310,6 +614,13 @@ def main():
                         name = f'failure-{context_index}-{page_index}-quote.json'
                         (OUT / name).write_text(json.dumps(diagnostic, ensure_ascii=False, indent=2))
                         receipt.setdefault('quoteDiagnostics', []).append(name)
+                    except Exception as diagnostic_error:
+                        receipt.setdefault('diagnosticErrors', []).append(safe(diagnostic_error))
+                    try:
+                        diagnostic = capture_product_scope_diagnostics(page)
+                        name = f'failure-{context_index}-{page_index}-product-scope.json'
+                        (OUT / name).write_text(json.dumps(diagnostic, ensure_ascii=False, indent=2))
+                        receipt.setdefault('productScopeDiagnostics', []).append(name)
                     except Exception as diagnostic_error:
                         receipt.setdefault('diagnosticErrors', []).append(safe(diagnostic_error))
                     try:
@@ -337,7 +648,8 @@ def main():
             host.stdout.close()
         log.close()
         receipt.update({'errors': errors, 'consoleErrors': console_errors, 'failedRequests': failed,
-                        'abortedRequests': aborted, 'reviewWrites': review_writes, 'externalWrites': outside_writes})
+                        'abortedRequests': aborted, 'reviewWrites': review_writes, 'externalWrites': outside_writes,
+                        'operatingWrites': operating_writes, 'priceApiRequests': price_api_requests})
         (OUT / 'receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2))
         print(json.dumps({'status': receipt['status'], 'checks': len(receipt['checks']),
                           'receipt': 'artifacts/research-application/receipt.json'}, ensure_ascii=False))

@@ -78,6 +78,20 @@ test('static export captures the confirmed app DOM, loaded CSS and current contr
   assert.equal(h.d.getElementById('password').value,'SECRET_CURRENT_PASSWORD');
 });
 
+test('current-screen export excludes retained inactive workspace drafts while preserving the live owners',async t=>{
+  const h=client(t);let reads=0;
+  for(const id of ['order-app-page','order-app-quote','order-app-pricing']){
+    const section=h.d.createElement('section');section.id=id;section.hidden=true;
+    section.innerHTML='<p>PRIVATE_INACTIVE_'+id+'</p><input value="PRIVATE_RETAINED_DRAFT">';h.root.append(section);
+    Object.defineProperty(section.querySelector('input'),'value',{get(){reads++;return 'PRIVATE_RETAINED_CURRENT';}});
+  }
+  const result=await h.tools.snapshot(h.args),saved=new JSDOM(result.html);t.after(()=>saved.window.close());
+  assert.equal(reads,0);assert.doesNotMatch(result.html,/PRIVATE_INACTIVE_|PRIVATE_RETAINED_/);
+  assert.equal(saved.window.document.querySelector('#order-app-pricing,#order-app-quote,#order-app-page'),null);
+  assert.equal(saved.window.document.getElementById('amount').value,'10');
+  assert.equal(h.root.querySelectorAll('section[hidden]').length,3);assert.equal(h.network(),0);
+});
+
 test('export rejects missing acknowledgement, origin, route, inspector and build identity before reading input',async t=>{
   for(const mutate of [h=>h.args.acknowledged.hash='c'.repeat(64),h=>{delete h.args.acknowledged.mode;},h=>{delete h.session.mode;},h=>h.route.mode='simple',h=>h.args.expected.mode='unknown',h=>h.args.origin='https://different.invalid',h=>h.route.screen='q3',h=>h.session.channel='different-channel',h=>h.d.documentElement.dataset.productBuild='c'.repeat(64),h=>h.setActive(false),h=>h.setPending({screen:'q3'}),h=>h.args.frame.inert=true]){
     const h=client(t);let reads=0;Object.defineProperty(h.d.getElementById('phone'),'value',{get(){reads++;return 'PRIVATE';}});mutate(h);

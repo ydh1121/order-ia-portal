@@ -21,12 +21,12 @@ export function createResearchEnvironment(config, installFixture, installAdapter
     },
     async configure(route,current,fixture){
       Object.assign(session,route);
-      const authenticated=['login','signup','otp','password','terms'].includes(route.screen)?['success','verified'].includes(route.state):route.screen==='onboarding'?route.state.startsWith('member-'):route.state!=='qa-guest';
+      const authenticated=['login','signup','otp','password','terms'].includes(route.screen)?['success','verified'].includes(route.state):route.screen==='onboarding'?route.state.startsWith('member-'):route.state!=='qa-guest'&&!(route.screen==='price-workspace'&&route.state==='guest');
       const scenario=({'qa-loading':'loading','qa-error':'error','qa-empty':'empty'})[route.state]||'normal';
       const selectedScenario=fixture?.scenario||scenario;
       if(selectedScenario==='empty'&&!scenarioBackup)scenarioBackup=current.fixture.inspect().data;
       const restore=selectedScenario!=='empty'&&scenarioBackup?scenarioBackup:null;
-      current.fixture.releasePending({authenticated,persona:authenticated?(route.screen.startsWith('admin-')||route.screen==='member-email-templates'||route.screen==='receipt'?'operator':route.screen.startsWith('supplier-')?'supplier':'buyer'):'guest',scenario,...(restore?{data:restore}:{}),...(fixture||{})});
+      current.fixture.releasePending({authenticated,persona:authenticated?(route.screen.startsWith('admin-')||route.screen==='member-email-templates'||route.screen==='receipt'||route.screen==='price-workspace'?'operator':route.screen.startsWith('supplier-')?'supplier':'buyer'):'guest',scenario,...(restore?{data:restore}:{}),...(fixture||{})});
       if(restore)scenarioBackup=null;
       await current.refreshSession?.();
     },

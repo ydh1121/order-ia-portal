@@ -203,10 +203,33 @@ test('a cancelled app inspection keeps its prior identity and input instead of a
   assert.equal(child.route.screen,'onboarding');assert.equal(child.inspector().inspect().session.artifact,h.rows[0].hashes[390]);
   assert.equal(h.latestReady().artifact,h.rows[0].hashes[390]);assert.equal(h.toHost.some(entry=>entry.message.type==='ready'&&entry.message.artifact===h.rows[1].hashes[390]),false);
   const failure=h.toHost.filter(entry=>entry.message.type==='researchError').at(-1).message;
-  assert.equal(failure.payload.code,'SCENE_UNAVAILABLE');assert.equal(failure.artifact,h.rows[0].hashes[390]);
+  assert.equal(failure.payload.code,'INSPECTION_NAVIGATION_CANCELLED');assert.equal(failure.artifact,h.rows[0].hashes[390]);
   assert.equal(input.value,'취소한 사업장 입력');assert.equal(input.isConnected,true);assert.equal(h.loads(),1);assert.equal(h.srcdocWrites(),0);
-  h.w.document.getElementById('general').click();assert.equal(h.w.document.getElementById('drawer').hidden,true,'a rejected transition cannot receive a comment under the requested hash');
+  assert.equal(h.selected().screen,'onboarding');assert.equal(new URL(h.w.location.href).searchParams.get('screen'),h.rows[0].id);
+  assert.equal(h.w.document.getElementById('caption').textContent,'onboarding · empty');assert.deepEqual(child.errors,[]);
+  h.w.document.getElementById('general').click();assert.equal(h.w.document.getElementById('drawer').hidden,false,'the retained acknowledged target remains reviewable');
+  assert.equal(h.toHost.some(entry=>entry.message.type==='ready'&&entry.message.artifact===h.rows[1].hashes[390]),false,'the rejected hash never becomes a review target');
   app.inspectRoute=inspectRoute;await h.select('q2');await until(()=>h.settled('q2'));assert.equal(h.child(),child);assert.equal(input.value,'취소한 사업장 입력');
+});
+
+test('rapid rejected QA selections restore the last acknowledged target while an earlier rejection is pending',async t=>{
+  const h=await harness(t),child=h.child(),input=child.w.document.querySelector('input'),gate=deferred();
+  const initialUrl=h.w.location.href,initial=h.latestReady(),app=child.w.ORDER_RESEARCH_APP;
+  input.value='연속 전환 중에도 보존할 입력';
+  app.inspectRoute=async next=>{child.inspectCalls.push(next);if(next.screen==='q1')await gate.promise;return false;};
+  await h.select('q1');await until(()=>child.inspectCalls.length===1);
+  await h.select('q2');
+  await until(()=>h.frame.inert===false&&h.toHost.some(entry=>entry.message.type==='researchError'&&entry.message.payload.code==='INSPECTION_NAVIGATION_CANCELLED'));
+  assert.equal(h.selected().screen,'onboarding');assert.equal(child.route.screen,'onboarding');
+  assert.equal(h.w.location.href,initialUrl);assert.equal(h.w.document.getElementById('caption').textContent,'onboarding · empty');
+  assert.equal(child.inspector().inspect().session.artifact,initial.artifact);assert.equal(h.latestReady().channel,initial.channel);
+  assert.equal(h.loads(),1);assert.equal(h.srcdocWrites(),0);assert.equal(h.child(),child);assert.equal(input.value,'연속 전환 중에도 보존할 입력');
+  h.w.document.getElementById('general').click();assert.equal(h.w.document.getElementById('drawer').hidden,false,'the last acknowledged target remains reviewable');
+  gate.resolve();await tick();
+  assert.equal(h.selected().screen,'onboarding');assert.equal(h.w.location.href,initialUrl);
+  assert.equal(child.inspector().inspect().session.artifact,initial.artifact);
+  assert.equal(h.toHost.some(entry=>entry.message.type==='ready'&&[h.rows[1].hashes[390],h.rows[2].hashes[390]].includes(entry.message.artifact)),false);
+  assert.deepEqual(child.inspectCalls.map(next=>next.screen),['q1','q2']);assert.deepEqual(child.errors,[]);
 });
 
 test('an uncatalogued app state never falls back to a different state or annotates under its hash',async t=>{
