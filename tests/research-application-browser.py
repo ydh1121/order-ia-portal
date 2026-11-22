@@ -11,6 +11,7 @@ import re
 import shutil
 import subprocess
 from playwright.sync_api import sync_playwright, expect
+from browser_predicate_support import wait_for_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-application'
@@ -86,7 +87,7 @@ def main():
         page.locator('#submit').click()
         page.wait_for_url('**/ia?view=research-r3**')
         phase = 'standalone'
-        page.wait_for_function('!!window.ORDER_RESEARCH_APP', timeout=30000)
+        wait_for_expression(page, '!!window.ORDER_RESEARCH_APP', timeout=30000)
         expect(page.locator('#order-app-page .ob')).to_be_visible(timeout=30000)
         page.evaluate('''window.__researchHeader=document.querySelector('#order-app-header');
             window.__researchBrand=document.querySelector('.order-product-brand svg');
@@ -97,7 +98,7 @@ def main():
 
         # Use the original onboarding controls, then the common app auth button.
         page.locator('#order-app-page [data-mf-intro="3"]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().route.state==="guest-3"')
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.state==="guest-3"')
         same_app(page)
         page.locator('#order-app-header [data-app-auth]').click()
         expect(page.locator('.product-auth-sheet')).to_be_visible()
@@ -109,9 +110,9 @@ def main():
         receipt['checks'].append('authentication uses the real retained parent and common header')
 
         page.locator('#order-app-page [data-mf-intro="4"]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().route.state==="guest-4"')
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.state==="guest-4"')
         page.locator('#order-app-page [data-mf-go="simple-r3/"]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().route.screen==="q1"')
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.screen==="q1"')
         expect(page.locator('#order-app-quote #app')).to_be_visible(timeout=30000)
         same_app(page)
         assert len(context.pages) == 1
@@ -122,19 +123,19 @@ def main():
         quote = page.locator('#order-app-quote')
         for field, value in [('housing', '1'), ('size', '대란'), ('pack', '30')]:
             quote.locator(f'[data-pick="{field}"][data-value="{value}"]:visible').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0]?.pack==="30"')
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0]?.pack==="30"')
         quote.locator('.accordion-trigger[data-open="q2"]').click()
         expect(quote.locator('[data-line-qty]')).to_be_visible()
         quote.locator('[data-line-qty]').fill('10')
         quote.locator('[data-line-price]').fill('5000')
         quote.locator('[data-line-price]').press('Tab')
-        page.wait_for_function('''(()=>{const line=ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0];
+        wait_for_expression(page, '''(()=>{const line=ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0];
             return line?.qty==='10' && line?.price==='5000';})()''')
         line = page.evaluate('ORDER_RESEARCH_APP.snapshot().quote.lines[0]')
         quote.locator('.accordion-trigger[data-open="q3"]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().route.screen==="q3"')
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.screen==="q3"')
         quote.locator('.accordion-trigger[data-open="q2"]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().route.screen==="q2"')
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.screen==="q2"')
         expect(quote.locator('[data-line-qty]')).to_have_value('10')
         expect(quote.locator('[data-line-price]')).to_have_value(re.compile(r'5,?000'))
         assert page.evaluate('ORDER_RESEARCH_APP.snapshot().quote.lines[0].id') == line['id']
@@ -148,8 +149,8 @@ def main():
         modal.locator('label').click()
         expect(modal.locator('[data-mode-option]')).to_be_checked()
         modal.locator('[data-mode-confirm]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().route.mode==="detailed"')
-        page.wait_for_function('''(()=>{const line=ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0];
+        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.mode==="detailed"')
+        wait_for_expression(page, '''(()=>{const line=ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0];
             return line?.qty==='10' && line?.price==='5000';})()''')
         same_app(page)
         quote.locator('.accordion-trigger[data-open="q3"]').click()
@@ -163,7 +164,7 @@ def main():
         receipt['checks'].append('explicit mode copy retains regular quote values and Q3 mounts the existing contact controllers')
         page.screenshot(path=str(OUT / 'quote-390.png'), full_page=True)
         page.reload()
-        page.wait_for_function('''window.ORDER_RESEARCH_APP && (()=>{const value=ORDER_RESEARCH_APP.snapshot();
+        wait_for_expression(page, '''window.ORDER_RESEARCH_APP && (()=>{const value=ORDER_RESEARCH_APP.snapshot();
             return value.route.mode==='detailed' && value.quote?.lines?.[0]?.qty==='10' && value.quote.lines[0].price==='5000';})()''', timeout=30000)
         receipt['checks'].append('the regular draft survives an actual research-app reload')
 
@@ -176,7 +177,7 @@ def main():
         phase = 'qa-shell'
         page.set_viewport_size({'width': 1440, 'height': 1000})
         page.goto(cfg['url'] + '/ia?view=qa-lab&screen=onboarding%2Fguest-2%2Femail&width=390')
-        page.wait_for_function('document.querySelector("#frame")?.src.includes("view=research-r3")', timeout=30000)
+        wait_for_expression(page, 'document.querySelector("#frame")?.src.includes("view=research-r3")', timeout=30000)
         frame = page.frame_locator('#frame')
         frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
         expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)

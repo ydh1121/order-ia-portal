@@ -127,7 +127,7 @@ export function installResearchInspector(initialSession,options={}) {
       const b=document.createElement('button');b.type='button';b.className='r3-pin';b.textContent=String(list[0].ordinal);b.style.left=group.x+'px';b.style.top=group.y+'px';
       b.dataset.cluster=list.length>1?'+'+(list.length-1):'';b.dataset.previousCount=String(previous);b.dataset.currentCount=String(current);
       b.classList.toggle('is-previous',previous===list.length);b.classList.toggle('is-mixed',previous>0&&current>0);b.classList.toggle('is-resolved',resolved);b.classList.toggle('is-selected',ids.some(id=>selection.includes(id)));
-      b.setAttribute('aria-label',(previous===list.length?'이전 ':'')+'위치 코멘트 '+list.map(pin=>pin.ordinal).join(', ')+'번 열기'+(resolved?' · 해결됨':''));
+      b.setAttribute('aria-label',(previous===list.length?'이전 ':'')+'위치 코멘트 '+list.map(pin=>pin.ordinal).join(', ')+'번 열기'+(previous>0&&current>0?' · 이전 '+previous+'개, 현재 '+current+'개':'')+(resolved?' · 해결됨':''));
       b.onclick=event=>{event.preventDefault();event.stopPropagation();send('openPins',{ids});};markers.append(b);
     }
     const signature=JSON.stringify(missing);if(signature!==previousMissing){previousMissing=signature;send('missing',{ids:missing});}

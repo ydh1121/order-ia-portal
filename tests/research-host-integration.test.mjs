@@ -25,10 +25,10 @@ function deferred(){let resolve;const promise=new Promise(done=>{resolve=done;})
 // browser's navigation/MessagePort scheduling and the artifact API are fixtures.
 // Product-owned DOM is deliberately persistent so a reload or second mount is
 // visible; these tests do not substitute a second QA implementation of the app.
-async function harness(t,{recorded=false,mode='simple',initialScreen='onboarding',actualShell=false,legacyPreview=null}={}){
-  const rows=['onboarding','q1','q2','q3'].map((screen,i)=>({id:screen+'/empty/email',screen,state:'empty',variant:'email',label:screen,stateLabel:'빈 입력',group:'견적',role:'customer',phase:'current',application:true,defaultWidth:390,hashes:{390:String(i+1).repeat(64)}}));
+async function harness(t,{recorded=false,mode='simple',initialScreen='onboarding',actualShell=false,legacyPreview=null,rowStates=null}={}){
+  const rows=(rowStates||['onboarding','q1','q2','q3'].map(screen=>[screen,'empty'])).map(([screen,state],i)=>({id:screen+'/'+state+'/email',screen,state,variant:'email',label:screen,stateLabel:state,group:'견적',role:'customer',phase:'current',application:true,defaultWidth:390,hashes:{390:(i+1).toString(16).repeat(64)}}));
   const navigationDefaults={groups:[{id:'mvp',name:'1차 MVP'},{id:'future',name:'향후 검토'}],assignments:{}};
-  const detailedRows=rows.map((row,i)=>({...row,hashes:{390:String(i+5).repeat(64)}})),initialRow=rows.find(row=>row.screen===initialScreen),hashFor=(row,selectedMode)=>selectedMode==='detailed'?detailedRows.find(item=>item.id===row.id).hashes[390]:row.hashes[390];
+  const detailedRows=rows.map((row,i)=>({...row,hashes:{390:(i+5).toString(16).repeat(64)}})),initialRow=rows.find(row=>row.screen===initialScreen),hashFor=(row,selectedMode)=>selectedMode==='detailed'?detailedRows.find(item=>item.id===row.id).hashes[390]:row.hashes[390];
   const host=new JSDOM(approvedShellBody(),{url:origin+'/ia?view=qa-lab&screen='+encodeURIComponent(initialRow.id)+'&width=390'+(mode==='detailed'?'&mode=detailed':legacyPreview?'&mode='+legacyPreview:'')+(recorded?'&version=recorded&artifactHash='+hashFor(initialRow,mode):''),runScripts:'outside-only',pretendToBeVisual:true}),w=host.window;
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
   Object.defineProperty(w,'crypto',{value:webcrypto});w.TextEncoder=TextEncoder;
@@ -40,7 +40,7 @@ async function harness(t,{recorded=false,mode='simple',initialScreen='onboarding
   const transitionTimers=new Map(),setTimer=w.setTimeout.bind(w),clearTimer=w.clearTimeout.bind(w);
   w.setTimeout=(callback,ms,...args)=>{const id=setTimer(callback,ms,...args);if(ms===15000)transitionTimers.set(id,()=>{clearTimer(id);callback();});return id;};
   w.clearTimeout=id=>{transitionTimers.delete(id);clearTimer(id);};
-  const artifact=(row,selectedMode)=>({release,hash:hashFor(row,selectedMode),version:'current',...(selectedMode==='detailed'?{mode:'detailed'}:{}),html:'<!doctype html><html><body><main id="order-single"></main><script type="module">/* app owns mounting */</script></body></html>',file:'research.html',editable:'',application:{url:'/ia?view=research-r3&build='+build+'&screen='+row.screen+'&state=empty&variant=email'+(selectedMode==='detailed'?'&mode=detailed':''),build}});
+  const artifact=(row,selectedMode)=>({release,hash:hashFor(row,selectedMode),version:'current',...(selectedMode==='detailed'?{mode:'detailed'}:{}),html:'<!doctype html><html><body><main id="order-single"></main><script type="module">/* app owns mounting */</script></body></html>',file:'research.html',editable:'',application:{url:'/ia?view=research-r3&build='+build+'&screen='+row.screen+'&state='+row.state+'&variant='+row.variant+(selectedMode==='detailed'?'&mode=detailed':''),build}});
   w.fetch=async(raw,options={})=>{
     const url=new URL(raw,w.location.href);requests.push({url:url.href,method:options.method||'GET',...(options.body?{body:JSON.parse(options.body)}:{})});
     if(url.pathname==='/api/ia/auth/me')return Response.json({csrf:'read-only-fixture',email:'integration@example.invalid'});
@@ -116,8 +116,8 @@ async function harness(t,{recorded=false,mode='simple',initialScreen='onboarding
   return {w,frame,rows,detailedRows,requests,stored,toApp,toHost,reads,errors,held,latestReady,selected,children,activeModes,
     child:()=>currentChild,loads:()=>loads,srcdocWrites:()=>srcdocWrites,transitionTimers,select:(screen,selectedMode)=>context.select({...rows.find(row=>row.screen===screen),...(selectedMode?{mode:selectedMode}:{})}),
     holdReady(value){holdReady=value;},flushReady(){while(held.length)held.shift()();},
-    async preview(screen){const unit=w.document.createElement('iframe');w.document.body.append(unit);await context.loadPreview(rows.find(row=>row.screen===screen),390,unit,true);return unit;},
-    settled:(screen,selectedMode='simple')=>frame.inert===false&&selected()?.screen===screen&&currentChild.inspector()?.inspect().session.artifact===hashFor(rows.find(row=>row.screen===screen),selectedMode)};
+    async preview(screen,board=false){const unit=w.document.createElement('iframe');w.document.body.append(unit);await context.loadPreview(rows.find(row=>row.screen===screen),390,unit,board);return unit;},
+    settled:(screen,selectedMode='simple',state='empty')=>frame.inert===false&&selected()?.screen===screen&&selected()?.state===state&&currentChild.inspector()?.inspect().session.artifact===hashFor(rows.find(row=>row.screen===screen&&row.state===state),selectedMode)};
 }
 
 test('QA selects a new scenario in the same app frame and accepts only the acknowledged hash for review',async t=>{
@@ -239,11 +239,13 @@ test('a recorded app keeps its recorded identity and never promotes an internal 
   assert.equal(last.searchParams.get('version'),'recorded');assert.equal(last.searchParams.get('artifactHash'),h.rows[0].hashes[390]);
 });
 
-test('a current comparison preview route opens the exact catalog state in focus without leaving inspection suspended',async t=>{
-  const h=await harness(t),preview=await h.preview('q1'),p=new URL(preview.src).searchParams;
+test('a current dual preview route opens the exact catalog state in focus without leaving inspection suspended',async t=>{
+  const h=await harness(t,{actualShell:true});h.w.document.querySelector('.lab-mode [data-mode="dual"]').click();
+  await until(()=>h.w.document.querySelector('.preview-unit:not(#focus-unit) iframe')?.getAttribute('src'));
+  const preview=h.w.document.querySelector('.preview-unit:not(#focus-unit) iframe'),p=new URL(preview.src).searchParams;
   const data={scope:'ORDER_R3_FRAME',channel:p.get('channel'),artifact:p.get('artifact'),type:'researchRoute',payload:{route:{screen:'q2',state:'empty',variant:'email',build},routeRevision:1}};
   h.w.dispatchEvent(new h.w.MessageEvent('message',{source:preview.contentWindow,origin,data}));
-  await until(()=>h.settled('q2'));assert.equal(h.activeModes.at(-1),'focus');assert.equal(preview.inert,true);assert.equal(h.loads(),1);
+  await until(()=>h.settled('q2'));assert.equal(h.w.document.querySelector('.lab-stage').dataset.mode,'focus');assert.equal(preview.isConnected,false);assert.equal(h.loads(),1);
 });
 
 test('app-owned detailed navigation, location comment storage and simple return preserve separate review identities',async t=>{
@@ -314,4 +316,22 @@ test('an existing mode=board bookmark keeps the QA layout while its mode-less pr
   assert.equal(h.w.document.querySelector('.lab-stage').dataset.mode,'board');assert.equal(h.child().route.mode,'simple');
   assert.equal(new URL(h.w.location.href).searchParams.has('mode'),false);assert.equal(new URL(h.w.location.href).searchParams.get('preview'),'board');
   assert.equal(Object.hasOwn(h.child().inspector().inspect().session,'mode'),false);
+});
+
+test('an automatic success route in a passive board card keeps eight login tiles and only explicit Open promotes a state',async t=>{
+  const states=['empty','filled','email-error','error','loading','limited','success','closed'];
+  const h=await harness(t,{actualShell:true,initialScreen:'login',rowStates:[...states.map(state=>['login',state]),['onboarding','member-4']]}),child=h.child();
+  h.w.document.querySelector('.lab-mode [data-mode="board"]').click();
+  const cards=()=>[...h.w.document.querySelectorAll('.preview-unit:not(#focus-unit)')];
+  await until(()=>cards().length===8&&cards().every(card=>card.querySelector('iframe').getAttribute('src')));
+  const card=cards().find(unit=>unit.dataset.state==='success'),preview=card.querySelector('iframe'),p=new URL(preview.src).searchParams,before=h.requests.length;
+  h.w.dispatchEvent(new h.w.MessageEvent('message',{source:preview.contentWindow,origin,data:{scope:'ORDER_R3_FRAME',channel:p.get('channel'),artifact:p.get('artifact'),type:'researchRoute',payload:{route:{screen:'onboarding',state:'member-4',variant:'email',mode:'simple',build},routeRevision:1}}}));
+  await tick();await tick();
+  assert.equal(h.w.document.querySelector('.lab-stage').dataset.mode,'board');assert.equal(h.selected().screen,'login');assert.equal(h.selected().state,'empty');
+  assert.deepEqual(cards().map(unit=>unit.dataset.state),states);assert.equal(cards().every(unit=>unit.dataset.module==='login'),true);
+  assert.equal(preview.inert,true);assert.equal(h.requests.length,before,'passive completion does not fetch a new focus artifact');assert.equal(h.child(),child);assert.equal(h.loads(),1);
+  const open=cards().find(unit=>unit.dataset.state==='filled').querySelector('[data-open-state="filled"]');assert.ok(open);open.click();
+  await until(()=>h.settled('login','simple','filled'));
+  assert.equal(h.w.document.querySelector('.lab-stage').dataset.mode,'focus');assert.equal(cards().length,0);
+  assert.equal(h.selected().state,'filled');assert.equal(h.loads(),1);assert.equal(h.child(),child);assert.equal(child.inspectCalls.at(-1).state,'filled');
 });

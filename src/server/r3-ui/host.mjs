@@ -1063,6 +1063,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const item=secondary.get(e.source);
     if(item&&e.origin===(item.artifact.application?location.origin:'null')&&item.frame.isConnected&&m?.scope==='ORDER_R3_FRAME'&&m.channel===item.channel&&m.artifact===item.hash){
       if(item.artifact.application&&m.type==='researchRoute'){
+        // Board cards observe independent app flows. Their automatic completion
+        // must not replace the main selection; only the card's Open control can.
+        if(item.board){item.frame.inert=true;return;}
         if(item.artifact.version!=='current'){historyResearchNotice(item.row,item.width,item.hash,modeOf(item.artifact));return;}
         const route=m.payload?.route,revision=m.payload?.routeRevision;
         if(!route||!validMode(route.mode)||!Number.isSafeInteger(revision)||revision<=0||route.build&&route.build!==item.artifact.application.build)return;

@@ -90,8 +90,20 @@ ${body}
  return Object.freeze({email:OrderEmail,domain:OrderEmailDomain,phone:OrderPhone,emailInstance:input=>OrderEmailUI.instance(input),forgetPhone:input=>phoneOwners.delete(input),
   mountEmail(input){
    if(closed)throw Error('REGULAR_CONTACT_CLOSED');if(lives.has(input))return lives.get(input).api;
+   const focused=document.activeElement===input;
+   const selection=focused&&typeof input.selectionStart==='number'&&typeof input.selectionEnd==='number'?{start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection}:null;
    const life={cleanups:[],timers:new Set(),disposed:false,api:null};mounting=life;
-   try{life.api=OrderEmailUI.mount(input);lives.set(input,life);return life.api;}
+   try{
+    life.api=OrderEmailUI.mount(input);lives.set(input,life);
+    // The original controller wraps its input by removing and reattaching it.
+    // An auth sheet may already own focus when this late adapter mounts.
+    const active=document.activeElement;
+    if(focused&&input.isConnected&&(!active||active===input||active===document.body||active===document.documentElement)){
+     input.focus({preventScroll:true});
+     if(document.activeElement===input&&selection)input.setSelectionRange(selection.start,selection.end,selection.direction);
+    }
+    return life.api;
+   }
    finally{mounting=null;}
   },
   suspendEmail(input){const life=lives.get(input);if(!life)return;life.api.cancel();for(const timer of life.timers)clearTimeout(timer);for(const cleanup of life.cleanups)cleanup();life.cleanups=[];life.timers.clear();},

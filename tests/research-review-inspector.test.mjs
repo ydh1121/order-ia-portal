@@ -86,6 +86,18 @@ test('same-origin pins use the released projection, preserve original anchors an
   assert.equal(JSON.stringify(original),frozen);assert.equal(JSON.stringify(pin),packet);
 });
 
+test('a mixed previous/current cluster announces both provenance counts and opens both original threads',async t=>{
+  const h=harness(t),{w,root,send,messages}=h,anchor=h.point(),original={...anchor,artifactHash:oldHash},frozen=JSON.stringify(original);
+  send('pin-sources',[{artifactHash:oldHash,sourceHash:oldHash,html:root.outerHTML}]);
+  const pins=[{id:'previous-thread',ordinal:1,previous:true,sourceArtifactHash:oldHash,anchor:{...original,artifactHash:hash}},{id:'current-thread',ordinal:3,previous:false,sourceArtifactHash:hash,anchor}];
+  const packet=JSON.stringify(pins);send('pins',pins);await until(()=>w.document.querySelector('.r3-pin.is-mixed'),w);
+  const marker=w.document.querySelector('.r3-pin.is-mixed');assert.equal(w.document.querySelectorAll('.r3-pin').length,1);
+  assert.equal(marker.dataset.previousCount,'1');assert.equal(marker.dataset.currentCount,'1');assert.equal(marker.dataset.cluster,'+1');
+  assert.equal(marker.getAttribute('aria-label'),'위치 코멘트 1, 3번 열기 · 이전 1개, 현재 1개');
+  marker.click();assert.deepEqual(Array.from(messages('openPins').at(-1).payload.ids),['previous-thread','current-thread']);
+  assert.equal(JSON.stringify(original),frozen);assert.equal(JSON.stringify(pins),packet);
+});
+
 test('foreign windows, origins, channels and artifacts cannot control inspection or reach the reused projection',async t=>{
   const h=harness(t),{w,send}=h;
   for(const overrides of [{source:{}},{origin:'null'},{origin:'https://untrusted.invalid'},{data:{channel:'wrong'}},{data:{artifact:oldHash}}]){

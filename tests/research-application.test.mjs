@@ -41,7 +41,7 @@ async function setup(initial={screen:'onboarding',state:'guest-2'}){
  environment.loadBusinessModule=path=>Promise.resolve(win.ResearchTest.serviceModules[path]);
  environment.loadScene=async route=>{const source=await researchScene(route.screen,route.state,route.variant);assert.ok(source,route.screen);const previous=win.ORDER_DESIGN_MODULES;win.ORDER_DESIGN_MODULES=[];try{win.eval(source.mount);return {modules:win.ORDER_DESIGN_MODULES.slice(),scene:{screen:source.row.screen,state:source.row.state,html:source.html,styles:[]}};}finally{win.ORDER_DESIGN_MODULES=previous;}};
  const app=await win.ResearchTest.mountResearchApplication(config,environment);await settle();
- return {win,doc,app,failures,async close(){app.dispose();await settle();dom.window.close();}};
+ return {win,doc,app,environment,failures,async close(){app.dispose();await settle();dom.window.close();}};
 }
 
 test('standalone research application retains the common header, parent and session through intro/auth/quote routes',async()=>{
@@ -59,12 +59,115 @@ test('standalone research application retains the common header, parent and sess
  }finally{await f.close();}
 });
 
+test('actual introduction and auth controls retain email focus through regular mounting and Escape resumes the same app',async()=>{
+ const f=await setup();try{
+  const header=f.doc.getElementById('order-app-header'),brand=header.querySelector('svg'),instance=f.app.instance;
+  const click=selector=>{
+   const element=f.doc.querySelector(selector);assert.ok(element,selector);assert.equal(element.disabled,false);
+   for(let node=element;node;node=node.parentElement){assert.notEqual(node.inert,true,selector+' has an inert ancestor');assert.equal(node.hasAttribute('inert'),false);assert.notEqual(node.hidden,true);}
+   element.focus();element.click();return element;
+  };
+  click('#order-app-page [data-mf-intro="3"]');await waitFor(()=>f.app.snapshot().route.state==='guest-3');
+  const parent=f.doc.querySelector('#order-app-page .ob'),opener=click('#order-app-header [data-app-auth]');
+  await waitFor(()=>f.doc.querySelector('.product-auth-sheet [name="email"]'));await settle();
+  const email=f.doc.querySelector('.product-auth-sheet [name="email"]');
+  assert.ok(f.win.OrderEmailUI.instance(email),'the original regular controller has mounted');
+  assert.equal(f.doc.activeElement,email,'late contact mounting must retain the auth sheet focus');
+  assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.equal(f.doc.querySelector('#order-app-page .auth-background'),null);
+  f.doc.activeElement.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  await waitFor(()=>!f.doc.querySelector('.product-auth-sheet')&&f.app.snapshot().route.screen==='onboarding');
+  assert.equal(f.app.snapshot().route.state,'guest-3');assert.equal(f.doc.activeElement,opener);
+  click('#order-app-page [data-mf-intro="4"]');await waitFor(()=>f.app.snapshot().route.state==='guest-4');
+  click('#order-app-page [data-mf-go="simple-r3/"]');await waitFor(()=>f.app.snapshot().route.screen==='q1');
+  await waitFor(()=>f.doc.querySelector('#order-app-quote #app'));
+  assert.equal(f.app.snapshot().route.mode,'simple');assert.equal(f.app.instance,instance);
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.querySelector('svg'),brand);
+  assert.equal(f.doc.querySelectorAll('#order-single').length,1);assert.equal(f.doc.querySelectorAll('iframe').length,0);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('introduction transitions retain exact source artwork and existing shell, pagination and header owners',async()=>{
+ for(const prefix of ['guest','member']){
+  const f=await setup({screen:'onboarding',state:prefix+'-3'});try{
+   const source=await researchScene('onboarding',prefix+'-2','email'),template=f.doc.createElement('template');template.innerHTML=source.html;
+   const original=template.content.querySelector('[data-intro-art]').getAttribute('src');assert.match(original,/^data:image\/webp;base64,/);
+   const shell=f.doc.querySelector('.ob'),pagination=shell.querySelector('.ob-pages'),header=f.doc.getElementById('order-app-header'),brand=header.querySelector('svg');
+   for(const step of [1,2,3,2]){
+    f.doc.querySelector('[data-mf-intro="'+step+'"]').click();await waitFor(()=>f.app.snapshot().route.state===prefix+'-'+step);
+    assert.equal(f.doc.querySelector('.ob'),shell);assert.equal(shell.querySelector('.ob-pages'),pagination);
+    assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.querySelector('svg'),brand);
+    const art=shell.querySelector('[data-intro-art]');
+    if(step===3)assert.equal(art,null);else{assert.ok(art);assert.ok(art.getAttribute('src')===original,'the selected build artwork must remain byte-identical');assert.equal(art.width,287);assert.equal(art.height,226);}
+   }
+   assert.deepEqual(f.failures,[]);
+  }finally{await f.close();}
+ }
+});
+
+test('unavailable and stale introduction sources cannot retarget or replace the currently visible scene',async()=>{
+ const f=await setup({screen:'onboarding',state:'guest-3'});try{
+  const load=f.environment.loadScene,shell=f.doc.querySelector('.ob'),main=shell.querySelector('.ob-main'),url=f.win.location.href;
+  f.environment.loadScene=async route=>{if(route.state==='guest-2')throw Error('SOURCE_UNAVAILABLE');return load(route);};
+  assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-2'}),false);
+  assert.equal(f.app.snapshot().route.state,'guest-3');assert.equal(f.win.location.href,url);assert.equal(shell.querySelector('.ob-main'),main);
+  assert.match(f.doc.getElementById('order-app-status').textContent,/불러오지 못/);
+  let finish;
+  f.environment.loadScene=route=>route.state==='guest-2'?new Promise(resolve=>{finish=()=>load(route).then(resolve);}):load(route);
+  const pending=f.app.navigate({screen:'onboarding',state:'guest-2'});await waitFor(()=>finish);
+  assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-1'}),true);
+  const newer=shell.querySelector('.ob-main'),art=newer.querySelector('[data-intro-art]').getAttribute('src');
+  await finish();assert.equal(await pending,false);
+  assert.equal(f.app.snapshot().route.state,'guest-1');assert.equal(f.doc.querySelector('.ob'),shell);
+  assert.equal(shell.querySelector('.ob-main'),newer);assert.ok(newer.querySelector('[data-intro-art]').getAttribute('src')===art,'a stale source cannot replace the current artwork');
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
 test('research assets and review target carry one immutable build and reject a different build URL',async()=>{
  const row=catalog.find(row=>row.id==='onboarding/guest-2/email'),artifact=await researchArtifact(row,390);
  assert.equal(artifact.application.url.includes('view=research-r3'),true);assert.equal(artifact.source.build,artifact.application.build);assert.match(artifact.editable,/<html/);
  const own=await serveResearchAsset(researchAssetBase+'research/application.mjs');assert.equal(own.status,200);assert.match(await own.text(),/mountResearchApplication/);
  const scene=await serveResearchAsset(researchAssetBase+'scene/'+row.id+'.mjs'),module=await scene.text(),runtime=module.match(/from "([^"]+)"/)[1];assert.equal((await serveResearchAsset(runtime)).status,200);assert.equal(runtime.split(artifact.application.build).length,2);
  assert.equal((await serveResearchAsset('/ia/research-assets/'+'f'.repeat(64)+'/research/application.mjs')).status,404);
+});
+
+test('the nested business date sheet keeps its own focusable branch active and restores the retained application background',async()=>{
+ const f=await setup({screen:'business',state:'empty'});try{
+  const header=f.doc.getElementById('order-app-header'),page=f.doc.querySelector('.business-page'),panel=f.doc.querySelector('.opening-wheels');
+  const trigger=f.doc.querySelector('.opening-date>button'),year=panel.querySelector('[role="listbox"][aria-label="연도"]');
+  assert.ok(page&&panel&&trigger&&year);
+  header.inert=false;page.inert=false;
+  const retained=f.doc.createElement('aside');retained.inert=true;f.doc.getElementById('order-single').append(retained);
+  const checkOpen=()=>{
+   trigger.click();assert.equal(panel.hidden,false);assert.equal(f.doc.activeElement,year);
+   for(let element=year;element;element=element.parentElement)assert.notEqual(element.inert,true,'the active date sheet must not inherit an inert ancestor');
+   assert.equal(page.inert,true);assert.equal(header.inert,true);assert.equal(retained.inert,true);
+  };
+  checkOpen();panel.querySelector('[data-action="opening-date-cancel"]').click();
+  assert.equal(panel.hidden,true);assert.equal(f.doc.activeElement,trigger);
+  assert.equal(header.inert,false);assert.equal(page.inert,false);assert.equal(retained.inert,true);
+  checkOpen();await f.app.navigate({screen:'onboarding',state:'guest-2'});await settle();
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.inert,false);assert.equal(retained.inert,true);
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('controlled quote responses follow the real retained wait controller and preserve retry request ownership',async()=>{
+ const f=await setup({screen:'quote-wait',state:'entry'});try{
+  const appRoot=f.doc.getElementById('order-single'),owner=f.doc.getElementById('order-app-page');
+  const scene=owner.querySelector('[data-wait-scene]');assert.ok(scene);
+  await waitFor(()=>owner.dataset.waitRequest);
+  assert.equal(appRoot.dataset.waitRequest,undefined,'the application does not impersonate a scene request owner');
+  const respond=(status,requestId)=>owner.dispatchEvent(new f.win.CustomEvent('order:quote-response',{detail:{status,requestId,canView:true}}));
+  const first=owner.dataset.waitRequest;respond('offline',first);await waitFor(()=>scene.dataset.phase==='offline');
+  scene.querySelector('[data-wait-retry]').click();await waitFor(()=>scene.dataset.phase==='entry');
+  const second=owner.dataset.waitRequest;assert.notEqual(second,first);
+  respond('success',first);await settle();assert.equal(f.app.snapshot().route.screen,'quote-wait');assert.equal(scene.dataset.phase,'entry');
+  respond('success',second);await waitFor(()=>f.app.snapshot().route.screen==='quote-result');
+  assert.equal(f.app.snapshot().route.state,'saving');assert.equal(f.doc.getElementById('order-app-page'),owner);
+  assert.equal(owner.dataset.waitRequest,undefined,'leaving the wait page disposes its old request owner');
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
 });
 
 test('authored wait and result scenes use the same retained canonical application header',async()=>{

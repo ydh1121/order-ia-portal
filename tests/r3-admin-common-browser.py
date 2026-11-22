@@ -13,9 +13,16 @@ from r3_workflow_browser_support import inspect_fixture, configure, release
 def capture_commands(frame):
     """Observe the canonical adapter without replacing its transport or result."""
     frame.locator('#order-single').evaluate('''el=>{
-      const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER,request=a.request.bind(a);
-      w.__adminCommands=[];
-      a.request=(path,body,signal)=>{if(body)w.__adminCommands.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
+      const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER;
+      // Receipt and billing now retain one application and adapter. End the
+      // previous observation before starting another, so one real command is
+      // still counted once when the next route is selected.
+      w.__adminCommandObserver?.release();
+      const original=a.request,request=original.bind(a),records=[];
+      const observed=(path,body,signal)=>{if(body)records.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
+      w.__adminCommands=records;
+      w.__adminCommandObserver={release(){if(a.request===observed)a.request=original;}};
+      a.request=observed;
     }''')
 
 

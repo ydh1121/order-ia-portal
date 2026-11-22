@@ -6,9 +6,9 @@ import shutil
 import subprocess
 
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import ReviewScreens, frame_click
+from r3_feedback_browser_support import PreservedReviewScreens, ReviewScreens, frame_click
 from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
-from r3_workflow_browser_support import check_consultation_flow
+from r3_workflow_browser_support import check_consultation_flow, inspect_fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYOUT_OUT = ROOT / 'artifacts/frame-pointer'
@@ -46,6 +46,27 @@ def record_pass_layout(page, frame, width, checkpoint):
     report['snapshots'].append(snapshot)
     path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     return snapshot
+
+
+def check_preserved_pass_receipt(page, origin, width):
+    """Keep the historical sample's tear/sort contract at its exact source hash."""
+    frame = PreservedReviewScreens(page, origin, width).screen("passes", "grid")
+    digest = page.locator("#frame").get_attribute("data-test-ready-hash")
+    cards = frame.locator("[data-pass-id]")
+    expect(cards).to_have_count(4)
+    frame_click(page, frame.locator('[data-pass-id="c15"] button'))
+    frame_click(page, frame.locator('[data-action="tear-ticket"]'))
+    confirm = frame.get_by_role("alertdialog", name="납품 수령 확인")
+    expect(confirm).to_contain_text("복원할 수 없어요")
+    frame_click(page, confirm.get_by_role("button", name="취소", exact=True))
+    expect(confirm).to_be_hidden()
+    frame_click(page, frame.locator('[data-action="tear-ticket"]'))
+    frame_click(page, confirm.get_by_role("button", name="수령 확인", exact=True))
+    expect(cards.last).to_have_attribute("data-pass-id", "c15")
+    expect(cards.last.locator(".pass-state")).to_have_text("수령 확인")
+    expect(frame.locator('.expanded-pass')).to_be_hidden()
+    return {"source": "preserved authored document", "artifactHash": digest,
+            "scope": "historical in-memory sample only", "received": "c15", "sortedLast": True}
 
 
 def check(page, origin, width):
@@ -98,9 +119,30 @@ def check(page, origin, width):
     frame_click(page, confirm.get_by_role("button", name="취소", exact=True))
     expect(confirm).to_be_hidden()
     frame_click(page, frame.locator('[data-action="tear-ticket"]'))
+    # Current product mode has no receipt handler for these authored sample IDs.
+    # It must keep the original detail and data instead of manufacturing success.
+    before = inspect_fixture(frame)
+    detail = frame.locator('.expanded-pass')
+    detail_node, detail_before = detail.element_handle(), detail.text_content()
+    cards_before = cards.evaluate_all('els=>els.map(el=>({id:el.dataset.passId,state:el.querySelector(".pass-state").textContent}))')
     frame_click(page, confirm.get_by_role("button", name="수령 확인", exact=True))
-    expect(cards.last).to_have_attribute("data-pass-id","c15")
-    expect(cards.last.locator(".pass-state")).to_have_text("수령 확인")
+    expect(frame.locator('#order-app-status')).to_have_text('아직 연결되지 않은 기능이에요.')
+    expect(confirm).to_be_visible()
+    assert detail_node.evaluate('el=>el===document.querySelector(".expanded-pass")')
+    assert detail.text_content() == detail_before
+    assert cards.evaluate_all('els=>els.map(el=>({id:el.dataset.passId,state:el.querySelector(".pass-state").textContent}))') == cards_before
+    expect(frame.locator('.ticket-received')).to_have_count(0)
+    after = inspect_fixture(frame)
+    assert after['data'] == before['data']
+    writes = lambda snapshot: [call for call in snapshot['calls'] if call['method'] != 'GET']
+    assert writes(after) == writes(before)
+    pass_receipt = {"width": width, "current": {
+        "source": "current standalone research application", "mode": "product",
+        "artifactHash": page.locator('#frame').get_attribute('data-test-ready-hash'),
+        "outcome": "unconnected", "detailUnchanged": True, "cardsUnchanged": True,
+        "dataUnchanged": True, "newMutationCalls": 0}}
+    frame_click(page, confirm.get_by_role("button", name="취소", exact=True))
+    frame_click(page, frame.locator('[data-action="close-ticket"]'))
 
     frame = screen("search", "empty")
     field = frame.locator(".tag-field input")
@@ -118,6 +160,12 @@ def check(page, origin, width):
     frame = screen("search", "none")
     frame_click(page, frame.get_by_role("button",name="태그 지우기"))
     expect(frame.locator(".quote-search-row")).to_have_count(4)
+
+    pass_receipt['preserved'] = check_preserved_pass_receipt(page, origin, width)
+    assert pass_receipt['current']['artifactHash'] != pass_receipt['preserved']['artifactHash']
+    LAYOUT_OUT.mkdir(parents=True, exist_ok=True)
+    (LAYOUT_OUT / f'navigation-receipt-{width}.json').write_text(
+        json.dumps(pass_receipt, ensure_ascii=False, indent=2), encoding='utf-8')
 
     # Local sample edits belong to the immutable pre-shared-brand document.
     # They must not be mistaken for the authenticated product's account writes.

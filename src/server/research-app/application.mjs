@@ -107,7 +107,8 @@ export async function mountResearchApplication(config, environment) {
     }
     for(const inner of scope.querySelectorAll('#order-single')){inner.removeAttribute('id');inner.dataset.applicationScene='';}
   }
-  async function mountPage(next,sequence,{restartQuote=false}={}){
+  const retainsIntroduction=next=>pageRoute?.screen==='onboarding'&&next.screen==='onboarding'&&pageRoute.state.split('-')[0]===next.state.split('-')[0];
+  async function mountPage(next,sequence,{restartQuote=false,introScene=null}={}){
     if(QUOTE_ROUTES.has(next.screen)){
       clearPage();page.hidden=true;quote.hidden=false;
       const fixtureScope=!restartQuote&&(reviewSelecting||Boolean(config.inspect&&!pageRoute));
@@ -124,10 +125,13 @@ export async function mountResearchApplication(config, environment) {
     if(pageRoute?.screen==='quote-result'&&next.screen==='quote-result'&&page.querySelector('[data-review-result]')){
       page.dispatchEvent(new win.CustomEvent('r3-result-state',{detail:{state:next.state,replay:false}}));pageRoute=next;return;
     }
-    if(pageRoute?.screen==='onboarding'&&next.screen==='onboarding'&&pageRoute.state.split('-')[0]===next.state.split('-')[0]){
-      const module=modules.get('onboarding');if(module?.render){const template=doc.createElement('template');template.innerHTML=module.render(next.state);removeDocumentChrome(template.content);const event=new win.CustomEvent('r3-onboarding-state',{cancelable:true,detail:{state:next.state,markup:template.innerHTML}});page.dispatchEvent(event);if(event.defaultPrevented){pageRoute=next;return;}}
+    if(retainsIntroduction(next)){
+      const source=introScene||await loadScene(next);if(sequence!==epoch||disposed)return;
+      const template=doc.createElement('template');template.innerHTML=source.html;removeDocumentChrome(template.content);
+      const event=new win.CustomEvent('r3-onboarding-state',{cancelable:true,detail:{state:next.state,markup:template.innerHTML}});
+      page.dispatchEvent(event);if(event.defaultPrevented){pageRoute=next;return;}
     }
-    const scene=await loadScene(next);if(sequence!==epoch||disposed)return;
+    const scene=introScene||await loadScene(next);if(sequence!==epoch||disposed)return;
     if(next.state==='default'&&scene.state!==next.state){next={...next,state:scene.state};route=next;}
     clearPage();page.innerHTML=scene.html;removeDocumentChrome(page);
     for(const style of scene.styles||[]){const node=doc.createElement('style');node.textContent=style;page.prepend(node);}
@@ -144,6 +148,15 @@ export async function mountResearchApplication(config, environment) {
     navigating++;
     const priorFixtureSelecting=fixtureSelecting;fixtureSelecting=scenario;
     try{
+    // Retained introduction transitions still need their build's complete
+    // authored HTML, including the original artwork. Resolve it before any
+    // route, fixture or parent-overlay changes so a missing source fails closed.
+    let introScene=null;
+    if(retainsIntroduction(next)){
+      try{introScene=await loadScene(next);if(typeof introScene.html!=='string'||!introScene.html)throw Error('INTRO_SOURCE_UNAVAILABLE');}
+      catch{if(sequence===epoch&&!disposed)notify('화면을 불러오지 못했어요. 다시 시도해 주세요.');return false;}
+      if(sequence!==epoch||disposed)return false;
+    }
     if(brandMenu?.requestClose&&brandMenu.inspect().phase!=='closed'){
       const accepted=await brandMenu.requestClose({focus:false,immediate:true});
       if(!accepted||sequence!==epoch){if(!history)updateLocation(true);return false;}
@@ -178,7 +191,7 @@ export async function mountResearchApplication(config, environment) {
     }else{
       authSheet?.close?.({immediate:true});brandMenu?.close?.({immediate:true});
       const retained=!scenario&&!restartQuote&&pageRoute&&['screen','state','variant','mode'].every(key=>next[key]===pageRoute[key]);
-      route=next;if(!retained)await mountPage(next,sequence,{restartQuote});
+      route=next;if(!retained)await mountPage(next,sequence,{restartQuote,introScene});
     }
     if(sequence!==epoch||disposed)return false;
     back.hidden=route.screen==='onboarding';header.dataset.appRoute=route.screen;

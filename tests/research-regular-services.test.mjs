@@ -98,6 +98,30 @@ test('phone uses the regular segmented DOM/caret/IME adapter and one owner acros
   } finally {f.close();}
 });
 
+test('research email mounting preserves the focused input and selection without stealing another focus owner', async () => {
+  const f = await setup(); try {
+    const release = f.services.installRegularGlobals(f.window), input = f.input('email');
+    input.type = 'text'; input.value = 'Case.Tag@example.com'; input.focus(); input.setSelectionRange(2, 6, 'backward');
+    const original = f.window.OrderEmailUI.mount(input);
+    assert.equal(f.document.activeElement, input);
+    assert.deepEqual([input.selectionStart, input.selectionEnd, input.selectionDirection], [2, 6, 'backward']);
+    assert.equal(input.value, 'Case.Tag@example.com');
+    const other = f.input('query'); other.focus();
+    f.services.mountEmail(input, {autoValidate: false});
+    assert.equal(f.window.OrderEmailUI.instance(input), original); assert.equal(f.document.activeElement, other);
+    assert.equal(f.document.querySelectorAll('.ui-email-field').length, 1);
+    const nativeEmail = f.document.createElement('input'); nativeEmail.type = 'email'; nativeEmail.id = 'native-email';
+    f.document.querySelector('form').append(nativeEmail); nativeEmail.focus();
+    f.services.mountEmail(nativeEmail, {autoValidate: false}); assert.equal(f.document.activeElement, nativeEmail);
+    const redirected = f.document.createElement('input'); redirected.type = 'email'; redirected.id = 'redirected-email';
+    f.document.querySelector('form').append(redirected); redirected.focus();
+    const replace = redirected.replaceWith;
+    redirected.replaceWith = function (...nodes) {const result = replace.apply(this, nodes); other.focus(); return result;};
+    f.services.mountEmail(redirected, {autoValidate: false}); assert.equal(f.document.activeElement, other);
+    release();
+  } finally {f.close();}
+});
+
 test('email proof gates actual commit, expires with clock, preserves local case and invalidates on edit/cancel', async () => {
   const f = await setup(); try {
     const email = f.services.mountEmail(f.input('email'), {autoValidate: false});

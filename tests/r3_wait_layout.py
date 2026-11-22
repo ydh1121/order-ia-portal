@@ -29,7 +29,10 @@ def check_wait_layout(context, origin):
         query=urlencode({'view':'qa-lab','archive':'1','screen':'quote-wait/entry/email','width':390})
         page.goto(origin+'/ia?'+query)
         frame=page.frame_locator('#frame')
-        root=frame.locator('#order-single');scene=root.locator('[data-wait-scene]')
+        # The application owns #order-single; the unchanged wait controller is
+        # mounted on its retained page. Read and resolve that controller's
+        # request identity, rather than sending a response to its app ancestor.
+        root=frame.locator('#order-app-page');scene=root.locator('[data-wait-scene]')
         expect(scene).to_have_attribute('data-phase','entry')
         trace=scene.evaluate("""async el=>{
           const rows=[];let last=-1;

@@ -372,7 +372,11 @@ def run():
     expect(pin.first).to_have_text('1')
     expect(pin.first).to_have_attribute('data-cluster','+1')
     expect(pin.first).to_have_attribute('aria-label','위치 코멘트 1, 2번 열기')
-    frame_click(page,pin.first);assert '위치 0' in page.locator('#notes').inner_text() and '위치 1' in page.locator('#notes').inner_text()
+    frame_click(page,pin.first)
+    # A trusted child-frame click posts the cluster to the host asynchronously.
+    # Wait for both original threads, retaining the same content assertion.
+    expect(page.locator('#notes')).to_contain_text('위치 0')
+    expect(page.locator('#notes')).to_contain_text('위치 1')
     parent=page.locator('#notes article').filter(has=page.get_by_text('위치 0',exact=True))
     parent.get_by_role('button',name='답글 작성').click()
     page.locator('#body-text').fill('저장한 답글');page.get_by_role('button',name='답글 저장').click()
