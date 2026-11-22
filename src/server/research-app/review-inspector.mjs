@@ -22,7 +22,7 @@ export function installResearchInspector(initialSession,options={}) {
   const session={},parentOrigin=location.origin;
   const allowed=new Set(['mode','pins','pin-sources','pin-view','visible','restore']);
   const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
-  const anchors=new Map();let elementIds=new WeakMap();
+  const anchors=new Map(),pinButtons=new Map();let elementIds=new WeakMap();
   let active=false,disposed=false,picking=false,shown=true,dirty=true,pins=[],selection=[],draftAnchor=null,keyPoint=null;
   let frame=0,readyFrame=0,readyTimer=0,revision=0,routeRevision=0,pendingRoute=null,previousMissing='',projection=null,panels=null,lastActivity=-Infinity;
   const style=document.createElement('style');style.dataset.researchInspector='';
@@ -111,9 +111,10 @@ export function installResearchInspector(initialSession,options={}) {
     const rect=el.getBoundingClientRect(),x=rect.left+a.x*rect.width,y=rect.top+a.y*rect.height;
     return x>=0&&y>=0&&x<=innerWidth&&y<=innerHeight?{x,y}:null;
   }
+  function clearMarkers(){markers.replaceChildren();pinButtons.clear();}
   function paint(){
-    if(dirty)index();markers.replaceChildren();draft.hidden=true;
-    if(!active||!shown||picking)return;
+    if(dirty)index();draft.hidden=true;
+    if(!active||!shown||picking){clearMarkers();return;}
     const groups=new Map(),missing=[];
     pins.forEach((pin,i)=>{
       if(!validAnchor(pin.anchor)||!anchors.has(pin.anchor.id)){missing.push(pin.id);return;}
@@ -122,14 +123,24 @@ export function installResearchInspector(initialSession,options={}) {
       if(!groups.has(key))groups.set(key,{...point,pins:[]});
       groups.get(key).pins.push({...pin,ordinal:Number.isSafeInteger(pin.ordinal)&&pin.ordinal>0?pin.ordinal:i+1});
     });
+    const rendered=[];
     for(const group of groups.values()){
       const list=group.pins,ids=list.map(pin=>pin.id),previous=list.filter(pin=>pin.previous===true).length,current=list.length-previous,resolved=list.every(pin=>pin.resolved===true);
-      const b=document.createElement('button');b.type='button';b.className='r3-pin';b.textContent=String(list[0].ordinal);b.style.left=group.x+'px';b.style.top=group.y+'px';
+      // Motion changes positions continuously. Keep an unchanged cluster's
+      // button attached so focus, pointer hits and DOM measurements stay valid.
+      const key=JSON.stringify(ids);let b=pinButtons.get(key);
+      if(!b){b=document.createElement('button');b.type='button';b.className='r3-pin';pinButtons.set(key,b);}
+      rendered.push(b);const label=String(list[0].ordinal);if(b.textContent!==label)b.textContent=label;
+      b.style.left=group.x+'px';b.style.top=group.y+'px';
       b.dataset.cluster=list.length>1?'+'+(list.length-1):'';b.dataset.previousCount=String(previous);b.dataset.currentCount=String(current);
       b.classList.toggle('is-previous',previous===list.length);b.classList.toggle('is-mixed',previous>0&&current>0);b.classList.toggle('is-resolved',resolved);b.classList.toggle('is-selected',ids.some(id=>selection.includes(id)));
       b.setAttribute('aria-label',(previous===list.length?'이전 ':'')+'위치 코멘트 '+list.map(pin=>pin.ordinal).join(', ')+'번 열기'+(previous>0&&current>0?' · 이전 '+previous+'개, 현재 '+current+'개':'')+(resolved?' · 해결됨':''));
-      b.onclick=event=>{event.preventDefault();event.stopPropagation();send('openPins',{ids});};markers.append(b);
+      b.onclick=event=>{event.preventDefault();event.stopPropagation();send('openPins',{ids});};
     }
+    const retained=new Set(rendered);
+    for(const [key,button] of pinButtons)if(!retained.has(button)){button.remove();pinButtons.delete(key);}
+    let cursor=markers.firstChild;
+    for(const button of rendered){if(button===cursor)cursor=cursor.nextSibling;else markers.insertBefore(button,cursor);}
     const signature=JSON.stringify(missing);if(signature!==previousMissing){previousMissing=signature;send('missing',{ids:missing});}
     const point=position(draftAnchor);if(point){draft.hidden=false;draft.style.left=point.x+'px';draft.style.top=point.y+'px';}
     followGeometry();
@@ -170,7 +181,7 @@ export function installResearchInspector(initialSession,options={}) {
   }
   addEventListener('keydown',keyEvent,true);
   function restore(anchor){
-    index();if(!validAnchor(anchor)||!anchors.has(anchor.id))return;
+    if(dirty)index();if(!validAnchor(anchor)||!anchors.has(anchor.id))return;
     for(const id of Array.isArray(anchor.layers)?anchor.layers.slice(0,24):[]){const el=anchors.get(id);if(el?.matches('details'))el.open=true;else if(el?.matches('[data-r3-popup]'))el.hidden=false;}
     for(const scroll of Array.isArray(anchor.scroll)?anchor.scroll.slice(0,24):[]){
       if(!scroll||![scroll.x,scroll.y].every(n=>Number.isFinite(n)&&n>=0))continue;
@@ -181,7 +192,9 @@ export function installResearchInspector(initialSession,options={}) {
   function receive(event){
     const m=event.data;if(disposed||!active||event.source!==parent||event.origin!==parentOrigin||m?.scope!=='ORDER_R3_HOST'||m.channel!==session.channel||m.artifact!==session.artifact)return;
     if(m.type==='mode')setPicking(m.payload===true);
-    else if(m.type==='pins'){pins=Array.isArray(m.payload)?m.payload.filter(p=>p&&typeof p.id==='string').slice(0,2000):[];dirty=true;schedule();}
+    // Match the released projection: attribute-only focus classes keep their
+    // indexed identity until a child-list mutation or explicit identity reset.
+    else if(m.type==='pins'){pins=Array.isArray(m.payload)?m.payload.filter(p=>p&&typeof p.id==='string').slice(0,2000):[];schedule();}
     else if(m.type==='pin-view'){draftAnchor=m.payload?.draft||null;selection=Array.isArray(m.payload?.selected)?m.payload.selected.filter(id=>typeof id==='string').slice(0,2000):[];schedule();}
     else if(m.type==='visible'){shown=m.payload===true;schedule();}
     else if(m.type==='restore')restore(m.payload);
@@ -197,7 +210,7 @@ export function installResearchInspector(initialSession,options={}) {
   }
   function routeChanged(event){
     const route=routeData(event.detail);if(disposed||!route||!['application','review'].includes(event.detail.origin))return;
-    active=false;revision++;pendingRoute=route;cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);readyFrame=0;readyTimer=0;setPicking(false);pins=[];selection=[];draftAnchor=null;previousMissing='';markers.replaceChildren();draft.hidden=true;
+    active=false;revision++;pendingRoute=route;cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);readyFrame=0;readyTimer=0;setPicking(false);pins=[];selection=[];draftAnchor=null;previousMissing='';clearMarkers();draft.hidden=true;
     releaseHelpers();dirty=true;
     // A host-requested inspection route already has its own artifact lookup.
     // It still suspends the old identity until that explicit acknowledgement.
@@ -235,7 +248,7 @@ export function installResearchInspector(initialSession,options={}) {
     for(const type of activityTypes)removeEventListener(type,activity,true);
     for(const type of geometryEvents)root.removeEventListener(type,schedule,true);
     document.fonts?.removeEventListener('loadingdone',schedule);
-    veil.remove();markers.remove();draft.remove();style.remove();if(root.__orderResearchInspector===api)delete root.__orderResearchInspector;
+    clearMarkers();veil.remove();markers.remove();draft.remove();style.remove();if(root.__orderResearchInspector===api)delete root.__orderResearchInspector;
   }
   const api={updateSession,dispose,inspect:()=>({active,picking,routeRevision,pendingRoute:pendingRoute?{...pendingRoute}:null,session:{...session}})};
   root.__orderResearchInspector=api;addEventListener('pagehide',dispose,{once:true});updateSession(initialSession);

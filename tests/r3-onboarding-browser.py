@@ -94,8 +94,25 @@ def restore_panel_point(page, envelope):
     },location.origin)""", {"channel":session['channel'],"envelope":envelope})
 
 
+def expect_auth_background(frame, opened):
+    """The app's retained parent owns inert; its nested introduction inherits it."""
+    for selector in ('#order-app-page', '#order-app-header'):
+        expect(frame.locator(selector)).to_have_js_property('inert', opened)
+    snapshot = frame.locator('#order-single').evaluate("""root=>{
+        const intro=root.querySelector('.ob.guest'),overlay=root.querySelector('[data-product-auth-sheet]');
+        return {width:innerWidth,parentInert:root.querySelector('#order-app-page').inert,
+            headerInert:root.querySelector('#order-app-header').inert,
+            introductionInertAncestor:intro.closest('[inert]')?.id||null,
+            overlayPresent:Boolean(overlay),overlayInert:Boolean(overlay?.closest('[inert]'))};
+    }""")
+    assert snapshot['introductionInertAncestor'] == ('order-app-page' if opened else None), snapshot
+    assert snapshot['overlayPresent'] is opened and snapshot['overlayInert'] is False, snapshot
+    return snapshot
+
+
 def check_auth_overlay(page, frame):
     url, digest = page.url, page.locator('#frame').get_attribute('data-test-ready-hash')
+    protection = []
     frame.locator('#order-single').evaluate("""root=>{
         window.__introOverlayBaseline={root,document:window.__qaPointerDocument,
             main:root.querySelector('.ob-main'),stage:root.querySelector('.ob-stage'),
@@ -118,25 +135,34 @@ def check_auth_overlay(page, frame):
                 root.querySelector('.ob-main')===before.main&&root.querySelector('.ob-stage')===before.stage&&
                 root.querySelector('#order-app-header .order-product-brand svg')===before.brand;
         }"""), 'Opening or closing auth must retain the introduction document, slide and brand'
+        protection.append(expect_auth_background(frame, overlay.count() > 0))
 
     overlay = frame.locator('[data-product-auth-sheet]')
-    frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
+    login = frame.get_by_role('button', name='로그인', exact=True)
+    frame_click(page, login)
     expect(overlay).to_be_visible()
     expect(overlay).to_have_attribute('data-auth-screen', 'login')
     expect(overlay).to_have_attribute('data-auth-state', 'empty')
     expect(overlay).to_have_attribute('data-auth-variant', 'compact')
-    expect(frame.locator('.ob.guest')).to_have_js_property('inert', True)
     expect(overlay.locator('.auth-background')).to_have_count(0)
     unchanged()
     for name in ('카카오 로그인', '네이버 로그인', 'Google 로그인'):
         expect(overlay.get_by_role('button', name=name).locator('img')).to_be_visible()
     expect(overlay.locator('[data-action="close-sheet"]')).to_have_count(0)
     email = overlay.locator('[name=email]')
+    expect(email).to_be_focused()
+    blocked = frame.locator('.ob.guest [data-mf-intro="2"]').evaluate("""button=>{
+        const before=document.activeElement;button.focus();
+        return document.activeElement===before&&before.closest('[data-product-auth-sheet]')!==null;
+    }""")
+    assert blocked, 'Native focus must remain inside the auth sheet when the background is inert'
+    expect(email).to_be_focused()
     envelope = pick_panel_point(page, frame, email, '#r3-panel-state-auth-login-empty')
     expect(email).to_have_value('')
     email.press('Escape')
     expect(overlay).to_have_count(0)
     unchanged()
+    expect(login).to_be_focused()
     frame_click(page, frame.get_by_role('button', name='로그인', exact=True))
     restore_panel_point(page, envelope)
     expect(email).to_be_focused()
@@ -162,7 +188,12 @@ def check_auth_overlay(page, frame):
     page.mouse.up()
     expect(overlay).to_have_count(0)
     unchanged()
-    expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
+    out = ROOT / 'artifacts' / 'r3-auth-motion'
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f'auth-background-{protection[0]["width"]}.json').write_text(json.dumps({
+        'source':'current research app; retained parent and native browser focus',
+        'artifactHash':digest,'backgroundFocusBlocked':blocked,'openerFocusRestored':True,
+        'snapshots':protection},ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
     print('PASS canonical auth overlay: original slide/DOM retained, acknowledged auth route and exact source return, real provider assets, inner QA pin and restore, Escape/scrim/drag close')
 
 
@@ -253,6 +284,7 @@ def check_auth_overlay_motion(page, origin, width):
         assert samples[-1]['focused'], str(trace)
         overlay = frame.locator('[data-product-auth-sheet]')
         expect(overlay).to_have_attribute('data-auth-screen', screen)
+        expect_auth_background(frame, True)
         root.evaluate('''root=>{
             const holder=root.querySelector('[data-product-auth-sheet]'),dim=holder.querySelector('.sheet-dim');
             const record=window.__authBackdropExit={done:false,closeAt:null,trusted:false,samples:[]},start=performance.now();
@@ -302,7 +334,7 @@ def check_auth_overlay_motion(page, origin, width):
             assert abs(box['left']) <= 1 and abs(box['top']) <= 1 and abs(box['width']-viewport['width']) <= 1 and abs(box['height']-viewport['height']) <= 1, str(dim_trace)
         expect(overlay).to_have_count(0)
         expect(opener).to_be_focused()
-        expect(frame.locator('.ob.guest')).to_have_js_property('inert', False)
+        expect_auth_background(frame, False)
         expect(frame.locator('.ob.guest')).to_have_attribute('data-intro-step', '1')
         expect(page.locator('#frame')).to_have_attribute('data-test-ready-hash', digest)
         assert page.url == url

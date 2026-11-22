@@ -183,10 +183,9 @@ export async function mountResearchApplication(config, environment) {
         activeAccountPanel=panel||'root';brandMenu?.open?.(panel,{title:panelTitles[next.screen]||null});
       }else{
         authSheet?.close?.({immediate:true});brandMenu?.close?.({immediate:true});
-        if(next.state!=='closed'){
-          const scene=await loadScene(next);if(sequence!==epoch)return false;
-          drawerDispose=mountResearchDrawer({container:root,scene,module:scene.module||modules.get('drawer'),api,signal});
-        }
+        const scene=await loadScene(next);if(sequence!==epoch)return false;
+        drawerDispose=mountResearchDrawer({container:root,scene,module:scene.module||modules.get('drawer'),api,signal,
+          onClose:()=>navigate(parent,{replace:true})});
       }
     }else{
       authSheet?.close?.({immediate:true});brandMenu?.close?.({immediate:true});

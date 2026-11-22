@@ -15,6 +15,28 @@ export function researchSceneSource(screen,source){
     // sheet's own ancestors, and restore every previous inert value on close.
     "for(let branch=panel,boundary=root.closest('#order-single')||root;branch&&branch!==boundary;branch=branch.parentElement)for(const element of branch.parentElement?.children||[])if(element!==branch&&!['STYLE','SCRIPT'].includes(element.tagName)){background.set(element,element.inert);element.inert=true;}");
   if(['navigation','consultation','profileNotice'].includes(screen))source=once(source,"onClose:()=>{if(!connected)api.select('drawer','closed');}","onClose:()=>api.select('drawer','closed')");
-  if(['adminCommon','adminLoading'].includes(screen))source=once(source,'const registry=window.ORDER_DESIGN_MODULES.find(item=>item.id===api.screen);','const registry=api.module||window.ORDER_DESIGN_MODULES.find(item=>item.id===api.screen);');
+  if(screen==='consultation'){
+    // The original date helper used a document already present at script load.
+    // A retained application imports the runtime before attaching its next
+    // scene, so bind that exact helper to the drawer mount and its disposal.
+    source=once(source,';(function consultationDate(env, root, source) {',`;(function bindResearchConsultationDate(mountDate,source){
+ const module=window.ORDER_DESIGN_MODULES.find(item=>item.id==='drawer');
+ if(!module||typeof module.mount!=='function')throw Error('CONSULTATION_DATE_MODULE_MISSING');
+ const mount=module.mount;
+ module.mount=function(root,state,api){
+  const controller=new AbortController();let dispose;
+  try{dispose=mount.call(this,root,state,api);mountDate(controller.signal,root,source);}
+  catch(error){controller.abort();dispose?.();throw error;}
+  return()=>{controller.abort();dispose?.();};
+ };
+})(function consultationDate(env, root, source) {`);
+    source=once(source,'})(new AbortController().signal,document.querySelector("#order-single"),','},');
+  }
+  if(['adminCommon','adminLoading'].includes(screen)){
+    source=once(source,'const registry=window.ORDER_DESIGN_MODULES.find(item=>item.id===api.screen);','const registry=api.module||window.ORDER_DESIGN_MODULES.find(item=>item.id===api.screen);');
+    // A research transport still implements the original product contracts.
+    // Layout persistence belongs to that adapter, not the old QA host callback.
+    source=once(source,"const review=Boolean(adapter?.fixture)||api.mode!=='product';","const review=api.mode!=='product';");
+  }
   return source;
 }

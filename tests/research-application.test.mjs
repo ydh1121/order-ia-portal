@@ -170,6 +170,28 @@ test('controlled quote responses follow the real retained wait controller and pr
  }finally{await f.close();}
 });
 
+test('dashboard layout uses the original adapter revision and persists inside the research application without a QA host',async()=>{
+ const f=await setup({screen:'admin-overview',state:'normal'});try{
+  const owner=f.doc.getElementById('order-app-page'),grid=()=>owner.querySelector('.qa-widget-grid');
+  const control=action=>owner.querySelector('[data-layout="'+action+'"]');
+  await waitFor(()=>control('edit')&&!control('edit').disabled&&grid()?.children.length===3);
+  const first=grid().firstElementChild.dataset.widgetId;
+  control('edit').click();control('forward').click();control('size').click();
+  const expected=[...grid().children].map(card=>({id:card.dataset.widgetId,wide:card.classList.contains('qa-widget-expanded')}));
+  assert.equal(expected[1].id,first);assert.equal(expected.filter(item=>item.wide).length,1);
+  control('save').click();await waitFor(()=>!control('edit').hidden);
+  const state=f.app.adapter.fixture.inspect();
+  assert.equal(state.calls.filter(call=>call.method==='POST'&&call.path==='/settings/dashboard-layout').length,1);
+  assert.deepEqual(JSON.parse(JSON.stringify(state.data.dashboardLayout)),{revision:1,data:{layout:expected}});
+  const saved=JSON.parse(f.win.sessionStorage.getItem('order-research-session-v1:research:v1'));
+  assert.deepEqual(saved.data.dashboardLayout,{revision:1,data:{layout:expected}});
+  await f.app.navigate({screen:'admin-buyers',state:'list'});await f.app.navigate({screen:'admin-overview',state:'normal'});
+  await waitFor(()=>control('edit')&&!control('edit').disabled);
+  assert.deepEqual([...grid().children].map(card=>({id:card.dataset.widgetId,wide:card.classList.contains('qa-widget-expanded')})),expected);
+  assert.equal(f.doc.getElementById('order-app-page'),owner);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
 test('authored wait and result scenes use the same retained canonical application header',async()=>{
  const f=await setup();try{
   const header=f.doc.getElementById('order-app-header'),brand=header.querySelector('svg');
@@ -193,6 +215,84 @@ test('the real consultation drawer opens on the retained result and closes witho
   f.doc.querySelector('[data-research-drawer] [data-action="close-drawer"]').click();await waitFor(()=>!f.doc.querySelector('[data-research-drawer]'));await settle();
   assert.equal(f.doc.querySelector('[data-research-drawer]'),null);assert.equal(f.doc.getElementById('order-app-page').firstElementChild,parent);
   assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('closed consultation owns selection and opener in the parent and retains the original form across Escape/reopen',async()=>{
+ const f=await setup({screen:'passes',state:'loading'});try{
+  const parent=f.doc.getElementById('order-app-page').firstElementChild,header=f.doc.getElementById('order-app-header'),adapter=f.app.adapter;
+  await f.app.inspectRoute({screen:'drawer',state:'closed'});
+  await waitFor(()=>f.doc.querySelector('[name="consult-pass"][data-id="qa-existing-quote"]'));await settle();
+  const root=f.doc.querySelector('[data-research-consult-entry]'),sheet=root.querySelector('.functional-drawer');
+  const choice=root.querySelector('[name="consult-pass"]'),opener=root.querySelector('[data-action="open-drawer"]');
+  assert.equal(root.parentElement,f.doc.getElementById('order-app-page'));
+  assert.equal(parent.isConnected,true);assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.app.adapter,adapter);
+  assert.equal(opener.hidden,false);assert.equal(sheet.dataset.open,'false');assert.equal(root.querySelectorAll('[name="consult-pass"]').length,1);
+  opener.click();await settle();assert.equal(sheet.dataset.open,'false');assert.match(root.querySelector('.consult-selection-message').textContent,/선택/);
+  choice.click();opener.focus();opener.click();await waitFor(()=>sheet.dataset.open==='true');
+  const memo=sheet.querySelector('.consult-memo textarea');memo.value='같은 상담 메모';memo.focus();
+  memo.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await waitFor(()=>sheet.dataset.open==='false');await settle();
+  assert.equal(f.doc.activeElement,opener);assert.equal(memo.isConnected,true);assert.equal(choice.checked,true);
+  opener.click();await waitFor(()=>sheet.dataset.open==='true');
+  assert.equal(root.querySelector('.consult-memo textarea'),memo);assert.equal(memo.value,'같은 상담 메모');
+  assert.equal(adapter.fixture.inspect().source.commercial,false);
+  assert.equal(adapter.fixture.inspect().calls.some(call=>call.method==='POST'),false,'opening a consultation cannot manufacture an issued quote or request');
+  await f.app.navigate({screen:'onboarding',state:'member-4'});assert.equal(root.isConnected,false);
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('the original consultation calendar keeps holiday rules and disposes its listeners before the same module mounts again',async()=>{
+ const f=await setup({screen:'passes',state:'loading'});try{
+  const OriginalDate=f.win.Date;
+  f.win.Date=class extends OriginalDate{constructor(...args){super(...(args.length?args:['2026-12-15T05:00:00Z']));}static now(){return OriginalDate.parse('2026-12-15T05:00:00Z');}};
+  const load=f.environment.loadScene;let cached,mounts=0,disposals=0;
+  f.environment.loadScene=async route=>{
+   if(route.screen!=='drawer')return load(route);
+   if(!cached){cached=await load(route);const module=cached.modules.find(value=>value.id==='drawer'),mount=module.mount;
+    module.mount=function(...args){mounts++;const dispose=mount.apply(this,args);return()=>{disposals++;dispose?.();};};
+   }
+   return cached;
+  };
+  const open=async()=>{
+   await f.app.inspectRoute({screen:'drawer',state:'closed'});
+   await waitFor(()=>f.doc.querySelector('[name="consult-pass"][data-id="qa-existing-quote"]'));
+   const root=f.doc.querySelector('[data-research-consult-entry]');root.querySelector('[name="consult-pass"]').click();root.querySelector('[data-action="open-drawer"]').click();
+   await waitFor(()=>root.querySelector('.functional-drawer').dataset.open==='true');
+   const trigger=root.querySelector('[data-action="choose-consult-date"]'),dialog=root.querySelector('.consult-date-dialog');
+   trigger.click();assert.equal(dialog.hidden,false);assert.equal(dialog.querySelectorAll('[data-day]').length,31);
+   return {root,trigger,dialog,title:dialog.querySelector('h2'),next:dialog.querySelector('[data-action="next-month"]')};
+  };
+  const first=await open();assert.equal(first.title.textContent,'2026년 12월');
+  for(const day of ['2026-12-25','2026-12-26','2026-12-14'])assert.equal(first.dialog.querySelector('[data-day="'+day+'"]').disabled,true,day);
+  assert.equal(first.dialog.querySelector('[data-day="2026-12-17"]').disabled,false);
+  first.next.click();assert.equal(first.title.textContent,'2027년 1월');
+  first.dialog.querySelector('[data-action="previous-month"]').click();assert.equal(first.title.textContent,'2026년 12월');
+  first.dialog.querySelector('[data-day="2026-12-17"]').click();
+  assert.equal(first.dialog.hidden,true);assert.equal(first.trigger.querySelector('strong').textContent,'2026-12-17');assert.equal(f.doc.activeElement,first.trigger);
+  const memo=first.root.querySelector('.consult-memo textarea'),submit=first.root.querySelector('[data-action="request-booking"]');
+  memo.value='원본 상담 재시도 검사';first.root.querySelector('[name="topic"]').click();
+  first.root.querySelector('[role="listbox"][aria-label="시"]').dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'End',bubbles:true,cancelable:true}));
+  assert.equal(first.root.querySelector('[data-hour][aria-selected="true"]').textContent,'18시');assert.equal(first.root.querySelector('[data-minute="10"]').disabled,true);
+  const writes=[],send=f.app.adapter.roleRequest;
+  f.app.adapter.roleRequest=(path,body,signal)=>{if(body)writes.push(JSON.parse(JSON.stringify(body)));return send(path,body,signal);};
+  f.app.adapter.fixture.configure({requests:{'role POST ':{scenario:'error',status:503}}});submit.click();
+  await waitFor(()=>submit.dataset.asyncPhase==='error');assert.equal(memo.value,'원본 상담 재시도 검사');
+  assert.equal(f.app.adapter.fixture.inspect().data.cases.some(item=>item.kind==='consult'),false);
+  f.app.adapter.fixture.configure({requests:{'role POST ':{scenario:'loading'}}});submit.click();
+  await waitFor(()=>submit.dataset.asyncPhase==='pending');assert.equal(memo.disabled,true);
+  f.app.adapter.fixture.releasePending({scenario:'normal',requests:{}});await waitFor(()=>submit.dataset.requestSaved==='true');
+  const creates=writes.filter(item=>item.action==='create');assert.equal(creates.length,2);assert.deepEqual(creates[0],creates[1]);
+  assert.deepEqual(creates[1].context.targets,['qa-existing-quote']);assert.equal(creates[1].context.desiredDate,'2026-12-17');
+  assert.match(creates[1].context.memo,/원본 상담 재시도 검사/);assert.match(creates[1].context.memo,/희망 시간: 18:00/);
+  assert.equal(f.app.adapter.fixture.inspect().data.cases.find(item=>item.kind==='consult').state,'OPEN');
+  assert.equal(f.app.adapter.fixture.inspect().source.commercial,false);
+  await f.app.navigate({screen:'onboarding',state:'member-4'});assert.equal(first.root.isConnected,false);assert.equal(disposals,1);
+  first.next.click();first.trigger.click();
+  assert.equal(first.title.textContent,'2026년 12월');assert.equal(first.dialog.hidden,true,'disposed original listeners cannot reopen or mutate a detached calendar');
+  const second=await open();assert.notEqual(second.root,first.root);assert.equal(mounts,2);
+  second.next.click();assert.equal(second.title.textContent,'2027년 1월','reusing the loaded module must add only one date listener');
+  await f.app.navigate({screen:'onboarding',state:'member-4'});assert.equal(disposals,2);assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
 

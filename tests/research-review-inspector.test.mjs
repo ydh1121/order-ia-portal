@@ -98,6 +98,47 @@ test('a mixed previous/current cluster announces both provenance counts and open
   assert.equal(JSON.stringify(original),frozen);assert.equal(JSON.stringify(pins),packet);
 });
 
+test('auth focus classes do not desynchronize released projection, current pins or the active draft',async t=>{
+  const session={...initial,screen:'login',state:'empty'},markup='<main id="order-single"><label class="field is-floating t-input-wrap"><input name="email" type="email"></label></main>';
+  const old=harness(t,{initialSession:{...session,artifact:oldHash},markup});old.hit(old.root.querySelector('input'));
+  const original=old.point(),originalBytes=JSON.stringify(original),source=old.root.outerHTML;
+  const h=harness(t,{initialSession:session,markup,setup(w,root){
+    const input=root.querySelector('input'),label=input.closest('label');
+    input.addEventListener('focus',()=>label.classList.add('is-focused'));
+    input.addEventListener('blur',()=>label.classList.remove('is-focused'));input.focus();
+  }}),{w,root,send,messages}=h,input=root.querySelector('input');h.hit(input);
+  const prior={id:'previous-email',ordinal:1,previous:true,sourceArtifactHash:oldHash,anchor:{...original,artifactHash:hash}};
+  const sources=[{artifactHash:oldHash,sourceHash:oldHash,html:source}];
+  send('pin-sources',sources);const focusedId=send('pins',[prior]).data.payload[0].anchor.id;
+  await until(()=>w.document.querySelector('.r3-pin.is-previous'),w);
+  assert.equal(w.document.activeElement,input);assert.equal(input.closest('label').classList.contains('is-focused'),true);
+  // Picking focuses the real annotation veil. The authored blur changes only
+  // a fingerprint class, just as leaving the auth input for the R1 drawer does.
+  const anchor=h.point();assert.equal(input.closest('label').classList.contains('is-focused'),false);assert.equal(anchor.id,focusedId);
+  const current={id:'current-email',ordinal:2,previous:false,sourceArtifactHash:hash,anchor},pins=[prior,current],packet=JSON.stringify(pins),draft=JSON.stringify(anchor);
+  send('pin-sources',sources);const blurredId=send('pins',pins).data.payload[0].anchor.id;
+  send('pin-view',{draft:anchor,selected:[prior.id,current.id]});
+  await until(()=>w.document.querySelector('.r3-pin.is-mixed')&&!w.document.querySelector('.approval-draft-pin').hidden,w);
+  assert.equal(blurredId,focusedId);assert.equal(w.document.querySelectorAll('.r3-pin').length,1);
+  assert.deepEqual(Array.from(messages('missing').at(-1).payload.ids),[]);
+  w.document.querySelector('.r3-pin').click();assert.deepEqual(Array.from(messages('openPins').at(-1).payload.ids),[prior.id,current.id]);
+  send('restore',anchor);await frame(w);assert.equal(w.document.activeElement,input,'restore retains the same indexed identity through the authored blur/focus classes');
+  assert.equal(w.document.querySelectorAll('.r3-pin.is-mixed').length,1);
+  assert.equal(JSON.stringify(original),originalBytes);assert.equal(JSON.stringify(pins),packet);assert.equal(JSON.stringify(anchor),draft);
+});
+
+test('child-list changes and explicit identity resets still refresh the inspector index',async t=>{
+  const h=harness(t),{w,root,send}=h,button=w.document.createElement('button');button.id='late-field';button.textContent='지연 입력';root.append(button);
+  await frame(w);h.hit(button);const first=h.point();assert.notEqual(first.id,'screen');
+  send('pins',[{id:'late-current',anchor:first}]);await until(()=>w.document.querySelector('.r3-pin'),w);
+  button.classList.add('new-identity');root.dispatchEvent(new w.CustomEvent('r3-motion-identity-reset'));await frame(w);
+  const reset=h.point();assert.notEqual(reset.id,first.id);assert.notEqual(reset.id,'screen');
+  send('pins',[{id:'late-current',anchor:reset}]);await until(()=>w.document.querySelector('.r3-pin'),w);
+  const replacement=w.document.createElement('button');replacement.id='replacement-field';replacement.textContent='교체 입력';button.replaceWith(replacement);
+  await frame(w);h.hit(replacement);const replaced=h.point();assert.notEqual(replaced.id,reset.id);assert.notEqual(replaced.id,'screen');
+  send('pins',[{id:'replacement-current',anchor:replaced}]);await until(()=>w.document.querySelector('.r3-pin'),w);
+});
+
 test('foreign windows, origins, channels and artifacts cannot control inspection or reach the reused projection',async t=>{
   const h=harness(t),{w,send}=h;
   for(const overrides of [{source:{}},{origin:'null'},{origin:'https://untrusted.invalid'},{data:{channel:'wrong'}},{data:{artifact:oldHash}}]){
@@ -194,13 +235,17 @@ test('pins track Web Animation geometry through completion, element resize and f
   }}),{w,root,send}=h,anchor=h.point(),html=root.innerHTML;
   send('pins',[{id:'moving-pin',anchor}]);send('pin-view',{draft:anchor,selected:[]});
   await until(()=>w.document.querySelector('.r3-pin'),w);
+  const marker=w.document.querySelector('.r3-pin');marker.focus();
   const y=()=>Number.parseFloat(w.document.querySelector('.r3-pin').style.top);
   assert.equal(y(),70);assert.ok(observed.has(root.querySelector('#continue')));
   top=47.125;await until(()=>y()===77.125,w);assert.equal(Number.parseFloat(w.document.querySelector('.approval-draft-pin').style.top),77.125);
+  assert.equal(marker.isConnected,true);assert.equal(w.document.querySelector('.r3-pin'),marker);assert.equal(w.document.activeElement,marker);
+  send('restore',anchor);await frame(w);assert.equal(w.document.querySelector('.r3-pin'),marker);assert.equal(marker.isConnected,true);
   top=40;motion.playState='finished';finishMotion();await until(()=>y()===70,w);
   assert.equal(root.innerHTML,html,'the app never mutated its DOM or emitted scroll/resize during the animation');
   top=52;resize([{target:root.querySelector('#continue')}]);await until(()=>y()===82,w);
   top=30;finishFonts();await until(()=>y()===60,w);
   top=35;w.document.fonts.dispatchEvent(new w.Event('loadingdone'));await until(()=>y()===65,w);
+  assert.equal(w.document.querySelector('.r3-pin'),marker);assert.equal(marker.isConnected,true);
   h.api.dispose();assert.equal(disconnected,true);assert.equal(observed.size,0);assert.equal(w.document.querySelector('.r3-pin'),null);
 });
