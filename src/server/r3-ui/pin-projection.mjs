@@ -218,10 +218,21 @@ export function installPinProjection(session) {
     // The host proves sameContent against artifact.source.contentHash. A new
     // review wrapper does not invalidate the original element identities.
     if(!legacy&&(!key||key===session.artifact||sameContent===true))return anchor;
-    const target=currentIndex(),source=sourceKey(key)?sources.get(key):null;
+    const target=currentIndex(),evidence=sourceKey(key)?sources.get(key):null;
+    const views=evidence?[...evidence.views.values()]:[];
     const x=legacy?legacy.x:anchor.x,y=legacy?legacy.y:anchor.y;
-    const el=coordinate(x)&&coordinate(y)?(legacy?legacyElement(legacy,source,target):
-      source&&mapElement(source.byId.get(anchor.id),source,target)):null;
+    const candidates=[];
+    if(coordinate(x)&&coordinate(y))for(const source of views){
+      const original=legacy?atPath(source,legacy.path):source.byId.get(anchor.id);
+      if(!original)continue;
+      candidates.push({source,original,element:legacy?legacyElement(legacy,source,target):mapElement(original,source,target)});
+    }
+    const chosen=candidates.at(-1),consistent=chosen?.element&&candidates.every(candidate=>candidate.element===chosen.element&&
+      (legacy||candidate.source.paths.get(candidate.original)===chosen.source.paths.get(chosen.original)));
+    const source=consistent?chosen.source:null;
+    // Static and mounted views describe one immutable source. An absent static
+    // id may be introduced by its real runtime; conflicting evidence may not.
+    const el=consistent?chosen.element:coordinate(x)&&coordinate(y)&&legacy&&!views.length?legacyElement(legacy,null,target):null;
     const id=el&&displayId(el,target);
     if(!id){
       // A removed old element can coincidentally share a current short id.
@@ -244,10 +255,17 @@ export function installPinProjection(session) {
     if(stamp!==identity())clear();
     if(message.type==='pin-sources'&&Array.isArray(message.payload)){
       for(const entry of message.payload){
-        if(!entry||!sourceKey(entry.artifactHash)||typeof entry.html!=='string')continue;
-        if(sources.has(entry.artifactHash)||entry.html.length>8*1024*1024||new Blob([entry.html]).size>8*1024*1024)continue;
-        const doc=new DOMParser().parseFromString(entry.html,'text/html'),nodes=doc.querySelectorAll('#order-single');
-        if(nodes.length===1)sources.set(entry.artifactHash,{...index(nodes[0]),sourceHash:/^[a-f0-9]{64}$/.test(entry.sourceHash||'')?entry.sourceHash:null});
+        if(!entry||!sourceKey(entry.artifactHash))continue;
+        const sourceHash=/^[a-f0-9]{64}$/.test(entry.sourceHash||'')?entry.sourceHash:entry.artifactHash==='legacy'?null:entry.artifactHash;
+        const evidence=sources.get(entry.artifactHash)||{sourceHash,views:new Map()};
+        if(evidence.sourceHash!==sourceHash)continue;
+        for(const [kind,html] of [['static',entry.html],['mounted',entry.mountedHtml]]){
+          if(evidence.views.has(kind)||typeof html!=='string'||html.length>8*1024*1024||new Blob([html]).size>8*1024*1024)continue;
+          if(kind==='mounted'&&(!sourceHash||entry.artifactHash!=='legacy'&&sourceHash!==entry.artifactHash))continue;
+          const doc=new DOMParser().parseFromString(html,'text/html'),nodes=doc.querySelectorAll('#order-single');
+          if(nodes.length===1)evidence.views.set(kind,{...index(nodes[0]),sourceHash});
+        }
+        if(evidence.views.size)sources.set(entry.artifactHash,evidence);
       }
     }else if(message.type==='pins'&&Array.isArray(message.payload)){
       activePins=message.payload.some(pin=>pin?.anchor?.instance===session.screen&&pin.anchor.artifactHash===session.artifact);

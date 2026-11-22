@@ -7,7 +7,7 @@ import {mountApprovedMarkers} from '../src/server/r3-ui/approved-markers.mjs';
 import {frameCode} from '../src/server/r3-ui/runtime.gen.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 
-const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
+const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const currentHash='a'.repeat(64),oldHash='b'.repeat(64);
 const plain=value=>JSON.parse(JSON.stringify(value));
 function freeze(value){
@@ -15,9 +15,9 @@ function freeze(value){
   return value;
 }
 function harness(t,body,options={}){
-  const {documentHTML,frameScript,...identityOptions}=options;
+  const {documentHTML,frameScript,beforeFrame,virtualConsole,...identityOptions}=options;
   const html=documentHTML||'<!doctype html><html><body><main id="order-single">'+body+'</main></body></html>';
-  const dom=new JSDOM(html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,''),{url:'https://order-ia-portal.pages.dev/qa-frame',runScripts:'outside-only',pretendToBeVisual:true});
+  const dom=new JSDOM(html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi,''),{url:'https://order-ia-portal.pages.dev/qa-frame',runScripts:'outside-only',pretendToBeVisual:true,...(virtualConsole?{virtualConsole}:{})});
   const w=dom.window,messages=[],scrolls=[],network=[];
   t.after(()=>w.close());
   const parent={postMessage(message){messages.push(plain(message));}};
@@ -38,6 +38,7 @@ function harness(t,body,options={}){
   const session={screen:'qa-example',state:'normal',variant:'email',channel:'11111111-1111-4111-8111-111111111111',artifact:currentHash,version:'current',...identityOptions};
   w.__session=session;
   w.eval('window.__projection='+browserFunction(installPinProjection)+'(window.__session)');
+  beforeFrame?.(w,session);
   w.eval('('+(frameScript||frameCode)+')(window.__session)');
   w.eval('('+browserFunction(mountApprovedMarkers)+')(window.__session)');
   const root=w.document.getElementById('order-single');
@@ -64,6 +65,89 @@ function point(h,selector,x=.37,y=.61){
 function placeholder(h,id='legacy-missing'){
   return {id,instance:h.session.screen,artifactHash:h.session.artifact,x:0,y:0,viewport:{width:390,height:844},scroll:[],layers:[]};
 }
+
+test('actual recorded guest logo-period anchors require the exact mounted source and retain their coordinates and provenance',async t=>{
+  const inventory=[
+    {cursor:393,hash:'887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36',x:0,y:.519375,scrollY:58},
+    {cursor:415,hash:'887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36',x:0,y:.519375,scrollY:58},
+    {cursor:435,hash:'5ee12e7bfbf591d7c1516c932d9afaf03975b777fed1cfbc2281a868a1d1cdc6',x:.5909943714821764,y:.679375,scrollY:0}
+  ];
+  const get=async hash=>{
+    const query=new URLSearchParams({id:'onboarding/guest-1/email',width:'390',version:hash?'recorded':'current'});if(hash)query.set('artifactHash',hash);
+    const response=await serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-artifact?'+query),{});assert.equal(response.status,200);return response.json();
+  };
+  const errors=[];
+  function mounted(a){
+    const virtualConsole=new VirtualConsole();virtualConsole.on('jsdomError',error=>{if(!error.message.startsWith('Could not parse CSS stylesheet'))errors.push(error.message);});
+    return harness(t,'',{documentHTML:a.html,frameScript:a.replayFrame||frameCode,virtualConsole,screen:'onboarding',state:'guest-1',variant:'email',artifact:a.hash,version:a.version,fixture:a.fixture,
+      beforeFrame(w,session){
+        w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
+        w.visualViewport=new w.EventTarget();Object.assign(w.visualViewport,{scale:1,width:390,height:844});
+        w.ResizeObserver=class{observe(){}disconnect(){}};w.IntersectionObserver=class{observe(){}disconnect(){}};
+        Object.assign(w,{TextEncoder,TextDecoder,Response,Request,Headers});
+        if(a.mount)w.eval(a.mount);if(a.qaRuntime)w.eval(a.qaRuntime);
+        if(!a.replayFrame)w.ORDER_QA_REVIEW_RUNTIME?.(session);
+      }});
+  }
+  const currentArtifact=await get(),current=mounted(currentArtifact),archives=new Map();
+  await until(()=>current.messages.some(message=>message.type==='ready'),'the real current runtime must mount');
+  const currentDot=point(current,'.ob-period.brand-dot');assert.equal(currentDot.id,'a-45vv8m');
+  for(const item of inventory){
+    if(!archives.has(item.hash)){const a=await get(item.hash),h=mounted(a);await until(()=>h.messages.some(message=>message.type==='ready'),'the exact saved runtime must mount');archives.set(item.hash,{a,h});}
+    const {a,h}=archives.get(item.hash),original=freeze({id:'a-45vv8m',instance:'onboarding',x:item.x,y:item.y,viewport:{width:390,height:844},scale:1,layers:[],artifactHash:item.hash,
+      scroll:[{id:'document',x:0,y:0},{id:'host-surface',x:0,y:item.scrollY},{id:'host-document',x:0,y:0}]}),before=JSON.stringify(original);
+    assert.equal(point(h,'.ob-period.brand-dot').id,original.id,'the immutable source runtime created this recorded identity');
+    current.session.channel='source-'+item.cursor;
+    const pin=freeze({id:'recorded-'+item.cursor,origin:'current',previous:true,resolved:false,sourceArtifactHash:item.hash,anchor:{...original,artifactHash:currentArtifact.hash}});
+    current.send('pin-sources',[{artifactHash:item.hash,sourceHash:item.hash,html:a.html}]);
+    const absent=current.send('pins',[pin]).projected.payload[0];assert.equal(absent.anchor.id,'pin-unmapped:a-45vv8m','the current same short id alone must not restore a source missing from static HTML');
+    current.send('pin-sources',[{artifactHash:item.hash,sourceHash:item.hash,html:a.html,mountedHtml:h.root.outerHTML}]);
+    const restored=current.send('pins',[pin]).projected.payload[0];assert.equal(restored.anchor.id,currentDot.id);
+    assert.equal(restored.anchor.x,original.x);assert.equal(restored.anchor.y,original.y);assert.deepEqual(plain(restored.anchor.scroll),plain(original.scroll));assert.deepEqual(plain(restored.anchor.layers),plain(original.layers));
+    assert.equal(restored.sourceArtifactHash,item.hash);assert.equal(restored.origin,pin.origin);assert.equal(restored.resolved,pin.resolved);assert.equal(JSON.stringify(original),before);
+    await until(()=>current.w.document.querySelector('.r3-pin.is-previous'),'the restored previous pin must reach the frozen frame and marker decoration');
+  }
+  assert.deepEqual(errors,[]);assert.equal(current.network.length,0);
+});
+
+test('conflicting static and mounted source evidence remains missing and neither view can be rebound',async t=>{
+  const original=harness(t,'<button class="old">Alpha</button>',{artifact:oldHash}),anchor=point(original,'button');
+  const current=harness(t,'<button data-action="alpha">Alpha</button><button data-action="beta">Beta</button>');
+  const pin=freeze({id:'conflict',sourceArtifactHash:oldHash,anchor:{...anchor,artifactHash:currentHash}});
+  const mountedHtml=original.html.replace('>Alpha<','>Beta<');
+  current.send('pin-sources',[{artifactHash:oldHash,sourceHash:oldHash,html:original.html,mountedHtml}]);
+  const missing=current.send('pins',[pin]).projected.payload[0].anchor;
+  assert.notEqual(missing.id,point(current,'[data-action="alpha"]').id);assert.notEqual(missing.id,point(current,'[data-action="beta"]').id);
+  current.send('pin-sources',[{artifactHash:oldHash,sourceHash:oldHash,html:original.html,mountedHtml:original.html}]);
+  assert.equal(current.send('pins',[pin]).projected.payload[0].anchor.id,missing.id,'a later payload cannot replace the already captured mounted view');
+  const forged=harness(t,'<button data-action="alpha">Alpha</button><button data-action="beta">Beta</button>');
+  forged.send('pin-sources',[{artifactHash:oldHash,sourceHash:oldHash,html:original.html}]);
+  const before=forged.send('pins',[pin]).projected.payload[0].anchor.id;
+  forged.send('pin-sources',[{artifactHash:oldHash,sourceHash:'c'.repeat(64),mountedHtml}]);
+  assert.equal(forged.send('pins',[pin]).projected.payload[0].anchor.id,before,'another source hash cannot attach mounted evidence to an existing source');
+});
+
+test('the replaced legacy company section remains missing on current and restores only on its exact previous document',async t=>{
+  const get=async version=>{
+    const response=await serveR3Artifact(new Request('https://order-ia-portal.pages.dev/api/ia/r3-artifact?'+new URLSearchParams({id:'onboarding/company/email',width:'390',version})),{});
+    assert.equal(response.status,200);return response.json();
+  };
+  const source=await get('previous'),now=await get('current');
+  assert.equal(source.hash,'76289ffc09f051ad6a64e6e79c30ab18bc5450c48044e9e1bfee364fb5ea8030');
+  const old=harness(t,'',{documentHTML:source.html,frameScript:source.replayFrame||frameCode,screen:'onboarding',state:'company',variant:'email',artifact:source.hash,version:source.version});
+  const current=harness(t,'',{documentHTML:now.html,screen:'onboarding',state:'company',variant:'email',artifact:now.hash});
+  assert.equal(old.root.querySelector(':scope > section').className.trim(),'mf-intro');
+  assert.equal(current.root.querySelector(':scope > section').className,'ob guest footer-open');
+  const legacy=freeze({path:'section:nth-of-type(1)',tag:'section',label:'소개·견적 모드 / 선택 영역',x:.44358974358974357,y:.7451690821256038,pageX:.44358974358974357,pageY:.731042654028436,contentHeight:844,scrollTop:0,nestedScroll:[],height:828});
+  const before=JSON.stringify(legacy),evidence={artifactHash:'legacy',sourceHash:source.hash,html:source.html,mountedHtml:old.root.outerHTML};
+  const pin=h=>({id:'legacy-company-section',origin:'legacy',previous:true,resolved:false,sourceArtifactHash:'legacy',legacyAnchor:legacy,anchor:placeholder(h)});
+  current.send('pin-sources',[evidence]);const absent=current.send('pins',[pin(current)]).projected.payload[0];
+  assert.equal(absent.anchor.id,'legacy-missing','changed whole-page structure cannot be guessed from a category label and section ordinal');
+  old.send('pin-sources',[evidence]);const restored=old.send('pins',[pin(old)]).projected.payload[0];
+  assert.equal(restored.anchor.id,'a-chb9kz');assert.equal(restored.anchor.x,legacy.x);assert.equal(restored.anchor.y,legacy.y);assert.equal(restored.resolved,false);
+  await until(()=>old.w.document.querySelector('.r3-pin'),'the original preserved screen must retain the recorded position');
+  assert.equal(current.w.document.querySelectorAll('.r3-pin').length,0);assert.equal(JSON.stringify(legacy),before);
+});
 async function until(check,label){
   const deadline=Date.now()+1500;
   while(!check()&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));

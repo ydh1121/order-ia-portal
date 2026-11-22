@@ -128,3 +128,11 @@
 - 사용자 원문: https://drive.google.com/file/d/19a7HZFMVl_xQ38cFQrPdMMYZOiRrNm9c/view . UTF-8 60바이트 / 1줄 / 끝 개행 없음 / SHA256 `76a01f343bb635329b901f7d0970e4b806b6cac34b6e2dd902e1fcae8b4022a6`.
 - 바로 위 Gooey 해석의 백슬래시 표시는 후속 정정으로 대체한다. 사용자가 입력한 기호는 원화 `₩`를 뜻한다. 시세 알림 아이콘은 계란 모양 안에 W 획과 두 가로획으로 구성한 원화 기호를 사용한다. 글꼴에 의존하지 않는 SVG로 실제 크기에서 확인한다.
 - 기존 알림 버튼 하나, 원형 아이콘 두 개, 오더 패스 아이콘과 두 메뉴의 연결 요구는 유지한다.
+
+## 재작업 지시 저장·이전 위치 핀 복구 — 2026-11-22
+
+- 사용자 원문: https://drive.google.com/file/d/15SJyrcJ1qsoExEKzfAm3GwkwefWPStRX/view . UTF-8 158바이트 / 끝 개행 없음 / SHA256 `6258338e98875c5499ed0edbc15b08cabb1b49d76d822c77227d62f7194284ac`.
+- 첨부 원본: https://drive.google.com/file/d/1sjxOFeRkXmyMqZZBd7Iz5AvhbVL9OYXs/view . PNG 238,859바이트 / SHA256 `badc1742d0ab2c9cf1685f56a197bec0eb0dda176817752a5262ecbc6ad4a37a`.
+- 재작업 저장 실패와 이전 위치 핀 누락을 구분해 재현하고 수정한다. 실패한 요청의 원인이 확인되지 않으면 다른 재현 결과를 해당 요청의 확정 원인으로 기록하지 않는다.
+- 발행 당시 화면의 HTML·실행 코드·fixture·해시와 원댓글·anchor·처리 상태를 보존한다. 실행 시 생성된 원요소도 해당 원본을 실행한 증거로 대조하며, 같은 짧은 위치 ID만으로 임의 연결하지 않는다.
+- 이전 화면 버전의 미저장 초안을 새 버전에서 숨기거나 새 target으로 덮어쓰지 않는다. 작성 당시 화면과 요청 식별자를 유지하고, 실패 원인을 구분해 안내한다.
