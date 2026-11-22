@@ -75,7 +75,7 @@ OBSERVER = r"""(() => {
     const value = snapshot();
     if (value) {
       const word = document.querySelector('.obm-wordmark'), style = getComputedStyle(word);
-      value.wordPaint = {backgroundPosition:style.backgroundPosition,animationName:style.animationName,color:style.color,transform:style.transform};
+      value.wordPaint = {backgroundImage:style.backgroundImage,backgroundPosition:style.backgroundPosition,animationName:style.animationName,color:style.color,transform:style.transform};
       receipt.frames.push(value);
     }
     // Longer than the complete test sequence; bounded even after a failure.
@@ -131,7 +131,7 @@ def geometry(page, expected, label):
         near(actual["mark"][key], value, label + ": path " + key)
     for key, value in {"x": 24, "y": 29.0234375, "width": 72, "height": 25}.items():
         near(actual["word"][key], value, label + ": word " + key)
-    paint = page.locator(".obm-wordmark").evaluate("e=>{const s=getComputedStyle(e);return {image:s.backgroundImage,color:s.color,animation:s.animationName,duration:s.animationDuration,transform:s.transform,fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
+    paint = page.locator(".obm-wordmark").evaluate("e=>{const s=getComputedStyle(e);return {text:[...e.childNodes].filter(n=>n.nodeType===Node.TEXT_NODE).map(n=>n.textContent).join(''),image:s.backgroundImage,color:s.color,animation:s.animationName,duration:s.animationDuration,transform:s.transform,fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
     # Check the authored rule in the rendered product, not only its fixed box.
     # A canonical module can change without reaching this serialized document.
     typography = {key: paint[key] for key in ("fontFamily", "fontSize", "fontWeight", "lineHeight", "letterSpacing")}
@@ -139,11 +139,9 @@ def geometry(page, expected, label):
     assert typography["fontSize"] == "25px" and typography["fontWeight"] == "900" and typography["lineHeight"] == "25px", {"label": label, "typography": typography}
     assert typography["letterSpacing"] in ("0px", "normal"), {"label": label, "typography": typography}
     actual["wordTypography"] = typography
-    if actual["authenticated"]:
-        assert "radial-gradient" in paint["image"] and paint["animation"] == "obm-wordmark-wash", paint
-        assert paint["duration"] == "24s" and paint["transform"] == "none", paint
-    else:
-        assert paint["image"] == "none" and paint["color"] == "rgb(36, 41, 46)", paint
+    assert paint["text"] == "Order", paint
+    assert paint["image"] == "none" and paint["animation"] == "none", paint
+    assert paint["color"] == "rgb(36, 41, 46)" and paint["transform"] == "none", paint
     assert page.evaluate("document.documentElement.scrollWidth<=innerWidth+1")
     return actual
 
@@ -158,6 +156,9 @@ def menu_settled(page, current, phase="open"):
     page.wait_for_function("([current,phase])=>{const b=document.querySelector('.obm-brand'),p=document.querySelector('.obm-panel'),s=b?.__orderAccountMenu?.inspect();return s?.page===current&&s?.phase===phase&&!p?.dataset.stackMoving;}", arg=[current, phase])
     if phase == "open":
         actual = state(page)
+        paint = page.locator('.obm-menu').evaluate("el=>{const s=getComputedStyle(el);return {background:s.backgroundColor,shadow:s.boxShadow};}")
+        assert paint['background'] == 'rgb(242, 244, 246)', paint
+        assert 'rgb(183, 193, 206)' in paint['shadow'] and 'inset' in paint['shadow'], paint
         rect = actual["panel"]
         assert rect and rect["x"] >= 0 and rect["y"] >= 0 and rect["x"] + rect["width"] <= 376 and rect["y"] + rect["height"] <= 829, rect
         near(rect["x"]+rect["width"],actual["trigger"]["x"]+actual["trigger"]["width"],"panel upper-right anchor")
@@ -334,11 +335,12 @@ def main():
             assert len({tuple(f["pathShape"]) for f in arrival["frames"]}) > 3
             assert all(f["svg"] == member["svg"] and f["paths"] == member["paths"] for f in arrival["frames"])
             product.screenshot(path=EVIDENCE / "member-1-375.png")
-            # Observe actual colour frames, with no animation seeking or CSS overrides.
-            product.wait_for_function("()=>new Set(window.__logoEvidence.frames.filter(f=>f.authenticated&&f.wordPaint?.animationName==='obm-wordmark-wash').map(f=>f.wordPaint.backgroundPosition)).size>=3",timeout=7000)
-            gradient = save_timeline(product,"member-gradient-timeline")
-            assert all(frame["wordPaint"]["transform"] == "none" for frame in gradient["frames"] if frame.get("wordPaint"))
-            product.screenshot(path=EVIDENCE / "member-gradient-375.png")
+            # Observe the retained animated icon beside the solid Order text.
+            solid = save_timeline(product,"member-solid-wordmark-timeline")
+            word_frames = [frame["wordPaint"] for frame in solid["frames"] if frame.get("authenticated") and frame.get("wordPaint")]
+            assert len(word_frames) >= 6, word_frames
+            assert all(paint["backgroundImage"] == "none" and paint["animationName"] == "none" and paint["color"] == "rgb(36, 41, 46)" and paint["transform"] == "none" for paint in word_frames), word_frames
+            product.screenshot(path=EVIDENCE / "member-solid-wordmark-375.png")
 
             # The actual intro controls update only content, keeping one header,
             # one original SVG, three original paths and the account panel.

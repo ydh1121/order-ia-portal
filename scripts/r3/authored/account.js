@@ -80,10 +80,24 @@
     if(message)U.shake(input?.closest('.field'));
     return !message;
   }
+  function restoreFieldMessages(root,signal) {
+    const added=[],fields=[];
+    for(const input of root.querySelectorAll('.field input,.field textarea')){
+      const field=input.closest('.field'),shell=input.closest('.input-shell');
+      if(!shell)continue;fields.push(field);
+      // Earlier auth exports omitted this shared display hook. Restore the hook,
+      // then let QAUI own its existing message, typing cancellation and 1800ms timer.
+      if(!field.querySelector('.inline-field-state')){
+        const display=input.ownerDocument.createElement('span');display.className='inline-field-state';display.setAttribute('aria-hidden','true');shell.append(display);added.push(display);
+      }
+      if(input.getAttribute('aria-invalid')==='true')U.setFieldError(input,field.querySelector('[data-field-message]')?.textContent||'');
+    }
+    root.addEventListener('compositionstart',event=>event.target.closest('.field')?.classList.remove('shows-message'),{signal});
+    signal.addEventListener('abort',()=>{for(const field of fields)field.classList.remove('shows-message');for(const display of added)display.remove();},{once:true});
+  }
   function emailValid(input) {
     if(!input)return false;
-    input.value=input.value.trim();
-    return fieldError(input,!input.value?'이메일 주소를 입력해 주세요.':input.validity.typeMismatch?'이메일 양식을 확인해 주세요.':'');
+    return fieldError(input,!input.value.trim()?'이메일 주소를 입력해 주세요.':input.validity.typeMismatch?'이메일 양식을 확인해 주세요.':'');
   }
   function firstInvalid(root) {root.querySelector('input[aria-invalid="true"]')?.focus({preventScroll:true});}
   function mountMeter(root,c,api) {
@@ -152,6 +166,7 @@
   }
   function commonAuthMount(root,state,api,authenticated=false) {
     const c=new AbortController();
+    restoreFieldMessages(root,c.signal);
     const context=api.brandAccount||w.ORDER_BRAND_ACCOUNT_CONTEXT||{},brand=root.querySelector('.auth-background .brand');
     const brandMenu=brand&&w.mountBrandAccountMenu?.(brand,{...context,authenticated:context.authenticated===true,animateInitial:context.consumeArrival?.()===true,reducedMotion:api.reduced});
     c.signal.addEventListener('abort',()=>brandMenu?.destroy(),{once:true});

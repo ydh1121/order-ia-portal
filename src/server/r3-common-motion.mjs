@@ -25,7 +25,9 @@ export function createCommonMotion(win=window){
 @keyframes r3-content-reveal{from{opacity:0;filter:blur(var(--reveal-blur,2px))}to{opacity:1;filter:blur(0)}}
 @keyframes r3-geometry-pulse{50%{opacity:var(--pulse-min,.5)}}
 .r3-input-mirror{position:fixed;pointer-events:none!important;z-index:2147483000;box-sizing:border-box;margin:0;overflow:hidden;background:transparent;contain:layout style;white-space:pre}
-.r3-input-mirror>span{display:inline-block;white-space:pre;transform-origin:center bottom}
+.r3-input-glyphs{display:block;position:relative;white-space:inherit;min-height:1em}
+.r3-input-glyphs>span{display:inline-block;white-space:pre;transform-origin:50% 80%}
+.r3-input-caret{position:absolute;pointer-events:none;width:2px;border-radius:2px;background:currentColor;transform-origin:left center}
 .r3-dropdown{transform-origin:top left;opacity:0;transform:scale(var(--dropdown-pre-scale,.97));pointer-events:none;transition:transform var(--dropdown-open-dur,250ms) var(--dropdown-ease,cubic-bezier(.22,1,.36,1)),opacity var(--dropdown-open-dur,250ms) var(--dropdown-ease,cubic-bezier(.22,1,.36,1))}
 .r3-dropdown[data-origin^=bottom]{transform-origin:bottom left}
 .r3-dropdown.is-open{opacity:1;transform:scale(1);pointer-events:auto}
@@ -229,41 +231,117 @@ export function createCommonMotion(win=window){
  }
 
  function bindInputs(scope=doc){
-  const controller=new win.AbortController(),states=new WeakMap(),active=new Map(),composing=new Set(),versions=new WeakMap();
+  const controller=new win.AbortController(),states=new WeakMap(),active=new Map(),composing=new Set(),finishingComposition=new WeakSet(),versions=new WeakMap();
   const allowed=el=>el?.matches?.('textarea,input:not([type]),input[type=text],input[type=search],input[type=tel],input[type=email],input[type=url],input[type=password],input[type=number]')&&!el.disabled&&!el.readOnly&&!el.closest('[data-no-input-motion]');
   const segments=s=>win.Intl?.Segmenter?[...new win.Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(s)].map(v=>v.segment):Array.from(s);
-  function stop(input){const previous=active.get(input);if(!previous)return;active.delete(input);for(const a of previous.animations)a.cancel();previous.layer.remove();input.style.webkitTextFillColor=previous.fill;input.style.caretColor=previous.caret;}
-  function animateInput(input,before){
-   const next=input.value;states.set(input,next);if(before===next||reduced()||!input.animate)return;stop(input);
-   const a=segments(before||''),b=segments(next);let start=0,end=0;while(start<a.length&&start<b.length&&a[start]===b[start])start++;while(end<a.length-start&&end<b.length-start&&a[a.length-1-end]===b[b.length-1-end])end++;
-   const box=input.getBoundingClientRect();if(!box.width||!box.height)return;const cs=win.getComputedStyle(input),layer=doc.createElement('span');layer.className='r3-input-mirror';layer.setAttribute('aria-hidden','true');layer.inert=true;
-   const paddingTop=input.tagName==='TEXTAREA'?parseFloat(cs.paddingTop)||0:Math.max(parseFloat(cs.paddingTop)||0,(box.height-(parseFloat(cs.lineHeight)||parseFloat(cs.fontSize)*1.2))/2);
-   Object.assign(layer.style,{left:box.left+'px',top:box.top+'px',width:box.width+'px',height:box.height+'px',paddingLeft:cs.paddingLeft,paddingRight:cs.paddingRight,paddingTop:paddingTop+'px',paddingBottom:cs.paddingBottom,font:cs.font,fontSize:cs.fontSize,fontFamily:cs.fontFamily,fontWeight:cs.fontWeight,fontStyle:cs.fontStyle,letterSpacing:cs.letterSpacing,lineHeight:cs.lineHeight,color:cs.color,direction:cs.direction,textAlign:cs.textAlign,whiteSpace:input.tagName==='TEXTAREA'?'pre-wrap':'pre',overflowWrap:cs.overflowWrap,border:cs.border,borderColor:'transparent'});
-   const glyph=ch=>input.type==='password'?'•':ch;
-   const draw=chars=>chars.map(ch=>{const span=doc.createElement('span');span.textContent=glyph(ch);layer.append(span);return span;});
-   const portal=input.closest('dialog,[popover]'),portalBox=portal?.getBoundingClientRect(),scale=portalBox?.width&&portal.offsetWidth?portalBox.width/portal.offsetWidth:1;
-   if(portal){Object.assign(layer.style,{position:'absolute',left:(box.left-portalBox.left)/scale+portal.scrollLeft-portal.clientLeft+'px',top:(box.top-portalBox.top)/scale+portal.scrollTop-portal.clientTop+'px',width:box.width/scale+'px',height:box.height/scale+'px'});portal.append(layer);}else doc.body.append(layer);let old=draw(a);layer.scrollLeft=input.scrollLeft;layer.scrollTop=input.scrollTop;
-   const oldBoxes=old.map(span=>span.getBoundingClientRect());layer.replaceChildren();const fresh=draw(b);layer.scrollLeft=input.scrollLeft;layer.scrollTop=input.scrollTop;
-   const record={layer,animations:[],fill:input.style.webkitTextFillColor,caret:input.style.caretColor};active.set(input,record);input.style.webkitTextFillColor='transparent';input.style.caretColor=cs.caretColor==='auto'?cs.color:cs.caretColor;
-   for(let i=0;i<fresh.length;i++){
-    let frames,delay=0;if(i>=start&&i<b.length-end){frames=[{translate:'0 -7px',scale:'.82',opacity:0},{translate:'0 1.6px',scale:'1.04',opacity:1,offset:.65},{translate:'0 0',scale:'1',opacity:1}];delay=Math.min(i-start,12)*12;}
-    else {const oldIndex=i<start?i:a.length-(b.length-i),to=fresh[i].getBoundingClientRect(),from=oldBoxes[oldIndex];if(from)frames=[{translate:((from.left-to.left)/scale)+'px '+((from.top-to.top)/scale)+'px'},{translate:'0 0'}];}
-    if(frames){const motion=animation(fresh[i],frames,{duration:300,delay,easing:'cubic-bezier(.22,1,.36,1)',fill:'both'});if(motion)record.animations.push(motion);}
+  const snapshot=input=>({value:input.value,selection:input.selectionEnd});
+  const selected=input=>Number.isInteger(input.selectionStart)&&input.selectionStart!==input.selectionEnd;
+  function stop(input){
+   const record=active.get(input);if(!record)return;active.delete(input);win.cancelAnimationFrame(record.raf);
+   for(const flight of record.animations)flight.cancel();record.layer.remove();
+   input.style.webkitTextFillColor=record.fill;input.style.caretColor=record.caretColor;
+  }
+  function place(input,record){
+   const box=input.getBoundingClientRect();if(!box.width||!box.height)return false;
+   const portal=record.portal,p=portal?.getBoundingClientRect(),scale=p?.width&&portal.offsetWidth?p.width/portal.offsetWidth:1;
+   Object.assign(record.layer.style,{left:(portal?(box.left-p.left)/scale+portal.scrollLeft-portal.clientLeft:box.left)+'px',top:(portal?(box.top-p.top)/scale+portal.scrollTop-portal.clientTop:box.top)+'px',width:box.width/scale+'px',height:box.height/scale+'px'});
+   record.layer.scrollLeft=input.scrollLeft;record.layer.scrollTop=input.scrollTop;return true;
+  }
+  function caretTarget(record,index){
+   let units=0;for(let i=0;i<record.chars.length;i++){if(units>=index)return record.glyphs[i].offsetLeft;units+=record.chars[i].length;}
+   const last=record.glyphs.at(-1);return last?last.offsetLeft+last.offsetWidth:0;
+  }
+  function drawCaret(input,record){
+   // Email/number controls do not expose native selection offsets. Keep their
+   // native caret instead of inventing an end position or changing input type.
+   if(!record.caret)return false;
+   const caret=record.caret;caret.t=caretTarget(record,input.selectionEnd);
+   const stretch=Math.min(Math.abs(caret.v)/80,7);
+   record.cursor.style.width=2+stretch+'px';record.cursor.style.transform='translateX('+(caret.x-(caret.v>0?stretch:0))+'px)';
+   return Math.abs(caret.x-caret.t)>.05||Math.abs(caret.v)>.1;
+  }
+  function wake(input,record){
+   if(record.raf||active.get(input)!==record)return;
+   record.raf=win.requestAnimationFrame(now=>{
+    record.raf=0;
+    if(!input.isConnected||input.value!==record.value||input.type!==record.type||!allowed(input)||selected(input)||composing.has(input)||reduced()||input.closest('.shows-message')||!place(input,record)){stop(input);return;}
+    const dt=Math.min(Math.max((now-(record.last||now-16))/1000,0),1/30);record.last=now;
+    if(record.caret){record.caret.t=caretTarget(record,input.selectionEnd);for(let i=0;i<4;i++){const c=record.caret;c.v+=(-700*(c.x-c.t)-32*c.v)*dt/4;c.x+=c.v*dt/4;}}
+    const moving=drawCaret(input,record);
+    if(record.animations.size||moving)wake(input,record);else stop(input);
+   });
+  }
+  function motion(input,record,span,frames,options,done){
+   const flight=animation(span,frames,options);if(!flight)return null;
+   record.animations.add(flight);
+   const settled=()=>{record.animations.delete(flight);if(active.get(input)===record){done?.();wake(input,record);}};
+   flight.finished.then(settled,settled);return flight;
+  }
+  function makeRecord(input,before){
+   const cs=win.getComputedStyle(input),box=input.getBoundingClientRect();
+   if(!box.width||!box.height||cs.direction==='rtl')return null;
+   const layer=doc.createElement('span'),line=doc.createElement('span');layer.className='r3-input-mirror';layer.setAttribute('aria-hidden','true');layer.inert=true;line.className='r3-input-glyphs';layer.append(line);
+   const paddingTop=input.tagName==='TEXTAREA'?parseFloat(cs.paddingTop)||0:Math.max(parseFloat(cs.paddingTop)||0,((input.offsetHeight||box.height)-(parseFloat(cs.lineHeight)||parseFloat(cs.fontSize)*1.2))/2);
+   Object.assign(layer.style,{paddingLeft:cs.paddingLeft,paddingRight:cs.paddingRight,paddingTop:paddingTop+'px',paddingBottom:cs.paddingBottom,font:cs.font,fontSize:cs.fontSize,fontFamily:cs.fontFamily,fontWeight:cs.fontWeight,fontStyle:cs.fontStyle,letterSpacing:cs.letterSpacing,wordSpacing:cs.wordSpacing,lineHeight:cs.lineHeight,color:cs.color,direction:cs.direction,textAlign:cs.textAlign,whiteSpace:input.tagName==='TEXTAREA'?'pre-wrap':'pre',overflowWrap:cs.overflowWrap,border:cs.border,borderColor:'transparent'});
+   const portal=input.closest('dialog,[popover]');if(portal)layer.style.position='absolute';(portal||doc.body).append(layer);
+   const record={layer,line,portal,type:input.type,value:before.value,chars:segments(before.value),glyphs:[],animations:new Set(),enter:new Map(),moves:new Map(),fill:input.style.webkitTextFillColor,caretColor:input.style.caretColor,raf:0,last:0};
+   record.make=ch=>{const span=doc.createElement('span');span.textContent=record.type==='password'?'•':ch;if(ch.includes('\n'))span.style.display='inline';return span;};
+   record.glyphs=record.chars.map(ch=>{const span=record.make(ch);line.append(span);return span;});
+   if(input.tagName==='INPUT'&&doc.activeElement===input&&Number.isInteger(before.selection)&&Number.isInteger(input.selectionEnd)){
+    record.cursor=doc.createElement('i');record.cursor.className='r3-input-caret';record.cursor.style.height=(parseFloat(cs.lineHeight)||parseFloat(cs.fontSize)*1.2||20)+'px';record.cursor.style.top='0';record.cursor.style.left='0';line.append(record.cursor);
+    record.caret={x:caretTarget(record,before.selection),t:0,v:0};input.style.caretColor='transparent';
    }
-   for(let i=start;i<a.length-end;i++){const from=oldBoxes[i];if(!from)continue;const gone=doc.createElement('span');gone.textContent=glyph(a[i]);Object.assign(gone.style,{position:'absolute',left:(from.left-box.left)/scale+input.scrollLeft+'px',top:(from.top-box.top)/scale+input.scrollTop+'px'});layer.append(gone);const motion=animation(gone,[{translate:'0 0',opacity:1,scale:'1'},{translate:'0 -10px',opacity:0,scale:'.65'}],{duration:240,easing:'ease-out',fill:'both'});if(motion)record.animations.push(motion);}
-   Promise.allSettled(record.animations.map(m=>m.finished)).then(()=>{if(active.get(input)===record)stop(input);});
+   active.set(input,record);input.style.webkitTextFillColor='transparent';place(input,record);return record;
+  }
+  function animateInput(input,before){
+   const next=input.value;states.set(input,snapshot(input));
+   if(before.value===next)return;
+   if(reduced()||!input.animate||selected(input)||input.closest('.shows-message')){stop(input);return;}
+   let record=active.get(input);
+   if(record&&(record.value!==before.value||record.type!==input.type)){stop(input);record=null;}
+   record||=makeRecord(input,before);if(!record)return;
+   const a=record.chars,b=segments(next);let start=0,end=0;while(start<a.length&&start<b.length&&a[start]===b[start])start++;while(end<a.length-start&&end<b.length-start&&a[a.length-1-end]===b[b.length-1-end])end++;
+   const positions=new Map(record.glyphs.map(span=>{const shift=win.getComputedStyle(span).translate?.split(/\s+/).map(parseFloat)||[];return [span,{x:span.offsetLeft+(shift[0]||0),y:span.offsetTop+(shift[1]||0)}];}));
+   const removed=record.glyphs.splice(start,a.length-start-end);
+   for(const span of removed){
+    const from=positions.get(span),painted=win.getComputedStyle(span),first={transform:painted.transform||'none',opacity:painted.opacity||'1',filter:painted.filter||'none'};
+    record.enter.get(span)?.cancel();record.enter.delete(span);record.moves.get(span)?.cancel();record.moves.delete(span);
+    Object.assign(span.style,{position:'absolute',left:from.x+'px',top:from.y+'px',translate:'none'});span.dataset.inputExit='';
+    motion(input,record,span,[first,{transform:'translateY(-18px) rotate(20deg) scale(.5)',opacity:0,filter:'blur(3px)'}],{duration:340,easing:'cubic-bezier(.5,0,.75,0)',fill:'both'},()=>span.remove());
+   }
+   const reference=record.glyphs[start]||record.cursor||null;
+   const inserted=b.slice(start,b.length-end).map((ch,i)=>{
+    const span=record.make(ch);record.line.insertBefore(span,reference);
+    const flight=motion(input,record,span,[{transform:'translateY(14px) rotate(-16deg) scale(.5)',opacity:0,filter:'blur(3px)'},{transform:'translateY(-3px) rotate(4deg) scale(1.1)',opacity:1,filter:'blur(0px)',offset:.55},{transform:'translateY(1px) rotate(-1deg) scale(.98)',opacity:1,filter:'blur(0px)',offset:.8},{transform:'none',opacity:1,filter:'blur(0px)'}],{duration:500,delay:Math.min(i,30)*18,easing:'cubic-bezier(.2,.8,.2,1)',fill:'backwards'},()=>{if(record.enter.get(span)===flight)record.enter.delete(span);});
+    if(flight)record.enter.set(span,flight);return span;
+   });
+   record.glyphs.splice(start,0,...inserted);record.chars=b;record.value=next;
+   for(const span of record.glyphs){
+    const from=positions.get(span);if(!from)continue;
+    const x=from.x-span.offsetLeft,y=from.y-span.offsetTop;record.moves.get(span)?.cancel();record.moves.delete(span);
+    if(Math.abs(x)+Math.abs(y)<.1)continue;
+    const flight=motion(input,record,span,[{translate:x+'px '+y+'px'},{translate:'0px 0px'}],{duration:360,easing:'cubic-bezier(.22,1,.36,1)'},()=>{if(record.moves.get(span)===flight)record.moves.delete(span);});
+    if(flight)record.moves.set(span,flight);
+   }
+   place(input,record);drawCaret(input,record);wake(input,record);
   }
   const on=(type,fn)=>scope.addEventListener(type,fn,{signal:controller.signal,capture:true});
-  on('focusin',e=>{if(allowed(e.target))states.set(e.target,e.target.value);});
-  on('beforeinput',e=>{if(allowed(e.target)&&!composing.has(e.target))states.set(e.target,e.target.value);});
-  on('compositionstart',e=>{if(allowed(e.target)){stop(e.target);states.set(e.target,e.target.value);composing.add(e.target);}});
-  function queue(input){const before=states.get(input)||'',version=(versions.get(input)||0)+1;versions.set(input,version);win.queueMicrotask(()=>{if(!controller.signal.aborted&&versions.get(input)===version&&!composing.has(input))animateInput(input,before);});}
-  on('compositionend',e=>{if(composing.delete(e.target))queue(e.target);});
+  on('focusin',e=>{if(allowed(e.target))states.set(e.target,snapshot(e.target));});
+  on('beforeinput',e=>{if(allowed(e.target)&&!composing.has(e.target)&&!finishingComposition.has(e.target))states.set(e.target,snapshot(e.target));});
+  on('compositionstart',e=>{if(allowed(e.target)){stop(e.target);states.set(e.target,snapshot(e.target));composing.add(e.target);}});
+  function queue(input){const before=states.get(input)||{value:'',selection:0},version=(versions.get(input)||0)+1;versions.set(input,version);win.queueMicrotask(()=>{if(!controller.signal.aborted&&versions.get(input)===version&&!composing.has(input))animateInput(input,before);});}
+  on('compositionend',e=>{if(composing.delete(e.target)){finishingComposition.add(e.target);queue(e.target);win.queueMicrotask(()=>finishingComposition.delete(e.target));}});
   on('input',e=>{if(!allowed(e.target)||e.isComposing||composing.has(e.target))return;queue(e.target);});
-  for(const type of ['blur','pointerdown','select','scroll'])on(type,e=>{if(allowed(e.target))stop(e.target);});
+  for(const type of ['blur','pointerdown','change'])on(type,e=>{if(active.has(e.target))stop(e.target);});
+  on('select',e=>{if(selected(e.target))stop(e.target);else{const record=active.get(e.target);if(record)wake(e.target,record);}});
+  on('click',e=>{const toggle=e.target.closest?.('[data-action=password-visibility]');if(toggle)stop(toggle.closest('.field')?.querySelector('input'));});
+  // A type change must remove any previously visible password glyphs immediately;
+  // replaced roots and a temporary field message must also release native paint.
+  const observer=new win.MutationObserver(()=>{for(const [input,record]of active)if(!input.isConnected||input.type!==record.type||!allowed(input)||input.closest('.shows-message'))stop(input);});
+  observer.observe(scope,{subtree:true,childList:true,attributes:true,attributeFilter:['type','disabled','readonly','class']});
   const stopAll=()=>{for(const input of active.keys())stop(input);};
-  win.addEventListener('resize',stopAll,{signal:controller.signal});doc.addEventListener('scroll',event=>{if(!event.target?.closest?.('.r3-input-mirror'))stopAll();},{signal:controller.signal,capture:true});doc.addEventListener('visibilitychange',stopAll,{signal:controller.signal});media?.addEventListener?.('change',stopAll,{signal:controller.signal});
-  function destroy(){controller.abort();stopAll();composing.clear();cleanups.delete(destroy);}cleanups.add(destroy);return {destroy};
+  win.addEventListener('resize',stopAll,{signal:controller.signal});doc.addEventListener('scroll',event=>{const record=active.get(event.target);if(record)place(event.target,record);else if(!event.target?.closest?.('.r3-input-mirror'))stopAll();},{signal:controller.signal,capture:true});doc.addEventListener('visibilitychange',stopAll,{signal:controller.signal});media?.addEventListener?.('change',stopAll,{signal:controller.signal});
+  function destroy(){controller.abort();observer.disconnect();stopAll();composing.clear();cleanups.delete(destroy);}cleanups.add(destroy);return {destroy};
  }
 
  function nativeSelects(scope=doc){

@@ -56,14 +56,14 @@ def check_input_motion(page, reduced, report):
           function sample(time){
             const box=input.getBoundingClientRect(),layers=[...document.querySelectorAll('.r3-input-mirror')];
             state.samples.push({t:time-armed,afterInput:state.eventAt===null?null:time-state.eventAt,mirrorCount:layers.length,value:input.value,start:input.selectionStart,end:input.selectionEnd,ownAnimations:input.getAnimations().length,scrollY,scrollLeft:input.scrollLeft,
-              glyphs:layers.flatMap(layer=>[...layer.children].map(g=>{const s=getComputedStyle(g),r=g.getBoundingClientRect();return {text:g.textContent,opacity:Number(s.opacity),translate:s.translate,scale:s.scale,transform:s.transform,x:r.x-box.x,y:r.y-box.y,width:r.width,height:r.height};}))});
-            if(state.eventAt!==null&&time-state.eventAt>=450||time-armed>=5000){
+              glyphs:layers.flatMap(layer=>[...layer.querySelectorAll('.r3-input-glyphs > span')].map(g=>{const s=getComputedStyle(g),r=g.getBoundingClientRect();return {text:g.textContent,opacity:Number(s.opacity),translate:s.translate,scale:s.scale,transform:s.transform,filter:s.filter,x:r.x-box.x,y:r.y-box.y,width:r.width,height:r.height};}))});
+            if(state.eventAt!==null&&time-state.eventAt>=700||time-armed>=5000){
               observer.disconnect();controller.abort();state.after={value:input.value,start:input.selectionStart,end:input.selectionEnd,ownAnimations:input.getAnimations().length,fill:input.style.webkitTextFillColor,caret:input.style.caretColor,sameInput:document.querySelector('#field')===input,mirrors:document.querySelectorAll('.r3-input-mirror').length};state.done=true;
             }else requestAnimationFrame(sample);
           }requestAnimationFrame(sample);
         }''', name)
         # The observer and RAF are running before the real keyboard event. A
-        # later Playwright polling call cannot miss the mirror's 300ms lifetime.
+        # later polling cannot miss the 500ms enter or 340ms exit frames.
         page.keyboard.press(key)
         observed = page.evaluate('''async()=>{const state=window.__inputMotion;while(!state.done)await new Promise(requestAnimationFrame);return state;}''')
         report['inputMotion'][name] = observed
@@ -80,10 +80,54 @@ def check_input_motion(page, reduced, report):
             assert any(event['type'] == 'added' for event in observed['mutations']) and any(event['type'] == 'removed' for event in observed['mutations']), observed
             glyphs = [glyph for sample in observed['samples'] for glyph in sample['glyphs'] if glyph['text'] == 'x']
             assert len(glyphs) >= 3 and any(0 < glyph['opacity'] < 1 for glyph in glyphs), observed
-            assert len({(glyph['translate'], glyph['scale']) for glyph in glyphs}) >= 3, observed
+            assert len({(glyph['transform'], glyph['filter']) for glyph in glyphs}) >= 3, observed
             assert len({(glyph['y'], glyph['height']) for glyph in glyphs}) >= 3, observed
         if name == 'insert':
             report['input'] = {key:after[key] for key in ['value','start','end','ownAnimations']}
+
+    # Actual consecutive keystrokes must not rebuild or restart unchanged
+    # letters. Then insert and delete in the middle while the first letters fly.
+    page.evaluate('''()=>{
+      const input=document.querySelector('#field'),controller=new AbortController();
+      const state=window.__continuousInput={events:[],input,controller,layer:null,prefix:null,a:null};
+      document.addEventListener('input',event=>{
+        if(event.target!==input)return;
+        queueMicrotask(()=>{
+          const layer=document.querySelector('.r3-input-mirror');
+          const glyphs=layer?[...layer.querySelectorAll('.r3-input-glyphs > span:not([data-input-exit])')]:[];
+          const prefix=glyphs.find(g=>g.textContent==='가'),a=glyphs.find(g=>g.textContent==='a');
+          const caret=layer?.querySelector('.r3-input-caret');
+          state.events.push({trusted:event.isTrusted,value:input.value,start:input.selectionStart,end:input.selectionEnd,
+            mirrors:document.querySelectorAll('.r3-input-mirror').length,
+            sameLayer:!state.layer||layer===state.layer,samePrefix:!state.prefix||prefix===state.prefix,
+            sameA:!state.a||a===state.a,caretWidth:caret?.getBoundingClientRect().width??null});
+          state.layer||=layer;state.prefix||=prefix;state.a||=a;
+        });
+      },{capture:true,signal:controller.signal});
+    }''')
+    page.keyboard.type('ab', delay=75)
+    page.keyboard.press('ArrowLeft')
+    page.keyboard.press('x')
+    page.keyboard.press('Backspace')
+    continuous = page.evaluate('''async()=>{
+      const state=window.__continuousInput,start=performance.now();
+      while(performance.now()-start<800)await new Promise(requestAnimationFrame);
+      state.controller.abort();const input=state.input;
+      return {events:state.events,value:input.value,start:input.selectionStart,end:input.selectionEnd,
+        sameInput:document.querySelector('#field')===input,mirrors:document.querySelectorAll('.r3-input-mirror').length,
+        fill:input.style.webkitTextFillColor,caret:input.style.caretColor};
+    }''')
+    report['inputMotion']['continuous'] = continuous
+    assert [e['value'] for e in continuous['events']] == ['가a', '가ab', '가axb', '가ab'], continuous
+    assert all(e['trusted'] for e in continuous['events']), continuous
+    assert (continuous['value'], continuous['start'], continuous['end']) == ('가ab', 2, 2), continuous
+    assert continuous['sameInput'] and continuous['mirrors'] == 0, continuous
+    assert (continuous['fill'], continuous['caret']) == (observed['before']['fill'], observed['before']['caret']), continuous
+    if reduced:
+        assert all(e['mirrors'] == 0 for e in continuous['events']), continuous
+    else:
+        assert all(e['mirrors'] == 1 and e['sameLayer'] and e['samePrefix'] and e['sameA'] for e in continuous['events']), continuous
+        assert all(e['caretWidth'] is not None and e['caretWidth'] >= 2 for e in continuous['events']), continuous
 
 
 def run(browser, reduced=False):
