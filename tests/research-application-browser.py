@@ -547,6 +547,9 @@ def main():
         frame.locator('#r3-veil').press('Escape')
         expect(frame.locator('#r3-veil')).to_be_hidden()
         expect(page.locator('#new')).to_have_attribute('aria-pressed', 'false')
+        expect(page.locator('#drawer')).to_be_visible()
+        page.locator('#close-drawer').click()
+        expect(page.locator('#drawer')).to_be_hidden()
 
         frame.locator('#price-workspace-app [data-action="draft"]').click()
         expect(frame.locator('#pw-notice')).to_contain_text('임시저장했습니다')
