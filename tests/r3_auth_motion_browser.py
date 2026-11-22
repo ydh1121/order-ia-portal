@@ -307,7 +307,9 @@ def check_auth_motion(page, origin, width):
     password = frame.locator("[name=password]")
     password.fill("a")
     expect(meter).to_have_attribute("data-level", "1")
-    password.evaluate("""el=>document.addEventListener('input',()=>{
+    # The canonical sheet stops input bubbling; observe on this same input after
+    # its already-mounted meter handler, before the enclosing sheet barrier.
+    password.evaluate("""el=>el.addEventListener('input',()=>{
        const bars=document.querySelector('.password-meter');
        window.__boundary=bars.getAnimations({subtree:true}).filter(a=>a.effect.target?.localName==='em');
        for(const animation of bars.getAnimations({subtree:true})){animation.pause();animation.currentTime=133;}
