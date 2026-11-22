@@ -393,8 +393,10 @@ def main():
         # the forced QA provider error as a successful load.
         phase = 'qa-pricing-initial-error'
         page.goto(cfg['url'] + '/ia?view=qa-lab&screen=price-workspace/error/email&width=1280')
+        wait_for_expression(page, 'document.querySelector("#frame")?.src.includes("view=research-r3")', timeout=30000)
         frame = page.frame_locator('#frame')
-        wait_for_expression(page, "!!document.querySelector('#frame')?.contentWindow?.ORDER_RESEARCH_APP", timeout=30000)
+        frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
+        expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
         remember_review_application(page)
         ready_review_route(page, frame, 'price-workspace', 'error')
         expect(frame.locator('#pw-notice')).to_contain_text('저장소에 연결하지 못했습니다')
