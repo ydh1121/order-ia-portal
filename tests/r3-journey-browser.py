@@ -199,7 +199,15 @@ def run(page, origin, width):
     expect(review).not_to_be_visible()
     expect(quantity).to_have_value('27')
     expect(price).to_have_value(re.compile(r'7,?300'))
-    price.fill('');price.blur()
+    # The regular edit action schedules focus back to the opened accordion.
+    # Re-enter the price as a user would: the trusted pointer cancels that
+    # pending navigation, then native keys must actually clear the field.
+    frame_click(page,price)
+    expect(price).to_be_focused()
+    price.press('ControlOrMeta+A');price.press('Backspace')
+    expect(price).to_have_value('')
+    price.press('Tab')
+    expect(price).to_have_value('')
     frame_click(page,quote.locator('#input-review-open'))
     expect(review.locator('#input-review-rows')).to_contain_text('포장당 미입력')
     frame_click(page,review.locator('#input-review-back'))
