@@ -3,6 +3,7 @@
 import * as r1Epoch from './r3-ui/r1-e8e12588-history.gen.mjs';
 import * as rework09Epoch from './r3-ui/r3-af5ece3e-history.gen.mjs';
 import * as release10Epoch from './r3-ui/r3-e5f97029-history.gen.mjs';
+import * as release11Epoch from './r3-ui/r3-a36b41e2-history.gen.mjs';
 
 const enc=new TextEncoder();
 const sha=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',enc.encode(value))),v=>v.toString(16).padStart(2,'0')).join('');
@@ -82,7 +83,7 @@ function deltaReader({epochMetadata,epochIndexGzip,epochFragmentsGzip},base){
 // Earlier immutable identities retain precedence. A later snapshot never rebinds
 // an existing hash to newly generated code, fixtures or feedback status.
 const previousEpoch=reader(rework09Epoch);
-const epochs=[reader(r1Epoch),previousEpoch,deltaReader(release10Epoch,previousEpoch)];
+const epochs=[reader(r1Epoch),previousEpoch,deltaReader(release10Epoch,previousEpoch),deltaReader(release11Epoch,previousEpoch)];
 export const reviewedEpochMetadata=r1Epoch.epochMetadata;
 export const reviewedEpochsMetadata=Object.freeze(epochs.map(epoch=>epoch.metadata));
 export async function readReviewedEpochBody(digest){

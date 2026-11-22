@@ -27,7 +27,8 @@ html,body{overflow:hidden}
 #notes .rework-instruction{border-left:2px solid #315de6;padding:8px 10px;margin:10px 0;background:#eef3ff;border-radius:0 8px 8px 0}
 #notes .rework-instruction details{font-size:10px;color:#4e5968}
 #notes .rework-instruction summary{cursor:pointer}
-#authoring-help{font-size:11px;line-height:1.5;color:#6b7684}
+#authoring-help,#editor-source{font-size:11px;line-height:1.5;color:#6b7684}
+#save-error{font-size:11px;line-height:1.5;color:#b42318}
 .pin-legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;color:#6b7684;font-size:10px}.pin-legend span{display:inline-flex;align-items:center;gap:5px}.pin-legend span::before{content:'';width:9px;height:9px;border-radius:50%;background:#315de6}.pin-legend .previous::before{background:#7c3aed}
 #filters button[aria-pressed=true]{color:#315de6;background:#eaeefa}
 #filters{display:flex;gap:4px;flex-wrap:wrap}
@@ -131,8 +132,8 @@ export function approvedShellBody(){
         <p id="motion-build"></p><div id="motion-actions"></div><output id="motion-note" aria-live="polite"></output><div id="motion-sources"></div>
       </details>
       <div id="authoring" hidden>
-        <p id="point-state" class="comment-location"></p><button class="qa-inline-button" id="reposition">위치 다시 선택</button>
-        <label for="body-text"><span id="editor-label">코멘트</span><textarea id="body-text" maxlength="10000" placeholder="수정할 부분을 남겨 주세요."></textarea></label><p id="authoring-help" hidden>원래 의견에 추가됩니다. 의견 상태는 그대로 유지됩니다.</p><p id="conflict" hidden></p>
+        <p id="point-state" class="comment-location"></p><p id="editor-source" hidden></p><button class="qa-inline-button" id="reposition">위치 다시 선택</button>
+        <label for="body-text"><span id="editor-label">코멘트</span><textarea id="body-text" maxlength="10000" placeholder="수정할 부분을 남겨 주세요."></textarea></label><p id="authoring-help" hidden>원래 의견에 추가됩니다. 의견 상태는 그대로 유지됩니다.</p><p id="save-error" role="alert" hidden></p><p id="conflict" hidden></p>
         <div class="composer-actions"><button id="draft">임시저장</button><button class="primary" id="save">의견 저장</button></div>
       </div>
     </div>

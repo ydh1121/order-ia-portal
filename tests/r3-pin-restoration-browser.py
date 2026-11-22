@@ -4,6 +4,7 @@ All records are synthetic and live only in the loopback host's ephemeral SQLite.
 The archived picker supplies the anchor; no coordinates, source hashes or records
 are rewritten to make a historical pin look current.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,12 @@ PASSWORD = '#order-single input[name="password"]'
 OLD_BODY = "합성 이전 판 입력칸 위치 의견"
 NEW_BODY = "합성 현재 판 비밀번호 위치 의견"
 MIXED_BODY = "합성 현재 판 같은 입력칸 위치 의견"
+LOGO_SCREEN = "onboarding/guest-1/email"
+LOGO_DOT = ".obm-brand .obm-wordmark .ob-period.brand-dot"
+LOGO_ARCHIVES = {
+    390: "887acf9a0fa75fcbcd8af48122d50329db491894048ba17e97371013a978ff36",
+    1280: "88d4658258af4b42213ba09c426ba7bf7ed8f7bfed31b2d6a70eea070411a186",
+}
 
 
 def url(origin, version="current", artifact_hash=None, width=WIDTH, screen=SCREEN):
@@ -78,7 +85,7 @@ def actual_size(page):
         "el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a") == 1
 
 
-def capture_anchor(page, frame, selector):
+def capture_anchor(page, frame, selector, instance="login"):
     """Use the real archived frame's picker, including its own fingerprint index.
 
     Historical UI correctly disables new review edits. This isolated fixture
@@ -109,16 +116,17 @@ def capture_anchor(page, frame, selector):
         scope:'ORDER_R3_HOST',channel:s.channel,artifact:s.artifact,type:'mode',payload:false},'*');
     }""")
     expect(veil).not_to_be_visible()
-    assert anchor["id"] != "screen", "The fixture must capture the actual input, not an invented root position"
-    assert anchor["instance"] == "login"
+    assert anchor["id"] != "screen", "The fixture must capture the actual element, not an invented root position"
+    assert anchor["instance"] == instance
     return anchor
 
 
-def store_pin(page, anchor, body):
+def store_pin(page, anchor, body, screen=SCREEN, width=WIDTH):
+    screen_id, state, variant = screen.split("/")
     payload = {"release": "MSG0585-R3", "kind": "comment", "id": "pin-fixture-" + str(uuid4()),
                "expectedRevision": 0, "idempotencyKey": str(uuid4()),
                "data": {"body": body, "anchor": anchor, "target": {
-                   "screen": "login", "state": "empty", "variant": "email", "viewport": WIDTH,
+                   "screen": screen_id, "state": state, "variant": variant, "viewport": width,
                    "artifactHash": anchor["artifactHash"]}}}
     saved = page.evaluate("""async payload=>{
       const me=await(await fetch('/api/ia/auth/me')).json();
@@ -402,6 +410,87 @@ def check_resolved_reload(page, current_hash, source_ids):
             "originalBodiesAnchorsAndHashesPreserved": True}
 
 
+def check_dynamic_logo_pins(context, origin, result):
+    """Capture mounted R1 logo anchors and restore them without changing SQLite events."""
+    parsed = urlsplit(origin)
+    assert parsed.scheme == "http" and parsed.hostname == "127.0.0.1" and parsed.port, origin
+    checks = []
+    for width, source_hash in LOGO_ARCHIVES.items():
+        page = context.new_page()
+        page.set_default_timeout(20000)
+        install_probe(page)
+        page.on("pageerror", lambda error: result["pageErrors"].append(str(error)))
+        # Observe the real reference lifecycle. This probe neither mounts a
+        # frame nor modifies its DOM, messages, visibility or geometry.
+        page.add_init_script("""if(window===top){
+          window.__logoReferences=[];
+          const observe=el=>{if(!el.matches('[data-pin-source-reference]'))return;
+            window.__logoReferences.push({sandbox:el.getAttribute('sandbox'),inert:el.inert,
+              ariaHidden:el.getAttribute('aria-hidden'),visibility:getComputedStyle(el).visibility,
+              width:parseFloat(el.style.width),height:parseFloat(el.style.height)});};
+          new MutationObserver(changes=>{for(const change of changes)for(const node of change.addedNodes){
+            if(!(node instanceof Element))continue;observe(node);
+            node.querySelectorAll('[data-pin-source-reference]').forEach(observe);
+          }}).observe(document,{childList:true,subtree:true});
+        }""")
+        try:
+            page.goto(url(origin, "recorded", source_hash, width=width, screen=LOGO_SCREEN))
+            frame = ready(page, source_hash, LOGO_DOT)
+            endpoint = "/api/ia/r3-qa/artifact?" + urlencode({"id": LOGO_SCREEN, "width": width})
+            archived = read_json(page, endpoint + "&version=recorded&artifactHash=" + source_hash)
+            current = read_json(page, endpoint + "&version=current")
+            assert archived["hash"] == source_hash and source_hash != current["hash"]
+            actual_size(page)
+            anchor = capture_anchor(page, frame, LOGO_DOT, instance="onboarding")
+            assert anchor["artifactHash"] == source_hash and anchor["viewport"]["width"] == width, anchor
+            assert anchor["id"] == "a-45vv8m", "Capture the mounted logo dot's real fingerprint"
+            body = "합성 이전 R1 로고 마침표 위치 의견 " + str(width)
+            record_id = store_pin(page, anchor, body, screen=LOGO_SCREEN, width=width)
+            original = records(page)[record_id]
+            # The backup endpoint reads the actual ephemeral SQLite event rows,
+            # including action, revision, request key/hash and untouched data.
+            backup_path = "/api/ia/r3-qa/backup?release=MSG0585-R3&limit=150"
+            backup_before = page.evaluate("""async path=>{
+              const r=await fetch(path);if(!r.ok)throw Error('backup '+r.status);
+              const text=await r.text();if(JSON.parse(text).hasMore)throw Error('incomplete backup');return text;
+            }""", backup_path)
+
+            page.goto(url(origin, width=width, screen=LOGO_SCREEN))
+            frame = ready(page, current["hash"], LOGO_DOT)
+            previous = frame.locator('.r3-pin.is-previous[data-previous-count="1"][data-current-count="0"]')
+            expect(previous).to_have_count(1)
+            expect(previous).to_be_visible()
+            expect(previous).to_have_css("background-color", "rgb(124, 58, 237)")
+            aligned = geometry(frame, previous, LOGO_DOT, anchor)
+            page.wait_for_function("window.__logoReferences.length>0")
+            references = page.evaluate("window.__logoReferences")
+            assert all(ref == {"sandbox": "allow-scripts", "inert": True, "ariaHidden": "true",
+                               "visibility": "hidden", "width": width,
+                               "height": anchor["viewport"]["height"]} for ref in references), references
+            expect(page.locator("[data-pin-source-reference]")).to_have_count(0)
+            page.screenshot(path=str(OUT / ("dynamic-logo-previous-" + str(width) + ".png")))
+            frame_click(page, previous)
+            expect(page.locator("#notes article").filter(has=page.get_by_text(body, exact=True))).to_be_visible()
+            assert page.evaluate("window.__pinMessages.filter(m=>m.type==='openPins').at(-1).payload.ids") == [record_id]
+            assert records(page)[record_id] == original, "Restoration must preserve source hash, anchor, coordinates and status"
+            backup_after = page.evaluate("""async path=>{
+              const r=await fetch(path);if(!r.ok)throw Error('backup '+r.status);return r.text();
+            }""", backup_path)
+            assert backup_after.encode("utf-8") == backup_before.encode("utf-8"), "Reading/restoring a pin must not rewrite any SQLite review event"
+            expect(page.locator("[data-pin-source-reference]")).to_have_count(0)
+            checks.append({"viewport": width, "sourceHash": source_hash, "currentHash": current["hash"],
+                           "anchorId": anchor["id"], "recordId": record_id, "physicalArchivedCapture": True,
+                           "previousGeometry": aligned, "referenceFrames": references, "referenceDisposed": True,
+                           "sqliteReviewEventsUnchanged": True,
+                           "sqliteBackupSha256": hashlib.sha256(backup_before.encode("utf-8")).hexdigest()})
+        except Exception:
+            page.screenshot(path=str(OUT / ("dynamic-logo-failure-" + str(width) + ".png")))
+            raise
+        finally:
+            page.close()
+    return checks
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     host = subprocess.Popen(["node", "tests/r3-browser-host.mjs"], cwd=ROOT, stdout=subprocess.PIPE, text=True)
@@ -516,6 +605,7 @@ def main():
             result["checks"]["resolvedReload"] = check_resolved_reload(page, current["hash"], [old_id, current_id, mixed_id])
             result["checks"]["legacy"] = check_legacy(context, fixture["url"], result)
             result["checks"]["duplicateOriginal"] = check_duplicate_original(context, fixture["url"], result)
+            result["checks"]["dynamicLogoPrevious"] = check_dynamic_logo_pins(context, fixture["url"], result)
             assert not result["pageErrors"], result["pageErrors"]
             result["status"] = "PASS"
             context.close()

@@ -8,6 +8,8 @@ import {runtimes,frameCode,hostCode} from '../src/server/r3-ui/runtime.gen.mjs';
 import {archivedRows,archivedScripts} from '../src/server/r3-ui/interaction-history.gen.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {approvedShellBody} from '../src/server/r3-ui/approved-shell.mjs';
+import {bootQaHost} from '../src/server/r3-ui/host.mjs';
+import {browserFunction} from '../src/server/browser-source.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const row=(state,variant='email')=>catalog.find(r=>r.id==='login/'+state+'/'+variant);
 const html=r=>gunzipSync(Buffer.from(frames[r.current],'base64')).toString();
@@ -81,17 +83,25 @@ test('the immediately preceding artifact hashes keep their exact body and execut
   }
 });
 
-async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,viewHash=null,viewVersion='current'}={}){
+async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,viewHash=null,viewVersion='current',initialDrafts=[],historicalArtifacts=null,canonicalHost=false}={}){
   const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390'+(viewVersion==='current'?'':'&version=recorded&artifactHash='+viewHash));
   const screens=['empty','closed'].map(state=>({...row(state),hashes:{390:state==='empty'&&viewHash||row(state).hashes[390]}})),screen=screens[0];
   const artifact={hash:screen.hashes[390],version:viewVersion,html:'<!doctype html><html><head><!--R3-POLICY--></head><body><main id="order-single"></main><!--R3-FRAME--></body></html>',editable:'',file:'test.html'};
   const writes=[],records=[...initialRecords],messages=[];let failure=null;
+  if(initialDrafts.length){
+    const owner=Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode('test@example.invalid'))).toString('hex');
+    w.sessionStorage.setItem('order.qa.unsent.v1.MSG0585-R3.'+owner,JSON.stringify(initialDrafts));
+  }
   const response=(value,status=200)=>Response.json(value,{status});
   w.fetch=async(raw,options={})=>{
     const url=new URL(raw,w.location.href);
     if(url.pathname==='/api/ia/auth/me')return response({csrf:'qa-session-csrf',email:'test@example.invalid'});
     if(url.pathname==='/api/order/features')return response({orderMenu:false});
-    if(url.pathname.endsWith('/artifact'))return response(url.searchParams.has('id')?{...artifact,hash:screens.find(r=>r.id===url.searchParams.get('id')).hashes[390]}:{release:'MSG0585-R3',items:screens});
+    if(url.pathname.endsWith('/artifact')){
+      const pinned=url.searchParams.get('artifactHash');
+      if(pinned&&historicalArtifacts)return historicalArtifacts[pinned]?response({...artifact,...historicalArtifacts[pinned],hash:pinned}):response({error:'UNKNOWN_REVIEW_TARGET'},404);
+      return response(url.searchParams.has('id')?{...artifact,hash:screens.find(r=>r.id===url.searchParams.get('id')).hashes[390]}:{release:'MSG0585-R3',items:screens});
+    }
     if(url.pathname.endsWith('/legacy'))return response({items:legacyItems,hasMore:false});
     if(url.pathname.endsWith('/events'))return response({items:records.filter(r=>r.kind===url.searchParams.get('kind')&&r.id===url.searchParams.get('id'))});
     if(url.pathname.endsWith('/records')){
@@ -108,7 +118,7 @@ async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,vie
     throw Error('Unmocked '+url);
   };
   const shell={render(){},focusForPoint(){},setTab(){},historyLinks(){},reviewWidths(){return[];},activeTab(){return'review';}};
-  w.eval('('+hostCode+')')('qa-nonce','function fixtureFrame(){}',()=>shell,null,()=>({clear(){},show(){},gate(){}}),()=>{},{requirements:[]});
+  w.eval('('+(canonicalHost?browserFunction(bootQaHost):hostCode)+')')('qa-nonce','function fixtureFrame(){}',()=>shell,null,()=>({clear(){},show(){},gate(){}}),()=>{},{requirements:[]});
   const frame=w.document.getElementById('frame');frame.contentWindow.postMessage=message=>messages.push(message);
   await until(()=>frame.srcdoc.includes('"channel"'));
   const params=JSON.parse(frame.srcdoc.match(/\)\((\{"channel"[\s\S]*?\})\)<\/script>/)[1]);
@@ -466,5 +476,68 @@ test('a historical rework draft survives server reload and rejected save with it
     assert.equal(records.at(-1).kind,'reply');assert.equal(records.at(-1).data.purpose,'rework');assert.equal(records.at(-1).data.sourceArtifactHash,original.data.target.artifactHash);
     assert.equal(feedbackCard(w,original.id).dataset.feedbackStatus,'unresolved');assert.equal(JSON.stringify(original),before);
     assert.ok(writes.every(r=>r.body.kind==='reply'));
+  }finally{w.close();}
+});
+
+test('an unsent rework from an earlier review hash remains discoverable and resumes its exact target and retry identity',async()=>{
+  const original=seedComment('unsent-source',{...feedbackTarget(),artifactHash:'a'.repeat(64)}),oldTarget={...feedbackTarget(),artifactHash:'c'.repeat(64)};
+  const data={target:oldTarget,body:'Order, 점, 로고 간격을 다시 확인해 주세요.',parent:{origin:'current',id:original.id},purpose:'rework',sourceArtifactHash:original.data.target.artifactHash};
+  const packet={release:'MSG0585-R3',id:'unsent-historical-instruction',kind:'reply',expectedRevision:0,data,action:'save',reason:''};
+  const draft={id:packet.id,body:data.body,revision:0,parent:data.parent,purpose:data.purpose,sourceArtifactHash:data.sourceArtifactHash,dirty:true,retry:{sig:JSON.stringify(packet),key:'same-unsent-request'}};
+  const key='login/empty/email/390/'+oldTarget.artifactHash+'|'+draft.id;
+  const h=await hostHarness({initialRecords:[original],initialDrafts:[[key,draft]],historicalArtifacts:{[oldTarget.artifactHash]:{archivedSource:{epoch:'exact-reviewed-source'}}},canonicalHost:true}),{w,writes,records}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();
+    const resume=[...$('notes').querySelectorAll('button')].find(button=>button.textContent.startsWith('이전 판의 미저장 재작업 지시 이어쓰기'));
+    assert.ok(resume,'a new release must not hide the previous hash-keyed draft');resume.click();
+    await until(()=>!$('authoring').hidden&&$('body-text').value===data.body);
+    assert.equal($('editor-source').hidden,false);assert.match($('editor-source').textContent,/작성 당시 화면/);
+    assert.equal(writes.length,0,'resuming only reads the exact source');$('save').click();
+    await until(()=>records.some(record=>record.id===draft.id&&record.kind==='reply')&&$('authoring').hidden);
+    assert.deepEqual(writes.at(-1).body,{...packet,idempotencyKey:'same-unsent-request'});
+    assert.equal(records.filter(record=>record.kind==='feedback'||record.kind==='review').length,0);
+    assert.deepEqual(records[0],original);
+  }finally{w.close();}
+});
+
+test('an unavailable earlier draft source stays preserved without moving its target or submitting it',async()=>{
+  const hash='d'.repeat(64),draft={id:'missing-source-draft',body:'원래 화면에 남긴 재작업 내용',revision:0,parent:{origin:'current',id:'source'},purpose:'rework',sourceArtifactHash:'a'.repeat(64),dirty:true};
+  const key='login/empty/email/390/'+hash+'|'+draft.id,h=await hostHarness({initialDrafts:[[key,draft]],historicalArtifacts:{},canonicalHost:true}),{w,writes}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();const resume=[...$('notes').querySelectorAll('button')].find(button=>button.textContent.startsWith('이전 판의 미저장 재작업 지시 이어쓰기'));
+    assert.ok(resume);resume.click();await until(()=>$('live').textContent.includes('작성 당시 화면'));
+    const storageKey=Object.keys(w.sessionStorage).find(value=>value.startsWith('order.qa.unsent.v1.'));
+    assert.deepEqual(JSON.parse(w.sessionStorage.getItem(storageKey)),[[key,draft]]);assert.equal(writes.length,0);assert.equal($('authoring').hidden,true);
+  }finally{w.close();}
+});
+
+test('rejected saves retain a specific visible failure and exact request until an idempotent retry succeeds',async()=>{
+  const original=seedComment('failure-detail-source'),h=await hostHarness({initialRecords:[original],canonicalHost:true}),{w,writes,records}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();feedbackCard(w,original.id).querySelector('.rework-action').click();
+    $('body-text').value='실패해도 그대로 남아야 하는 지시';$('body-text').dispatchEvent(new w.Event('input'));
+    h.setFailure({error:'REVIEW_TARGET_UNAVAILABLE',status:400});$('save').click();
+    await until(()=>$('save-error')?.hidden===false);
+    assert.match($('save-error').textContent,/화면 버전/);const attempt=writes.at(-1).body;
+    const storageKey=Object.keys(w.sessionStorage).find(value=>value.startsWith('order.qa.unsent.v1.'));
+    const retained=JSON.parse(w.sessionStorage.getItem(storageKey))[0][1];
+    assert.equal(retained.body,attempt.data.body);assert.equal(retained.saveFailure.code,'REVIEW_TARGET_UNAVAILABLE');assert.equal(retained.saveFailure.status,400);
+    assert.deepEqual(JSON.parse(retained.retry.sig),Object.fromEntries(Object.entries(attempt).filter(([key])=>key!=='idempotencyKey')));
+    $('points').click();[...$('notes').querySelectorAll('button')].find(button=>button.textContent.startsWith('저장하지 않은 재작업 지시 이어쓰기')).click();
+    assert.equal($('save-error').hidden,false);assert.equal($('body-text').value,attempt.data.body);
+    h.setFailure(null);$('save').click();await until(()=>records.length===2&&$('authoring').hidden);
+    assert.equal(writes.at(-1).body.idempotencyKey,attempt.idempotencyKey);assert.deepEqual(writes.at(-1).body.data,attempt.data);
+    assert.deepEqual(records[0],original);
+  }finally{w.close();}
+});
+
+test('blank rework content is explained before any request or failed retry draft is created',async()=>{
+  const original=seedComment('blank-rework-source'),h=await hostHarness({initialRecords:[original],canonicalHost:true}),{w,writes}=h,$=id=>w.document.getElementById(id);
+  try{
+    $('points').click();feedbackCard(w,original.id).querySelector('.rework-action').click();$('save').click();await tick();
+    assert.equal(writes.length,0);assert.match($('live').textContent,/재작업 지시 내용을 입력/);
+    assert.equal(w.document.activeElement,$('body-text'));
+    const storageKey=Object.keys(w.sessionStorage).find(value=>value.startsWith('order.qa.unsent.v1.'));
+    assert.equal(storageKey,undefined,'an untouched empty editor must not become a phantom failed draft');
   }finally{w.close();}
 });

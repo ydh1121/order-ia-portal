@@ -10,6 +10,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   // Historical source documents are read-only evidence for display projection.
   // Neither the stored anchor nor its source artifact identity is rewritten.
   const pinSources=new Map(),pinSourceRequests=new Map();
+  const pinSourceFrames=new Map(),pinSourceQueue=[],pinSourceActive=new Set(),pinSourceAttempted=new Set();
+  let pinSourceEpoch=0,pinSourcePaused=false,pinSourceCacheBytes=0;
   let screens=[],current=null,artifact=null,target=null,csrf='',filter='all',session='',generation=0,cursor=0,editor=null,pending=null,storing=false,missing=new Set(),subset=null;
   let legacyAvailable=false,reviewAvailable=false,displayPins=true,wantsPoint=false,continuousPoints=false;
   let shell, commentFilter='open';
@@ -106,6 +108,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   });
   const reviewKey=(v,width)=>[v.screen,v.state,v.variant,width].join('/');
   const localKey=(kind,id)=>kind+'/'+id;
+  function retainLatestRecord(kind,id,record){
+    const key=localKey(kind,id),known=records.get(key);
+    if(record?.id===id&&Number.isInteger(record.revision)&&(!known||record.revision>known.revision))records.set(key,record);
+    return records.get(key);
+  }
   const match=(t,v,width)=>t&&t.screen===v.screen&&t.state===v.state&&t.variant===v.variant&&t.viewport===width;
   const announceError=e=>status(e.status===401||e.status===403?'접근 권한을 확인해 주세요.':'불러오지 못했습니다. 다시 시도해 주세요.');
   async function api(url,options={}){
@@ -218,6 +225,27 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let draftStorageKey='';
   const draftKey=(id)=>localDraft()+'|'+id;
   function draftsForScreen(){const prefix=localDraft()+'|';return [...edits].filter(([key])=>key.startsWith(prefix)).map(([,value])=>value);}
+  function earlierDraftsForScreen(){
+    if(!target)return [];
+    const prefix=reviewKey(target,target.viewport)+'/';
+    return [...edits].flatMap(([key,draft])=>{
+      if(!key.startsWith(prefix)||!key.endsWith('|'+draft.id))return [];
+      const hash=key.slice(prefix.length,key.length-draft.id.length-1);
+      return /^[a-f0-9]{64}$/.test(hash)&&hash!==target.artifactHash?[{hash,draft}]:[];
+    });
+  }
+  async function resumeEarlierDraft({hash,draft}){
+    const row=current,view=target&&reviewKey(target,target.viewport);
+    if(!row||!view)return;
+    // Resume the exact source and request identity. Moving a saved reply/draft
+    // to a new hash would invalidate its immutable target and retry packet.
+    await select(row,'recorded',null,hash);
+    if(!target||reviewKey(target,target.viewport)!==view||target.artifactHash!==hash||$('version').value==='prior-r3'){
+      status('작성 당시 화면을 불러오지 못했습니다. 미저장 내용은 이 탭에 그대로 보관했습니다.');return;
+    }
+    edit(null,null,false,null,draft);
+    status('작성 당시 화면에서 미저장 내용을 이어 씁니다.');
+  }
   function persistDrafts(){
     if(!draftStorageKey)return;
     try{
@@ -325,18 +353,115 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     }
     return pins.map((pin,i)=>({...pin,ordinal:i+1}));
   }
-  function loadPinSources(view,pins){
-    for(const hash of new Set(pins.filter(p=>p.previous&&!p.sameContent&&p.sourceArtifactHash!==view.artifactHash).map(p=>p.sourceArtifactHash))){
-      const key=pinSourceKey(view,hash);if(pinSources.has(key)||pinSourceRequests.has(key))continue;
-      const query=new URLSearchParams({id:[view.screen,view.state,view.variant].join('/'),width:String(view.viewport),version:hash==='legacy'?'previous':'recorded'});
-      if(hash!=='legacy')query.set('artifactHash',hash);
-      const request=api(base+'/artifact?'+query).then(source=>{
-        if(typeof source.html!=='string'||source.html.length>8000000||(hash==='legacy'?source.version!=='previous':source.hash!==hash))throw Error('UNKNOWN_PIN_SOURCE');
-        pinSources.set(key,{artifactHash:hash,sourceHash:source.hash,html:source.html});
-      }).catch(()=>{pinSources.set(key,null);}).finally(()=>{pinSourceRequests.delete(key);syncPins();});
-      pinSourceRequests.set(key,request);
+  const pinSourceBytes=value=>value?new Blob([value.html||'',value.mountedHtml||'']).size:0;
+  function forgetPinSource(key){pinSourceCacheBytes-=pinSourceBytes(pinSources.get(key));pinSources.delete(key);}
+  function cachePinSource(key,value){
+    forgetPinSource(key);
+    pinSources.set(key,value);pinSourceCacheBytes+=pinSourceBytes(value);
+    while(pinSources.size>32||pinSourceCacheBytes>32*1024*1024){
+      const first=pinSources.keys().next().value;
+      forgetPinSource(first);
     }
   }
+  function validPinSourceSnapshot(html){
+    if(typeof html!=='string'||html.length>8*1024*1024||new Blob([html]).size>8*1024*1024)return false;
+    const template=document.createElement('template');template.innerHTML=html;
+    return template.content.childElementCount===1&&template.content.firstElementChild.id==='order-single'&&template.content.querySelectorAll('#order-single').length===1;
+  }
+  // Runs only in the opaque reference frame. No product data, interaction or
+  // parent DOM is imported: the exact archive supplies its own fixture/runtime.
+  function collectPinSource(identity){
+    if(window===parent)return;
+    let disposed=false,requested=false,quiet=0,deadline=0,observer=null;
+    const sameTarget=value=>value&&['screen','state','variant','viewport','height'].every(key=>value[key]===identity.target[key]);
+    function dispose(){disposed=true;clearTimeout(quiet);clearTimeout(deadline);observer?.disconnect();removeEventListener('message',receive);removeEventListener('pagehide',dispose);}
+    function complete(stable){
+      if(disposed)return;
+      const roots=document.querySelectorAll('#order-single'),snapshot=stable&&roots.length===1?roots[0].outerHTML:null;
+      const html=typeof snapshot==='string'&&snapshot.length<=8*1024*1024&&new Blob([snapshot]).size<=8*1024*1024?snapshot:null;
+      parent.postMessage({scope:'ORDER_R3_PIN_SOURCE_FRAME',type:'snapshot',channel:identity.channel,artifact:identity.artifact,target:identity.target,html},'*');
+      dispose();
+    }
+    const settled=()=>{clearTimeout(quiet);quiet=setTimeout(()=>complete(true),40);};
+    function receive(event){
+      const message=event.data;
+      if(disposed||requested||event.source!==parent||message?.scope!=='ORDER_R3_PIN_SOURCE_HOST'||message.type!=='snapshot'||message.channel!==identity.channel||message.artifact!==identity.artifact||!sameTarget(message.target))return;
+      requested=true;
+      const roots=document.querySelectorAll('#order-single');if(roots.length!==1){complete(false);return;}
+      // Chromium may pause RAF in an offscreen/hidden iframe. The frozen frame
+      // has already sent ready; wait for a short DOM quiet period instead.
+      observer=new MutationObserver(settled);observer.observe(roots[0],{childList:true,subtree:true,attributes:true,characterData:true});
+      settled();deadline=setTimeout(()=>complete(false),1500);
+    }
+    addEventListener('message',receive);addEventListener('pagehide',dispose,{once:true});
+  }
+  function finishPinSource(request,{mountedHtml,cancelled=false}={}){
+    if(request.done)return;request.done=true;
+    clearTimeout(request.timer);request.controller.abort();
+    if(request.frame){pinSourceFrames.delete(request.window);request.frame.remove();}
+    pinSourceActive.delete(request);
+    const owns=pinSourceRequests.get(request.key)===request;
+    if(owns)pinSourceRequests.delete(request.key);
+    if(!cancelled&&owns&&request.epoch===pinSourceEpoch){
+      cachePinSource(request.key,request.source?{artifactHash:request.hash,sourceHash:request.source.hash,html:request.source.html,
+        ...(mountedHtml?{mountedHtml}:{mountedUnavailable:true})}:null);
+    }
+    if(!cancelled&&!pinSourcePaused){pumpPinSources();syncPins();}
+  }
+  function cancelPinSources(){
+    pinSourceEpoch++;
+    for(const request of pinSourceRequests.values())finishPinSource(request,{cancelled:true});
+    pinSourceQueue.length=0;pinSourceAttempted.clear();
+  }
+  function routePinSourceMessage(event){
+    const request=pinSourceFrames.get(event.source);if(!request)return false;
+    // Consume every message from reference frames before the live review routes.
+    const message=event.data;
+    if(!request.frame.isConnected){finishPinSource(request);return true;}
+    if(request.done||request.epoch!==pinSourceEpoch||event.origin!=='null'||message?.channel!==request.channel||message.artifact!==request.source.hash)return true;
+    if(message.scope==='ORDER_R3_FRAME'&&message.type==='ready'&&!request.snapshotRequested){
+      request.snapshotRequested=true;
+      request.frame.contentWindow.postMessage({scope:'ORDER_R3_PIN_SOURCE_HOST',type:'snapshot',channel:request.channel,artifact:request.source.hash,target:request.target},'*');
+    }else if(message.scope==='ORDER_R3_PIN_SOURCE_FRAME'&&message.type==='snapshot'&&request.snapshotRequested&&
+      message.target&&['screen','state','variant','viewport','height'].every(key=>message.target[key]===request.target[key])){
+      finishPinSource(request,validPinSourceSnapshot(message.html)?{mountedHtml:message.html}:{});
+    }
+    return true;
+  }
+  function pumpPinSources(){
+    if(pinSourcePaused)return;
+    while(pinSourceActive.size<2&&pinSourceQueue.length){
+      const request=pinSourceQueue.shift();if(request.done||pinSourceRequests.get(request.key)!==request)continue;
+      pinSourceActive.add(request);request.timer=setTimeout(()=>finishPinSource(request),8000);
+      const query=new URLSearchParams({id:[request.target.screen,request.target.state,request.target.variant].join('/'),width:String(request.target.viewport),version:request.hash==='legacy'?'previous':'recorded'});
+      if(request.hash!=='legacy')query.set('artifactHash',request.hash);
+      api(base+'/artifact?'+query,{signal:request.controller.signal}).then(source=>{
+        if(request.done||request.epoch!==pinSourceEpoch)return;
+        if(source.release!==release||typeof source.html!=='string'||source.html.length>8000000||!/^[a-f0-9]{64}$/.test(source.hash)||
+          (request.hash==='legacy'?source.version!=='previous':source.hash!==request.hash))throw Error('UNKNOWN_PIN_SOURCE');
+        request.source=source;request.channel=crypto.randomUUID();
+        const unit=node('iframe');request.frame=unit;unit.setAttribute('sandbox','allow-scripts');unit.setAttribute('aria-hidden','true');unit.tabIndex=-1;unit.inert=true;
+        unit.dataset.pinSourceReference='';unit.style.cssText='position:fixed;left:-20000px;top:0;width:'+request.target.viewport+'px;height:'+request.target.height+'px;visibility:hidden;pointer-events:none;border:0';
+        document.body.append(unit);request.window=unit.contentWindow;pinSourceFrames.set(request.window,request);
+        unit.srcdoc=frameDocument(source,request.target,request.channel,request.target);
+      }).catch(()=>{if(!request.done)finishPinSource(request);});
+    }
+  }
+  function loadPinSources(view,pins){
+    if(pinSourcePaused)return;
+    for(const hash of new Set(pins.filter(p=>p.previous&&!p.sameContent&&p.sourceArtifactHash!==view.artifactHash).map(p=>p.sourceArtifactHash))){
+      const key=pinSourceKey(view,hash);
+      if(pinSources.has(key)){pinSourceAttempted.add(key);continue;}
+      if(pinSourceRequests.has(key)||pinSourceAttempted.has(key))continue;
+      if(pinSourceRequests.size>=64)break;
+      const recordedHeight=pins.find(pin=>pin.sourceArtifactHash===hash&&Number.isInteger(pin.anchor?.viewport?.height)&&pin.anchor.viewport.height>0&&pin.anchor.viewport.height<=10000)?.anchor.viewport.height;
+      const request={key,hash,target:{screen:view.screen,state:view.state,variant:view.variant,viewport:view.viewport,height:recordedHeight||844},epoch:pinSourceEpoch,controller:new AbortController(),done:false};
+      pinSourceAttempted.add(key);pinSourceRequests.set(key,request);pinSourceQueue.push(request);
+    }
+    pumpPinSources();
+  }
+  addEventListener('pagehide',()=>{pinSourcePaused=true;cancelPinSources();});
+  addEventListener('pageshow',()=>{pinSourcePaused=false;syncPins();});
   function pinsForDisplay(view,document,post){
     // Original comments can arrive before their later status events. Wait for
     // the complete initial snapshot before drawing them as unresolved pins.
@@ -399,6 +524,13 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     if(rework)body.setAttribute('aria-describedby','authoring-help');else body.removeAttribute('aria-describedby');
     body.placeholder=rework?'다시 작업할 내용과 확인할 기준을 남겨 주세요.':'수정할 부분을 남겨 주세요.';
     $('save').textContent=rework?'재작업 지시 저장':editor.parent?'답글 저장':'의견 저장';
+    const sourceNote=$('editor-source');
+    if(sourceNote){sourceNote.hidden=!artifact?.archivedSource;sourceNote.textContent=artifact?.archivedSource?'이전 판의 화면에서 이어 쓰는 중입니다. 작성 당시 화면에 저장됩니다.':'';}
+    showEditorSaveError(editor.saveFailure?.message||'');
+  }
+  function showEditorSaveError(message){
+    const box=$('save-error');if(!box)return;
+    box.textContent=message;box.hidden=!message;
   }
   function thread(card,parent,allowReply,{allowRework=false,sourceArtifactHash}={}){
     const replies=[...records.values()].filter(r=>r.kind==='reply'&&r.data.parent?.origin===parent.origin&&
@@ -449,8 +581,12 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     box.append(node('p',[info.previous?'이전 수정 요청':null,info.blocked?'구현 보류':info.verified?'구현 검증':info.untouched?'미착수':info.changed?'이번 판 수정':info.unknown?'구현 확인 전':null,info.approved?'사용자 통과':info.requested?'이번 판 수정 요청':info.needs?'재검토 대기':'이번 판 미검토',info.oldApproval?'이전 판 통과':null].filter(Boolean).join(' · ')));
     if(!ids){
       for(const draft of draftsForScreen()){
-        const label=(draft.purpose==='rework'?'저장하지 않은 재작업 지시 이어쓰기':draft.parent?'저장하지 않은 답글 이어쓰기':'저장하지 않은 의견 이어쓰기')+' · '+(draft.body||'위치 지정됨').slice(0,40);
+        const label=(draft.purpose==='rework'?'저장하지 않은 재작업 지시 이어쓰기':draft.parent?'저장하지 않은 답글 이어쓰기':'저장하지 않은 의견 이어쓰기')+' · '+(draft.body||(draft.anchor?'위치 지정됨':'내용 없음')).slice(0,40);
         box.append(btn(label,()=>edit(null,null,false,null,draft)));
+      }
+      for(const saved of earlierDraftsForScreen()){
+        const {draft}=saved,label=(draft.purpose==='rework'?'이전 판의 미저장 재작업 지시 이어쓰기':draft.parent?'이전 판의 미저장 답글 이어쓰기':'이전 판의 미저장 의견 이어쓰기')+' · '+(draft.body||(draft.anchor?'위치 지정됨':'내용 없음')).slice(0,40);
+        box.append(btn(label,()=>resumeEarlierDraft(saved)));
       }
       for(const d of [...records.values()].filter(r=>r.kind==='draft'&&match(r.data.target,target,target.viewport)&&r.data.target.artifactHash===target.artifactHash&&r.data.body&&records.get(localKey(r.data.parent?'reply':'comment',r.id))?.data.body!==r.data.body)){box.append(btn(d.data.purpose==='rework'?'임시 재작업 지시 이어쓰기':'임시 의견 이어쓰기',()=>{edit();editor={id:d.id,revision:records.get(localKey(d.data.parent?'reply':'comment',d.id))?.revision??0,body:d.data.body,anchor:d.data.anchor,parent:d.data.parent,purpose:d.data.purpose,sourceArtifactHash:d.data.sourceArtifactHash,draftRevision:d.revision};setEditorFields();}));}
       if(past?.note)box.append(node('small','이전 화면 의견'),node('p',past.note));
@@ -533,6 +669,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const packet={release,id,kind,expectedRevision:rev,data,action,reason};const sig=JSON.stringify(packet);
     if(storing)return false;
     const draftEditor=editor&&['comment','reply','draft'].includes(kind)&&editor.id===id?editor:null;
+    if(draftEditor)showEditorSaveError('');
     if(draftEditor?.retry?.sig===sig)pending=draftEditor.retry;
     if(!pending||pending.sig!==sig)pending={sig,key:crypto.randomUUID()};
     if(draftEditor){draftEditor.retry=pending;remember();}
@@ -540,14 +677,32 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     try{if(!csrf||!reviewAvailable)throw Error('STORE_UNAVAILABLE');
       const r=await api(base+'/records',{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify({...packet,idempotencyKey:pending.key})});
       if(r.id!==id||!Number.isInteger(r.revision))throw Error('UNCONFIRMED');
-      records.set(localKey(kind,id),r);if(draftEditor)delete draftEditor.retry;pending=null;list();syncPins();status('저장됨 · r'+r.revision);return true;
+      const latest=retainLatestRecord(kind,id,r);
+      if(latest?.revision>r.revision){
+        // An idempotency replay acknowledges its original revision; it must
+        // not replace a newer record or discard the reviewer's pending text.
+        const conflict=Error('NEWER_REVIEW_AVAILABLE');conflict.status=409;conflict.current=latest;throw conflict;
+      }
+      if(draftEditor){delete draftEditor.retry;delete draftEditor.saveFailure;}pending=null;list();syncPins();status('저장됨 · r'+r.revision);return true;
     }catch(e){
-      if(e.current)records.set(localKey(kind,id),e.current);
-      if(e.status===409)status('다른 탭에서 먼저 저장했습니다. 내 입력을 보관했습니다.');
-      else if(e.status===401)status('로그인을 다시 연결한 뒤 저장해 주세요. 작성 중인 의견은 남아 있습니다.');
-      else if(e.status===403)status('저장 권한을 확인해 주세요. 작성 중인 의견은 남아 있습니다.');
-      else status('저장하지 못했습니다. 내 입력을 보관했습니다.');
-      if(e.message==='REPLY_PARENT_UNAVAILABLE')status('원래 의견이 해결되었거나 삭제되었습니다. '+(data.purpose==='rework'?'재작업 지시는':'답글은')+' 초안으로 남아 있습니다.');
+      if(e.current)e.current=retainLatestRecord(kind,id,e.current);
+      let message='서버가 저장을 완료하지 못했습니다. 입력은 이 탭에 보관했습니다.';
+      if(e.status===409)message='다른 탭에서 먼저 저장했습니다. 내 입력을 보관했습니다.';
+      else if(e.status===401)message='로그인을 다시 연결한 뒤 저장해 주세요. 작성 중인 의견은 남아 있습니다.';
+      else if(e.status===403)message='저장 권한을 확인해 주세요. 작성 중인 의견은 남아 있습니다.';
+      else if(e.message==='REVIEW_TARGET_UNAVAILABLE')message='작성한 화면 버전을 확인할 수 없어 저장하지 못했습니다. 입력은 이 탭에 보관했습니다.';
+      else if(e.status===400)message='입력 내용이나 작성 화면을 확인할 수 없어 저장하지 못했습니다. 입력은 이 탭에 보관했습니다.';
+      else if(e.message==='STORE_UNAVAILABLE')message='검토 기록을 불러온 뒤 다시 저장해 주세요. 입력은 이 탭에 보관했습니다.';
+      else if(e.message==='UNCONFIRMED')message='저장 응답을 확인하지 못했습니다. 입력은 보관했으며 같은 저장 버튼으로 다시 확인할 수 있습니다.';
+      if(e.message==='REPLY_PARENT_UNAVAILABLE')message='원래 의견이 해결되었거나 삭제되었습니다. '+(data.purpose==='rework'?'재작업 지시는':'답글은')+' 초안으로 남아 있습니다.';
+      if(e.message==='NEWER_REVIEW_AVAILABLE')message='이 요청은 이미 저장됐지만 이후 수정된 내용이 있습니다. 최신 내용을 확인한 뒤 계속해 주세요. 입력은 보관했습니다.';
+      status(message);
+      if(draftEditor){
+        const code=/^[A-Z0-9_]{1,80}$/.test(e.message||'')?e.message:'SAVE_RESPONSE_UNAVAILABLE';
+        draftEditor.saveFailure={message,code,status:Number.isInteger(e.status)?e.status:0,at:new Date().toISOString()};
+        persistDrafts();
+        if(editor===draftEditor)showEditorSaveError(message);
+      }
       if(e.current&&draftEditor&&editor===draftEditor&&target&&match(target,data.target,data.target.viewport)&&target.artifactHash===data.target.artifactHash){
         const current=e.current,box=$('conflict');
         box.replaceChildren(node('span','다른 탭의 내용 · '+(current.data.body||current.data.decision||'')));
@@ -567,6 +722,10 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   async function eventReason(r,action){const why=window.prompt('이유를 입력해 주세요.');if(!why?.trim())return;const ok=await write(r.kind,r.id,r.data,r.revision,action,why.trim());if(ok)notes();}
   async function saveDraft(draft){if(!editor||!target)return;remember();
     const submitted=editor,view={...target},key=draftKey(submitted.id);
+    if(!draft&&!submitted.body.trim()){
+      const message=submitted.purpose==='rework'?'재작업 지시 내용을 입력해 주세요.':submitted.parent?'답글 내용을 입력해 주세요.':'의견 내용을 입력해 주세요.';
+      showEditorSaveError(message);status(message);body.focus();return;
+    }
     const content=value=>JSON.stringify([value.body,value.anchor,value.parent,value.purpose,value.sourceArtifactHash,value.sourceKey,value.sourceCommentId,value.action]);
     const sentContent=content(submitted),data={target:view,body:submitted.body,anchor:submitted.anchor??null};
     if(submitted.sourceKey)data.sourceKey=submitted.sourceKey;if(submitted.sourceCommentId)data.sourceCommentId=submitted.sourceCommentId;
@@ -625,20 +784,22 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   document.addEventListener('visibilitychange',()=>{if(document.hidden)clearPrivateQuote();});
   const sameOriginUrl=(path)=>new URL(path,location.href);
   function download(filename,bytes,mime){const url=URL.createObjectURL(new Blob([bytes],{type:mime}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  function frameDocument(a,row,channel){
-      const boot=frameBootstrap.replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant,authOriginStep:authOriginStep||null,...(a.fixture?{fixture:a.fixture}:{})}).replaceAll('<','\\u003c');
+  function frameDocument(a,row,channel,reference=null){
+      const boot=frameBootstrap.replaceAll('</script','<\\/script');const params=JSON.stringify({channel:channel,artifact:a.hash,version:a.version,screen:row.screen,state:row.state,variant:row.variant,authOriginStep:reference?null:authOriginStep||null,...(a.fixture?{fixture:a.fixture}:{})}).replaceAll('<','\\u003c');
       const replay=a.replayFrame?',('+a.replayFrame.replaceAll('</script','<\\/script')+')':'';
       const script='<script nonce="'+nonce+'">('+boot+')('+params+replay+')</'+'script>';
+      const referenceScript=reference?'<script nonce="'+nonce+'">('+collectPinSource.toString().replace(/<\/script/gi,'<\\/script')+')('+JSON.stringify({channel,artifact:a.hash,target:reference}).replaceAll('<','\\u003c')+')</'+'script>':'';
       // srcdoc inherits parent CSP; the child further restricts network, forms and images.
       const policy='<meta http-equiv="Content-Security-Policy" content="default-src \'none\';script-src \'nonce-'+nonce+'\';style-src \'unsafe-inline\';img-src data:;connect-src \'none\';form-action \'none\';base-uri \'none\'">';
       const reduced=$('motion-enabled')?.checked===false?'<style>*, *:before, *:after{transition:none!important;animation-play-state:paused!important;scroll-behavior:auto!important}</style>':'';
       const html=reduced?a.html.replace('<html ','<html data-review-reduced '):a.html;
-      return html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+(a.qaRuntime?'<script nonce="'+nonce+'">'+a.qaRuntime.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
+      return html.replace('<!--R3-POLICY-->',()=>policy+reduced).replace('<!--R3-FRAME-->',()=>referenceScript+(a.mount?'<script nonce="'+nonce+'">'+a.mount.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+(a.qaRuntime?'<script nonce="'+nonce+'">'+a.qaRuntime.replace(/<\/script/gi,'<\\/script')+'</'+'script>':'')+script);
   }
   // The source step is short-lived and belongs to this QA tab's guest authentication flow.
   let authOriginStep = null, arrivalScreen = null;
   async function select(row,version=$('version').value,originStep=null,pinnedHash=null,appliedState=false,purchaseFixture=null){
     if(!row)return;
+    cancelPinSources();
     clearTimeout(transitionTimeout);exitAnimation?.cancel();
     const previous=displayed;displayed=null;
     if(row && row.id !== current?.id) authOriginStep = originStep;
@@ -722,6 +883,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let consultationFixture={passes:[],topics:[],memo:'',date:'',time:''};
   const roleMenus={passes:['quotes','delivery'],search:['quotes'],profile:['activity','business','quotes'],drawer:['consult']};
   addEventListener('message',e=>{
+    if(routePinSourceMessage(e))return;
     const m=e.data;
     const item=secondary.get(e.source);
     if(item&&e.origin==='null'&&item.frame.isConnected&&m?.scope==='ORDER_R3_FRAME'&&m.channel===item.channel&&m.artifact===item.hash){
@@ -880,7 +1042,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   $('points').onclick=()=>{stopPointMode();notes();};$('new').onclick=()=>{if(continuousPoints||wantsPoint){stopPointMode();notes();}else{continuousPoints=true;edit(null,null,true);}};$('general').onclick=()=>{stopPointMode();edit();};$('reposition').onclick=pick;
   $('pick-cancel').onclick=()=>{stopPointMode();notes();};$('close-drawer').onclick=hideDrawer;$('hide-pins').onclick=()=>{displayPins=!displayPins;syncPins();$('hide-pins').setAttribute('aria-pressed',String(!displayPins));};
   addEventListener('keydown',event=>{if(event.key==='Escape'&&continuousPoints){event.preventDefault();stopPointMode();notes();}});
-  $('save').onclick=()=>saveDraft(false);$('draft').onclick=()=>saveDraft(true);$('sync').onclick=async()=>{for(const [key,value] of pinSources)if(value===null)pinSources.delete(key);await readLegacy();await refresh();};body.oninput=()=>{if(editor){editor.dirty=true;remember();}};
+  $('save').onclick=()=>saveDraft(false);$('draft').onclick=()=>saveDraft(true);$('sync').onclick=async()=>{pinSourceAttempted.clear();for(const [key,value] of pinSources)if(value===null||value.mountedUnavailable)forgetPinSource(key);await readLegacy();await refresh();};body.oninput=()=>{if(editor){editor.dirty=true;remember();}};
   if(exportReview) exportReview({release, notify:status, getLocalDrafts:()=>{remember();return [...edits];}});
   $('export').onclick=async()=>{if(!artifact)return;const item=artifact, snapshotTarget={...target};download(item.file,item.editable,'text/html');await write('figma',crypto.randomUUID(),{target:snapshotTarget,status:'exported',evidenceRef:'sha256:'+item.exportHash},0);};
   const memoDrafts=new Map();
