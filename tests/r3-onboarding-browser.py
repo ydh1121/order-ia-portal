@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 from playwright.sync_api import expect, sync_playwright
 
 from r3_auth_motion_browser import check_auth_motion
+from browser_predicate_support import wait_for_expression
 from r3_feedback_browser_support import ReviewScreens, frame_click, frame_pointer_position, wait_review_session
 from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
 
@@ -71,7 +72,7 @@ def pick_panel_point(page, frame, target, marker, *, native_popover=False):
     # after it has opened; frame_click maps this child point to the live canvas.
     point = target.evaluate("el=>{const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}")
     frame_click(page, veil, position=point)
-    page.wait_for_function('window.__onboardingReviewPoint!==null')
+    wait_for_expression(page, 'window.__onboardingReviewPoint!==null')
     envelope = page.evaluate('window.__onboardingReviewPoint')
     anchor = envelope['payload']
     assert anchor['id'] == expected_id and anchor['id'] != 'screen', anchor

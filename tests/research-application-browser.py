@@ -275,6 +275,8 @@ def main():
         receipt['checks'].append('R1 observes app navigation and selects scenarios without replacing the running app')
 
         # Real mouse picking preserves an unsaved comment; no opinion is posted.
+        page.locator('#points').click()
+        expect(page.locator('#drawer')).to_be_visible()
         page.locator('#general').click()
         page.locator('#body-text').fill('브라우저 회귀 검사 · 저장하지 않는 위치 초안')
         page.locator('#reposition').click()
