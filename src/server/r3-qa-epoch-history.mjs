@@ -13,6 +13,25 @@ async function unpack(packed,expected){
   if(await sha(text)!==expected)throw Error('Reviewed epoch integrity mismatch');
   return JSON.parse(text);
 }
+export async function readReviewedFragmentAdditions(packed,metadata,baseParts){
+  if(!metadata.fragmentPack)return unpack(packed,metadata.fragmentsSha256);
+  const format='order-reviewed-fragment-slices/v1';
+  if(metadata.fragmentPack.format!==format)throw Error('Unsupported reviewed fragment pack');
+  const pack=await unpack(packed,metadata.fragmentPack.sha256);
+  if(pack?.format!==format||!Array.isArray(pack.recipes)||pack.recipes.length!==metadata.addedFragments)throw Error('Invalid reviewed fragment pack');
+  const added=pack.recipes.map(recipe=>{
+    if(!Array.isArray(recipe))throw Error('Invalid reviewed fragment recipe');
+    return recipe.map(part=>{
+      if(typeof part==='string')return part;
+      if(!Array.isArray(part)||part.length!==3||!part.every(Number.isInteger))throw Error('Invalid reviewed fragment slice');
+      const [index,start,end]=part,source=baseParts[index];
+      if(index<0||index>=baseParts.length||typeof source!=='string'||start<0||end<start||end>source.length)throw Error('Invalid reviewed fragment slice');
+      return source.slice(start,end);
+    }).join('');
+  });
+  if(await sha(JSON.stringify(added))!==metadata.fragmentsSha256)throw Error('Reviewed fragment integrity mismatch');
+  return added;
+}
 const key=(id,width,hash)=>[id,width,hash].join('|');
 function expand(nodes,id){
   const [kind,value]=nodes[id];
@@ -63,7 +82,7 @@ function deltaReader({epochMetadata,epochIndexGzip,epochFragmentsGzip},base){
  if(epochMetadata.delta.baseEpoch!==base.metadata.epoch)throw Error('Reviewed delta base mismatch');
  let savedIndex,savedParts;
  const index=()=>savedIndex??=unpack(epochIndexGzip,epochMetadata.delta.indexSha256);
- const parts=()=>savedParts??=Promise.all([base.parts(),unpack(epochFragmentsGzip,epochMetadata.delta.fragmentsSha256)]).then(([old,added])=>[...old,...added]);
+ const parts=()=>savedParts??=base.parts().then(async old=>[...old,...await readReviewedFragmentAdditions(epochFragmentsGzip,epochMetadata.delta,old)]);
  function hydrate(value,hash){return value&&typeof value==='object'&&Object.keys(value).length===1&&value.__orderCurrentHash===1?hash:Array.isArray(value)?value.map(v=>hydrate(v,hash)):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).map(([k,v])=>[k,hydrate(v,hash)])):value;}
  function patch(previous,change,hash){if(!change)return previous;if(change[0]==='v')return hydrate(change[1],hash);const result=Array.isArray(previous)?[...previous]:{...previous};for(const [key,value] of change[1]){if(value[0]==='d')delete result[key];else result[key]=patch(result[key],value,hash);}return result;}
  const valid=(id,width,hash)=>typeof id==='string'&&epochMetadata.widths.includes(width)&&typeof hash==='string'&&/^[a-f0-9]{64}$/.test(hash);
