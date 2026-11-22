@@ -373,9 +373,12 @@ def main():
         # The remaining MVP product families use this same running app. Their
         # canonical phase metadata and explicit QA scenarios remain separate.
         phase = 'qa-product-scope'
-        catalog_response = context.request.get(cfg['url'] + '/api/ia/r3-qa/artifact')
-        assert catalog_response.ok
-        catalog = catalog_response.json()['items']
+        catalog_response = page.evaluate('''async () => {
+            const response=await fetch('/api/ia/r3-qa/artifact',{credentials:'same-origin'});
+            return {status:response.status,body:await response.json()};
+        }''')
+        assert catalog_response['status'] == 200, catalog_response
+        catalog = catalog_response['body']['items']
         campaigns = [row for row in catalog if row['screen'] == 'admin-campaigns']
         pricing = [row for row in catalog if row['screen'] == 'price-workspace']
         campaign_states = ['normal', 'more', 'reviewing', 'approved', 'denied']
