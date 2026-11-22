@@ -78,7 +78,7 @@ test('a stored live comment survives a new build with append-only resolve/reopen
 });
 
 test('an existing old digest does not authorize new comments, arbitrary old hashes or altered source identities',async t=>{
-  const f=await fixture(t),invalid='INVALID_REVIEW_REQUEST';
+  const f=await fixture(t),invalid='REVIEW_TARGET_UNAVAILABLE';
   // Even a known old digest belongs to its existing event, not to a new comment.
   await rejectedWithoutWrite(f,f.record('comment','new-on-old',{target,body:'새 의견'}),400,invalid);
   await rejectedWithoutWrite(f,f.record('comment','unknown-old',{target:{...target,artifactHash:'b'.repeat(64)},body:'임의 과거 해시'}),400,invalid);
