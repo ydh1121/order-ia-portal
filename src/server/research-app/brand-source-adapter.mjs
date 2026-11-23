@@ -69,6 +69,12 @@ export function researchBrandSource(original) {
   // reachable; the original start-y still morphs from the actual logo origin.
   source = once(source, 'const top=Math.max(y+12,Math.min(r.top,bottom-1));',
     "const researchHeader=brand.closest('#order-app-header');const top=Math.max(y+12,Math.min(researchHeader?researchHeader.getBoundingClientRect().bottom+8:r.top,bottom-1));");
+  // A newly displayed popover has no prior layout. Place its closed surface
+  // at the trigger before enabling the transition to its measured open size.
+  source = once(source, "const from=points(),version=++generation;cancelArrival();halt();",
+    "const prepareOrigin=phase==='closed';if(prepareOrigin)surface.style.transitionProperty='none';const from=points(),version=++generation;cancelArrival();halt();");
+  source = once(source, "void surface.offsetWidth;surface.dataset.open='true';",
+    "void surface.offsetWidth;if(prepareOrigin)surface.style.removeProperty('transition-property');surface.dataset.open='true';");
   source = once(source, '  function pop(settings={}){', '  function pop(settings={}){\n    if(researchLeaveGuards([pages.at(-1)]).length){void requestBack(settings);return false;}');
   source = once(source, '  function close({focus=true,immediate=false}={}){', '  function close({focus=true,immediate=false}={}){\n    if(phase!==\'closed\'&&researchLeaveGuards(pages.slice(1)).length){void requestClose({focus,immediate});return false;}');
   source = once(source,

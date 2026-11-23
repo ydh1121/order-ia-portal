@@ -79,7 +79,18 @@ export function researchOnboardingSource(source){
   source=once(source,"      if(badge){badge.textContent=count>99?'99+':String(count);badge.hidden=!count;}",`      if(badge){
         badge.classList.add('t-badge');badge.hidden=false;badge.setAttribute('aria-hidden','true');
         let dot=badge.querySelector('.t-badge-dot');if(!dot){dot=document.createElement('span');dot.className='t-badge-dot';badge.replaceChildren(dot);}
-        dot.textContent=count>99?'99+':String(count);badge.dataset.open=String(count>0);
+        const label=count>99?'99+':String(count),open=String(count>0);
+        if(dot.textContent!==label){
+          if(open==='true'&&badge.dataset.open==='true'&&!api.reduced?.()){
+            // Reuse the source entrance for the new number, including rapid replacements.
+            // Commit the closed style in this task so the reset never paints.
+            badge.dataset.badgeReset='';badge.dataset.open='false';
+            void dot.offsetWidth;
+            delete badge.dataset.badgeReset;
+          }
+          dot.textContent=label;dot.dataset.capped=String(count>99);
+        }
+        if(badge.dataset.open!==open)badge.dataset.open=open;
       }`);
   source=once(source,'    if(quick){\n      noticeState(brandMenu?.inspect());',`    const unsubscribeNotice=api.applicationHeader?.subscribe?.(noticeState);
     if(quick){
@@ -161,5 +172,7 @@ export const researchOnboardingCss=String.raw`
   .t-badge, .t-badge-dot { animation: none !important; transition: none !important; }
 }
 #order-app-page .ob .quick-unread.t-badge{top:-4px;right:-4px;min-width:0;padding:0;border:0;background:transparent;line-height:1}
-#order-app-page .ob .quick-unread .t-badge-dot{display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:20px;height:20px;padding:0 5px;border:0;border-radius:999px;background:#bf2e43;color:white;font:600 11px/1 system-ui;font-variant-numeric:tabular-nums}
+#order-app-page .ob .quick-unread[data-badge-reset],#order-app-page .ob .quick-unread[data-badge-reset] .t-badge-dot{animation:none;transition:none}
+#order-app-page .ob .quick-unread .t-badge-dot{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:20px;height:20px;padding:0;border:0;border-radius:999px;background:#bf2e43;color:white;font:600 11px/1 system-ui;font-variant-numeric:tabular-nums}
+#order-app-page .ob .quick-unread .t-badge-dot[data-capped=true]{font-size:9px}
 `;

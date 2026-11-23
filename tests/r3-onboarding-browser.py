@@ -504,6 +504,89 @@ def drag_intro(page, frame, *, forward, expected_step):
         window.__introOverlayBaseline.brand===root.querySelector('#order-app-header .order-product-brand svg')""")
 
 
+def check_unread_number_changes(page, origin, reduced):
+    page.emulate_media(reduced_motion='reduce' if reduced else 'no-preference')
+    frame = ReviewScreens(page, origin, 390).screen('onboarding', 'member-1')
+    bell = frame.locator('[data-action=quick]')
+    dot = bell.locator('.quick-unread .t-badge-dot')
+    expect(dot).to_have_text('1')
+    # Seed only this frame's private inbox. The list load and each read use normal controls.
+    dot.evaluate('''dot=>{
+        const fixture=window.ORDER_APP_ADAPTER.fixture, sample=fixture.inspect().data.notifications[0];
+        fixture.configure({data:{notifications:Array.from({length:101},(_,i)=>({
+            ...sample,id:'badge-notice-'+i,title:'검증 알림 '+i,readAt:null
+        }))}});
+        const badge=dot.parentElement,bell=badge.closest('[data-action=quick]'),samples=[],starts=[],clicks=[];
+        badge.addEventListener('animationstart',e=>{if(e.target===badge)starts.push(dot.textContent)});
+        document.addEventListener('click',e=>{if(e.target.closest('button'))clicks.push(e.isTrusted)},true);
+        let raf;
+        const observe=()=>{
+            const b=bell.getBoundingClientRect(),r=dot.getBoundingClientRect(),range=document.createRange();
+            range.selectNodeContents(dot);
+            const t=range.getBoundingClientRect(),style=getComputedStyle(dot);
+            samples.push({label:dot.textContent,at:performance.now(),opacity:Number(style.opacity),
+                same:dot===badge.firstElementChild&&badge===bell.querySelector('.quick-unread'),
+                parent:[b.x,b.y,b.width,b.height],box:[r.width,r.height],textWidth:t.width,
+                textOffset:t.y+t.height/2-r.y-r.height/2,
+                motion:badge.getAnimations({subtree:true}).map(a=>[a.animationName||a.transitionProperty,a.effect.getTiming().duration])});
+            raf=requestAnimationFrame(observe);
+        };
+        observe();
+        dot.finishBadgeProbe=()=>{cancelAnimationFrame(raf);return {samples,starts,clicks};};
+    }''')
+    frame_click(page, bell)
+    frame_click(page, frame.get_by_role('button', name='시세 알림'))
+    expect(dot).to_have_text('99+')
+    # The first read is 101→100 (still 99+); its text node and motion must survive.
+    dot.evaluate('el=>el.initialLabel=el.firstChild')
+    for remaining, label in [(100, '99+'), (99, '99'), (98, '98')]:
+        row = frame.locator('[data-notification-id][data-read=false]').first
+        if remaining == 98:
+            row.press('Enter')
+        else:
+            frame_click(page, row)
+        expect(frame.locator('[data-notification-detail]')).not_to_have_attribute('aria-busy', 'true')
+        expect(dot).to_have_text(label)
+        if remaining == 100:
+            assert dot.evaluate('el=>el.firstChild===el.initialLabel')
+        back = frame.locator('[data-action=research-notification-back]')
+        if remaining == 99:
+            # Interrupt with native keyboard input while the preceding number still pops.
+            dot.evaluate('()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))')
+            back.press('Enter')
+        else:
+            frame_click(page, back)
+    dot.evaluate('''async el=>{
+        await Promise.allSettled(el.parentElement.getAnimations({subtree:true}).map(a=>a.finished));
+        await new Promise(requestAnimationFrame);
+    }''')
+    report = dot.evaluate('el=>el.finishBadgeProbe()')
+    report['reduced'] = reduced
+    samples = report['samples']
+    output = ROOT / 'artifacts/qa-mvp'
+    output.mkdir(parents=True, exist_ok=True)
+    (output / f'unread-number-390-{"reduced" if reduced else "normal"}.json').write_text(json.dumps(report))
+    assert all(s['same'] and s['parent'] == samples[0]['parent'] for s in samples), 'The parent bell moved or the pinned badge was replaced'
+    for label in ('99+', '99', '98'):
+        frames = [s for s in samples if s['label'] == label]
+        assert frames, label
+        if reduced:
+            assert all(not s['motion'] and s['opacity'] == 1 for s in frames), label
+        else:
+            observed = {tuple(a) for s in frames for a in s['motion']}
+            assert {('t-badge-slide-in', 260), ('transform', 500), ('filter', 500), ('opacity', 400)} <= observed, (label, observed)
+            assert any(s['opacity'] < 1 for s in frames), label
+        assert all(abs(s['box'][0]-s['box'][1]) < .01 and s['textWidth'] <= s['box'][0]+.1
+                   and abs(s['textOffset']) <= 1 for s in frames), label
+    assert len(report['clicks']) >= 8 and all(report['clicks']), report['clicks']
+    assert report['starts'] == ([] if reduced else ['99+', '99', '98']), report['starts']
+    if not reduced:
+        previous = [s for s in samples if s['label'] == '99'][-1]
+        assert previous['motion'], 'The next native read must interrupt the previous number transition'
+    assert samples[-1]['box'] == [20, 20] and samples[-1]['opacity'] == 1, samples[-1]
+    print('PASS native bell unread number through capped, equal and two-digit counts; reduced:', reduced)
+
+
 def check_notification_pin(page, screens):
     frame = screens.screen('onboarding', 'member-1')
     typography = current_wordmark_typography(frame)
@@ -801,6 +884,13 @@ def main():
                 if width == 390:
                     page.emulate_media(reduced_motion="no-preference")
                     if not focused_auth:
+                        for reduced_badge in (False, True):
+                            badge_page = context.new_page()
+                            try:
+                                check_unread_number_changes(badge_page, fixture["url"], reduced_badge)
+                            finally:
+                                badge_page.close()
+                        page.emulate_media(reduced_motion="no-preference")
                         check_auth_overlay_motion(page,fixture["url"],width)
                     check_auth_overlay_internal_transition(page,fixture["url"],width)
                     context.close()

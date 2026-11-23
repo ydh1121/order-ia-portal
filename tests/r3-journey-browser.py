@@ -11,7 +11,7 @@ from r3_feedback_browser_support import PreservedReviewScreens, ReviewScreens, f
 
 ROOT = Path(__file__).resolve().parents[1]
 def capture_reference_viewports(qa_page, folder):
-    # Match the five preserved Figma artboards at the original 375 × 828 CSS pixels.
+    # Match the preserved Figma artboards at the original 375 × 828 CSS pixels.
     # Use the exact current application build URL, with the same isolated result
     # data. A module app must run on its authenticated origin, not set_content.
     out = Path(folder)
@@ -20,7 +20,7 @@ def capture_reference_viewports(qa_page, folder):
     page.set_viewport_size({'width':375,'height':828})
     errors=[]
     try:
-        for state in ['saving','new-detail','current-detail','equal','current-lower']:
+        for state in ['saving','new-detail','current-detail','equal','current-lower','no-result']:
             path = '/api/ia/r3-qa/artifact?'+urlencode({'id':'quote-result/'+state+'/email','width':375,'version':'current'})
             artifact = qa_page.evaluate('''async path => {
                 const response = await fetch(path, {credentials:'same-origin'});
@@ -47,6 +47,17 @@ def capture_reference_viewports(qa_page, folder):
                 check_result(wrapper.locator('[data-order-result]'),state)
                 if state=='new-detail':
                     expect(wrapper.locator('.oq-clock:visible')).to_have_text('6일 21시간 13분 59초')
+                if state=='no-result':
+                    # Figma 1025:14915 contains the error artboard, despite its old NO-CURRENT name.
+                    title=stage.locator('.oq-title').bounding_box()
+                    assert abs(title['y']-147)<1 and actions_box=={'x':24,'y':744,'width':327,'height':54}
+                    page.evaluate("""() => document.addEventListener('click', e => {
+                        if(e.target.closest('button[data-action=back]')) window.__quoteReturnTrusted=e.isTrusted;
+                    }, true)""")
+                    stage.get_by_role('button',name='이전 페이지로 돌아가기').click()
+                    expect(page).to_have_url(re.compile(r'screen=quote-review(?:&|$)'))
+                    expect(page.locator('#order-app-quote')).to_be_visible()
+                    assert page.evaluate('window.__quoteReturnTrusted') is True
                 assert page.locator('iframe').count()==0
             except AssertionError as error:
                 errors.append((state,str(error)))
@@ -95,6 +106,15 @@ def check_result(view, state):
         expect(view).to_have_attribute('data-state',{'locked':'unverified','no-result':'no-offer','expired':'expired'}[state])
         expect(view.locator('.oq-series:visible')).to_have_count(0)
         assert not re.search(r'12,540,000|11,940,000|13,140,000',view.inner_text())
+        if state=='no-result':
+            expect(view.locator('.oq-title')).to_have_text('길을 잃으셨나요?')
+            expect(view.locator('.oq-sub')).to_be_hidden()
+            expect(view.get_by_role('button',name='이전 페이지로 돌아가기')).to_be_visible()
+            assert view.evaluate("""s => {
+                const mark=getComputedStyle(s,'::after');
+                return mark.width==='22px' && mark.height==='104px' && mark.backgroundImage.includes('data:image/svg+xml');
+            }""")
+
 
 
 def check_motion(page, origin):

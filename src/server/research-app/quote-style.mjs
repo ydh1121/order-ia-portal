@@ -8,6 +8,14 @@ export const researchQuoteCss=`
 [data-research-quote] .qcopy strong{font-weight:750;letter-spacing:-.035em}
 [data-research-quote] .ui-input-control{min-height:48px}
 [data-research-quote] [data-order-result] .oq-brand{display:none}
+/* Figma 1025:14915 is the missing-quote error view despite the old NO-CURRENT frame name. */
+#order-single [data-order-result][data-state=no-offer] .oq-heading{top:17.75%}
+#order-single [data-order-result][data-state=no-offer] .oq-sub{display:none}
+#order-single [data-order-result][data-state=no-offer]::after{
+  content:"";position:absolute;left:50%;top:49.4%;transform:translate(-50%,-50%);
+  width:22px;height:104px;pointer-events:none;
+  background:center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 104'%3E%3Cg fill='%23ffbc70'%3E%3Cpath d='M11 0C4.6 0 .1 5.1 .4 11.4L5 61.7c.3 3.7 2.6 6.3 6 6.3s5.8-2.6 6.1-6.3l4.5-50.3C22 5.1 17.4 0 11 0Z'/%3E%3Ccircle cx='10.5' cy='94' r='9.2'/%3E%3C/g%3E%3C/svg%3E");
+}
 /* The shared result artboard reserves its first 78px for the real app header. */
 #order-app-header:has(~ #order-app-page:not([hidden]) [data-review-result],~ #order-app-quote:not([hidden]) #page-result.active [data-order-result]){
   position:absolute;inset:0 0 auto;

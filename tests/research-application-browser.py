@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
+from research_account_origin_browser import check_account_origin
 from r3_feedback_browser_support import frame_click, frame_pointer_position, prepare_frame_pointer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1220,6 +1221,9 @@ def main():
                                          'editorAcceptsInputAfterPick': True, 'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'native-modal-location-picking-1440.png'), full_page=True)
 
+        phase = 'qa-account-panel-origin-and-pin'
+        receipt['accountTriggerMotion'] = check_account_origin(context, cfg['url'], OUT)
+        receipt['checks'].append('The account panel opens from the native trigger and returns there at both widths; an inside pin preserves the popover and unsaved draft')
         critical = [item for item in failed if item['phase'] != 'owner-login' and (
             item['resource'] in ('document', 'script', 'stylesheet') or item['path'].startswith('/ia/research-assets/'))]
         assert not errors, errors
