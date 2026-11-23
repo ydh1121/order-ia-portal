@@ -7,7 +7,7 @@ import {gunzipSync,gzipSync} from 'node:zlib';
 import {researchReleases} from '../src/server/research-release-runtime-index.gen.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
-const build='2ac2efb1ca970fe1ecb868251fda0bc2cd96d5c8324e38af699f470f1f8e74a4';
+const build='9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092';
 const directory=join(root,'public/ia/research-releases',build);
 const check=process.argv.includes('--check');
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
