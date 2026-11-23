@@ -759,9 +759,11 @@ def capture_member_artboards(page, origin):
         for step in (2, 3, 4):
             state = f'member-{step}'
             query = urlencode({'id': f'onboarding/{state}/email', 'width': 375, 'version': 'current'})
-            response = page.context.request.get(f'{origin}/api/ia/r3-qa/artifact?{query}')
-            assert response.ok, (state, response.status)
-            artifact = response.json()
+            artifact = page.evaluate("""async path => {
+                const response = await fetch(path, {credentials: 'same-origin'});
+                if (!response.ok) throw Error('Artboard lookup failed: ' + response.status);
+                return response.json();
+            }""", '/api/ia/r3-qa/artifact?' + query)
             assert artifact['source']['kind'] == 'research-application'
             application = artifact['application']
             artboard.goto(origin + application['url'])

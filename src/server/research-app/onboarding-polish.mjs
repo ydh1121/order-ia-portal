@@ -109,6 +109,16 @@ export const researchOnboardingCss=String.raw`
 #order-app-page .ob .ob-shade{position:fixed;inset:0;z-index:100;background:rgb(22 29 36 / 35%);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
 #order-app-page .ob .ob-drawer{max-height:82dvh}
 #order-app-page .ob .ob-art-caption,#order-app-page .ob .ob-art-caption .ob-art-detail,#order-app-page .ob .ob-art-caption small{font-size:14px;line-height:24px}
+/* The member artboards already include the introduction copy's top inset.
+   The shared live header occupies its original 78px grid row. */
+#order-app-page .ob.member .ob-main:is(.step-2,.step-3,.step-4){padding-top:0}
+#order-app-page .ob.member .step-2 .ob-art-caption small{font-size:10px}
+#order-app-page .ob.member .ob-tasks .ob-mode.simple{border-width:2px}
+#order-app-page .ob.member .ob-mode.card.simple{border-width:3px}
+/* Both titles share a baseline below a 60px illustration row. */
+#order-app-page .ob.member .ob-mode.card [data-intro-icon=search]{width:52px;height:60px;stroke-width:2.5}
+#order-app-page .ob.member .ob-mode.card span:not(:has(svg,span)){position:relative;top:2px}
+#order-app-page .ob.member .ob-mode.card [data-intro-icon=file-search]{width:60px;height:60px}
 #order-app-page .ob .ob-mode.card{cursor:pointer}
 /* Transitions.dev 03-notification-badge. The badge owns its pop; the bell stays still. */
 #order-single{--badge-slide-dur:260ms;--badge-pop-dur:500ms;--badge-pop-close-dur:180ms;--badge-fade-dur:400ms;--badge-fade-close-dur:180ms;--badge-blur:2px;--badge-offset-x:-8.2px;--badge-offset-y:12.4px;--badge-slide-ease:cubic-bezier(0.22,1,0.36,1);--badge-pop-ease:cubic-bezier(0.34,1.36,0.64,1);--badge-close-ease:cubic-bezier(0.4,0,0.2,1)}

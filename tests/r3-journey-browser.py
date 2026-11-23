@@ -37,6 +37,13 @@ def capture_reference_viewports(qa_page, folder):
             page.evaluate('document.fonts.ready')
             page.screenshot(path=str(out/('reference-'+state+'-375x828.png')),animations='disabled')
             try:
+                stage = wrapper.locator('[data-order-result]')
+                stage_box = stage.bounding_box()
+                header_box = page.locator('#order-app-header').bounding_box()
+                actions_box = stage.locator('.oq-actions').bounding_box()
+                assert stage_box and header_box and actions_box
+                assert abs(stage_box['y'] - header_box['y']) <= 1, (state,stage_box,header_box)
+                assert actions_box['y'] + actions_box['height'] <= 828, (state,actions_box)
                 check_result(wrapper.locator('[data-order-result]'),state)
                 if state=='new-detail':
                     expect(wrapper.locator('.oq-clock:visible')).to_have_text('6일 21시간 13분 59초')

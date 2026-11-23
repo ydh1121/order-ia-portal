@@ -210,19 +210,28 @@ def check_detailed_q3_actions(page, frame):
     if not delete.is_visible():
         frame_click(page, address.locator('[data-saved-actions-toggle]'))
     copy = site.locator('.q3-contact-grid [data-contact-copy]')
+    expect(edit).to_have_accessible_name(re.compile('수정'))
+    expect(edit).to_have_css('text-indent', '0px')
     for action in [edit, delete, copy]:
         expect(action).to_be_visible()
 
+    address.scroll_into_view_if_needed()
     geometry = site.evaluate("""site => {
         const box = selector => {
             const r=site.querySelector(selector).getBoundingClientRect();
             return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};
         };
-        return {viewport:innerWidth, address:box('.q3-address-row'), edit:box('[data-site-edit]'),
+        const addressValue = site.querySelector('[data-q3-summary-value="address"]');
+        const valueRect = addressValue.getBoundingClientRect();
+        const hit=site.ownerDocument.elementFromPoint(valueRect.left+2, valueRect.top+valueRect.height/2);
+        return {viewport:innerWidth, addressEditTarget:!!hit?.closest('[data-site-edit]'),
+            address:box('.q3-address-row'), edit:box('[data-site-edit]'),
             delete:box('[data-site-delete]'), email:box('[data-q3-summary-field="email"]'),
             contacts:box('.q3-contact-grid'), copy:box('[data-contact-copy]')};
     }""")
     assert geometry['viewport'] == 390, geometry
+    assert geometry['addressEditTarget'], geometry
+    assert 0 <= geometry['address']['right'] - geometry['delete']['right'] <= 1, geometry
     assert geometry['edit']['right'] <= geometry['delete']['left'] + 1, geometry
     assert geometry['address']['bottom'] <= geometry['contacts']['top'] + 1, geometry
     assert geometry['email']['bottom'] <= geometry['copy']['top'] + 1, geometry

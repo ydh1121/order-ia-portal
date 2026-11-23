@@ -43,7 +43,16 @@ def check_wait_layout(context, origin):
                     banner: banner.width, clipped: document.documentElement.scrollWidth > innerWidth};
             }""")
             assert rect["width"] == width and not rect["clipped"], rect
-            assert rect["gap"] >= 15 and 105 <= rect["avatar"] <= 161, rect
+            assert rect["gap"] >= 28 and 105 <= rect["avatar"] <= 129, rect
+            if width == 390:
+                cards = visual.locator('.mf-banner')
+                expect(cards).to_have_count(3)
+                labels = cards.evaluate_all("""cards => cards.map(card => ({
+                    depth: Number(card.style.getPropertyValue('--layer')),
+                    opacity: Number(getComputedStyle(card.querySelector('span')).opacity)
+                })).sort((a,b) => a.depth - b.depth)""")
+                assert labels == [{'depth': 0, 'opacity': 1}, {'depth': 1, 'opacity': 0}, {'depth': 2, 'opacity': 0}], labels
+                rect["labels"] = labels
             current.append(rect)
             visual.screenshot(path=str(out / f"current-wait-visual-{width}.png"))
         (out / "current-wait-geometry.json").write_text(json.dumps(current, indent=2) + "\n")
