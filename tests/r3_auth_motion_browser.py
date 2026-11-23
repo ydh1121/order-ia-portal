@@ -190,16 +190,22 @@ def check_auth_motion(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
     header = frame.locator("#order-app-header")
+    brand_trigger = header.locator(".obm-trigger")
+    brand_svg = brand_trigger.locator("svg.brand-mark[data-code1-jelly]")
     expect(frame.locator(".ob-pages .ob-active-pill")).to_be_visible()
+    expect(brand_svg).to_have_count(1)
+    expect(brand_svg.locator("g > path")).to_have_count(3)
     # Figma 2009173058 requires random original motion on a guest click. The
     # shared trigger selects CODE1 idle/play or gather; neither is a fake event
     # nor an account-menu action. Arm observations before the physical click so
     # its synchronous event cannot be lost while waiting for an assumed kind.
-    header.evaluate("""el=>{
-        const svg=window.__savedBrand=el.querySelector('svg');
+    # The shared header also contains navigation-arrow SVGs. Observe only the
+    # original CODE1 owned by the button receiving the trusted physical click.
+    brand_svg.evaluate("""svg=>{
+        window.__savedBrand=svg;
         const paths=[...svg.querySelectorAll('g > path')],before=paths.map(p=>p.getAttribute('d'));
         window.__guestMotion={trusted:false,started:[],changed:new Set(),paths};
-        el.querySelector('.obm-trigger').addEventListener('click',event=>{
+        svg.closest('.obm-trigger').addEventListener('click',event=>{
             window.__guestMotion.trusted=event.isTrusted;
         },{capture:true,once:true});
         svg.addEventListener('code1:motionstart',event=>{
@@ -211,7 +217,6 @@ def check_auth_motion(page, origin, width):
         });
         window.__guestMotionObserver.observe(svg,{subtree:true,attributes:true,attributeFilter:['d']});
     }""")
-    brand_trigger = frame.locator(".obm-trigger")
     expect(frame.locator(".obm-brand")).to_have_attribute("data-authenticated", "false")
     expect(brand_trigger).to_have_accessible_name("Order 로고")
     assert brand_trigger.get_attribute("aria-haspopup") is None
@@ -243,7 +248,7 @@ def check_auth_motion(page, origin, width):
     expect(frame.locator(".obm-panel")).to_be_hidden()
     frame_click(page, frame.locator("[data-mf-intro='3']"))
     expect(frame.locator(".ob")).to_have_attribute("data-intro-step", "3")
-    assert header.evaluate("el=>el.querySelector('svg')===window.__savedBrand")
+    assert brand_svg.evaluate("el=>el===window.__savedBrand")
     x3, y3 = frame_pointer_position(page, frame.locator("[data-mf-intro='3']"))
     x1, y1 = frame_pointer_position(page, frame.locator("[data-mf-intro='1']"))
     page.mouse.move(x3, y3)
@@ -251,7 +256,7 @@ def check_auth_motion(page, origin, width):
     page.mouse.move(x1, y1, steps=7)
     page.mouse.up()
     expect(frame.locator(".ob.guest")).to_have_attribute("data-intro-step", "1")
-    assert header.evaluate("el=>el.querySelector('svg')===window.__savedBrand")
+    assert brand_svg.evaluate("el=>el===window.__savedBrand")
     frame_click(page, frame.locator("[data-company-open]"))
     expect(frame.locator(".ob-stage")).to_have_js_property("inert", True)
     grip = frame.locator(".ob-grip")

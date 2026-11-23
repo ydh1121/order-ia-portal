@@ -37,7 +37,9 @@ export function mountResearchOrderMenu({brand,adapter,signal,getRoute,onChoose,b
     if(from&&page===1){const to=title.getBoundingClientRect();animate(title,[{transform:'translate('+(from.left-to.left)+'px,'+(from.top+from.height/2-to.top-to.height/2)+'px)'},{transform:'translate(0,0)'}],{duration:420,easing:'cubic-bezier(.23,1,.32,1)'});}
     (page===1?modes[0]:eggs).focus();
   }
-  function close(focus=false){++openEpoch;stop();gesture=null;panel.hidden=true;trigger.setAttribute('aria-expanded','false');rootPage.hidden=false;modePage.hidden=true;page=0;back.hidden=true;title.textContent='Order';slider.style.transform='';for(const copy of slider.querySelectorAll('.research-order-departing'))copy.remove();if(focus&&!host.hidden)trigger.focus();}
+  // An outside pointer still cancels a pending open, but an already closed
+  // selector must not replace the retained title's identical text node.
+  function close(focus=false){++openEpoch;stop();gesture=null;panel.hidden=true;trigger.setAttribute('aria-expanded','false');rootPage.hidden=false;modePage.hidden=true;page=0;back.hidden=true;if(title.textContent!=='Order')title.textContent='Order';slider.style.transform='';for(const copy of slider.querySelectorAll('.research-order-departing'))copy.remove();if(focus&&!host.hidden)trigger.focus();}
   async function open(last=false){const epoch=++openEpoch;if(!enabled||disposed||await beforeOpen()===false||epoch!==openEpoch||disposed||!enabled)return;sync();panel.hidden=false;trigger.setAttribute('aria-expanded','true');eggs.focus();if(last)showPage(1,eggs.firstElementChild);}
   listen(trigger,'click',()=>panel.hidden?open():close(true));listen(trigger,'keydown',event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();void open(event.key==='ArrowUp');}});
   listen(eggs,'click',()=>showPage(1,eggs.firstElementChild));listen(back,'click',()=>showPage(0));

@@ -52,6 +52,23 @@ test('the detailed hash catalogue is separate and leaves the default simple cata
   assert.ok(normal.items.filter(row=>row.application).every(row=>detail.items.some(item=>item.id===row.id)));
 });
 
+test('the native notification page is addressable and reviewable in the same catalogue as application navigation',async()=>{
+  for(const mode of ['simple','detailed']){
+    const list=await (await serveR3Artifact(new Request(origin+'/api/ia/r3-qa/artifact'+(mode==='detailed'?'?mode=detailed':'')))).json();
+    const native=list.items.filter(row=>row.id==='notifications/list/email');
+    assert.equal(native.length,1,'an app-owned notification route must be acknowledged by the QA host');
+    const row=native[0];assert.equal(row.application,true);assert.equal(list.navigationDefaults.assignments.notifications,'mvp');
+    for(const width of [390,1440]){
+      const response=await serveR3Artifact(new Request(origin+'/api/ia/r3-qa/artifact?'+new URLSearchParams({id:row.id,width:String(width),version:'current',mode})));
+      assert.equal(response.status,200);const artifact=await response.json();
+      assert.equal(artifact.hash,row.hashes[width]);assert.equal(new URL(artifact.application.url,origin).searchParams.get('screen'),'notifications');
+      const target={screen:'notifications',state:'list',variant:'email',viewport:width,artifactHash:artifact.hash,...(mode==='detailed'?{mode}:{})};
+      assert.equal(await isR3ReviewTarget(target),true);
+      assert.equal(await isR3ReviewTarget({...target,mode:mode==='simple'?'detailed':'simple'}),false);
+    }
+  }
+});
+
 test('detailed comments preserve mode in target and anchor through save and backup without rewriting old simple JSON',async t=>{
   const s=store(t),old=s.event('original-simple',simpleTarget),next=s.event('new-detailed',detailedTarget);
   assert.equal((await s.post(old)).status,200);const oldBytes=s.db.prepare('SELECT data FROM qa_review_events WHERE id=?').get(old.id).data;

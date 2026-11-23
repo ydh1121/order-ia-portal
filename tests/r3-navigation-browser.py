@@ -180,7 +180,10 @@ def check(page, origin, width):
       w.__passWrites=[];
       a.request=(path,body,signal)=>{if(path==='/purchases'&&body)w.__passWrites.push(JSON.parse(JSON.stringify(body)));return send(path,body,signal);};
     }''')
-    accept = confirm.get_by_role('button', name='수령 확인', exact=True)
+    # Async motion changes the accessible label while retaining this button.
+    # Keep the same action locator through failure, pending and acknowledgement.
+    accept = confirm.locator('[data-action="confirm-tear"]')
+    expect(accept).to_have_accessible_name('수령 확인')
     configure(frame, {'requests': {'product POST /purchases': {'scenario': 'error', 'status': 503}}})
     frame_click(page, accept)
     expect(accept).to_have_attribute('data-async-phase', 'error')

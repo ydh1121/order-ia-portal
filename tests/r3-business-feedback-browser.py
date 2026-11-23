@@ -160,6 +160,11 @@ def check(page, origin, width):
     expect(option).to_be_visible()
     after = next_input.evaluate("e=>e.getBoundingClientRect().top + scrollY")
     assert abs(before - after) < 1
+    # The complete official list has several matches for this short consonant
+    # query. Keep that search check, then select one unambiguous keyboard result.
+    field.fill("숙박 및 음식")
+    expect(frame.get_by_role("option")).to_have_count(1)
+    expect(option).to_be_visible()
     field.press("ArrowDown"); field.press("Enter")
     expect(field).to_have_value("숙박 및 음식점업")
     field.fill("정보통신")

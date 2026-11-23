@@ -12,7 +12,7 @@ import shutil
 import subprocess
 from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
-from r3_feedback_browser_support import frame_click, prepare_frame_pointer
+from r3_feedback_browser_support import frame_click, frame_pointer_position, prepare_frame_pointer
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-application'
@@ -124,6 +124,53 @@ def ready_review_route(page, frame, screen, state):
     expect(page.locator('#focus-unit')).to_have_attribute('data-state', state, timeout=30000)
     expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
     same_review_application(page, frame)
+
+
+def measured_badge(dot):
+    return dot.evaluate('''node => {
+        const r=node.getBoundingClientRect(), css=getComputedStyle(node);
+        const range=document.createRange();range.selectNodeContents(node);
+        const text=range.getBoundingClientRect(), row=node.closest('.obm-row')?.getBoundingClientRect();
+        return {text:node.textContent,width:r.width,height:r.height,
+            textCenterOffset:text.y+text.height/2-r.y-r.height/2,
+            rowCenterOffset:row?r.y+r.height/2-row.y-row.height/2:null,
+            alignItems:css.alignItems,justifyContent:css.justifyContent,borderRadius:css.borderRadius};
+    }''')
+
+
+def measured_arrow_hover(page, control, direction):
+    """Use the real pointer and sample the rendered transition without clicks."""
+    page.mouse.move(250, 140)
+    arrow=control.locator('.order-arrow-direction')
+    expect(arrow).to_have_attribute('data-direction', direction)
+    x,y=frame_pointer_position(page, control)
+    control.evaluate('''control => {
+        const node=control.querySelector('.order-arrow-direction');
+        const chevron=node.querySelector('.t-learn-chevron'),top=node.querySelector('.t-learn-arm-top');
+        const probe={samples:[],started:false};
+        probe.done=new Promise(resolve=>{probe.resolve=resolve;});control.__researchHoverProbe=probe;
+        control.addEventListener('pointerenter',event=>{
+            probe.started=true;probe.trusted=event.isTrusted;const start=performance.now();
+            const sample=()=>{
+                const c=getComputedStyle(chevron),a=getComputedStyle(top),m=new DOMMatrixReadOnly(c.transform);
+                probe.samples.push({elapsed:performance.now()-start,x:m.m41,arm:a.transform,duration:c.transitionDuration});
+                if(performance.now()-start<430)requestAnimationFrame(sample);
+                else probe.resolve({trusted:probe.trusted,samples:probe.samples});
+            };sample();
+        },{once:true});
+    }''')
+    page.mouse.move(x,y)
+    observed=control.evaluate('''async control => {
+        const probe=control.__researchHoverProbe;
+        if(!probe?.started)throw Error('The real pointer did not enter the observed control');
+        return probe.done;
+    }''')
+    assert observed['trusted'], 'The hover receipt must come from native pointer input'
+    samples=observed['samples']
+    assert abs(samples[-1]['x']-2)<0.02, samples[-1]
+    assert any(0<sample['x']<1.98 for sample in samples), 'Native hover must animate through intermediate positions'
+    assert samples[-1]['arm']!='none', samples[-1]
+    return {'direction':direction,**observed}
 
 
 def review_target_snapshot(page):
@@ -470,6 +517,14 @@ def main():
         expect(account_trigger).to_be_enabled()
         expect(order_trigger).to_be_visible()
         expect(header).to_have_js_property('inert', False)
+        appearance={}
+        quick_dot=frame.locator('#order-app-page .quick-unread .t-badge-dot')
+        expect(quick_dot).to_be_visible()
+        appearance['quickBadge']=measured_badge(quick_dot)
+        quick=appearance['quickBadge']
+        assert quick['text'].isdigit() and int(quick['text'])>0, quick
+        assert abs(quick['height']-20)<0.5 and abs(quick['width']-quick['height'])<0.5, quick
+        assert abs(quick['textCenterOffset'])<=2.5, quick
         page.screenshot(path=str(OUT / 'member-header-1440.png'), full_page=True)
 
         frame_click(page, account_trigger)
@@ -479,6 +534,28 @@ def main():
             panel.getBoundingClientRect().top >=
             document.querySelector('#order-app-header').getBoundingClientRect().bottom
         '''), 'The native account popover must leave the retained header controls reachable'
+        appearance['accountSurface']=frame.locator('.obm-panel').evaluate('''panel => {
+            const surface=panel.querySelector('.obm-surface'),menu=panel.querySelector('.obm-menu');
+            const s=getComputedStyle(surface),m=getComputedStyle(menu),p=getComputedStyle(panel);
+            const trigger=document.querySelector('[data-order-account-trigger]'),t=getComputedStyle(trigger);
+            return {surfaceShadow:s.boxShadow,menuBackground:m.backgroundColor,menuShadow:m.boxShadow,
+                menuBorder:m.borderWidth,panelBorder:p.borderWidth,triggerBackground:t.backgroundColor,
+                triggerShadow:t.boxShadow,triggerBorder:t.borderWidth};
+        }''')
+        surface=appearance['accountSurface']
+        assert surface['menuBackground']=='rgb(255, 255, 255)' and surface['menuBorder']=='0px' and surface['panelBorder']=='0px', surface
+        assert surface['surfaceShadow']!='none' and surface['menuShadow']=='none', surface
+        assert surface['triggerBackground']=='rgba(0, 0, 0, 0)' and surface['triggerShadow']=='none' and surface['triggerBorder']=='0px', surface
+        account_dot=frame.locator('.obm-panel [data-obm-item="notifications"] .t-badge-dot')
+        appearance['accountBadge']=measured_badge(account_dot)
+        badge=appearance['accountBadge']
+        assert abs(badge['height']-20)<0.5 and abs(badge['width']-badge['height'])<0.5, badge
+        assert abs(badge['textCenterOffset'])<=2.5 and abs(badge['rowCenterOffset'])<=0.5, badge
+        page.emulate_media(reduced_motion='no-preference')
+        appearance['rightHover']=measured_arrow_hover(page, frame.locator('.obm-panel [data-obm-item="profile"]'), 'right')
+        expect(frame.locator('.obm-panel [data-obm-item="profile"]')).to_have_css('background-color','rgb(243, 244, 246)')
+        page.screenshot(path=str(OUT / 'member-account-surface-1440.png'), full_page=True)
+        page.emulate_media(reduced_motion='reduce')
         # One physical click must complete the account close and Order open.
         frame_click(page, order_trigger)
         expect(frame.locator('.research-order-stack')).to_be_visible()
@@ -532,7 +609,20 @@ def main():
         assert messages, 'The original member scenario must supply actual notification records'
         expect(preview.locator('[data-notification-id]')).to_have_count(min(3, len(messages)))
         assert preview.locator('time').evaluate_all('nodes => nodes.every(time => time.dateTime && time.title.startsWith("발송 "))')
+        back=frame.locator('.obm-panel [data-obm-page="notifications"] .obm-back')
+        appearance['backHeading']=back.evaluate('''button => {
+            const b=button.getBoundingClientRect(),h=button.parentElement.querySelector('.obm-heading').getBoundingClientRect(),s=getComputedStyle(button);
+            return {centerOffset:b.y+b.height/2-h.y-h.height/2,background:s.backgroundColor,border:s.borderWidth,shadow:s.boxShadow,radius:s.borderRadius};
+        }''')
+        alignment=appearance['backHeading']
+        assert abs(alignment['centerOffset'])<=0.5, alignment
+        assert alignment['background']=='rgba(0, 0, 0, 0)' and alignment['border']=='0px' and alignment['shadow']=='none' and alignment['radius']=='0px', alignment
+        page.emulate_media(reduced_motion='no-preference')
+        appearance['leftHover']=measured_arrow_hover(page, back, 'left')
         page.screenshot(path=str(OUT / 'notifications-preview-1440.png'), full_page=True)
+        page.emulate_media(reduced_motion='reduce')
+        receipt['memberAppearance']=appearance
+        receipt['checks'].append('native 390px layout has circular centered unread badges, one borderless white account surface with an unclipped resting shadow, aligned plain Back and measured real-pointer left/right hover motion')
         frame_click(page, preview.locator('[data-action="research-all-notifications"]'))
         ready_review_route(page, frame, 'notifications', 'list')
         full = frame.locator('#order-app-page .research-notifications[data-notifications-mode="full"]')

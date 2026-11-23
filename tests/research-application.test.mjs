@@ -728,3 +728,33 @@ test('QA cannot hide a live price editor dialog by selecting another product fam
   assert.equal(await f.app.navigate({screen:'admin-campaigns'}),true);assert.equal(f.app.snapshot().route.screen,'admin-campaigns');assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
+
+test('a closed Order menu preserves a live email pin across blur, outside pointerdown and location restore',async()=>{
+ const f=await setup({screen:'login',state:'empty',variant:'email'});let review;
+ try{
+  const input=f.doc.querySelector('.product-auth-sheet input[name=email]'),menu=f.doc.getElementById('research-order-menu');
+  assert.ok(input);assert.equal(menu.hidden,true);
+  // JSDOM has no layout. Only the input hit/rect uses a fixed fixture; the
+  // served product, focus handlers, point capture and inspector index are real.
+  const rect=new f.win.DOMRect(f.win.innerWidth/2-100,f.win.innerHeight/2-30,200,60);
+  input.getBoundingClientRect=()=>rect;input.getClientRects=()=>[rect];f.doc.elementFromPoint=()=>input;
+  input.focus();review=await attachTestReview(f);
+  const veil=f.doc.getElementById('r3-veil'),paint=()=>new Promise(resolve=>f.win.requestAnimationFrame(()=>f.win.requestAnimationFrame(resolve)));
+  const capture=()=>{review.send('mode',true);veil.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));const point=review.messages.filter(x=>x.message.type==='point').at(-1)?.message.payload;assert.ok(point);review.send('mode',false);return point;};
+  const anchor=capture(),original=JSON.stringify(anchor),text=menu.querySelector('h2').firstChild;
+  assert.notEqual(anchor.id,'screen');assert.equal(input.closest('.field').classList.contains('is-focused'),false);
+  review.send('pins',[{id:'current-email',anchor,ordinal:1}]);await paint();
+  assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1);
+  // The native Chrome receipt showed this outside pointerdown unnecessarily
+  // rewriting the hidden menu's h2, reindexing the blurred email's ancestors.
+  f.doc.body.dispatchEvent(new f.win.MouseEvent('pointerdown',{bubbles:true,button:0}));await paint();
+  assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1,'an outside pointer must retain the current email marker');
+  assert.equal(menu.querySelector('h2').firstChild,text,'closing an already closed selector preserves its title node');
+  assert.equal(menu.hidden,true);assert.equal(f.doc.querySelector('#order-single input[name=email]'),input);
+  assert.equal(capture().id,anchor.id,'the same element keeps its captured identity after an unrelated pointerdown');await paint();
+  review.send('restore',anchor);await waitFor(()=>f.doc.activeElement===input);await paint();
+  assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1);
+  assert.deepEqual([...review.messages.filter(x=>x.message.type==='missing').at(-1).message.payload.ids],[]);
+  assert.equal(JSON.stringify(anchor),original);assert.deepEqual(f.failures,[]);
+ }finally{review?.bridge.dispose();await f.close();}
+});

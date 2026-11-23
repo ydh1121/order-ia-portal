@@ -74,7 +74,11 @@ export const researchInteractionCss = String.raw`
 #order-single .t-learn:disabled .t-learn-chevron,#order-single .t-learn:disabled .t-learn-arm{transform:none}
 /* One surface and one neutral field palette throughout the account stack. */
 #order-single .obm-panel{--paper:#fff;--surface:#f3f4f6;--ink:#20272b;--muted:#717982;--blue:#315de6;--obm-bg:#fff;--obm-hover:#f3f4f6;--obm-text:#20272b;--obm-muted:#717982;--obm-separator:#e9ebee;--obm-focus:#315de6}
-#order-single .obm-panel .obm-menu.t-morph-menu{background:#fff;border:0;box-shadow:0 12px 36px rgb(24 39 58 / 18%);padding:12px}
+#order-single .obm-panel .obm-menu.t-morph-menu{background:#fff;border:0;box-shadow:none;padding:12px}
+/* The morph clips its contents. Place the resting shadow on that surface so
+   it can separate white panels from white pages without an inset border or a
+   shadow behind the logo while its points are still travelling. */
+#order-single .obm-panel:not(:has([data-points-moving=true])) .obm-surface.t-morph[data-open=true]{box-shadow:0 12px 36px rgb(24 39 58 / 18%)}
 #order-single .obm-panel .obm-page,#order-single .obm-panel .obm-panel-content{background:transparent}
 #order-single .obm-panel .obm-row{background:transparent;border:0;box-shadow:none;min-height:48px;gap:12px}
 #order-single .obm-panel .obm-row:is(:hover,:focus-visible){background:#f3f4f6}

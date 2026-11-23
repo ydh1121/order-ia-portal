@@ -29,7 +29,7 @@ import * as supplementalHistory from './r3-ui/supplemental-history.gen.mjs';
 import {isProductLiveTarget} from './product-lab-page.mjs';
 import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-runtime.mjs';
 import {isReviewedEpochTarget,readReviewedEpochArtifact,readReviewedEpochBody} from './r3-qa-epoch-history.mjs';
-import {isResearchRow,researchArtifactHash,researchArtifact,archivedResearchTarget,archivedResearchArtifact} from './research-app/page.mjs';
+import {isResearchRow,researchNativeRows,researchArtifactHash,researchArtifact,archivedResearchTarget,archivedResearchArtifact} from './research-app/page.mjs';
 import {createResearchExportTools} from './research-app/export-snapshot.mjs';
 
 const utf8=new TextEncoder();
@@ -65,7 +65,7 @@ export async function isR3ReviewTarget(target,revision=release){
   if(Object.hasOwn(target,'mode')&&!['simple','detailed'].includes(target.mode))return false;
   const mode=target.mode??'simple';
   if(mode==='simple'&&isProductLiveTarget(target))return true;
-  const researchRow=catalog.find(row=>row.id===[target.screen,target.state,target.variant].join('/'))||(await getQaSupplemental()).rows.find(row=>row.id===[target.screen,target.state,target.variant].join('/'));
+  const researchRow=catalog.find(row=>row.id===[target.screen,target.state,target.variant].join('/'))||(await getQaSupplemental()).rows.find(row=>row.id===[target.screen,target.state,target.variant].join('/'))||researchNativeRows.find(row=>row.id===[target.screen,target.state,target.variant].join('/'));
   if(isResearchRow(researchRow)&&await researchArtifactHash(researchRow,target.viewport,mode)===target.artifactHash)return true;
   if(await archivedResearchTarget(target))return true;
   if(mode==='detailed')return false;
@@ -102,12 +102,15 @@ export async function serveR3Artifact(request,env){
       const selected=byId.get(row.id)||row;
       if(row.screen==='admin-analytics'&&!salesInserted){salesInserted=true;return [...sales,selected];}
       return [selected];
-    }),...supplemental.filter(row=>row.screen!=='admin-analytics')];
+    }),...supplemental.filter(row=>row.screen!=='admin-analytics'),...researchNativeRows];
     const items=await Promise.all((mode==='detailed'?inventory.filter(isResearchRow):inventory).map(async row=>{
       const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
-      const contentHashes=await reviewHashes(row);
+      let contentHashes=row.hashes?await reviewHashes(row):null;
       const application=isResearchRow(row),hashes=application?Object.fromEntries(await Promise.all(approvedWidths.map(async width=>[width,await researchArtifactHash(row,width,mode)]))):await qaReviewHashes(row,contentHashes);
+      // Native app pages have no earlier authored-document identity. Their
+      // review identity is the sealed application build at this route/width.
+      contentHashes??=hashes;
       return {hashes,contentHashes,application,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':screen==='q2'?'Q2 구매량·현재 가격':label,stateLabel,defaultWidth,phase,role,
         description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
         authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
@@ -118,7 +121,7 @@ export async function serveR3Artifact(request,env){
   // Detailed mode may only resolve a mode-bound research artifact below.
   if(mode==='simple')q.delete('mode');
   if(['current','recorded'].includes(q.get('version'))&&approvedWidths.includes(Number(q.get('width')))&&[...q.keys()].every(key=>['id','width','version','artifactHash','mode'].includes(key))){
-    const row=(await getQaSupplemental()).rows.find(row=>row.id===q.get('id'))||catalog.find(row=>row.id===q.get('id'));
+    const row=(await getQaSupplemental()).rows.find(row=>row.id===q.get('id'))||catalog.find(row=>row.id===q.get('id'))||researchNativeRows.find(row=>row.id===q.get('id'));
     if(isResearchRow(row)){
       const hash=await researchArtifactHash(row,Number(q.get('width')),mode),pinned=q.get('artifactHash');
       if(pinned===hash||!pinned&&q.get('version')==='current')return json(await researchArtifact(row,Number(q.get('width')),env,new URL(request.url).origin,mode));

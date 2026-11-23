@@ -41,3 +41,15 @@ test('a pending account editor vetoes opening and a disposed pending feature req
   let release;const pending=new Promise(resolve=>release=resolve),f=setup({pending});
   f.menu.destroy();release({orderMenu:true});await f.menu.ready;assert.equal(f.d.querySelector('.research-order-menu'),null);f.close();
 });
+
+test('closing an already hidden selector cancels its pending open without rewriting its title',async()=>{
+  let release;const permission=new Promise(resolve=>release=resolve),f=setup({allow:permission});
+  try{
+    await f.menu.ready;const panel=f.d.querySelector('[role=menu]'),title=panel.querySelector('h2'),node=title.firstChild,trigger=f.d.querySelector('.research-order-trigger');
+    trigger.click();await tick();assert.equal(panel.hidden,true);
+    f.d.body.dispatchEvent(new f.w.MouseEvent('pointerdown',{bubbles:true,button:0}));
+    assert.equal(title.firstChild,node,'a no-op close must not cause a child-list mutation');
+    release(true);await tick();assert.equal(panel.hidden,true);assert.equal(trigger.getAttribute('aria-expanded'),'false');
+    trigger.click();await tick();assert.equal(panel.hidden,false,'a later explicit open still works');
+  }finally{f.close();}
+});

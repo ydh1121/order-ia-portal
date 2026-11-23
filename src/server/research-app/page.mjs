@@ -44,7 +44,8 @@ export const isResearchRow=row=>Boolean(row&&(row.phase!=='future'||row.screen==
 const staticCache=new Map(),scenes=new Map();let styles;
 const response=(body,type='text/javascript; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','X-Order-Research-Build':researchBuild.digest}});
 const fallbackFamily=screen=>['login','signup','otp','password','terms'].includes(screen)?'accountFeedback':['business','proof','signature'].includes(screen)?'business':screen.startsWith('admin-')||screen==='receipt'?'adminCommon':'member';
-const notificationRow=Object.freeze({id:'notifications/list/email',screen:'notifications',state:'list',variant:'email',group:'내 견적·메뉴',label:'알림',stateLabel:'전체 알림',defaultWidth:390,role:'customer',phase:'current',runtimeFamily:'researchNotifications'});
+const notificationRow=Object.freeze({id:'notifications/list/email',screen:'notifications',state:'list',variant:'email',group:'내 견적·메뉴',label:'알림',stateLabel:'전체 알림',defaultWidth:390,role:'customer',phase:'current',runtimeFamily:'researchNotifications',supplemental:true});
+export const researchNativeRows=Object.freeze([notificationRow]);
 let runtimeSources;
 async function researchRuntime(family){
   if(!runtimeSources)runtimeSources=new Map();if(runtimeSources.has(family))return runtimeSources.get(family);

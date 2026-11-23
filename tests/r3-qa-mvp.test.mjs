@@ -48,11 +48,13 @@ test('account-owned navigation retains history, rejects stale tabs and isolates 
   const db={prepare(sql){return {bind(...args){const st=sqlite.prepare(sql);return {first:async()=>st.get(...args),run:async()=>({meta:st.run(...args)})};}};}};
   const send=(actorId,body)=>handleQaNavigation({env:{ORDER_QA_DB:db},actor:{id:actorId,role:'OWNER'},request:new Request('https://x/api/ia/r3-qa/navigation',body?{method:'POST',body:JSON.stringify(body)}:{})});
   const first=await(await send('owner-a')).json();assert.equal(first.revision,0);
+  assert.equal(first.layout.assignments.notifications,'mvp','native app routes remain selectable and persistable in QA navigation');
   first.layout.groups[0].name='첫 매장';first.layout.assignments['admin-rights']='mvp';
   assert.equal((await send('owner-a',{expectedRevision:0,layout:first.layout})).status,200);
   const stale=await send('owner-a',{expectedRevision:0,layout:first.layout});assert.equal(stale.status,409);assert.equal((await stale.json()).current.layout.groups[0].name,'첫 매장');
   const second=await(await send('owner-b')).json();assert.equal(second.revision,0);assert.equal(second.layout.assignments['admin-rights'],'future');
   const reopened=await(await send('owner-a')).json();assert.equal(reopened.revision,1);assert.equal(reopened.layout.assignments['admin-rights'],'mvp');
+  assert.equal(reopened.layout.assignments.notifications,'mvp');
   reopened.layout.assignments['admin-rights']='future';assert.equal((await send('owner-a',{expectedRevision:1,layout:reopened.layout})).status,200);
   assert.equal(sqlite.prepare('SELECT count(*) AS n FROM qa_navigation_revisions WHERE actor_id=?').get('owner-a').n,2);
   sqlite.close();
