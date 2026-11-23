@@ -178,6 +178,45 @@ def assert_no_hidden_modal(frame):
     assert not hidden, 'A hidden native modal still blocks the application: ' + json.dumps(hidden)
 
 
+def pick_native_modal_note(page, frame, dialog, heading, text):
+    """Pick a real product heading through the veil while its native modal stays open."""
+    page.locator('#points').click()
+    page.locator('#general').click()
+    page.locator('#body-text').fill(text)
+    before = page.evaluate('window.__researchModalPoints.length')
+    page.locator('#reposition').click()
+    veil = frame.locator('#r3-veil')
+    expect(veil).to_be_visible()
+    assert dialog.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+    heading.element_handle().wait_for_element_state('stable')
+    point = heading.evaluate('''heading => {
+        const target=heading.getBoundingClientRect(),veil=document.getElementById('r3-veil').getBoundingClientRect();
+        return {x:target.left+target.width/2-veil.left,y:target.top+target.height/2-veil.top};
+    }''')
+    # Physical input must hit the real annotation surface above the modal.
+    # Do not dismiss the modal, lower the veil, or synthesize the point message.
+    frame_click(page, veil, position=point)
+    wait_for_expression(page, 'window.__researchModalPoints.length===' + str(before + 1))
+    expect(page.locator('#drawer')).to_be_visible()
+    expect(page.locator('#point-state')).to_have_text('위치 지정됨')
+    expect(page.locator('#body-text')).to_have_value(text)
+    expect(veil).to_be_hidden()
+    assert dialog.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+    anchor = page.evaluate('window.__researchModalPoints.at(-1)')
+    session = review_target_snapshot(page)['session']
+    assert re.fullmatch(r'a-[a-z0-9]+', anchor['id']), 'A modal heading must resolve to a product element, not the screen fallback'
+    assert anchor['instance'] == session['screen'] and anchor['artifactHash'] == session['artifact']
+    assert anchor.get('mode', 'simple') == session.get('mode', 'simple')
+    assert all(0 <= anchor[key] <= 1 for key in ('x', 'y')) and anchor['layers']
+    expect(frame.locator('.approval-draft-pin')).to_be_visible()
+    assert heading.evaluate('''heading => {
+        const target=heading.getBoundingClientRect(),marker=document.querySelector('.approval-draft-pin').getBoundingClientRect();
+        const x=marker.left+marker.width/2,y=marker.top+marker.height/2;
+        return x>=target.left-2 && x<=target.right+2 && y>=target.top-2 && y<=target.bottom+2;
+    }'''), 'The draft marker must remain at the picked modal heading after returning to the comment'
+    return anchor
+
+
 def capture_product_scope_diagnostics(page):
     """Read app ownership/layout only; omit account fields and private payloads."""
     return page.evaluate('''() => {
@@ -200,6 +239,9 @@ def capture_product_scope_diagnostics(page):
                 .flatMap(selector=>[...doc.querySelectorAll(selector)].map(node=>({selector,...box(node)}))),
             dialogs:[...doc.querySelectorAll('dialog')].map(node=>({...box(node),open:node.open,
                 modal:node.matches(':modal'),hiddenOwner:node.closest('[hidden]')?.id||null})),
+            annotations:[...doc.querySelectorAll('#r3-veil,#r3-pins,.approval-draft-pin')].map(node=>({...box(node),
+                parent:node.parentElement?.id,modalOwner:node.closest('dialog[open]')?.id||null,
+                popoverOpen:node.matches(':popover-open')})),
             activeElement:{id:doc.activeElement?.id,tag:doc.activeElement?.tagName},
             appStatus:doc.querySelector('#order-app-status')?.textContent,
             priceStatus:doc.querySelector('#pw-notice')?.textContent};
@@ -787,6 +829,90 @@ def main():
                                                                 'ordinarySimpleDraftUnchanged': True},
                                         'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'quote-modal-boundary-1440.png'), full_page=True)
+
+        # A visible native modal also makes body-owned QA controls inert. The
+        # location picker must operate within that modal without closing it or
+        # losing the product editor's unsaved input.
+        phase = 'qa-visible-modal-location-picking'
+        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=quote-review/normal/email&width=390&mode=detailed')
+        frame = page.frame_locator('#frame')
+        frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
+        expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
+        remember_review_application(page)
+        ready_review_route(page, frame, 'quote-review', 'normal')
+        page.locator('.lab-role-filter [data-role="all"]').click()
+        page.evaluate('''() => {
+            window.__researchModalPoints=[];
+            window.addEventListener('message',event=>{
+                const frame=document.querySelector('#frame'),message=event.data;
+                if(event.source===frame?.contentWindow && event.origin===location.origin &&
+                    message?.scope==='ORDER_R3_FRAME' && message.type==='point')
+                    window.__researchModalPoints.push(message.payload);
+            });
+        }''')
+        review = frame.locator('#order-app-quote #input-review-dialog')
+        expect(review).to_be_visible()
+        assert review.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        snapshot = remember_review_quote(frame)
+        review_note = '열린 견적 검토 모달 안의 위치 · 저장하지 않는 초안'
+        review_anchor = pick_native_modal_note(page, frame, review, review.locator('#input-review-title'), review_note)
+        same_review_quote(frame, snapshot)
+        same_review_application(page, frame)
+        page.locator('#close-drawer').click()
+        frame_click(page, review.locator('#input-review-back'))
+        expect(review).to_have_js_property('open', False)
+        expect(frame.locator('dialog:modal')).to_have_count(0)
+        wait_for_expression(page, '''(() => {
+            const frame=document.getElementById('frame'),state=frame.contentDocument.getElementById('order-single').__orderResearchInspector.inspect();
+            return state.active && !state.pendingRoute && !frame.inert;
+        })()''')
+
+        # The detailed Q3 fixture opens the original site editor. It owns a
+        # real unsaved text field, whose value and identity must survive both
+        # selecting a point and cancelling another pick with Escape.
+        phase = 'qa-visible-editor-location-picking'
+        choose_review_route(page, frame, 'q3', 'open')
+        editor = frame.locator('#order-app-quote #site-editor-dialog')
+        expect(editor).to_be_visible()
+        assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        name = editor.locator('#site-name')
+        draft_name = '위치 선택 중 유지할 사업장 초안'
+        name.fill(draft_name)
+        original_name = name.element_handle()
+        snapshot = remember_review_quote(frame)
+        editor_note = '편집 모달 안의 위치 · 제품 입력을 유지하는 초안'
+        editor_anchor = pick_native_modal_note(page, frame, editor, editor.locator('#site-editor-title'), editor_note)
+        expect(name).to_have_value(draft_name)
+        same_review_quote(frame, snapshot)
+        points_before_cancel = page.evaluate('window.__researchModalPoints.length')
+        page.locator('#reposition').click()
+        veil = frame.locator('#r3-veil')
+        expect(veil).to_be_visible()
+        veil.press('Escape')
+        expect(veil).to_be_hidden()
+        expect(page.locator('#drawer')).to_be_visible()
+        expect(page.locator('#point-state')).to_have_text('위치 지정됨')
+        expect(page.locator('#body-text')).to_have_value(editor_note)
+        assert page.evaluate('window.__researchModalPoints.length') == points_before_cancel
+        assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')"), 'Cancelling annotation must not cancel the product editor'
+        expect(name).to_have_value(draft_name)
+        assert original_name.evaluate("input => input===document.getElementById('site-name') && input.isConnected")
+        same_review_quote(frame, snapshot)
+        same_review_application(page, frame)
+        page.locator('#close-drawer').click()
+        frame_click(page, name)
+        name.press('End')
+        name.press('X')
+        expect(name).to_have_value(draft_name + 'X')
+        assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        assert_no_hidden_modal(frame)
+        receipt['checks'].append('visible native quote review and editable site dialogs accept trusted location picks while retaining the modal, quote and input; annotation Escape preserves the editor and original controls remain usable')
+        receipt['nativeModalPicking'] = {'reviewAnchor': review_anchor, 'editorAnchor': editor_anchor,
+                                         'trustedModalHeadingPicks': True, 'draftMarkersAtHeadings': True,
+                                         'retainedQuoteDocumentAndModel': True, 'unsavedEditorInputRetained': True,
+                                         'annotationEscapeRetainsEditor': True, 'originalReviewBackButtonWorks': True,
+                                         'editorAcceptsInputAfterPick': True, 'commercialAcceptance': False}
+        page.screenshot(path=str(OUT / 'native-modal-location-picking-1440.png'), full_page=True)
 
         critical = [item for item in failed if item['phase'] != 'owner-login' and (
             item['resource'] in ('document', 'script', 'stylesheet') or item['path'].startswith('/ia/research-assets/'))]

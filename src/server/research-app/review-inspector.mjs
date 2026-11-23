@@ -23,6 +23,9 @@ export function installResearchInspector(initialSession,options={}) {
   const allowed=new Set(['mode','pins','pin-sources','pin-view','visible','restore','motionScenario']);
   const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
   const anchors=new Map(),pinButtons=new Map();let elementIds=new WeakMap();
+  const annotation=node=>node?.nodeType===1&&Boolean(node.closest('[data-research-annotation]'));
+  const annotationMutation=record=>annotation(record.target)||[...record.addedNodes,...record.removedNodes].length>0&&[...record.addedNodes,...record.removedNodes].every(annotation);
+  const modalOrder=new Map();let modalSerial=0,pickFocus=null;
   let active=false,disposed=false,picking=false,shown=true,dirty=true,pins=[],selection=[],draftAnchor=null,keyPoint=null;
   let frame=0,readyFrame=0,readyTimer=0,revision=0,routeRevision=0,pendingRoute=null,previousMissing='',projection=null,panels=null,lastActivity=-Infinity;
   const style=document.createElement('style');style.dataset.researchInspector='';
@@ -47,11 +50,42 @@ export function installResearchInspector(initialSession,options={}) {
   veil.setAttribute('aria-label','코멘트 위치 선택. 방향키로 이동하고 Enter로 선택, Escape로 취소합니다.');
   markers.id='r3-pins';markers.setAttribute('aria-label','위치 코멘트');
   draft.className='approval-draft-pin';draft.textContent='+';draft.hidden=true;draft.setAttribute('aria-label','저장 전 위치');
+  const annotationNodes=[markers,veil,draft];for(const node of annotationNodes)node.dataset.researchAnnotation='';
   document.head.append(style);document.body.append(markers,veil,draft);
+  function visibleModal(dialog){
+    if(!dialog.isConnected||!dialog.open)return false;
+    try{if(!dialog.matches(':modal'))return false;}catch{return false;}
+    for(let node=dialog;node;node=node.parentElement){const css=getComputedStyle(node);if(node.hidden||node.inert||css.display==='none'||['hidden','collapse'].includes(css.visibility))return false;}
+    return dialog.getClientRects().length>0;
+  }
+  function modalHost(){
+    for(const dialog of modalOrder.keys())if(!dialog.open||!dialog.isConnected)modalOrder.delete(dialog);
+    const dialogs=[...document.querySelectorAll('dialog[open]')].filter(visibleModal);
+    if(dialogs.length<2)return dialogs[0]||document.body;
+    // Native top-layer order is independent of DOM order. A real hit or focus
+    // resolves an existing stack; observed opens also cover sibling dialogs.
+    for(const dialog of dialogs){const r=dialog.getBoundingClientRect(),x=Math.max(0,Math.min(innerWidth-1,r.left+r.width/2)),y=Math.max(0,Math.min(innerHeight-1,r.top+r.height/2));
+      const hit=document.elementFromPoint?.(x,y);if(!annotation(hit)){const owner=hit?.closest('dialog[open]');if(dialogs.includes(owner))return owner;}}
+    const latest=dialogs.filter(dialog=>modalOrder.has(dialog)).sort((a,b)=>modalOrder.get(b)-modalOrder.get(a))[0];
+    const focused=document.activeElement?.closest('dialog[open]');
+    return latest||(dialogs.includes(focused)?focused:document.body);
+  }
+  function hostAnnotations(){
+    const host=modalHost();let moved=false;
+    for(const node of annotationNodes)if(node.parentElement!==host){host.append(node);moved=true;}
+    if(picking&&moved&&document.hasFocus())veil.focus({preventScroll:true});
+    return host;
+  }
+  function modalEvent(event){
+    if(event.target?.localName!=='dialog')return;
+    if(event.type==='beforetoggle'&&event.newState==='open')modalOrder.set(event.target,++modalSerial);
+    schedule();
+  }
+  for(const type of ['beforetoggle','close'])addEventListener(type,modalEvent,true);
   const send=(type,payload={})=>{if(!disposed)parent.postMessage({scope:'ORDER_R3_FRAME',channel:session.channel,artifact:session.artifact,type,payload},parentOrigin);};
   const activityTypes=['pointerdown','keydown','input','wheel'];
   function activity(event){
-    if(disposed||!active||event.isTrusted!==true||!root.contains(event.target))return;
+    if(disposed||!active||event.isTrusted!==true||!root.contains(event.target)||annotation(event.target))return;
     const now=Date.now();if(now-lastActivity<30000)return;lastActivity=now;send('userActivity');
   }
   for(const type of activityTypes)addEventListener(type,activity,{capture:true,passive:true});
@@ -72,7 +106,7 @@ export function installResearchInspector(initialSession,options={}) {
   function index(){
     anchors.clear();elementIds=new WeakMap();const paths=new WeakMap(),buckets=new Map();
     for(const el of root.querySelectorAll('*')){
-      if(el.parentElement?.closest('svg')||['STYLE','SCRIPT','META'].includes(el.tagName))continue;
+      if(annotation(el)||el.parentElement?.closest('svg')||['STYLE','SCRIPT','META'].includes(el.tagName))continue;
       const path=(paths.get(el.parentElement)||'screen')+'/'+[el.localName,...fields.map(name=>el.getAttribute(name)||'')].join('|');paths.set(el,path);
       const id='a-'+hash(path);if(!buckets.has(id))buckets.set(id,[]);buckets.get(id).push(el);
     }
@@ -113,7 +147,7 @@ export function installResearchInspector(initialSession,options={}) {
   }
   function clearMarkers(){markers.replaceChildren();pinButtons.clear();}
   function paint(){
-    if(dirty)index();draft.hidden=true;
+    hostAnnotations();if(dirty)index();draft.hidden=true;
     if(!active||!shown||picking){clearMarkers();return;}
     const groups=new Map(),missing=[];
     pins.forEach((pin,i)=>{
@@ -146,9 +180,13 @@ export function installResearchInspector(initialSession,options={}) {
     followGeometry();
   }
   function setPicking(on){
-    picking=Boolean(active&&on);veil.hidden=!picking;
+    const wasPicking=picking,focused=document.activeElement;
+    picking=Boolean(active&&on);
+    const host=hostAnnotations();veil.hidden=!picking;
+    if(picking&&!wasPicking)pickFocus=host!==document.body&&host.contains(focused)&&!annotation(focused)?focused:null;
     if(picking){keyPoint={x:innerWidth/2,y:innerHeight/2};veil.style.removeProperty('--x');veil.style.removeProperty('--y');veil.focus({preventScroll:true});}
-    else keyPoint=null;
+    else{keyPoint=null;const restore=pickFocus;pickFocus=null;
+      if(wasPicking&&focused===veil&&document.hasFocus()&&restore?.isConnected&&restore.getClientRects().length&&!restore.closest('[hidden],[inert]')&&(host===document.body||host.contains(restore)))restore.focus({preventScroll:true});}
     schedule();
   }
   function safeScroll(){
@@ -156,7 +194,7 @@ export function installResearchInspector(initialSession,options={}) {
     for(const [id,el] of anchors)if(el!==root&&(el.scrollTop||el.scrollLeft))list.push({id,x:Math.max(0,el.scrollLeft),y:Math.max(0,el.scrollTop)});
     return list.slice(0,24);
   }
-  function visibleLayers(){return [...root.querySelectorAll('[aria-expanded=true],[open],dialog[open],[aria-modal=true],[data-r3-popup]:not([hidden])')].filter(el=>el.checkVisibility?el.checkVisibility():el.getClientRects().length).map(identity).filter((id,i,all)=>all.indexOf(id)===i).slice(0,24);}
+  function visibleLayers(){return [...root.querySelectorAll('[aria-expanded=true],[open],dialog[open],[aria-modal=true],[data-r3-popup]:not([hidden])')].filter(el=>!annotation(el)&&(el.checkVisibility?el.checkVisibility():el.getClientRects().length)).map(identity).filter((id,i,all)=>all.indexOf(id)===i).slice(0,24);}
   function choose(x,y){
     if(!active||!picking||![x,y].every(Number.isFinite))return;
     if(dirty)index();veil.style.pointerEvents='none';markers.style.visibility='hidden';
@@ -172,8 +210,9 @@ export function installResearchInspector(initialSession,options={}) {
   for(const type of pointerTypes)addEventListener(type,pointEvent,true);
   function keyEvent(event){
     if(!active||!picking||event.target!==veil||event.isComposing)return;
-    if(!['Escape','Enter',' ','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','c','C'].includes(event.key))return;
+    if(!['Escape','Enter',' ','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown','c','C'].includes(event.key))return;
     event.preventDefault();event.stopImmediatePropagation();
+    if(event.key==='Tab')return;
     if(['Escape','c','C'].includes(event.key)){setPicking(false);send('cancelPick');return;}
     if(event.key==='Enter'||event.key===' '){choose(keyPoint.x,keyPoint.y);return;}
     const step=event.shiftKey?20:4,dx=event.key==='ArrowLeft'?-step:event.key==='ArrowRight'?step:0,dy=event.key==='ArrowUp'?-step:event.key==='ArrowDown'?step:0;
@@ -234,17 +273,23 @@ export function installResearchInspector(initialSession,options={}) {
     readyFrame=requestAnimationFrame(ready);readyTimer=setTimeout(ready,50);
     return true;
   }
-  function changed(){dirty=true;schedule();}
-  const observer=new MutationObserver(changed);observer.observe(root,{childList:true,subtree:true});
+  function changed(records){
+    if(Array.isArray(records)){records=records.filter(record=>!annotationMutation(record));if(!records.length)return;}
+    if(!Array.isArray(records)||records.some(record=>record.type==='childList'&&root.contains(record.target)))dirty=true;
+    if(Array.isArray(records))for(const record of records)if(record.type==='attributes'&&record.attributeName==='open'&&record.oldValue===null&&record.target.open)modalOrder.set(record.target,++modalSerial);
+    schedule();
+  }
+  const observer=new MutationObserver(changed);observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['open','hidden','inert']});
   const geometryEvents=['animationstart','animationend','animationcancel','transitionrun','transitionend','transitioncancel','click','pointerdown','keydown','input','change'];
   for(const type of geometryEvents)root.addEventListener(type,schedule,true);
   document.fonts?.ready?.then(schedule,()=>{});document.fonts?.addEventListener('loadingdone',schedule);
   addEventListener('order:research-route',routeChanged);addEventListener('scroll',schedule,true);addEventListener('resize',schedule);
   root.addEventListener('r3-motion-identity-reset',changed);
   function dispose(){
-    if(disposed)return;disposed=true;active=false;revision++;cancelAnimationFrame(frame);cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);observer.disconnect();resizeObserver?.disconnect();observedGeometry.clear();releaseHelpers();
+    if(disposed)return;setPicking(false);disposed=true;active=false;revision++;cancelAnimationFrame(frame);cancelAnimationFrame(readyFrame);clearTimeout(readyTimer);observer.disconnect();resizeObserver?.disconnect();observedGeometry.clear();releaseHelpers();modalOrder.clear();
     removeEventListener('message',gate,true);removeEventListener('message',receive);removeEventListener('keydown',keyEvent,true);removeEventListener('order:research-route',routeChanged);removeEventListener('scroll',schedule,true);removeEventListener('resize',schedule);removeEventListener('pagehide',dispose);
     for(const type of pointerTypes)removeEventListener(type,pointEvent,true);root.removeEventListener('r3-motion-identity-reset',changed);
+    for(const type of ['beforetoggle','close'])removeEventListener(type,modalEvent,true);
     for(const type of activityTypes)removeEventListener(type,activity,true);
     for(const type of geometryEvents)root.removeEventListener(type,schedule,true);
     document.fonts?.removeEventListener('loadingdone',schedule);
