@@ -17,10 +17,12 @@ def wordmark_geometry(word):
                 opacity:Number(d.opacity),marginInlineStart:d.marginInlineStart}};
     }""")
     period = geometry['period']
-    assert period['text'] == '.' and period['display'] == 'inline-block', geometry
+    assert period['text'] == '.', geometry
     if geometry['authenticated']:
+        assert period['display'] == 'block', geometry
         assert period['position'] == 'absolute' and period['width'] == 0 and period['opacity'] == 0, geometry
     else:
+        assert period['display'] == 'inline-block', geometry
         assert period['position'] == 'static' and period['width'] > 0 and period['opacity'] == 1, geometry
         assert period['marginInlineStart'] == '3px', geometry
     return geometry
