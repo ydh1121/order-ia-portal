@@ -185,6 +185,13 @@ export async function mountResearchApplication(config, environment) {
     if(priceWorkspace&&(route.kind==='pricing'||pageRoute?.kind==='pricing')&&next.kind!=='pricing'&&!priceWorkspace.canLeave()){
       notify('단가표의 편집 창이나 저장 작업을 먼저 마쳐 주세요. 현재 입력은 유지됩니다.');if(!history)updateLocation(true);return false;
     }
+    // A native modal blocks the whole document even when its retained quote
+    // owner is hidden. Check the actual owner on every route, including quote
+    // steps and account/auth overlays, before changing any page or fixture.
+    if(workspace&&!await workspace.prepareNavigation()){
+      notify('열려 있는 견적 창의 편집이나 확인을 먼저 마쳐 주세요. 현재 입력은 유지됩니다.');if(!history)updateLocation(true);return false;
+    }
+    if(sequence!==epoch||disposed)return false;
     let priceSelected=false;
     if(next.kind==='pricing'){
       const existing=priceWorkspace;

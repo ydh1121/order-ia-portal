@@ -189,7 +189,7 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
     const abort=()=>controller.dispose();
     controller={mode,fixtureScope,app,sync,repository,ready:Promise.resolve(app),navigate,
       snapshot:()=>app.researchBridge.snapshot(),inspect:()=>({...app.researchBridge.inspect(),lifecycle:environment.inspect()}),
-      canLeave:()=>app.researchBridge.canLeave(),save:()=>app.researchBridge.save(),
+      canLeave:()=>app.researchBridge.canLeave(),prepareNavigation:()=>app.researchBridge.prepareNavigation(),save:()=>app.researchBridge.save(),
       async restoreDraft(record){if(record?.mode!==mode)return {ok:false,status:'MODE_MISMATCH'};const result=await repository.restore(mode,app.quoteDraftBridge,{expectedRevision:record.revision,expectedToken:record.versionToken,signal,isCurrent:()=>!disposed});notify();return result;},
       async applyScenario(value){const result=await app.researchBridge.applyScenario(value);notify();return result;},
       back(){if(!environment.inspect().modalHistory)return false;environment.history.back();return true;},
