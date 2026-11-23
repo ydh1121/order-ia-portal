@@ -214,3 +214,19 @@ test('account switch persists, scopes reads and writes, and refuses revoked acce
   assert.deepEqual((await update('/account-context',w.command('switch',{...first,expectedRevision:1}),1)).body.selected,first);
   assert.deepEqual((await get('/purchases')).body.items.map(r=>r.id),['first-order']);
 });
+
+test('supplier contract desk and product registration use the same selected operator organization',async t=>{
+  const w=await workspace(t),base='/runs/'+w.run+'/as/operator/price';
+  const select=(orgId,expectedRevision)=>w.product('operator','/account-context',w.command('switch',{orgId,siteId:'',expectedRevision}));
+  const initial=await w.api(base+'/desk'),version=initial.body.versions[0];
+  assert.equal(version.supplier_id,'lab-farm');
+  assert.equal((await select('lab-store',0)).status,200);
+  assert.equal((await w.api(base+'/desk')).body.versions.length,0);
+  assert.deepEqual((await w.api(base+'/registration')).body.organizations.map(o=>o.supplierId),['lab-store']);
+  assert.equal((await w.api(base+'/registration',{action:'product',requestKey:crypto.randomUUID(),supplierId:'lab-farm',
+    supplierName:'공급처',originName:'다른 출고지',productName:'계란',packSize:30,shell:'1'})).status,403);
+  const outside=await w.direct('lab-operator','/account-context');assert.equal(outside.body.selected.orgId,'lab-store');
+  assert.equal((await select('lab-farm',1)).status,200);
+  assert.deepEqual((await w.api(base+'/desk')).body.versions.map(v=>v.id),initial.body.versions.map(v=>v.id));
+  assert.deepEqual((await w.api(base+'/registration')).body.organizations.map(o=>o.supplierId),['lab-farm']);
+});

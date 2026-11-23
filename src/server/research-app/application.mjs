@@ -260,7 +260,8 @@ export async function mountResearchApplication(config, environment) {
       }
       else if(next.kind==='account'){
         authSheet?.close?.({immediate:true});
-        const panel=input.panel||(config.accountRun&&(next.screen==='profile'&&next.state==='restricted'||next.screen==='account-settings'&&next.state==='normal')?'profile.account':next.screen==='profile'?(next.state==='notification'?'notifications':next.state==='menu'?null:'profile.personal'):next.screen==='account-settings'&&next.state==='edit'?'profile.personal':['account-settings','saved-quote','delivery-schedule'].includes(next.screen)?(next.screen==='account-settings'?'profile':'manage')+'.research.'+next.screen+'.'+next.state:next.panel);
+        const workingAccount=config.accountRun&&(next.screen==='profile'&&next.state==='restricted'||next.screen==='account-settings'&&next.state==='normal');
+        const panel=workingAccount?'profile.account':input.panel||(next.screen==='profile'?(next.state==='notification'?'notifications':next.state==='menu'?null:'profile.personal'):next.screen==='account-settings'&&next.state==='edit'?'profile.personal':['account-settings','saved-quote','delivery-schedule'].includes(next.screen)?(next.screen==='account-settings'?'profile':'manage')+'.research.'+next.screen+'.'+next.state:next.panel);
         if(!authenticated())return await navigate({screen:'login',state:'empty',parent});
         activeAccountPanel=panel||'root';brandMenu?.open?.(panel,{title:panelTitles[next.screen]||null});
       }else{

@@ -1,3 +1,4 @@
+import {researchQuoteResultSource} from './quote-source-adapter.mjs';
 import {researchOnboardingSource} from './onboarding-polish.mjs';
 import {researchPassesSource} from './passes-source.mjs';
 import {researchBusinessClassificationSource} from './business-classification-source.mjs';
@@ -12,7 +13,10 @@ export function researchSceneSource(screen,source){
     source=once(source,"run:()=>brandMenu.open('manage.quotes')","run:()=>brandMenu.open('manage.research.passes.grid',{title:'오더 패스'})");
     source=researchOnboardingSource(source);
   }
-  if(screen==='quote-result')source=once(source,'const view=mount(host,{','const view=mount(host,{brand:false,');
+  if(screen==='quote-result'){
+    source=researchQuoteResultSource(source);
+    source=once(source,'const view=mount(host,{','const view=mount(host,{brand:false,');
+  }
   if(screen==='business'){
     source=researchBusinessClassificationSource(source);
     source=once(source,

@@ -101,8 +101,9 @@ async function workspace(t){
 }
 
 test('order and application menus expose distinct real routes while the original application archive remains intact',async()=>{
-  assert.equal(productLabPages.length,101);assert.equal(new Set(productLabPages.map(page=>page.id)).size,101);
-  assert.equal(productLabPages.filter(page=>page.kind==='product').length,16);
+  assert.equal(productLabPages.length,102);assert.equal(new Set(productLabPages.map(page=>page.id)).size,102);
+  assert.equal(productLabPages.filter(page=>page.kind==='product').length,17);
+  assert.deepEqual(entry('account-context'),{id:'account-context',label:'조직·사업장 계정 전환',view:'research-r3',screen:'profile',state:'restricted',kind:'product'});
   assert.equal(productLabPages.filter(page=>page.kind==='component').length,2);
   assert.equal(productLabPages.filter(page=>page.kind==='reference').length,83);
   assert.deepEqual(entry('customer-orders'),{id:'customer-orders',label:'주문·납품·거래 문서',view:'product-r3',screen:'store-purchase',state:'select',kind:'product'});

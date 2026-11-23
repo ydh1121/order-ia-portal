@@ -228,3 +228,26 @@ test('authenticated research sync and mode copy use regular storage only, picker
     assert.ok(Object.keys(f.win.localStorage).every(key=>key.startsWith('order.app.test-account:')));assert.deepEqual(f.failures,[]);
   }finally{f.close();}
 });
+
+test('issued and expiry dates appear together only when disclosed on the regular and review result screens',async()=>{
+ const {researchScene}=await import('../src/server/research-app/page.mjs');
+ const dom=new JSDOM('<main><div data-review-result></div></main>',{runScripts:'outside-only',pretendToBeVisual:true});
+ const w=dom.window,root=w.document.querySelector('main'),host=root.querySelector('[data-review-result]');
+ w.matchMedia=()=>({matches:true});
+ try{
+  const path='web/quote-result-screen.mjs',source=getResearchQuoteSource(path,served(path));
+  const mount=w.eval(source.replace(/^export /gm,'')+'\nmountQuoteResult');
+  const view=mount(host,{brand:false,reducedMotion:()=>true});
+  const issued=Date.parse('2026-11-14T00:00:00+09:00'),end=Date.parse('2026-11-21T00:00:00+09:00');
+  for(const start of [undefined,NaN,end,end+1,issued]){
+   view.show({state:'expired',issued:start,end,proposed:'11940000'});
+   assert.equal(host.querySelector('.oq-note').textContent,start===issued?'견적 유효기간 2026.11.14 ~ 2026.11.21':'견적 만료일 2026.11.21');
+   assert.equal(host.querySelectorAll('.oq-series:not([hidden])').length,0);
+  }
+  view.clear();const scene=await researchScene('quote-result','expired');
+  w.eval(scene.mount);const dispose=w.ORDER_DESIGN_MODULES.find(r=>r.id==='quote-result').mount(root,'expired',{select(){}});
+  assert.equal(host.querySelector('.oq-note').textContent,'견적 유효기간 2026.11.14 ~ 2026.11.21');
+  assert.equal(host.querySelectorAll('.oq-series:not([hidden])').length,0);
+  dispose?.();
+ }finally{dom.window.close();}
+});

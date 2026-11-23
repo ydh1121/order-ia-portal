@@ -127,9 +127,19 @@ const researchBridge=Object.freeze({
 });
 `;
 
+/** The regular and review routes render the same expiry note from disclosed dates. */
+export function researchQuoteResultSource(source){
+  const expiry="m.state==='expired'&&dated(m.end)?'견적 만료일 '+dated(m.end):''";
+  return once(source,expiry,`m.state==='expired'&&dated(m.end)?(
+    Number.isFinite(m.issued)&&m.issued>=-8640000000000000&&m.issued<m.end
+      ? '견적 유효기간 '+dated(m.issued)+' ~ '+dated(m.end)
+      : '견적 만료일 '+dated(m.end)):''`);
+}
+
 /** Applies explicit integration seams to the *served*, extended regular asset. */
 export function getResearchQuoteSource(path,source){
   if(typeof source!=='string')throw TypeError('RESEARCH_QUOTE_SOURCE_REQUIRED');
+  if(path==='web/quote-result-screen.mjs')return researchQuoteResultSource(source);
   if(path==='web/app.mjs'){
     source=once(source,
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null}={}){",

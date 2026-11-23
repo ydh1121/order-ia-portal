@@ -50,3 +50,10 @@ export async function workingRevision(db, actorId, request) {
   if (String(revision) !== presented) throw Object.assign(Error('ACCOUNT_CONTEXT_CHANGED'), {status:409});
   return revision;
 }
+
+// A separate linked writer grant can authorize a product without staff membership.
+// An explicitly chosen organization still limits the linked writer's workspace.
+export const workingPriceConnection = `NOT EXISTS(SELECT 1 FROM order_operation chosen
+ WHERE chosen.kind='account-context' AND chosen.id=a.actor_id AND
+ (chosen.org_id<>a.supplier_id OR chosen.site_id<>'' OR NOT EXISTS(
+ SELECT 1 FROM r3_membership g WHERE g.actor_id=chosen.id AND g.org_id=chosen.org_id AND g.site_id='' AND g.active=1)))`;

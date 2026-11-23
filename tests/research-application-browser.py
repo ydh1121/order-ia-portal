@@ -191,6 +191,71 @@ def choose_review_route(page, frame, screen, state):
     ready_review_route(page, frame, screen, state)
 
 
+def check_detailed_q3_actions(page, frame):
+    """Measure the retained 390px product with two actual fixture locations."""
+    choose_review_route(page, frame, 'q4', 'mixed')
+    quote = frame.locator('#order-app-quote')
+    expect(quote.locator('[data-research-quote]')).to_have_attribute('data-research-quote', 'detailed')
+    frame_click(page, quote.locator('.accordion-trigger[data-open="q3"]'))
+    sites = quote.locator('#q3-sites .q3-site-accordion')
+    expect(sites).to_have_count(2)
+    site = sites.first
+    summary = site.locator(':scope > .accordion-trigger')
+    if summary.get_attribute('aria-expanded') != 'true':
+        frame_click(page, summary)
+    expect(summary).to_have_attribute('aria-expanded', 'true')
+    address = site.locator('.q3-address-row')
+    edit = address.locator('[data-site-edit]')
+    delete = address.locator('[data-site-delete]')
+    if not delete.is_visible():
+        frame_click(page, address.locator('[data-saved-actions-toggle]'))
+    copy = site.locator('.q3-contact-grid [data-contact-copy]')
+    for action in [edit, delete, copy]:
+        expect(action).to_be_visible()
+
+    geometry = site.evaluate("""site => {
+        const box = selector => {
+            const r=site.querySelector(selector).getBoundingClientRect();
+            return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};
+        };
+        return {viewport:innerWidth, address:box('.q3-address-row'), edit:box('[data-site-edit]'),
+            delete:box('[data-site-delete]'), email:box('[data-q3-summary-field="email"]'),
+            contacts:box('.q3-contact-grid'), copy:box('[data-contact-copy]')};
+    }""")
+    assert geometry['viewport'] == 390, geometry
+    assert geometry['edit']['right'] <= geometry['delete']['left'] + 1, geometry
+    assert geometry['address']['bottom'] <= geometry['contacts']['top'] + 1, geometry
+    assert geometry['email']['bottom'] <= geometry['copy']['top'] + 1, geometry
+    assert abs(geometry['contacts']['left'] - geometry['copy']['left']) <= 1, geometry
+    for action in ['edit', 'delete', 'copy']:
+        rect = geometry[action]
+        assert 0 <= rect['left'] < rect['right'] <= geometry['viewport'] + 1, geometry
+
+    site.screenshot(path=str(OUT / 'q3-detailed-site-actions-390.png'))
+    model = quote.evaluate('() => JSON.stringify(ORDER_RESEARCH_APP.snapshot().quote.locations)')
+    assert len(json.loads(model)) == 2
+    for name, trigger, dialog_id, cancel in [
+            ('copy', copy, 'q3-contact-copy', '[data-copy-cancel]'),
+            ('edit', edit, 'site-editor-dialog', '#cancel-site'),
+            ('delete', delete, 'q3-action-confirm', '[data-q3-confirm-cancel]')]:
+        if name == 'delete' and not delete.is_visible():
+            frame_click(page, address.locator('[data-saved-actions-toggle]'))
+        frame_click(page, trigger)
+        dialog = frame.locator('#' + dialog_id)
+        expect(dialog).to_be_visible()
+        assert dialog.evaluate("node => node.open && node.matches(':modal')"), name
+        if name == 'copy':
+            expect(dialog.locator('[data-contact-copy-target]')).to_have_count(1)
+        frame_click(page, dialog.locator(cancel))
+        expect(dialog).to_be_hidden()
+        assert quote.evaluate('() => JSON.stringify(ORDER_RESEARCH_APP.snapshot().quote.locations)') == model, name
+    return {'commentId': '86fd2971-843f-4444-8fb8-5e689f26ff8e',
+            'legacySource': 'q3/open/email/390', 'mode': 'detailed', 'siteCount': 2,
+            'fixtureOrigin': 'q4/mixed with the product Q3 accordion', 'geometry': geometry,
+            'trustedOpenAndCancel': ['copy','edit','delete'], 'siteDataPreserved': True,
+            'screenshot': 'q3-detailed-site-actions-390.png'}
+
+
 def remember_review_quote(frame):
     """Observe the original quote document and model before hiding its owner."""
     return frame.locator('#order-app-quote').evaluate('''root => {
@@ -1097,8 +1162,13 @@ def main():
         # The detailed Q3 fixture opens the original site editor. It owns a
         # real unsaved text field, whose value and identity must survive both
         # selecting a point and cancelling another pick with Escape.
+        phase = 'qa-detailed-business-actions'
+        receipt['q3BusinessActions390'] = check_detailed_q3_actions(page, frame)
         phase = 'qa-visible-editor-location-picking'
         choose_review_route(page, frame, 'q3', 'open')
+        expect(frame.locator('#q3-sites .q3-site-accordion')).to_have_count(1)
+        expect(frame.locator('#q3-sites [data-contact-copy]')).to_have_count(0)
+        receipt['q3BusinessActions390']['singleSiteSourceHasNoCopyDestination'] = True
         editor = frame.locator('#order-app-quote #site-editor-dialog')
         expect(editor).to_be_visible()
         assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
