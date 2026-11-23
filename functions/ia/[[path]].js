@@ -58,8 +58,12 @@ export async function onRequest({request,env}){
  }
  if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && isBusinessSurface(url)))return new Response(null,{status:403,headers:base});
  if(researchAsset){
-   const {serveResearchAsset}=await import('../../src/server/research-app/page.mjs');
-   const response=await serveResearchAsset(url.pathname,env,url.origin),headers=new Headers(response.headers);
+   const {deliveryBuild,deliverResearchAsset}=await import('../../src/server/research-release-delivery.mjs');
+   const prefix='/ia/research-assets/'+deliveryBuild+'/';
+   const response=url.pathname.startsWith(prefix)
+     ?await deliverResearchAsset(url.pathname.slice(prefix.length),env,url.origin)
+     :await (await import('../../src/server/research-app/page.mjs')).serveResearchAsset(url.pathname,env,url.origin);
+   const headers=new Headers(response.headers);
    for(const [key,value]of Object.entries(base))headers.set(key,value);
    return new Response(request.method==='HEAD'?null:response.body,{status:response.status,headers});
  }
@@ -99,8 +103,8 @@ export async function onRequest({request,env}){
  }else if(r3View==='research-r3'){
    headers['X-Frame-Options']='SAMEORIGIN';
    headers['Content-Security-Policy']=`default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dns.google https://cloudflare-dns.com; img-src 'self' data:; font-src 'self' data:; form-action 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`;
-   const {renderResearchApplication}=await import('../../src/server/research-app/page.mjs');
-   try{html=await renderResearchApplication(nonce,url.searchParams,env,url.origin,productContext.mode==='lab'?productContext:null);}catch(error){return new Response('이 연구 빌드를 열 수 없습니다.',{status:error.status||503,headers:{...base,'Content-Type':'text/plain; charset=utf-8'}});}
+   const {renderDeliveryApplication}=await import('../../src/server/research-release-delivery.mjs');
+   try{html=await renderDeliveryApplication(nonce,url.searchParams,env,url.origin,productContext.mode==='lab'?productContext:null);}catch(error){return new Response('이 연구 빌드를 열 수 없습니다.',{status:error.status||503,headers:{...base,'Content-Type':'text/plain; charset=utf-8'}});}
  }else if(r3View==='product-r3'){
    const screen=url.searchParams.get('screen')||'store-purchase',state=url.searchParams.get('state')||'default',componentVariant=url.searchParams.get('componentVariant')||null;
    if(screen==='component-library'){

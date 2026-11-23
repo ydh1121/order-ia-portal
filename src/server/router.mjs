@@ -56,13 +56,13 @@ export async function handleIaRequest(request,env,dependencies={}) {
         const {handleQaNavigation}=await import('./r3-qa-navigation.mjs');return await handleQaNavigation(ctx);
       }
       if(r3[1]==='qa' && ctx.path==='/artifact' && request.method==='GET'){
-        const {serveR3Artifact}=await import('./r3-qa-page.mjs');return await serveR3Artifact(request,env);
+        const {serveDeliveredQaArtifact}=await import('./r3-qa-delivery.mjs');return await serveDeliveredQaArtifact(request,env);
       }
       if(r3[1]==='qa'){
         const {handleR3Review}=await import('./r3-review-store.mjs');
         if(request.method==='POST'){
-          const {isR3ReviewTarget}=await import('./r3-qa-page.mjs');
-          ctx.checkTarget=isR3ReviewTarget;
+          const {isDeliveredReviewTarget}=await import('./r3-qa-delivery.mjs');
+          ctx.checkTarget=(target,revision)=>isDeliveredReviewTarget(target,revision,env,url.origin);
         }
         return await handleR3Review(ctx);
       }

@@ -9,6 +9,10 @@ import {readFileSync, readdirSync} from 'node:fs';
 import {join,dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {researchReleases} from '../src/server/research-app/releases.gen.mjs';
+import {gunzipSync} from 'node:zlib';
+import {deliveryBuild,deliveryManifest} from '../src/server/research-delivery-identity.gen.mjs';
+import {qaCatalogIdentity} from '../src/server/r3-qa-catalog-identity.gen.mjs';
+import {r1Recorded} from '../src/server/r1-recorded-index.gen.mjs';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const domain='https://ia-testing.cloudflareaccess.com',audience='R0PLACEHOLDER_1234567890';
 const kp=generateKeyPairSync('rsa',{modulusLength:2048});
@@ -50,7 +54,24 @@ test('public entry remains nonconfidential and private releases are confined to 
  // Inspect the packaged public/index.html relative to this test file.
  const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','owner.css','owner.js','price-template.xlsx','vendor']);
  assert.deepEqual(readdirSync(join(publicRoot,'ia')),['research-releases']);
- assert.deepEqual(readdirSync(join(publicRoot,'ia','research-releases')).sort(),Object.keys(researchReleases).map(build=>build+'.json.gz').sort());
+ const releasesRoot=join(publicRoot,'ia','research-releases');
+ const packs=Object.keys(researchReleases).map(build=>build+'.json.gz');
+ assert.deepEqual(readdirSync(releasesRoot).sort(),[...packs,deliveryBuild,'qa-catalog','r1-recorded'].sort());
+ const deliveryRoot=join(releasesRoot,deliveryBuild),indexBytes=readFileSync(join(deliveryRoot,'index.bin'));
+ assert.equal(createHash('sha256').update(indexBytes).digest('hex'),deliveryManifest[2]);
+ const index=JSON.parse(gunzipSync(indexBytes));
+ assert.equal(index.build,deliveryBuild);
+ assert.equal(index.source,researchReleases[deliveryBuild].packSha256);
+ assert.equal(Object.keys(index.assets).length,541);
+ const privateFiles=['index.bin','shell.bin',...index.parts.map((_,i)=>i+'.bin')];
+ assert.equal(privateFiles.length,115);
+ assert.deepEqual(readdirSync(deliveryRoot).sort(),privateFiles.sort());
+ const catalogs=Object.values(qaCatalogIdentity.modes).map(mode=>mode.sha256+'.json');
+ assert.equal(catalogs.length,2);
+ assert.deepEqual(readdirSync(join(releasesRoot,'qa-catalog')).sort(),catalogs.sort());
+ const recorded=[r1Recorded.shared,...r1Recorded.buckets].map(hash=>hash+'.json.gz');
+ assert.equal(recorded.length,17);
+ assert.deepEqual(readdirSync(join(releasesRoot,'r1-recorded')).sort(),recorded.sort());
  // The HTTP-denial and exact internal binding bytes are independently exercised
  // in research-browser-assets.test.mjs; no public index links to these packs.
  assert.deepEqual(readdirSync(join(publicRoot,'vendor')).sort(),['r3-pdf','research']);
