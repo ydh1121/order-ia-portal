@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto,generateKeyPairSync} from 'node:crypto';
+import {webcrypto,generateKeyPairSync,createHash} from 'node:crypto';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {permit,requireActor} from '../src/server/auth.mjs';
 import {fetchTab} from '../src/server/google.mjs';
@@ -53,7 +53,12 @@ test('public entry remains nonconfidential and private releases are confined to 
  assert.deepEqual(readdirSync(join(publicRoot,'ia','research-releases')).sort(),Object.keys(researchReleases).map(build=>build+'.json.gz').sort());
  // The HTTP-denial and exact internal binding bytes are independently exercised
  // in research-browser-assets.test.mjs; no public index links to these packs.
- assert.deepEqual(readdirSync(join(publicRoot,'vendor')),['r3-pdf']);
+ assert.deepEqual(readdirSync(join(publicRoot,'vendor')).sort(),['r3-pdf','research']);
  assert.deepEqual(readdirSync(join(publicRoot,'vendor','r3-pdf')).sort(),['LICENSE.txt','SOURCE.txt','pdf.min.mjs','pdf.worker.min.mjs']);
+ const industry='nts-industry-2025-edfa839b2a2d90fc.json';
+ assert.deepEqual(readdirSync(join(publicRoot,'vendor','research')),[industry]);
+ const classification=readFileSync(join(publicRoot,'vendor','research',industry));
+ assert.equal(createHash('sha256').update(classification).digest('hex'),'edfa839b2a2d90fc279aea102b447beccf1623dd04a440aaa3fa5381303fc1b4','the only added public file is the exact official classification reference');
+ const reference=JSON.parse(classification);assert.equal(new URL(reference.source).hostname,'www.nts.go.kr');assert.equal(reference.format,'order-business-classification/v1');
  for(const term of ['PENDING-','/src/internal','docs.google.com','drive.google.com','F17','사업자등록증','sk_live_'])assert.ok(!entry.includes(term));
 });

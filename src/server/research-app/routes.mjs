@@ -17,7 +17,7 @@ export function researchRoute(input={}, previous={}) {
   if(screen==='role-consult'){screen='drawer';state='info';}
   if(screen==='role-delivery'){screen='delivery-request';state='ready';}
   if(screen==='role-case'){screen='proof';state='empty';}
-  if(state==='default')state=({q1:'before',q2:'empty',q3:'open',q4:'open','quote-review':'normal','account-settings':'normal','quote-result':'saving','quote-wait':'entry','saved-quote':'list','store-settings':'list','delivery-schedule':'calendar','delivery-request':'ready','admin-campaigns':'normal','price-workspace':'costs',passes:'grid',drawer:'info',business:'empty',proof:'empty'})[screen]||state;
+  if(state==='default')state=({q1:'before',q2:'empty',q3:'open',q4:'open','quote-review':'normal','account-settings':'normal','quote-result':'saving','quote-wait':'entry','saved-quote':'list','store-settings':'list','delivery-schedule':'calendar','delivery-request':'ready','admin-campaigns':'normal','price-workspace':'costs',passes:'grid',drawer:'info',business:'empty',proof:'empty',notifications:'list'})[screen]||state;
   if(screen==='onboarding'&&state==='default')state='guest-1';
   const variant=/^[\w-]{1,100}$/.test(input.variant||'')?input.variant:'email';
   if(!/^[\w-]{1,100}$/.test(screen)||!/^[\w-]{1,100}$/.test(state))throw TypeError('INVALID_RESEARCH_ROUTE');

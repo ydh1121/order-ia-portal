@@ -1,3 +1,4 @@
+import {workingMemberships,workingPriceConnection} from './product-account-context.mjs';
 import {createPriceBookModel} from './r3-price-book-model.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
 import {PolicyError} from './order-engine/calculation/supply-policy.mjs';
@@ -39,8 +40,8 @@ async function prepareImport(db,actor,own,b){
   if(![b.supplierId,b.originId,b.productId].every(code)||!Number.isSafeInteger(b.packSize)||!['1','2','3','4','unspecified'].includes(b.shell))fail('INVALID_REQUEST',400);
   const catalog=await sql(db,`SELECT c.definition FROM r3_price_catalog c JOIN r3_price_scope s USING(supplier_id,origin_id,product_id)
     WHERE s.supplier_id=? AND s.origin_id=? AND s.product_id=? AND s.active=1 AND (
-    EXISTS(SELECT 1 FROM r3_membership m WHERE m.org_id=s.supplier_id AND m.actor_id=? AND m.site_id='' AND m.active=1 AND m.role IN('SUPPLIER','OPERATOR'))
-    OR EXISTS(SELECT 1 FROM r3_price_connection a WHERE a.actor_id=? AND a.state='LINKED' AND a.supplier_id=s.supplier_id
+    EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.org_id=s.supplier_id AND m.actor_id=? AND m.site_id='' AND m.active=1 AND m.role IN('SUPPLIER','OPERATOR'))
+    OR EXISTS(SELECT 1 FROM r3_price_connection a WHERE a.actor_id=? AND a.state='LINKED' AND ${workingPriceConnection} AND a.supplier_id=s.supplier_id
       AND a.origin_id=s.origin_id AND a.product_id=s.product_id AND NOT EXISTS(SELECT 1 FROM r3_membership r WHERE r.actor_id=a.actor_id
         AND r.org_id=a.supplier_id AND r.role='SUPPLIER' AND r.active=0)))`,b.supplierId,b.originId,b.productId,actor.id,actor.id).first();
   if(!catalog)fail('ACCESS_REQUIRED',403);

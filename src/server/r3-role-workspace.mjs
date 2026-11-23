@@ -1,6 +1,7 @@
+import {workingMemberships} from './product-account-context.mjs';
 const prepared=(db,sql,...params)=>db.prepare(sql).bind(...params);
 const all=async(db,sql,...params)=>(await prepared(db,sql,...params).all()).results;
-const releaseAdmin=`EXISTS (SELECT 1 FROM r3_release_admin a JOIN r3_membership m ON m.actor_id=a.actor_id WHERE a.actor_id=? AND a.active=1 AND m.active=1 AND m.role='OPERATOR')`;
+const releaseAdmin=`EXISTS (SELECT 1 FROM r3_release_admin a JOIN ${workingMemberships} m ON m.actor_id=a.actor_id WHERE a.actor_id=? AND a.active=1 AND m.active=1 AND m.role='OPERATOR')`;
 const readAdmin=(db,id)=>prepared(db,'SELECT 1 ok WHERE '+releaseAdmin,id).first();
 const currentMenu=db=>db.prepare('SELECT enabled,revision FROM r3_menu_publication ORDER BY revision DESC LIMIT 1').first();
 
@@ -15,21 +16,34 @@ export async function workspaceOptions(db,actorId) {
     json_extract(pc.definition,'$.supplierName') AS supplierName,
     CASE WHEN julianday(q.expires_at)>julianday('now') THEN json_extract(q.result_json,'$.quotes[0].total.decimal') END AS total,
     json_array_length(q.sources_json,'$.lines') AS lineCount,
+    json_extract(q.sources_json,'$.lines') AS displayLineInputs,
+    json_extract(q.sources_json,'$.versions') AS displayLineVersions,
     (SELECT c.id FROM r3_case c WHERE c.kind='delivery' AND c.quote_id=q.id AND c.state NOT IN ('CANCELLED','REJECTED') LIMIT 1) AS deliveryCase,
     (SELECT c.state FROM r3_case c WHERE c.kind='delivery' AND c.quote_id=q.id AND c.state NOT IN ('CANCELLED','REJECTED') LIMIT 1) AS deliveryState
     FROM r3_price_quote q JOIN r3_business_site s ON s.org_id=q.org_id AND s.site_id=q.site_id AND s.verification='VERIFIED'
     LEFT JOIN r3_price_catalog pc ON pc.supplier_id=q.supplier_org_id AND pc.origin_id=json_extract(q.sources_json,'$.versions[0].policy.originId') AND pc.product_id=json_extract(q.sources_json,'$.lines[0].productId')
-    WHERE EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.role='BUYER' AND m.active=1 AND m.org_id=q.org_id AND m.site_id=q.site_id)
+    WHERE EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.role='BUYER' AND m.active=1 AND m.org_id=q.org_id AND m.site_id=q.site_id)
     ORDER BY q.issued_at DESC LIMIT 200`,actorId);
-  const products=await all(db,`SELECT DISTINCT p.supplier_id,p.product_id,p.origin_id,json_extract(pc.definition,'$.productName') productName,json_extract(pc.definition,'$.originName') originName FROM r3_price_scope p JOIN r3_price_catalog pc USING(supplier_id,origin_id,product_id) JOIN r3_membership m ON m.org_id=p.supplier_id
+  const products=await all(db,`SELECT DISTINCT p.supplier_id,p.product_id,p.origin_id,json_extract(pc.definition,'$.productName') productName,json_extract(pc.definition,'$.originName') originName FROM r3_price_scope p JOIN r3_price_catalog pc USING(supplier_id,origin_id,product_id) JOIN ${workingMemberships} m ON m.org_id=p.supplier_id
     WHERE m.active=1 AND m.actor_id=? AND m.role IN ('SUPPLIER','OPERATOR') AND p.active=1 ORDER BY p.product_id,p.origin_id LIMIT 200`,actorId);
   const admin=await readAdmin(db,actorId);
   const publication=admin?(await currentMenu(db)||{enabled:0,revision:0}):null;
   const businesses=await all(db,`SELECT m.org_id,m.site_id,
     (SELECT json_extract(n.context_json,'$.businessName') FROM r3_case c JOIN r3_case_note n ON n.case_id=c.id AND n.revision=1
     WHERE c.kind='business' AND c.org_id=m.org_id AND c.site_id=m.site_id AND json_extract(n.context_json,'$.businessName') IS NOT NULL ORDER BY c.updated_at DESC LIMIT 1) AS businessName
-    FROM r3_membership m WHERE m.actor_id=? AND m.active=1 ORDER BY m.org_id,m.site_id`,actorId);
-  return {quotes,products,businesses,publication};
+    FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 ORDER BY m.org_id,m.site_id`,actorId);
+  // The issued snapshot owns these values. Return only the display projection;
+  // private policies, performance, destinations and calculation inputs stay here.
+  const displayedQuotes=quotes.map(({displayLineInputs,displayLineVersions,...quote})=>{
+    const inputs=JSON.parse(displayLineInputs||'[]'),versions=JSON.parse(displayLineVersions||'[]');
+    const lines=inputs.map(input=>{
+      const policy=versions.find(version=>version.id===input.versionId)?.policy;
+      const grade=policy?.matrix?.grades?.find(grade=>grade.id===input.grade)?.name;
+      return {productName:[policy?.displayName||quote.productName||'발급 품목',grade,input.packing==='raw'?'원란':input.packing==='packed'?'포장':null].filter(Boolean).join(' · '),quantity:input.deliveryQty,unit:input.unit,serviceDate:input.serviceDate};
+    });
+    return {...quote,lines};
+  });
+  return {quotes:displayedQuotes,products,businesses,publication};
 }
 
 export async function publishMenu(db,actorId,body,now){

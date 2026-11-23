@@ -126,6 +126,68 @@ test('QA scenarios hydrate the regular model in a distinct scope and open its ac
   }finally{f.close();}
 });
 
+test('research saved-row actions follow actual Q1/Q3/Q4 data without changing validation or creating rows',async()=>{
+  const f=setup();try{
+    const workspace=await f.mount('detailed',{fixtureScope:true});await settle();
+    assert.equal(workspace.snapshot().lines.length,0);assert.equal(f.root.querySelector('#q1-step-actions').hidden,true);
+    assert.equal(f.root.querySelector('#q3-next').hidden,true);assert.equal(f.root.querySelector('#q4-next').hidden,true);
+    assert.equal(f.root.querySelector('#add-line').textContent,'계란 추가');assert.equal(f.root.querySelector('#add-line .ui-text-plus'),null);
+    assert.equal((await workspace.applyScenario({screen:'q3',state:'closed'})).ok,true);await settle();
+    assert.equal(workspace.snapshot().locations.length,1);assert.equal(f.root.querySelector('#q3-next').hidden,false);
+    assert.equal(workspace.snapshot().allocations.length,0);assert.equal(f.root.querySelector('#q4-next').hidden,true);
+    assert.equal((await workspace.applyScenario({screen:'q4',state:'closed'})).ok,true);await settle();
+    assert.equal(workspace.snapshot().allocations.length,1);assert.equal(f.root.querySelector('#q4-next').hidden,false);
+    const before=workspace.snapshot(),empty=f.win.JSON.parse(JSON.stringify({...before,locations:[],allocations:[]}));
+    assert.equal((await workspace.applyScenario({screen:'q3',state:'closed',payload:empty})).ok,true);await settle();
+    assert.equal(f.root.querySelector('#q3-next').hidden,true);assert.equal(f.root.querySelector('#q4-next').hidden,true);
+    assert.equal(workspace.snapshot().lines[0].id,before.lines[0].id);assert.equal(workspace.snapshot().lines[0].qty,before.lines[0].qty);
+    assert.equal(workspace.inspect().validation.valid,false,'hiding completion buttons cannot validate missing business/allocation data');
+    workspace.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('closed business and delivery headers accept horizontal swipes, preserve scrolling, and retain their original confirmation transactions',async()=>{
+  const f=setup();try{
+    const workspace=await f.mount('detailed',{fixtureScope:true});
+    const pointer=(element,type,x,y=12)=>{const event=new f.win.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y});Object.defineProperties(event,{pointerId:{value:1},isPrimary:{value:true}});element.dispatchEvent(event);};
+    const swipe=(element,{vertical=false,cancel=false}={})=>{pointer(element,'pointerdown',160);pointer(element,'pointermove',vertical?157:70,vertical?80:14);pointer(element,cancel?'pointercancel':'pointerup',vertical?155:50,vertical?110:15);};
+    assert.equal((await workspace.applyScenario({screen:'q3',state:'closed'})).ok,true);workspace.navigate({step:'q3'});await settle();
+    const siteHeader=f.root.querySelector('.q3-site-accordion>.accordion-trigger'),siteBefore=JSON.stringify(workspace.snapshot());
+    swipe(siteHeader,{vertical:true});assert.equal(siteHeader.getAttribute('aria-expanded'),'false','a vertical scroll must not open actions');
+    swipe(siteHeader,{cancel:true});assert.equal(siteHeader.getAttribute('aria-expanded'),'false','canceled pointer gestures do not open actions');
+    swipe(siteHeader);assert.equal(siteHeader.getAttribute('aria-expanded'),'true');
+    const siteAction=f.root.querySelector('[data-site-delete]');assert.equal(siteAction.closest('[data-saved-row]').dataset.savedOpen,'true');
+    assert.equal(JSON.stringify(workspace.snapshot()),siteBefore,'revealing actions changes no stored model');
+    siteAction.click();const siteDialog=f.root.querySelector('#q3-action-confirm');assert.equal(siteDialog.open,true);
+    siteDialog.querySelector('[data-q3-confirm-cancel]').click();await until(()=>!siteDialog.open);assert.equal(JSON.stringify(workspace.snapshot()),siteBefore,'cancel preserves business and allocation records');
+    assert.equal((await workspace.applyScenario({screen:'q4',state:'mixed'})).ok,true);workspace.navigate({step:'q4'});await settle();
+    const deliveryHeader=f.root.querySelector('.q4-body-toggle'),before=workspace.snapshot();assert.equal(before.allocations.length,2);
+    assert.equal(deliveryHeader.querySelector('.research-q4-tag').textContent,'2개 사업장 · 혼합 주문');
+    swipe(deliveryHeader);assert.equal(deliveryHeader.getAttribute('aria-expanded'),'true');
+    const actions=[...f.root.querySelectorAll('.q4-body-item [data-delete-allocation]')];assert.equal(actions.length,2);
+    assert.ok(actions.every(action=>action.textContent==='해제'&&action.closest('[data-saved-row]').dataset.savedOpen==='true'));
+    actions[0].click();const confirmation=f.root.querySelector('#q4-delete-confirm');assert.equal(confirmation.open,true);
+    assert.match(confirmation.querySelector('h2').textContent,/연결을 해제/);assert.equal(f.root.querySelector('#q4-delete-commit').textContent,'해제');
+    f.root.querySelector('#q4-delete-cancel').click();await until(()=>!confirmation.open);assert.equal(workspace.snapshot().allocations.length,2);
+    actions[0].click();const removed=actions[0].dataset.deleteAllocation;f.root.querySelector('#q4-delete-commit').click();await until(()=>workspace.snapshot().allocations.length===1);await until(()=>!confirmation.open);
+    assert.equal(workspace.snapshot().allocations[0].id,before.allocations.find(row=>row.id!==removed).id,'the existing transaction removes only the selected allocation');
+    assert.equal(workspace.snapshot().locations.length,2);assert.equal(workspace.snapshot().lines[0].id,before.lines[0].id);
+    workspace.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('a delayed stage focus cannot leave a visible application control for a hidden, inert or non-form quote workspace',async()=>{
+  const f=setup();try{
+    const workspace=await f.mount('detailed'),outside=f.win.document.getElementById('outside');
+    for(const state of ['hidden','inert','home']){
+      f.root.hidden=false;f.root.inert=false;assert.equal(workspace.navigate({step:'q1'}),true);
+      if(state==='home')assert.equal(workspace.navigate({page:'home'}),true);else f.root[state]=true;
+      outside.focus();await new Promise(resolve=>setTimeout(resolve,90));assert.equal(f.win.document.activeElement,outside,state);
+    }
+    workspace.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
 test('quote import and disposal preserve the already installed application contact owner',async()=>{
   const f=setup();let regular,release;try{
     regular=await f.win.QuoteWorkspaceTest.createParentServices({document:f.win.document,origin:f.win.location.origin,crypto:webcrypto,fetcher:f.win.fetch});
@@ -165,4 +227,27 @@ test('authenticated research sync and mode copy use regular storage only, picker
     workspace.dispose();assert.equal(f.win.ORDER_APP_ADAPTER,adapter);assert.equal(f.win.ORDER_QUOTE_DRAFT_SYNC,otherSync);assert.equal(f.calls.length,0,'no regular API or undeclared native fetch can escape the quote environment');
     assert.ok(Object.keys(f.win.localStorage).every(key=>key.startsWith('order.app.test-account:')));assert.deepEqual(f.failures,[]);
   }finally{f.close();}
+});
+
+test('issued and expiry dates appear together only when disclosed on the regular and review result screens',async()=>{
+ const {researchScene}=await import('../src/server/research-app/page.mjs');
+ const dom=new JSDOM('<main><div data-review-result></div></main>',{runScripts:'outside-only',pretendToBeVisual:true});
+ const w=dom.window,root=w.document.querySelector('main'),host=root.querySelector('[data-review-result]');
+ w.matchMedia=()=>({matches:true});
+ try{
+  const path='web/quote-result-screen.mjs',source=getResearchQuoteSource(path,served(path));
+  const mount=w.eval(source.replace(/^export /gm,'')+'\nmountQuoteResult');
+  const view=mount(host,{brand:false,reducedMotion:()=>true});
+  const issued=Date.parse('2026-11-14T00:00:00+09:00'),end=Date.parse('2026-11-21T00:00:00+09:00');
+  for(const start of [undefined,NaN,end,end+1,issued]){
+   view.show({state:'expired',issued:start,end,proposed:'11940000'});
+   assert.equal(host.querySelector('.oq-note').textContent,start===issued?'견적 유효기간 2026.11.14 ~ 2026.11.21':'견적 만료일 2026.11.21');
+   assert.equal(host.querySelectorAll('.oq-series:not([hidden])').length,0);
+  }
+  view.clear();const scene=await researchScene('quote-result','expired');
+  w.eval(scene.mount);const dispose=w.ORDER_DESIGN_MODULES.find(r=>r.id==='quote-result').mount(root,'expired',{select(){}});
+  assert.equal(host.querySelector('.oq-note').textContent,'견적 유효기간 2026.11.14 ~ 2026.11.21');
+  assert.equal(host.querySelectorAll('.oq-series:not([hidden])').length,0);
+  dispose?.();
+ }finally{dom.window.close();}
 });

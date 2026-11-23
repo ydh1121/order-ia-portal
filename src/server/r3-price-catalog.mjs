@@ -10,13 +10,13 @@ export function validateDefinition(d) {
     !d.grades.every(g=>g&&code(g.id)&&name(g.name))) throw new PolicyError('CATALOG_INVALID');
   return d;
 }
-export async function editPriceCatalog(db,actor,b,clock) {
+export async function editPriceCatalog(db,actor,b,clock,memberships='r3_membership') {
   const {supplierId,originId,productId,expectedRevision}=b;
   if(![supplierId,originId,productId].every(code)||!Number.isSafeInteger(expectedRevision)||expectedRevision<0)throw new PolicyError('INVALID_REQUEST',400);
-  const d=validateDefinition(b.definition),current=await db.prepare("SELECT 1 ok FROM r3_price_scope s JOIN r3_membership m ON s.supplier_id=m.org_id WHERE s.supplier_id=? AND s.origin_id=? AND s.product_id=? AND s.active=1 AND m.active=1 AND m.site_id='' AND m.actor_id=? AND m.role='OPERATOR'").bind(supplierId,originId,productId,actor).first();
+  const d=validateDefinition(b.definition),current=await db.prepare(`SELECT 1 ok FROM r3_price_scope s JOIN ${memberships} m ON s.supplier_id=m.org_id WHERE s.supplier_id=? AND s.origin_id=? AND s.product_id=? AND s.active=1 AND m.active=1 AND m.site_id='' AND m.actor_id=? AND m.role='OPERATOR'`).bind(supplierId,originId,productId,actor).first();
   if(!current)throw new PolicyError('ACCESS_REQUIRED',403);
   const text=JSON.stringify(d), result=await db.prepare(`INSERT INTO r3_price_catalog(supplier_id,origin_id,product_id,revision,definition,updated_by,updated_at)
-    SELECT s.supplier_id,s.origin_id,s.product_id,?, ?,?,? FROM r3_price_scope s JOIN r3_membership m ON m.org_id=s.supplier_id
+    SELECT s.supplier_id,s.origin_id,s.product_id,?, ?,?,? FROM r3_price_scope s JOIN ${memberships} m ON m.org_id=s.supplier_id
     WHERE s.supplier_id=? AND s.origin_id=? AND s.product_id=? AND s.active=1 AND m.active=1 AND m.site_id='' AND m.actor_id=? AND m.role='OPERATOR'
     AND COALESCE((SELECT revision FROM r3_price_catalog c WHERE c.supplier_id=s.supplier_id AND c.origin_id=s.origin_id AND c.product_id=s.product_id),0)=?
     ON CONFLICT(supplier_id,origin_id,product_id) DO UPDATE SET revision=excluded.revision,definition=excluded.definition,updated_by=excluded.updated_by,updated_at=excluded.updated_at`)

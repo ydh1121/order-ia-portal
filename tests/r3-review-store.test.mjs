@@ -108,6 +108,7 @@ test('backup is bounded to a frozen cursor while subsequent events continue',asy
 
 test('verified role mutation receives the same signed session as the router',async()=>{
   db.exec(readFileSync(new URL('../migrations/0003_r3_roles.sql',import.meta.url),'utf8'));
+  db.exec(readFileSync(new URL('../migrations/0017_product_operations.sql',import.meta.url),'utf8'));
   db.exec("INSERT INTO r3_membership VALUES ('owner','BUYER','test-store','test-site',1)");
   const rolePost=async(token)=>handleIaRequest(new Request(origin+'/api/ia/r3-role',{method:'POST',
     headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json','X-IA-CSRF':token},body:'{}'}),env);

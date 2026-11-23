@@ -21,7 +21,7 @@ export async function businessActor(request,env,fetcher=fetch,now=Math.floor(Dat
   const personalInput=(/^\/ia\/?$/.test(url.pathname)&&['pricing-r3','businesses-r3','simple-r3','detailed-r3','product-r3'].includes(url.searchParams.get('view')))
     || url.pathname.startsWith('/ia/r3-product/')
     || /^\/api\/ia\/r3-role\/(session|businesses)$/.test(url.pathname)
-    || /^\/api\/ia\/product\/(session|account|notifications|features|drafts\/(simple|detailed))$/.test(url.pathname)
+    || /^\/api\/ia\/product\/(session|account|notifications|notification-preferences|features|drafts\/(simple|detailed))$/.test(url.pathname)
     || /^\/api\/ia\/r3-price\/(registration|personal-draft|session|desk|version|sites|simulate|workspace)$/.test(url.pathname);
   if(!grant&&!personalInput)throw Error('BUSINESS_MEMBERSHIP_REQUIRED');
   // Token-bound synchronizer value is returned only by the same-origin authenticated session endpoint.

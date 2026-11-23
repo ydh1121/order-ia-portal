@@ -43,7 +43,7 @@ def frame_identity(locator):
     }""")
 
 
-def pick_panel_point(page, frame, target, marker, *, native_popover=False):
+def pick_panel_point(page, frame, target, marker, *, native_popover=False, horizontal_fraction=.5):
     """Use the real QA toolbar and physical pointer, stopping before any save."""
     frame_pointer_position(page, target)
     expected_id = frame_identity(target)
@@ -70,7 +70,9 @@ def pick_panel_point(page, frame, target, marker, *, native_popover=False):
         expect(frame.locator('.obm-panel:popover-open')).to_have_count(1)
     # Opening the outer toolbar can move its viewport. Read the target again
     # after it has opened; frame_click maps this child point to the live canvas.
-    point = target.evaluate("el=>{const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}")
+    # Composite buttons contain independently annotatable title/summary nodes.
+    # Their real padding targets the button itself without activating its child.
+    point = target.evaluate("(el,fraction)=>{const r=el.getBoundingClientRect();return {x:r.x+r.width*fraction,y:r.y+r.height/2};}", horizontal_fraction)
     frame_click(page, veil, position=point)
     wait_for_expression(page, 'window.__onboardingReviewPoint!==null')
     envelope = page.evaluate('window.__onboardingReviewPoint')
@@ -502,6 +504,89 @@ def drag_intro(page, frame, *, forward, expected_step):
         window.__introOverlayBaseline.brand===root.querySelector('#order-app-header .order-product-brand svg')""")
 
 
+def check_unread_number_changes(page, origin, reduced):
+    page.emulate_media(reduced_motion='reduce' if reduced else 'no-preference')
+    frame = ReviewScreens(page, origin, 390).screen('onboarding', 'member-1')
+    bell = frame.locator('[data-action=quick]')
+    dot = bell.locator('.quick-unread .t-badge-dot')
+    expect(dot).to_have_text('1')
+    # Seed only this frame's private inbox. The list load and each read use normal controls.
+    dot.evaluate('''dot=>{
+        const fixture=window.ORDER_APP_ADAPTER.fixture, sample=fixture.inspect().data.notifications[0];
+        fixture.configure({data:{notifications:Array.from({length:101},(_,i)=>({
+            ...sample,id:'badge-notice-'+i,title:'검증 알림 '+i,readAt:null
+        }))}});
+        const badge=dot.parentElement,bell=badge.closest('[data-action=quick]'),samples=[],starts=[],clicks=[];
+        badge.addEventListener('animationstart',e=>{if(e.target===badge)starts.push(dot.textContent)});
+        document.addEventListener('click',e=>{if(e.target.closest('button'))clicks.push(e.isTrusted)},true);
+        let raf;
+        const observe=()=>{
+            const b=bell.getBoundingClientRect(),r=dot.getBoundingClientRect(),range=document.createRange();
+            range.selectNodeContents(dot);
+            const t=range.getBoundingClientRect(),style=getComputedStyle(dot);
+            samples.push({label:dot.textContent,at:performance.now(),opacity:Number(style.opacity),
+                same:dot===badge.firstElementChild&&badge===bell.querySelector('.quick-unread'),
+                parent:[b.x,b.y,b.width,b.height],box:[r.width,r.height],textWidth:t.width,
+                textOffset:t.y+t.height/2-r.y-r.height/2,
+                motion:badge.getAnimations({subtree:true}).map(a=>[a.animationName||a.transitionProperty,a.effect.getTiming().duration])});
+            raf=requestAnimationFrame(observe);
+        };
+        observe();
+        dot.finishBadgeProbe=()=>{cancelAnimationFrame(raf);return {samples,starts,clicks};};
+    }''')
+    frame_click(page, bell)
+    frame_click(page, frame.get_by_role('button', name='시세 알림'))
+    expect(dot).to_have_text('99+')
+    # The first read is 101→100 (still 99+); its text node and motion must survive.
+    dot.evaluate('el=>el.initialLabel=el.firstChild')
+    for remaining, label in [(100, '99+'), (99, '99'), (98, '98')]:
+        row = frame.locator('[data-notification-id][data-read=false]').first
+        if remaining == 98:
+            row.press('Enter')
+        else:
+            frame_click(page, row)
+        expect(frame.locator('[data-notification-detail]')).not_to_have_attribute('aria-busy', 'true')
+        expect(dot).to_have_text(label)
+        if remaining == 100:
+            assert dot.evaluate('el=>el.firstChild===el.initialLabel')
+        back = frame.locator('[data-action=research-notification-back]')
+        if remaining == 99:
+            # Interrupt with native keyboard input while the preceding number still pops.
+            dot.evaluate('()=>new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(done)))')
+            back.press('Enter')
+        else:
+            frame_click(page, back)
+    dot.evaluate('''async el=>{
+        await Promise.allSettled(el.parentElement.getAnimations({subtree:true}).map(a=>a.finished));
+        await new Promise(requestAnimationFrame);
+    }''')
+    report = dot.evaluate('el=>el.finishBadgeProbe()')
+    report['reduced'] = reduced
+    samples = report['samples']
+    output = ROOT / 'artifacts/qa-mvp'
+    output.mkdir(parents=True, exist_ok=True)
+    (output / f'unread-number-390-{"reduced" if reduced else "normal"}.json').write_text(json.dumps(report))
+    assert all(s['same'] and s['parent'] == samples[0]['parent'] for s in samples), 'The parent bell moved or the pinned badge was replaced'
+    for label in ('99+', '99', '98'):
+        frames = [s for s in samples if s['label'] == label]
+        assert frames, label
+        if reduced:
+            assert all(not s['motion'] and s['opacity'] == 1 for s in frames), label
+        else:
+            observed = {tuple(a) for s in frames for a in s['motion']}
+            assert {('t-badge-slide-in', 260), ('transform', 500), ('filter', 500), ('opacity', 400)} <= observed, (label, observed)
+            assert any(s['opacity'] < 1 for s in frames), label
+        assert all(abs(s['box'][0]-s['box'][1]) < .01 and s['textWidth'] <= s['box'][0]+.1
+                   and abs(s['textOffset']) <= 1 for s in frames), label
+    assert len(report['clicks']) >= 8 and all(report['clicks']), report['clicks']
+    assert report['starts'] == ([] if reduced else ['99+', '99', '98']), report['starts']
+    if not reduced:
+        previous = [s for s in samples if s['label'] == '99'][-1]
+        assert previous['motion'], 'The next native read must interrupt the previous number transition'
+    assert samples[-1]['box'] == [20, 20] and samples[-1]['opacity'] == 1, samples[-1]
+    print('PASS native bell unread number through capped, equal and two-digit counts; reduced:', reduced)
+
+
 def check_notification_pin(page, screens):
     frame = screens.screen('onboarding', 'member-1')
     typography = current_wordmark_typography(frame)
@@ -540,14 +625,24 @@ def check_notification_pin(page, screens):
     expect(panel).to_be_visible()
     pass_panel=panel.locator('[data-obm-page="manage.research.passes.grid"]')
     expect(pass_panel.locator('.obm-heading')).to_have_text('오더 패스')
-    expect(pass_panel.locator('.research-scene-panel')).to_have_attribute('data-research-scene-connection','connected')
+    pass_scene=pass_panel.locator('.research-scene-panel')
+    expect(pass_scene).to_have_attribute('data-research-scene-connection','connected')
+    expect(pass_scene).to_have_attribute('data-pass-data-state','ready')
+    # The research renderer now uses the controlled purchase/workspace response,
+    # rather than the four historical artwork samples. Check the exact current
+    # fixture identities before exercising the same native deck controls.
+    expected_pass_ids={'qa-order-cash','qa-order-paid','qa-order-shipped',
+                       'qa-order-card','qa-order-campaign','quote:qa-existing-quote'}
+    pass_cards=pass_panel.locator('.pass-stage [data-pass-id]')
+    expect(pass_cards).to_have_count(len(expected_pass_ids))
+    assert set(pass_cards.evaluate_all('(cards)=>cards.map(card=>card.dataset.passId)'))==expected_pass_ids
     expect(pass_panel.locator('.pass-stage [data-pass-id]').first).to_be_visible()
     expect(pass_panel.locator('[data-open-quote-draft]')).to_have_count(0)
     wait_review_session(page,'passes','grid')
     frame_click(page,pass_panel.locator('[data-view="deck"]'))
     expect(pass_panel.locator('[data-view="deck"]')).to_have_attribute('aria-pressed','true')
     frame_click(page,pass_panel.locator('[data-action="deck-next"]'))
-    expect(pass_panel.locator('.deck-position')).to_have_text('2 / 4')
+    expect(pass_panel.locator('.deck-position')).to_have_text(f'2 / {len(expected_pass_ids)}')
     expect(bell).to_have_attribute('aria-expanded','false')
     expect(panel.locator('[data-product-gooey]')).to_have_count(0)
     expect(frame.locator('[data-product-gooey]')).to_have_count(1)
@@ -560,21 +655,28 @@ def check_notification_pin(page, screens):
     frame_click(page,bell)
     frame_click(page,actions.nth(1))
     expect(panel).to_be_visible()
-    read = panel.get_by_role('button', name='읽음', exact=True)
-    expect(read).to_be_visible()
+    notice = panel.locator('button[data-action="research-open-notification"][data-notification-id="qa-notice-1"]')
+    expect(notice).to_be_visible()
+    expect(notice).to_have_attribute('data-read','false')
     snapshot = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
-    envelope = pick_panel_point(page, frame, read, '#r3-panel-state-account-notifications', native_popover=True)
+    envelope = pick_panel_point(page, frame, notice, '#r3-panel-state-account-notifications', native_popover=True, horizontal_fraction=.02)
     after = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
-    assert after['data']['notifications'] == snapshot['data']['notifications'], 'Selecting the read-button location must not activate it'
+    assert after['data']['notifications'] == snapshot['data']['notifications'], 'Selecting the notification location must not open or mark it read'
     assert not any(call['method'] == 'POST' for call in after['calls']), after['calls']
+    expect(notice).to_have_attribute('data-read','false')
+    expect(panel.locator('[data-notification-detail]')).to_have_count(0)
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
     wait_review_session(page,'onboarding','member-1')
     frame_click(page,bell)
     frame_click(page,actions.nth(1))
     restore_panel_point(page, envelope)
-    expect(read).to_be_focused()
-    assert frame_identity(read) == envelope['payload']['id']
+    expect(notice).to_be_focused()
+    expect(notice).to_have_attribute('data-read','false')
+    assert frame_identity(notice) == envelope['payload']['id']
+    restored = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
+    assert restored['data']['notifications'] == snapshot['data']['notifications']
+    assert not any(call['method'] == 'POST' for call in restored['calls']), restored['calls']
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
     print('PASS existing bell: only two radial icons, real Order Pass and notification panels, pin restore and zero mutation')
@@ -727,7 +829,41 @@ def check(page, origin, width):
                       "authOverlay":"same introduction, Escape/scrim/drag close","horizontalDrag":"2→1→2",
                       "wordTypography":{"guest":guest_typography,"member":member_typography},
                       "directCompanyHeader":company_geometry,
-                      "panelPins":"auth email + real notification read button; restore without comment save","reviewWrites":0}))
+                      "panelPins":"auth email + real notification open control; restore without reading or comment save","reviewWrites":0}))
+
+
+def capture_member_artboards(page, origin):
+    """Capture the same 375 × 828 CSS viewport as the three preserved Figma artboards."""
+    output = ROOT / 'artifacts' / 'qa-mvp'
+    output.mkdir(parents=True, exist_ok=True)
+    artboard = page.context.new_page()
+    try:
+        artboard.set_viewport_size({'width': 375, 'height': 828})
+        for step in (2, 3, 4):
+            state = f'member-{step}'
+            query = urlencode({'id': f'onboarding/{state}/email', 'width': 375, 'version': 'current'})
+            artifact = page.evaluate("""async path => {
+                const response = await fetch(path, {credentials: 'same-origin'});
+                if (!response.ok) throw Error('Artboard lookup failed: ' + response.status);
+                return response.json();
+            }""", '/api/ia/r3-qa/artifact?' + query)
+            assert artifact['source']['kind'] == 'research-application'
+            application = artifact['application']
+            artboard.goto(origin + application['url'])
+            expect(artboard.locator('html')).to_have_attribute('data-product-build', application['build'])
+            scene = artboard.locator('.ob.member')
+            expect(scene).to_have_attribute('data-intro-step', str(step))
+            if step == 2:
+                expect(scene.locator('.ob-art')).to_have_js_property('naturalWidth', 287)
+            if step < 4:
+                expect(scene.locator('.ob-pages [aria-current]')).to_have_attribute('data-mf-intro', str(step))
+            else:
+                expect(scene.locator('.ob-pages')).to_have_count(0)
+                expect(scene.locator('.ob-mode-grid button')).to_have_count(2)
+            artboard.evaluate('document.fonts.ready')
+            artboard.screenshot(path=str(output / f'reference-{state}-375x828.png'))
+    finally:
+        artboard.close()
 
 
 def main():
@@ -748,6 +884,13 @@ def main():
                 if width == 390:
                     page.emulate_media(reduced_motion="no-preference")
                     if not focused_auth:
+                        for reduced_badge in (False, True):
+                            badge_page = context.new_page()
+                            try:
+                                check_unread_number_changes(badge_page, fixture["url"], reduced_badge)
+                            finally:
+                                badge_page.close()
+                        page.emulate_media(reduced_motion="no-preference")
                         check_auth_overlay_motion(page,fixture["url"],width)
                     check_auth_overlay_internal_transition(page,fixture["url"],width)
                     context.close()
@@ -756,6 +899,7 @@ def main():
                     check_archived_entry(page,fixture["url"])
                 check(page,fixture["url"],width)
                 if width == 375:
+                    capture_member_artboards(page, fixture["url"])
                     page.emulate_media(reduced_motion="no-preference")
                     check_auth_overlay_motion(page,fixture["url"],width)
                     check_auth_motion(page,fixture["url"],width)

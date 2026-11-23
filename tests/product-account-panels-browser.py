@@ -161,6 +161,35 @@ def main():
         expect(dashboard.locator('[data-sales-total=paid]')).to_have_text('185,070원')
         stable(operator)
         operator.screenshot(path=EVIDENCE / 'sales-1440.png')
+
+        # Open the same staging app in two tabs using one server-validated lab
+        # run. The state fixture has no authority to invent these memberships.
+        switch_url = base + '/ia?view=research-r3&screen=profile&state=restricted&labRun=' + run + '&persona=operator'
+        def switch_tab():
+            tab = context.new_page()
+            pages.append(tab)
+            tab.set_default_timeout(15000)
+            tab.on('pageerror', lambda error: errors.append(str(error)))
+            tab.goto(switch_url)
+            expect(tab.locator('html')).to_have_attribute('data-product-runtime', 'research-application')
+            panel = tab.locator('[data-research-account-panel="profile.account"]')
+            expect(panel.get_by_label('작업할 조직·사업장')).to_be_visible()
+            return tab, panel
+
+        first, first_panel = switch_tab()
+        other, other_panel = switch_tab()
+        select = first_panel.get_by_label('작업할 조직·사업장')
+        assert select.locator('option').all_text_contents() == ['사업장을 선택해 주세요', 'lab-farm', 'lab-store']
+        select.select_option(label='lab-store')
+        with first.expect_navigation():
+            first_panel.get_by_role('button', name='계정 전환').click()
+        expect(first_panel.get_by_label('작업할 조직·사업장').locator('option:checked')).to_have_text('lab-store')
+        other_panel.get_by_label('작업할 조직·사업장').select_option(label='lab-farm')
+        with other.expect_response(lambda r: r.url.endswith('/account-context') and r.request.method == 'POST') as conflict:
+            other_panel.get_by_role('button', name='계정 전환').click()
+        assert conflict.value.status == 409
+        expect(other_panel.get_by_role('status').filter(has_text='다른 창')).to_be_visible()
+        receipt['accountContext'] = {'app': 'research-r3', 'persisted': 'lab-store', 'otherTab': 409, 'memberships': 2}
         assert not errors, errors
         receipt.update(status='PASS', checkpoint='complete', runId=run, widths=[320, 1440], orderId=order['id'], actualBusinessSaveAndReload=True, actualOrderCashDispatchReceive=True, actualSalesRead=True, parentRefreshAfterBack=True, samePanelAndURL=True, originalSvgPreserved=True, pageErrors=errors, writes=writes, source=operator.evaluate('window.ORDER_APP_CONTEXT.source'))
         context.tracing.stop(path=EVIDENCE / 'account-panels-trace.zip')

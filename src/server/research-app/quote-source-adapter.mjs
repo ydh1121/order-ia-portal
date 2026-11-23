@@ -2,6 +2,7 @@ import {quoteTemplate,quoteCommit} from '../r3-product-sources.mjs';
 import {browserFunction} from '../browser-source.mjs';
 import {mountSavedBusinessPicker} from '../r3-saved-business-client.mjs';
 import {createQuoteDraftSync,mountQuoteDraftSync} from '../r3-quote-draft-client.mjs';
+import {mountResearchClosedQuoteRows} from './quote-row-swipe.mjs';
 
 // Only the research asset endpoint applies these adapters. The sealed source,
 // current regular endpoint, business calculations and validation remain intact.
@@ -113,6 +114,7 @@ const researchBridge=Object.freeze({
   },
   dispose(){
     if(researchDisposed)return;researchDisposed=true;
+    releaseResearchClosedQuoteRows();
     pageSeq++;regularStageEpoch++;storageEpoch++;siteEditGeneration++;q3SaveRevision++;skuSaveRevision++;
     routeAnimation?.cancel();routeAnimation=null;
     issuedRequest?.abort();emailGateAttempt?.controller.abort();quoteService.detach();
@@ -125,9 +127,19 @@ const researchBridge=Object.freeze({
 });
 `;
 
+/** The regular and review routes render the same expiry note from disclosed dates. */
+export function researchQuoteResultSource(source){
+  const expiry="m.state==='expired'&&dated(m.end)?'견적 만료일 '+dated(m.end):''";
+  return once(source,expiry,`m.state==='expired'&&dated(m.end)?(
+    Number.isFinite(m.issued)&&m.issued>=-8640000000000000&&m.issued<m.end
+      ? '견적 유효기간 '+dated(m.issued)+' ~ '+dated(m.end)
+      : '견적 만료일 '+dated(m.end)):''`);
+}
+
 /** Applies explicit integration seams to the *served*, extended regular asset. */
 export function getResearchQuoteSource(path,source){
   if(typeof source!=='string')throw TypeError('RESEARCH_QUOTE_SOURCE_REQUIRED');
+  if(path==='web/quote-result-screen.mjs')return researchQuoteResultSource(source);
   if(path==='web/app.mjs'){
     source=once(source,
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null}={}){",
@@ -144,6 +156,17 @@ export function getResearchQuoteSource(path,source){
     source=once(source,'const addressEditor=createAddressEditor({','const addressEditor=createAddressEditor({\n document,service:researchEnvironment?.addressService,');
     source=once(source,'const resultScreen=mountQuoteResult($(\'receipt\'),{','const resultScreen=mountQuoteResult($(\'receipt\'),{\n brand:!researchEnvironment?.externalHeader,');
     source=once(source,'simpleUI=createSimpleQuoteUI({onAuthRequest,bridge:', 'simpleUI=createSimpleQuoteUI({researchEnvironment,onAuthRequest,bridge:');
+    source=once(source,"if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;const target=","if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;if(researchEnvironment){for(let boundary=document.body;boundary;boundary=boundary.parentElement)if(boundary.hidden||boundary.inert)return;if(current!=='form')return;}const target=");
+    // Presentation follows the regular saved model. These seams neither create
+    // rows nor mark incomplete data valid; the original actions own all writes.
+    source=once(source,"$('add-line').innerHTML='<span class=\"ui-text-plus\" aria-hidden=\"true\">+</span><span>계란 추가</span>';","$('add-line').textContent='계란 추가';");
+    source=once(source,"bindSavedRowActions($('page-form'));","bindSavedRowActions($('page-form'));const releaseResearchClosedQuoteRows=("+browserFunction(mountResearchClosedQuoteRows)+")($('page-form'));");
+    source=once(source,"label:esc(siteName(site)),content:","label:esc(siteName(site))+(!q3Expanded.get(site.id)&&itemCount?' <span class=\"research-q3-tags\">'+itemCount+'개 품목</span>':''),content:");
+    source=once(source,"savedRowActions(name,'edit-allocation','delete-allocation',a.id,'수정','삭제','q4-allocation-item-actions')","savedRowActions(name,'edit-allocation','delete-allocation',a.id,'수정','해제','q4-allocation-item-actions')");
+    source=once(source,"CODE1_UI.textAction('삭제','delete-allocation',esc(a.id),false)","CODE1_UI.textAction('해제','delete-allocation',esc(a.id),false)");
+    source=once(source,'<span class="q4-body-subtitle">${esc(summary)}</span>','<span class="q4-body-subtitle">${rows.length?\'<span class="research-q4-tag">\'+esc(summary)+\'</span>\':esc(summary)}</span>');
+    source=once(source,"}).join('');$('q3-empty').hidden=S.locations.length>0;","}).join('');$('q3-empty').hidden=S.locations.length>0;$('q3-next').hidden=!S.locations.length;");
+    source=once(source," }).join('');\n updateResultCTA();\n}\n\nfunction invoiceDetails(stats){"," }).join('');\n $('q4-next').hidden=!S.allocations.length;updateResultCTA();\n}\n\nfunction invoiceDetails(stats){");
     source=once(source,'return Object.freeze({quoteDraftBridge,savedBusinessBridge,regularBridge:',appBridge+'\nreturn Object.freeze({researchBridge,quoteDraftBridge,savedBusinessBridge,regularBridge:');
     return source;
   }
@@ -209,6 +232,9 @@ export function getResearchQuoteMarkup(){
   if(to<0)throw Error('RESEARCH_QUOTE_TEMPLATE_HEADER_MISMATCH');
   body=body.slice(0,from)+body.slice(to+'</header>'.length);
   body=once(body,'<script type="module" src="/main.mjs"></script>','');
+  body=once(body,'이 납품 조건을 삭제할까요?','이 납품 조건 연결을 해제할까요?');
+  body=once(body,'해당 사업장의 납품 조건만 삭제됩니다.<br>삭제한 경우 다시 설정해야 합니다.','해당 사업장의 납품 조건 연결만 해제됩니다.<br>다시 연결하려면 납품 조건을 설정해 주세요.');
+  body=once(body,'id="q4-delete-commit">삭제</button>','id="q4-delete-commit">해제</button>');
   if(/<script\b|<iframe\b/i.test(body))throw Error('RESEARCH_QUOTE_EXECUTABLE_TEMPLATE');
   return body;
 }

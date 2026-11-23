@@ -175,6 +175,75 @@ test('actual introduction and auth controls retain email focus through regular m
  }finally{await f.close();}
 });
 
+test('company sheet locks the retained header, removes its redundant title and restores the same controls when dismissed',async()=>{
+ const f=await setup({screen:'onboarding',state:'company'});try{
+  const header=f.doc.getElementById('order-app-header'),scene=f.doc.querySelector('.ob'),shade=scene.querySelector('.ob-shade');
+  assert.equal(header.inert,true);assert.equal(shade.hidden,false);assert.equal(scene.querySelector('.ob-drawer h2'),null);
+  shade.click();await settle();assert.equal(header.inert,false);assert.equal(shade.hidden,true);assert.equal(f.doc.querySelector('.ob'),scene);
+  assert.equal(header.querySelector('[data-app-auth]').hidden,false);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('member account has one opener and notification preview opens a full reader with actual sent times and settings',async()=>{
+ const f=await setup();try{
+  await f.app.inspectRoute({screen:'onboarding',state:'member-1'});await settle();
+  const header=f.doc.getElementById('order-app-header');assert.equal(header.querySelector('[data-app-auth]').hidden,true);
+  header.querySelector('[data-order-account-trigger]').click();await settle();f.doc.querySelector('[data-obm-item=notifications]').click();
+  await waitFor(()=>f.doc.querySelector('[data-action=research-all-notifications]'));
+  const preview=f.doc.querySelector('.research-notifications');assert.ok(preview);assert.equal(preview.dataset.notificationsMode,'preview');
+  const messages=await f.app.adapter.request('/notifications');assert.equal(preview.querySelectorAll('[data-notification-id]').length,Math.min(3,messages.items.length));
+  assert.ok([...preview.querySelectorAll('time')].every(time=>time.dateTime));
+  f.doc.querySelector('[data-action=research-all-notifications]').click();await waitFor(()=>f.app.snapshot().route.screen==='notifications');await settle();
+  const full=f.doc.querySelector('#order-app-page .research-notifications');assert.equal(full.dataset.notificationsMode,'full');assert.equal(full.querySelector('h1').textContent,'알림');
+  assert.ok(f.doc.querySelector('[data-notification-preferences]'));assert.equal(f.doc.getElementById('order-app-header'),header);
+  const item=full.querySelector('[data-notification-id]');item.click();await waitFor(()=>full.querySelector('[data-notification-detail]'));
+  assert.equal(full.querySelector('[data-notification-detail]').textContent.includes(messages.items.find(value=>value.id===item.dataset.notificationId).body),true);
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('global Order menu preserves the actual quote mode confirmation and quote draft on cancellation',async()=>{
+ const f=await setup();try{
+  await f.app.navigate({screen:'q1',mode:'simple'});await settle();const quote=f.doc.querySelector('[data-research-quote]'),before=f.app.snapshot().quote;
+  assert.equal(f.doc.querySelector('[data-app-back]').hidden,true);
+  const trigger=f.doc.querySelector('.research-order-trigger');assert.equal(trigger.closest('.research-order-menu').hidden,false);trigger.click();await settle();
+  f.doc.querySelector('.research-order-row').click();f.doc.querySelector('[data-order-mode=detailed]').click();await settle();
+  const dialog=quote.querySelector('#quote-mode-dialog');assert.equal(dialog.open,true);assert.equal(dialog.querySelector('[data-mode-option]').checked,false);
+  dialog.querySelector('[data-mode-cancel]').click();await settle();assert.equal(f.app.snapshot().route.mode,'simple');assert.equal(f.doc.querySelector('[data-research-quote]'),quote);assert.deepEqual(f.app.snapshot().quote,before);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('guest notification entry opens login and dismissal returns to the unchanged parent without private reads',async()=>{
+ const f=await setup({screen:'onboarding',state:'guest-3'});try{
+  const parent=f.doc.querySelector('#order-app-page .ob'),before=f.app.adapter.fixture.inspect().calls.length;
+  await f.app.navigate({screen:'notifications'});await settle();assert.equal(f.app.snapshot().route.screen,'login');assert.equal(f.app.snapshot().route.parent.state,'guest-3');
+  assert.equal(f.doc.querySelector('#order-app-page .research-notifications'),null);assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);
+  assert.equal(f.app.adapter.fixture.inspect().calls.slice(before).some(call=>call.path==='/notifications'||call.path==='/notification-preferences'),false);
+  f.doc.activeElement.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();
+  assert.equal(f.app.snapshot().route.screen,'onboarding');assert.equal(f.app.snapshot().route.state,'guest-3');assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('one Order-selector click closes the actual account stack and opens its own menu after that transition',async()=>{
+ const f=await setup({screen:'onboarding',state:'member-1'});try{
+  const header=f.doc.getElementById('order-app-header');header.querySelector('[data-order-account-trigger]').click();await settle();
+  assert.equal(f.app.snapshot().route.kind,'account');assert.equal(f.doc.querySelector('.obm-panel').hidden,false);
+  header.querySelector('.research-order-trigger').click();await waitFor(()=>!f.doc.querySelector('.research-order-stack').hidden);
+  assert.equal(f.doc.querySelector('.obm-panel').hidden,true);assert.equal(f.app.snapshot().route.screen,'onboarding');assert.equal(header.querySelector('.research-order-trigger').getAttribute('aria-expanded'),'true');assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('leaving an open company sheet releases the shared account controller for quote and account navigation',async()=>{
+ const f=await setup({screen:'onboarding',state:'member-1'});try{
+  const header=f.doc.getElementById('order-app-header');f.doc.querySelector('[data-company-open]').click();assert.equal(header.inert,true);
+  await f.app.navigate({screen:'q1',mode:'simple'});await settle();assert.equal(header.inert,false);assert.equal(f.doc.querySelector('.ob-shade'),null);
+  header.querySelector('[data-order-account-trigger]').click();await settle();assert.equal(f.doc.querySelector('.obm-panel').hidden,false);assert.equal(f.app.snapshot().route.kind,'account');
+  await f.app.navigate({screen:'onboarding',state:'member-1'});f.doc.querySelector('[data-company-open]').click();assert.equal(header.inert,true);
+  const focused=[];f.doc.addEventListener('focusin',event=>focused.push({tag:event.target.tagName,id:event.target.id,class:event.target.className,text:event.target.textContent.slice(0,30)}));
+  await f.app.navigate({screen:'profile',state:'menu'});await settle();assert.equal(header.inert,false,'company header restored');assert.equal(f.doc.querySelector('.ob-shade').hidden,true,'company shade closed');assert.equal(f.doc.querySelector('.obm-panel').hidden,false,JSON.stringify({focused,paused:header.querySelector('.brand').dataset.motionPaused,disabled:header.querySelector('[data-order-account-trigger]').disabled,route:f.app.snapshot().route,failures:f.failures}));assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
 test('research auth source adapter rejects a missing or duplicated email validation seam',async()=>{
  const source=(await getProductAuthSheetBootstrap()).script,marker='input.validity.typeMismatch';
  assert.match(researchAuthSheetSource(source),/!w\.OrderEmail\.parse\(input\.value\)\.valid/);
@@ -344,6 +413,26 @@ test('the real consultation drawer opens on the retained result and closes witho
  }finally{await f.close();}
 });
 
+test('the explicit pass loading target holds one read and leaves ordinary product navigation responsive',async()=>{
+ const f=await setup({screen:'passes',state:'grid'});
+ try{
+  await f.app.inspectRoute({screen:'passes',state:'loading'});
+  const fixture=f.app.adapter.fixture;
+  await waitFor(()=>fixture.inspect().pending===1);
+  assert.equal(f.doc.querySelector('.pass-stage').getAttribute('aria-busy'),'true');
+  assert.equal(f.doc.querySelector('#order-app-page').dataset.passDataState,'loading');
+  const other=await f.app.adapter.request('/purchases');
+  assert.ok(other.items.length);
+  assert.equal(fixture.inspect().pending,1);
+  fixture.releasePending();
+  await waitFor(()=>f.doc.querySelector('[data-pass-data-state="ready"]'));
+  assert.equal(fixture.inspect().pending,0);
+  await f.app.inspectRoute({screen:'passes',state:'grid'});
+  await waitFor(()=>f.doc.querySelector('[data-pass-data-state="ready"]'));
+  assert.equal(fixture.inspect().pending,0);
+ }finally{await f.close();}
+});
+
 test('closed consultation owns selection and opener in the parent and retains the original form across Escape/reopen',async()=>{
  const f=await setup({screen:'passes',state:'loading'});try{
   const parent=f.doc.getElementById('order-app-page').firstElementChild,header=f.doc.getElementById('order-app-header'),adapter=f.app.adapter;
@@ -466,7 +555,10 @@ test('the actual Gooey pass action opens real passes over its parent and direct 
   assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.querySelector('svg'),brand);assert.equal(f.app.instance,instance);
   assert.ok(panel.querySelector('.pass-stage [data-pass-id]'));assert.equal(panel.querySelector('[data-open-quote-draft]'),null);
   panel.querySelector('[data-view="deck"]').click();assert.equal(panel.querySelector('[data-view="deck"]').getAttribute('aria-pressed'),'true');
-  panel.querySelector('[data-action="deck-next"]').click();assert.equal(panel.querySelector('.deck-position').textContent,'2 / 4');
+  const purchases=await f.app.adapter.request('/purchases'),roles=await f.app.adapter.roleRequest('/workspace');
+  const passTotal=purchases.items.length+roles.quotes.filter(item=>!purchases.items.some(purchase=>purchase.quoteId===item.id)).length;
+  assert.equal(passTotal,6,'the retained fixture owns five actual purchase records and one unpurchased quote');
+  panel.querySelector('[data-action="deck-next"]').click();assert.equal(panel.querySelector('.deck-position').textContent,'2 / '+passTotal);
   const heading=panel.querySelector('.obm-heading');heading.focus();heading.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   await waitFor(()=>f.app.snapshot().route.screen==='onboarding');assert.equal(f.app.snapshot().route.state,'member-1');
   assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.equal(f.doc.getElementById('order-app-header'),header);
@@ -655,4 +747,34 @@ test('QA cannot hide a live price editor dialog by selecting another product fam
   control.modal.close(modal,{immediate:true});await settle();
   assert.equal(await f.app.navigate({screen:'admin-campaigns'}),true);assert.equal(f.app.snapshot().route.screen,'admin-campaigns');assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
+});
+
+test('a closed Order menu preserves a live email pin across blur, outside pointerdown and location restore',async()=>{
+ const f=await setup({screen:'login',state:'empty',variant:'email'});let review;
+ try{
+  const input=f.doc.querySelector('.product-auth-sheet input[name=email]'),menu=f.doc.getElementById('research-order-menu');
+  assert.ok(input);assert.equal(menu.hidden,true);
+  // JSDOM has no layout. Only the input hit/rect uses a fixed fixture; the
+  // served product, focus handlers, point capture and inspector index are real.
+  const rect=new f.win.DOMRect(f.win.innerWidth/2-100,f.win.innerHeight/2-30,200,60);
+  input.getBoundingClientRect=()=>rect;input.getClientRects=()=>[rect];f.doc.elementFromPoint=()=>input;
+  input.focus();review=await attachTestReview(f);
+  const veil=f.doc.getElementById('r3-veil'),paint=()=>new Promise(resolve=>f.win.requestAnimationFrame(()=>f.win.requestAnimationFrame(resolve)));
+  const capture=()=>{review.send('mode',true);veil.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));const point=review.messages.filter(x=>x.message.type==='point').at(-1)?.message.payload;assert.ok(point);review.send('mode',false);return point;};
+  const anchor=capture(),original=JSON.stringify(anchor),text=menu.querySelector('h2').firstChild;
+  assert.notEqual(anchor.id,'screen');assert.equal(input.closest('.field').classList.contains('is-focused'),false);
+  review.send('pins',[{id:'current-email',anchor,ordinal:1}]);await paint();
+  assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1);
+  // The native Chrome receipt showed this outside pointerdown unnecessarily
+  // rewriting the hidden menu's h2, reindexing the blurred email's ancestors.
+  f.doc.body.dispatchEvent(new f.win.MouseEvent('pointerdown',{bubbles:true,button:0}));await paint();
+  assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1,'an outside pointer must retain the current email marker');
+  assert.equal(menu.querySelector('h2').firstChild,text,'closing an already closed selector preserves its title node');
+  assert.equal(menu.hidden,true);assert.equal(f.doc.querySelector('#order-single input[name=email]'),input);
+  assert.equal(capture().id,anchor.id,'the same element keeps its captured identity after an unrelated pointerdown');await paint();
+  review.send('restore',anchor);await waitFor(()=>f.doc.activeElement===input);await paint();
+  assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1);
+  assert.deepEqual([...review.messages.filter(x=>x.message.type==='missing').at(-1).message.payload.ids],[]);
+  assert.equal(JSON.stringify(anchor),original);assert.deepEqual(f.failures,[]);
+ }finally{review?.bridge.dispose();await f.close();}
 });

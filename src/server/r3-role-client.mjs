@@ -31,7 +31,7 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
   const money=value=>typeof value==='string' && /^\d+(\.\d+)?$/.test(value)?value.replace(/\B(?=(\d{3})+(?!\d))/g,',')+'원':'';
   const unit=u=>({tray:'판',pack:'팩',box:'상자',piece:'개'}[u]||u||'');
   const qTitle=q=>[q.productName||'발급 견적',q.lineCount>1?'외 '+(q.lineCount-1)+'항목':null,q.deliveryQty==null?null:q.deliveryQty+unit(q.unit),titleDate(q.serviceDate)||titleDate(q.issued_at)].filter(Boolean).join(' · ');
-  let grants=[],cases=[],opts={quotes:[],products:[],businesses:[]},next='',csrf='',epoch=0,expiryTimer=0,dispose=()=>{},pending,loading=false,ready=false;
+  let contextRevision=null,grants=[],cases=[],opts={quotes:[],products:[],businesses:[]},next='',csrf='',epoch=0,expiryTimer=0,dispose=()=>{},pending,loading=false,ready=false;
   const draftKey='order.r3.business.form.v1';
   let drafts={},cipher=null,changeNumber=0;
   const unpack=s=>Uint8Array.from(atob(s),x=>x.charCodeAt(0));
@@ -78,15 +78,16 @@ export function runRolePage(labels,createEvidenceEditor,createCustomerControls,m
   const error=e=>{if(e.name==='AbortError')return;status(messages[e.message]||(navigator.onLine?'업무를 불러오지 못했습니다. 새로고침해 주세요.':'연결이 끊겼습니다. 연결 후 다시 저장해 주세요.'));};
   async function api(path,body,signal){
     const settings={cache:'no-store',credentials:'same-origin',signal};
-    if(body)Object.assign(settings,{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf},body:JSON.stringify(body)});
+    if(body)Object.assign(settings,{method:'POST',headers:{'Content-Type':'application/json','X-IA-CSRF':csrf,...(contextRevision?{'X-Order-Context-Revision':String(contextRevision)}:{})},body:JSON.stringify(body)});
     const res=await fetch(path,settings);
     const data=await res.json();
     if(!res.ok)throw Object.assign(new Error(data.error),{status:res.status});
+    if(contextRevision===null&&Number.isSafeInteger(data.contextRevision))contextRevision=data.contextRevision;
     return data;
   }
   function clear(){
     formController?.abort();publicationController?.abort();signedView.tagController?.abort();
-    ++epoch;signedView.gesture?.abort();panelView='';signedView.selected=null;signedView.tags=[];asyncMotion?.destroy();asyncMotion=null;cipher=null;drafts={};clearTimeout(expiryTimer);dispose();dispose=()=>{};ready=false;csrf='';pending=null;grants=[];cases=[];next='';opts={quotes:[],products:[],businesses:[]};
+    ++epoch;signedView.gesture?.abort();panelView='';signedView.selected=null;signedView.tags=[];asyncMotion?.destroy();asyncMotion=null;cipher=null;drafts={};clearTimeout(expiryTimer);dispose();dispose=()=>{};ready=false;csrf='';contextRevision=null;pending=null;grants=[];cases=[];next='';opts={quotes:[],products:[],businesses:[]};
     for(const id of ['role-search-tags','role-menu','queue-list','list','detail','create','publication'])$(id).replaceChildren();
     $('account-trigger').hidden=true;$('account-panel').hidden=true;$('account-panel').replaceChildren();
     $('create').hidden=true;$('filter-bar').hidden=true;$('more').hidden=true;$('r3-practice').hidden=true;

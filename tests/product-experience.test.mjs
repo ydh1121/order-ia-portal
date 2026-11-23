@@ -134,6 +134,19 @@ test('business verification fails closed without a provider and never accepts cl
   assert.doesNotMatch(JSON.stringify(mismatched.body),/1234567890|시험 대표|test-only-key/);
 });
 
+test('business outages identify the failing boundary and enqueue one private alert for active same-organization operators',async t=>{
+  const w=await workspace(t);await w.business();
+  for(const [actor,org,active] of [['same-operator','lab-store',1],['foreign-operator','other-store',1],['inactive-operator','lab-store',0]])await w.db.prepare('INSERT INTO r3_membership VALUES(?,?,?,\'\',?)').bind(actor,'OPERATOR',org,active).run();
+  const input=verification(w),configuration=await w.direct('lab-buyer','/business-verifications',input);assert.deepEqual(configuration.body.businessVerification,{source:'configuration',alertQueued:true});
+  const failed={NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async()=>{throw Error('private-provider-failure');}};const provider=await w.direct('lab-buyer','/business-verifications',input,failed);assert.equal(provider.body.businessVerification.source,'provider');assert.equal(provider.body.businessVerification.alertQueued,true);
+  for(const malformed of [null,[],0,'OK',{bad:'response'},{status_code:'OK',request_cnt:1,data:{0:{b_no:input.number,valid:'01',status:{b_stt_cd:'01'}},length:1}}]){
+    const invalid=await w.direct('lab-buyer','/business-verifications',input,{NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async()=>Response.json(malformed)});assert.equal(invalid.status,502);assert.equal(invalid.body.error,'BUSINESS_PROVIDER_RESPONSE_INVALID');assert.deepEqual(invalid.body.businessVerification,{source:'invalid-response',alertQueued:true});
+  }
+  const alerts=(await w.db.prepare('SELECT actor_id,data_json FROM order_notification').all()).results.filter(row=>JSON.parse(row.data_json).caseId==='verify-case');assert.deepEqual(alerts.map(row=>row.actor_id).sort(),['lab-operator','same-operator']);assert.ok(alerts.every(row=>JSON.parse(row.data_json).priority==='urgent'));assert.doesNotMatch(JSON.stringify(alerts),/1234567890|시험 대표|시험 사업장|test-only-key|private-provider-failure/);assert.equal((await w.db.prepare("SELECT count(*) n FROM order_operation WHERE kind='business-verification'").first()).n,0);
+  await w.business('no-recipient');await w.db.prepare("UPDATE r3_membership SET active=0 WHERE role='OPERATOR' AND org_id='lab-store'").run();const absent=await w.direct('lab-buyer','/business-verifications',verification(w,{caseId:'no-recipient'}));assert.equal(absent.body.businessVerification.alertQueued,false);
+  await w.db.prepare('DROP TABLE order_notification').run();const storage=await w.direct('lab-buyer','/business-verifications',input);assert.equal(storage.status,503);assert.equal(storage.body.businessVerification.alertQueued,false);
+});
+
 test('NTS request/response bindings, exact replay and data minimization are enforced',async t=>{
   const w=await workspace(t);await w.business();let calls=0;const input=verification(w),env={NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async(url,init)=>{calls++;assert.equal(url.origin,'https://api.odcloud.kr');assert.equal(url.pathname,'/api/nts-businessman/v1/validate');assert.equal(init.redirect,'error');assert.ok(init.signal);const data=JSON.parse(init.body);assert.deepEqual(data.businesses,[{b_no:input.number,start_dt:input.openingDate,p_nm:input.owner,b_nm:input.name,b_sector:input.industry,b_type:input.trade}]);return ntsResponse();}};
   const result=await w.direct('lab-buyer','/business-verifications',input,env);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.item.verified,true);assert.equal(result.body.item.status,'VERIFIED');assert.match(result.body.item.inputDigest,/^[a-f0-9]{64}$/);assert.equal(calls,1);
@@ -156,4 +169,64 @@ test('NTS completion cannot commit after the buyer site grant is removed or the 
 test('a business verification request is bound to the requesting buyer and case before any provider call',async t=>{
   const w=await workspace(t);await w.business('verify-case','another-buyer');let calls=0;
   const result=await w.direct('lab-buyer','/business-verifications',verification(w),{NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async()=>{calls++;return ntsResponse();}});assert.ok([403,404].includes(result.status),JSON.stringify(result));assert.equal(calls,0);
+});
+
+test('account switch persists, scopes reads and writes, and refuses revoked access and stale tabs', async t => {
+  const w=await workspace(t), user='lab-buyer';
+  await w.db.prepare("INSERT INTO r3_membership VALUES(?,'BUYER','second-store','second-site',1)").bind(user).run();
+  const grants=async()=>(await w.db.prepare('SELECT * FROM r3_membership WHERE actor_id=? ORDER BY org_id,site_id').bind(user).all()).results;
+  const before=await grants(), first={orgId:'lab-store',siteId:'lab-site'}, second={orgId:'second-store',siteId:'second-site'};
+  await w.insert('purchase','first-order',first.orgId,first.siteId,{quantity:10,supplierId:'seller'},'AWAITING_CASH',user);
+  await w.insert('purchase','second-order',second.orgId,second.siteId,{quantity:12,supplierId:'seller'},'AWAITING_CASH',user);
+  const get=path=>w.product('buyer',path);
+  const update=async(path,command,revision)=>{
+    const request=new Request('https://product.test/api/ia/product'+path,{method:'POST',
+      headers:{'Content-Type':'application/json','X-Order-Context-Revision':String(revision)},body:JSON.stringify(command)});
+    const result=await handleProductOperations({request,env:{ORDER_PRODUCT_DB:w.db},actor:{id:user},path,clock:()=>w.now});
+    return {status:result.status,body:await result.json()};
+  };
+  const account=(await get('/account')).body;
+  assert.equal(account.capabilities.accountSwitch,true);
+  assert.deepEqual(account.context,{options:[first,second],selected:null,revision:0});
+  const select=w.command('switch',second);
+  assert.equal((await update('/account-context',{...select,siteId:'unknown'},0)).status,403);
+  const change=await update('/account-context',select,0);
+  assert.equal(change.status,200);assert.deepEqual(change.body.selected,second);
+  assert.deepEqual((await update('/account-context',select,0)).body,change.body);
+  assert.deepEqual((await get('/account-context')).body,change.body);
+  assert.deepEqual((await get('/purchases')).body.items.map(r=>r.id),['second-order']);
+  assert.equal((await get('/documents/first-order')).status,404);
+  const sites=await w.api('/runs/'+w.run+'/as/buyer/price/sites');
+  assert.deepEqual(sites.body.sites.map(r=>[r.org_id,r.site_id]),[[second.orgId,second.siteId]]);
+  const role=await w.api('/runs/'+w.run+'/as/buyer/role/workspace');
+  assert.deepEqual(role.body.businesses.map(r=>[r.org_id,r.site_id]),[[second.orgId,second.siteId]]);
+  const cancel=w.command('cancel',{expectedRevision:1,id:'second-order'});
+  assert.equal((await update('/purchases',cancel,0)).body.error,'ACCOUNT_CONTEXT_CHANGED');
+  assert.equal((await update('/purchases',{...cancel,id:'first-order'},1)).status,404);
+  const cancelled=await update('/purchases',cancel,1);assert.equal(cancelled.status,200,JSON.stringify(cancelled.body));assert.equal(cancelled.body.item.status,'CANCELLED');
+  assert.equal((await update('/account-context',w.command('switch',first),0)).status,409);
+  assert.deepEqual(before,await grants());
+  assert.equal((await w.db.prepare("SELECT count(*) n FROM r3_member_request").first()).n,0);
+  await w.db.prepare('UPDATE r3_membership SET active=0 WHERE actor_id=? AND org_id=?').bind(user,second.orgId).run();
+  assert.equal((await get('/purchases')).status,403);
+  assert.equal((await get('/account-context')).body.selected,null);
+  assert.equal((await get('/account')).body.capabilities.accountSwitch,true);
+  assert.deepEqual((await update('/account-context',w.command('switch',{...first,expectedRevision:1}),1)).body.selected,first);
+  assert.deepEqual((await get('/purchases')).body.items.map(r=>r.id),['first-order']);
+});
+
+test('supplier contract desk and product registration use the same selected operator organization',async t=>{
+  const w=await workspace(t),base='/runs/'+w.run+'/as/operator/price';
+  const select=(orgId,expectedRevision)=>w.product('operator','/account-context',w.command('switch',{orgId,siteId:'',expectedRevision}));
+  const initial=await w.api(base+'/desk'),version=initial.body.versions[0];
+  assert.equal(version.supplier_id,'lab-farm');
+  assert.equal((await select('lab-store',0)).status,200);
+  assert.equal((await w.api(base+'/desk')).body.versions.length,0);
+  assert.deepEqual((await w.api(base+'/registration')).body.organizations.map(o=>o.supplierId),['lab-store']);
+  assert.equal((await w.api(base+'/registration',{action:'product',requestKey:crypto.randomUUID(),supplierId:'lab-farm',
+    supplierName:'공급처',originName:'다른 출고지',productName:'계란',packSize:30,shell:'1'})).status,403);
+  const outside=await w.direct('lab-operator','/account-context');assert.equal(outside.body.selected.orgId,'lab-store');
+  assert.equal((await select('lab-farm',1)).status,200);
+  assert.deepEqual((await w.api(base+'/desk')).body.versions.map(v=>v.id),initial.body.versions.map(v=>v.id));
+  assert.deepEqual((await w.api(base+'/registration')).body.organizations.map(o=>o.supplierId),['lab-farm']);
 });

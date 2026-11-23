@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {RESEARCH_RELEASE_FORMAT,RESEARCH_RELEASE_NONCE,RESEARCH_RELEASE_FULL_ROWS,RESEARCH_RELEASE_ROW_IDENTITIES,researchReleaseRowIdentities,createResearchReleaseStore,serveResearchReleaseAsset,renderResearchReleaseApplication} from '../src/server/research-app/release-store.mjs';
-import {collectResearchRelease,encodeResearchRelease,sealResearchRelease,verifyResearchReleaseFiles} from '../scripts/seal-research-release.mjs';
+import {collectResearchRelease,encodeResearchRelease,sealResearchRelease,verifyResearchReleaseFiles,researchReleaseRuntimeIndexSource,syncResearchReleaseRuntimeIndex} from '../scripts/seal-research-release.mjs';
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const configFrom=html=>JSON.parse(/id="order-app-config">([\s\S]*?)<\/script>/.exec(html)[1]);
 const row=(screen,state)=>({id:screen+'/'+state+'/email',screen,state,variant:'email',title:screen+' '+state,phase:'mvp'});
@@ -26,6 +26,73 @@ function fixture(...packs){
   const env={ASSETS:{fetch:async request=>{const url=new URL(request.url);calls.push({path:url.pathname,method:request.method,origin:url.origin});const build=/^\/ia\/research-releases\/([a-f0-9]{64})\.json.gz$/.exec(url.pathname)?.[1];return files.has(build)?new Response(files.get(build),{headers:{'Content-Type':'application/gzip'}}):new Response(null,{status:404});}}};
   return {index,files,calls,env,store:createResearchReleaseStore(index)};
 }
+
+test('the compact Worker index preserves immutable pack identities and projects every original route after deployment-style bundling',async()=>{
+  const {researchReleases:authoritative}=await import('../src/server/research-app/releases.gen.mjs');
+  const {researchReleases:runtime}=await import('../src/server/research-release-runtime-index.gen.mjs');
+  const source=await readFile(new URL('../src/server/research-release-runtime-index.gen.mjs',import.meta.url),'utf8');
+  assert.deepEqual(Object.keys(runtime),Object.keys(authoritative));
+  for(const [build,entry]of Object.entries(authoritative)){
+    const {rowsGzip:originalRows,rowsFormat:originalFormat,...original}=entry,{rowsGzip,rowsFormat,...actual}=runtime[build];assert.deepEqual(actual,original,'pack hashes, byte lengths and remaining metadata are exact');assert.equal(rowsFormat,RESEARCH_RELEASE_ROW_IDENTITIES);assert.deepEqual(JSON.parse(gunzipSync(Buffer.from(rowsGzip,'base64'))),researchReleaseRowIdentities(JSON.parse(gunzipSync(Buffer.from(originalRows,'base64')))));
+  }
+  assert.equal(source,researchReleaseRuntimeIndexSource(authoritative));
+  assert.ok(Buffer.byteLength(source)<Buffer.byteLength(JSON.stringify(authoritative)),'shared row strings reduce the actual source imported by the Worker');
+  const {transform}=createRequire(new URL('./build-tools/package.json',import.meta.url))('esbuild');
+  const bundled=await transform(source,{format:'esm',target:'es2022',minify:true,keepNames:true});
+  const restored=(await import('data:text/javascript;base64,'+Buffer.from(bundled.code).toString('base64'))).researchReleases;
+  assert.deepEqual(restored,runtime);assert.equal(JSON.stringify(restored),JSON.stringify(runtime));
+  assert.equal((await syncResearchReleaseRuntimeIndex({check:true})).changed,false);
+});
+
+test('every published artifact identity and full archive metadata survive runtime-only row projection',async()=>{
+  const indexPath=new URL('../src/server/research-app/releases.gen.mjs',import.meta.url),before=await readFile(indexPath);
+  const {researchReleases:authoritative}=await import('../src/server/research-app/releases.gen.mjs'),{researchReleases:runtime}=await import('../src/server/research-release-runtime-index.gen.mjs');
+  const store=createResearchReleaseStore(runtime,{maxCachedReleases:1}),base=new URL('../public/ia/research-releases/',import.meta.url);let checked=0;
+  for(const [build,entry]of Object.entries(authoritative)){
+    const bytes=await readFile(new URL(build+'.json.gz',base));assert.equal(hash(bytes),entry.packSha256);assert.equal(bytes.length,entry.bytes);
+    const original=JSON.parse(gunzipSync(bytes)),env={ASSETS:{fetch:async()=>new Response(bytes)}};const saved=await store.read(build,env,'https://archive.example');assert.deepEqual(saved.rows,original.rows,'titles, fixtures, pins and all metadata are read from the original checksummed pack');
+    const rows=JSON.parse(gunzipSync(Buffer.from(entry.rowsGzip,'base64')));
+    for(const row of rows)await Promise.all([320,360,375,390,430,768,1024,1280,1440,1920].flatMap(width=>['simple','detailed'].map(async mode=>{const identity=['order-research-application/v1',build,row.id,width];if(mode==='detailed')identity.push(mode);assert.equal(await store.artifactHash(build,row.id,width,mode),hash(JSON.stringify(identity)));checked++;})));
+    assert.equal(hash(await readFile(new URL(build+'.json.gz',base))),entry.packSha256);
+  }
+  assert.ok(checked>10000);assert.deepEqual(await readFile(indexPath),before,'the append-only authoritative index is never rewritten');
+});
+
+test('runtime index generation is read-only in check mode and appends exact historical entries without changing packs',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'order-release-runtime-index-')),files=join(directory,'packs'),indexPath=join(directory,'releases.gen.mjs'),runtimeIndexPath=join(directory,'runtime-index.gen.mjs');
+  const options={directory:files,indexPath},runtimeOptions={indexPath,runtimeIndexPath};
+  const load=async()=> (await import('data:text/javascript;base64,'+(await readFile(runtimeIndexPath)).toString('base64'))).researchReleases;
+  try{
+    await assert.rejects(syncResearchReleaseRuntimeIndex({...runtimeOptions,check:true}),/INDEX_MISSING/);assert.deepEqual(await readdir(directory),[]);
+    const old=pack('first'),next=pack('second');
+    await sealResearchRelease(old,options);
+    const oldPath=join(files,old.build.digest+'.json.gz'),oldPack=await readFile(oldPath),originalIndex=await readFile(indexPath);
+    await assert.rejects(syncResearchReleaseRuntimeIndex({...runtimeOptions,check:true}),/RUNTIME_INDEX_STALE/);
+    assert.deepEqual(await readFile(indexPath),originalIndex);assert.deepEqual((await readdir(directory)).sort(),['packs','releases.gen.mjs']);
+    const first=await syncResearchReleaseRuntimeIndex(runtimeOptions);assert.equal(first.releases,1);assert.equal(first.uniqueRows,1);assert.equal(first.changed,true);
+    const previous=await readFile(runtimeIndexPath),originalEntry=(await load())[old.build.digest];
+    assert.deepEqual(originalEntry,encodeResearchRelease(old).entry);assert.deepEqual(await readFile(indexPath),originalIndex);assert.deepEqual(await readFile(oldPath),oldPack);
+    assert.equal((await syncResearchReleaseRuntimeIndex({...runtimeOptions,check:true})).checked,true);assert.deepEqual(await readFile(runtimeIndexPath),previous);
+    await writeFile(runtimeIndexPath,previous.toString('utf8').replace(originalEntry.packSha256,'0'.repeat(64)));
+    const damaged=await readFile(runtimeIndexPath);
+    await assert.rejects(syncResearchReleaseRuntimeIndex({...runtimeOptions,check:true}),/RUNTIME_INDEX_STALE/);assert.deepEqual(await readFile(runtimeIndexPath),damaged,'check mode cannot silently repair changed data');
+    await syncResearchReleaseRuntimeIndex(runtimeOptions);assert.deepEqual(await readFile(runtimeIndexPath),previous);
+    await sealResearchRelease(next,options);const appendedIndex=await readFile(indexPath);
+    await assert.rejects(syncResearchReleaseRuntimeIndex({...runtimeOptions,check:true}),/RUNTIME_INDEX_STALE/);assert.deepEqual(await readFile(runtimeIndexPath),previous);
+    await writeFile(indexPath+'.lock','another-sealer\n');
+    await assert.rejects(syncResearchReleaseRuntimeIndex(runtimeOptions),/INDEX_BUSY/);assert.deepEqual(await readFile(runtimeIndexPath),previous);
+    await rm(indexPath+'.lock');
+    const second=await syncResearchReleaseRuntimeIndex(runtimeOptions);assert.equal(second.releases,2);assert.equal(second.uniqueRows,1,'identical row identities share one string across distinct source builds');
+    const runtime=await load();assert.deepEqual(runtime[old.build.digest],originalEntry);assert.deepEqual(runtime[next.build.digest],encodeResearchRelease(next).entry);
+    assert.deepEqual(await readFile(indexPath),appendedIndex);assert.deepEqual(await readFile(oldPath),oldPack);
+    const f=fixture(old,next),store=createResearchReleaseStore(runtime);
+    for(const original of [old,next]){
+      assert.deepEqual(await store.read(original.build.digest,f.env,'https://order.example'),original,'each source build reads its own immutable payload after the runtime index is reconstructed');
+      for(const mode of ['simple','detailed'])assert.equal(await store.artifactHash(original.build.digest,'q2/filled/email',390,mode),await f.store.artifactHash(original.build.digest,'q2/filled/email',390,mode));
+    }
+    assert.equal((await syncResearchReleaseRuntimeIndex({...runtimeOptions,check:true})).changed,false);
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
 
 test('new indexes contain only explicit route identities while all formats preserve full immutable pack rows and recorded targets',async()=>{
   const original=pack();
@@ -213,8 +280,8 @@ test('collection snapshots actual served assets and rejects an incomplete depend
 
 test('current Worker assets, page and HTML exports use the same sealed Node bytes even after raw serializer cache is populated',async()=>{
   const source=await import('../src/server/research-app/page.mjs');
-  const current=source.researchBuild,base=source.researchAssetBase,rows=(await source.listResearchRows()).filter(value=>['onboarding/guest-1/email','q1/before/email','q2/empty/email','q2/filled/email'].includes(value.id));
-  assert.equal(rows.length,4);
+  const current=source.researchBuild,base=source.researchAssetBase,rows=(await source.listResearchRows()).filter(value=>['onboarding/guest-1/email','q1/before/email','q2/empty/email','q2/filled/email','notifications/list/email'].includes(value.id));
+  assert.equal(rows.length,5);
   const assetNames=['research/bootstrap.js','research/quote-integrations.mjs','bridge/business-directory.mjs'],assets={};
   for(const name of assetNames){const response=await source.serveResearchAsset(base+name);assert.equal(response.status,200);assets[name]={body:await response.text(),type:response.headers.get('Content-Type')};}
   const html=await source.renderResearchApplication(RESEARCH_RELEASE_NONCE,new URLSearchParams({screen:'onboarding',state:'guest-1'}));
@@ -224,7 +291,7 @@ test('current Worker assets, page and HTML exports use the same sealed Node byte
     const {build}=createRequire(new URL('./build-tools/package.json',import.meta.url))('esbuild'),output=join(directory,'worker.mjs');
     await build({entryPoints:[fileURLToPath(new URL('../src/server/research-app/page.mjs',import.meta.url))],outfile:output,bundle:true,platform:'node',format:'esm',target:'es2022',keepNames:true,logLevel:'silent',plugins:[{
       name:'immutable-release-index-fixture',setup(builder){
-        builder.onResolve({filter:/^\.\/releases\.gen\.mjs$/},()=>({path:'index',namespace:'sealed-fixture'}));
+        builder.onResolve({filter:/^\.\.\/research-release-runtime-index\.gen\.mjs$/},()=>({path:'index',namespace:'sealed-fixture'}));
         builder.onLoad({filter:/.*/,namespace:'sealed-fixture'},()=>({contents:'export const researchReleases='+JSON.stringify(f.index)+';',loader:'js'}));
       }
     }]});
@@ -247,7 +314,7 @@ test('current Worker assets, page and HTML exports use the same sealed Node byte
     const nonce='a'.repeat(36),parameters=new URLSearchParams({screen:'q2',state:'filled',variant:'email',mode:'detailed'});
     const sealed=await worker.renderResearchApplication(nonce,parameters,f.env,'https://worker.example');
     assert.equal(sealed,await renderResearchReleaseApplication(original,nonce,parameters));assert.ok(sealed.includes('<!-- sealed-node-shell -->'));
-    for(const input of [{screen:'q2'},{screen:'detailed-r3'}]){
+    for(const input of [{screen:'q2'},{screen:'detailed-r3'},{screen:'notifications'}]){
       const direct=new URLSearchParams(input),rawInitial=configFrom(await source.renderResearchApplication(nonce,direct)).initial,sealedInitial=configFrom(await worker.renderResearchApplication(nonce,direct,f.env,'https://worker.example')).initial;
       for(const key of ['screen','state','variant','mode'])assert.equal(sealedInitial[key],rawInitial[key],'current route defaults remain available after sealing: '+key);
     }

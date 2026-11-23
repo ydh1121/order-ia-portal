@@ -115,7 +115,7 @@ def compare(name, original, candidate, drawer, mode):
     # The user's 2026-11-20 directive replaces the flat menu with two editable
     # accordions. All existing preview geometry and other shell gates remain.
     require(set(original["navModules"]).issubset(candidate["navModules"]),"an approved menu module was lost")
-    require(candidate["navCount"]==102 and len(set(candidate["navModules"]))==102 and "price-workspace" in candidate["navModules"],"MVP inventory or the canonical price workspace is missing or duplicated")
+    require(candidate["navCount"]==103 and len(set(candidate["navModules"]))==103 and {"price-workspace","notifications"}.issubset(candidate["navModules"]),"MVP inventory, the canonical price workspace or the native notification page is missing or duplicated")
     require(candidate["navGroups"]==["mvp","future"],"MVP and future accordions missing")
     require(candidate["bodyOverflow"] <= 1, f"document horizontal overflow {candidate['bodyOverflow']}px")
     def compare_box(what, a, b, axes=range(4), tol=2):

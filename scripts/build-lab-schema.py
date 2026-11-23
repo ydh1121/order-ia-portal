@@ -15,7 +15,7 @@ NAMES = [
     '0006_r3_price_catalog', '0008_r3_role_workspace',
     '0009_r3_price_registration', '0010_r3_member_requests',
     '0011_r3_personal_price_draft', '0014_r3_price_workspace',
-    '0015_r3_saved_businesses', '0017_product_operations',
+    '0015_r3_saved_businesses', '0017_product_operations', '0018_notification_preferences',
 ]
 statements, sources = [], []
 db = sqlite3.connect(':memory:')

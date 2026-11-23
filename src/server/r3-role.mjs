@@ -1,3 +1,4 @@
+import {workingMemberships,workingRevision,readContextRevision} from './product-account-context.mjs';
 import {readAccountPanel,requestMemberChange} from './r3-role-account.mjs';
 import {workspaceOptions,caseQuotes,publishMenu,validCaseContext,targetsOwnedSql} from './r3-role-workspace.mjs';
 import {handleR3Evidence} from './r3-evidence.mjs';
@@ -6,14 +7,14 @@ import {caseKinds, creatorRole, dispositionReasons, reasonRequired, transitions}
 const privateHeaders = {'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie, Cf-Access-Jwt-Assertion','X-Content-Type-Options':'nosniff'};
 const json = (body,status=200) => new Response(JSON.stringify(body),{status,headers:privateHeaders});
 const id = value => typeof value==='string' && /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(value);
-const guardedRole = `EXISTS (SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.active=1 AND m.role=? AND m.org_id=? AND m.site_id=?)`;
-const visibleCase = `EXISTS (SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.active=1 AND
+const guardedRole = `EXISTS (SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 AND m.role=? AND m.org_id=? AND m.site_id=?)`;
+const visibleCase = `EXISTS (SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 AND
  ((m.role='BUYER' AND m.org_id=c.org_id AND m.site_id=c.site_id) OR
   (m.role='OPERATOR' AND m.org_id=c.org_id) OR (m.role='SUPPLIER' AND m.org_id=c.supplier_org_id)))`;
 const scopeArgs = (actorId,role,c) => [actorId,role,role==='SUPPLIER'?c.supplier_org_id:c.org_id,role==='BUYER'?c.site_id:''];
 const readVisible = (db,actorId,caseId) => db.prepare(`SELECT c.* FROM r3_case c WHERE c.id=? AND ${visibleCase}`).bind(caseId,actorId).first();
 export async function readRoleScope(db,actorId) {
-  return (await db.prepare('SELECT role,org_id,site_id FROM r3_membership WHERE actor_id=? AND active=1 ORDER BY role,org_id,site_id').bind(actorId).all()).results;
+  return (await db.prepare(`SELECT role,org_id,site_id FROM ${workingMemberships} WHERE actor_id=? AND active=1 ORDER BY role,org_id,site_id`).bind(actorId).all()).results;
 }
 export async function canReadSite(db,actorId,orgId,siteId) {
   return !!await db.prepare(`SELECT 1 FROM r3_business_site WHERE org_id=? AND site_id=? AND verification='VERIFIED' AND ${guardedRole}`).bind(orgId,siteId,actorId,'BUYER',orgId,siteId).first();
@@ -149,6 +150,7 @@ export async function handleR3Role({request,env,actor,path}) {
   if(suffix==='session'&&request.method==='GET'&&actor.csrf)return json({csrf:actor.csrf,expiresAt:actor.expiresAt,practiceAllowed:actor.role!=='BUSINESS'});
   if(!['','workspace','publication','account'].includes(suffix)) return json({error:'NOT_FOUND'},404);
   try {
+    if(request.method==='POST')await workingRevision(db,actor.id,request);
     if(suffix==='publication'||suffix==='account'&&request.method==='POST'){
       if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
       if(request.headers.get('Origin')!==url.origin||!actor.csrf||request.headers.get('X-IA-CSRF')!==actor.csrf)return json({error:'CSRF_DENIED'},403);
@@ -185,7 +187,7 @@ export async function handleR3Role({request,env,actor,path}) {
       const withContext=url.searchParams.get('context')==='1';
       const extra=withContext?", (SELECT json_extract(n.context_json,'$.businessName') FROM r3_case_note n WHERE n.case_id=c.id AND n.revision=1) businessName, (SELECT json_extract(n.context_json,'$.desiredDate') FROM r3_case_note n WHERE n.case_id=c.id AND json_extract(n.context_json,'$.desiredDate') IS NOT NULL ORDER BY revision DESC LIMIT 1) desiredDate":'';
       const {results}=await db.prepare(`SELECT c.*${extra} FROM r3_case c WHERE c.id>? AND ${visibleCase} ORDER BY c.id LIMIT 51`).bind(cursor,actor.id).all();
-      return json({grants,cases:results.slice(0,50).map(c=>publicCase(c,grants,actor.id)),next:results.length===51?results[49].id:null});
+      return json({grants,contextRevision:await readContextRevision(db,actor.id),cases:results.slice(0,50).map(c=>publicCase(c,grants,actor.id)),next:results.length===51?results[49].id:null});
     }
     if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
     if(request.headers.get('Origin')!==url.origin || !actor.csrf || request.headers.get('X-IA-CSRF')!==actor.csrf) return json({error:'CSRF_DENIED'},403);
@@ -197,5 +199,5 @@ export async function handleR3Role({request,env,actor,path}) {
     let input;try{input=readInput(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(buf.subarray(0,used))));}catch{return json({error:'INVALID_INPUT'},400);}
     if(!input)return json({error:'INVALID_INPUT'},400);
     return await mutate(db,actor.id,input,new Date().toISOString());
-  }catch{return json({error:'WORKFLOW_UNAVAILABLE'},503);}
+  }catch(error){if(error.message==='ACCOUNT_CONTEXT_CHANGED')return json({error:error.message},409);return json({error:'WORKFLOW_UNAVAILABLE'},503);}
 }

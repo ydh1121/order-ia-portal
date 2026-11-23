@@ -34,3 +34,22 @@ test('composed quote route pages exclude catalog blur while preserving original 
   assert.equal(dom.window.getComputedStyle(other).filter,otherBefore,'catalog motion outside the quote retains its original filter');
  }finally{dom.window.close();}
 });
+
+test('research quote cards, add regions and egg choices override the current regular rules only inside the quote workspace',()=>{
+ const regular=inflate(quoteFiles['web/styles.css']);
+ const relevant=[...regular.matchAll(/(?:^|\n)((?:\.sku-editor \.q1-egg|\.subaction|\.t-acc\[data-status="active"\])\{[^{}]*\})/g)].map(match=>match[1]).join('\n');
+ assert.match(relevant,/stroke:#aeb4be/);assert.match(relevant,/fill:#f3eee4/);
+ const egg='<div class="sku-editor"><button class="pick" aria-pressed="false"><svg class="q1-egg"></svg></button><button class="pick" aria-pressed="true"><svg class="q1-egg"></svg></button></div>';
+ const dom=new JSDOM('<!doctype html><style>'+relevant+'\n'+researchQuoteCss+'</style><section id="order-app-quote"><div data-research-quote><section id="page-form"><div class="stack"><section class="t-acc" data-status="active"><button class="accordion-trigger">품목</button></section></div><button id="add-line" class="subaction">계란 추가</button><button id="add-site" class="subaction">+ 사업장 추가</button>'+egg+'<button id="q3-next" hidden>완료</button><button id="q4-next" hidden>완료</button></section></div></section><section id="unrelated">'+egg+'</section>');
+ try{
+  const w=dom.window,d=w.document,scope=d.querySelector('[data-research-quote]');
+  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).backgroundColor,'rgb(243, 245, 247)');
+  assert.equal(w.getComputedStyle(scope.querySelector('.t-acc')).borderWidth,'0px');
+  for(const id of ['add-line','add-site']){const css=w.getComputedStyle(d.getElementById(id));assert.equal(css.width,'100%');assert.equal(css.minHeight,'60px');assert.equal(css.borderStyle,'dashed');}
+  assert.equal(w.getComputedStyle(scope.querySelector('[aria-pressed=false] .q1-egg')).fill,'#bfc7d1');
+  assert.equal(w.getComputedStyle(scope.querySelector('[aria-pressed=true] .q1-egg')).fill,'white');
+  for(const element of scope.querySelectorAll('.q1-egg'))assert.equal(w.getComputedStyle(element).stroke,'none');
+  assert.equal(w.getComputedStyle(d.querySelector('#unrelated .q1-egg')).stroke,'#aeb4be');
+  for(const id of ['q3-next','q4-next'])assert.equal(w.getComputedStyle(d.getElementById(id)).display,'none');
+ }finally{dom.window.close();}
+});

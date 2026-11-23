@@ -9,6 +9,11 @@ import {mountResearchScenePanel} from './scene-panels.mjs';
 import {mountResearchDrawer} from './drawer.mjs';
 import {createResearchQuoteRepository} from './quote-repository.mjs';
 import {mountResearchSavedQuotePanel} from './saved-quote-panel.mjs';
+import {mountResearchArrowMotion} from './interaction-polish.mjs';
+import {mountResearchNotifications} from './notifications.mjs';
+import {installResearchWorkflowPolish} from './workflow-polish.mjs';
+import {installResearchPasses} from './passes.mjs';
+import {mountResearchOrderMenu} from './order-menu.mjs';
 
 /** One document, one application session and one header. The review tool is an
  * optional observer; this application also runs without any parent frame. */
@@ -17,8 +22,10 @@ export async function mountResearchApplication(config, environment) {
   if(!root||root.__researchApplication)throw Error('RESEARCH_APPLICATION_ROOT');
   const controller=new win.AbortController(), signal=controller.signal, instance=win.crypto.randomUUID();
   const header=doc.getElementById('order-app-header'), page=doc.getElementById('order-app-page'), quote=doc.getElementById('order-app-quote'), pricing=doc.getElementById('order-app-pricing');
-  const status=doc.getElementById('order-app-status'), modules=new Map(), scenePromises=new Map(), fields=new Map();
-  let route=researchRoute(config.initial), pageRoute=null, epoch=0, pageDispose=null, sharedDispose=null, workspace=null, priceWorkspace=null, brandMenu=null, authSheet=null, drawerDispose=null, disposed=false,started=false,reviewSelecting=false,fixtureSelecting=false,navigating=0,activeAccountPanel=null;
+  const status=doc.getElementById('order-app-status'), modules=new Map(), scenePromises=new Map(), fields=new Map(), brandListeners=new Set();
+  const arrowMotion=mountResearchArrowMotion(doc,{signal});
+  const workflowPolish=installResearchWorkflowPolish(win),releasePasses=installResearchPasses(win);
+  let route=researchRoute(config.initial), pageRoute=null, epoch=0, pageDispose=null, sharedDispose=null, workspace=null, priceWorkspace=null, brandMenu=null, authSheet=null, drawerDispose=null, disposed=false,started=false,reviewSelecting=false,fixtureSelecting=false,navigating=0,activeAccountPanel=null,authReturn=null;
   const notify=text=>{status.textContent=String(text||'');status.hidden=!text;};
   const assetUrl=path=>config.assetBase+path;
   const loadScene=async r=>{
@@ -52,8 +59,11 @@ export async function mountResearchApplication(config, environment) {
     if(response?.confirmed!==true)return {...response,confirmed:false};
     await adapter.refreshSession?.();refreshBrand();return response;
   }
-  const api={mode:'product',interactive:true,adapter,variant:'email',get screen(){return route.screen;},get reviewScenario(){return fixtureSelecting;},get brandAccount(){return win.ORDER_BRAND_ACCOUNT_CONTEXT;},applicationHeader:{get menu(){return brandMenu;}},signal,
-    reduced:()=>win.matchMedia('(prefers-reduced-motion: reduce)').matches,select:(screen,state,options={})=>navigate(screen==='onboarding'&&route.kind==='auth'&&route.parent?.screen!=='onboarding'?route.parent:{screen,state,...options}),
+  const api={mode:'product',interactive:true,adapter,variant:'email',get screen(){return route.screen;},get reviewScenario(){return fixtureSelecting;},get brandAccount(){return win.ORDER_BRAND_ACCOUNT_CONTEXT;},applicationHeader:{element:header,get menu(){return brandMenu;},subscribe(listener){brandListeners.add(listener);if(brandMenu)listener(brandMenu.inspect());return()=>brandListeners.delete(listener);}},signal,
+    reduced:()=>win.matchMedia('(prefers-reduced-motion: reduce)').matches,select:(screen,state,options={})=>{
+      const destination=screen==='onboarding'&&route.kind==='auth'&&authenticated()&&authReturn?authReturn:screen==='onboarding'&&route.kind==='auth'&&route.parent?.screen!=='onboarding'?route.parent:{screen,state,...options};
+      return navigate(destination);
+    },
     localState,toast:notify,performAction,demoSuccess(){notify('연결된 서비스의 응답을 확인하지 못했어요.');return Promise.resolve({confirmed:false,error:'SERVICE_UNCONNECTED'});}};
   const originalBrandContext=win.ORDER_BRAND_ACCOUNT_CONTEXT||{};
   const panelTitles={'account-settings':'계정 설정','saved-quote':'내 견적','delivery-schedule':'납품 일정',passes:'오더 패스'};
@@ -63,6 +73,8 @@ export async function mountResearchApplication(config, environment) {
     return ({'profile.personal':{screen:'profile',state:'default'},'profile.account':{screen:'account-settings',state:'normal'},'profile.connections':{screen:'profile',state:'menu'},notifications:{screen:'profile',state:'notification'},'manage.business':{screen:'store-settings',state:'list'},'manage.quotes':{screen:'saved-quote',state:'list'},'manage.delivery':{screen:'delivery-schedule',state:'calendar'}})[id]||null;
   }
   function accountState(state){
+    for(const listener of brandListeners)listener(state);
+    if(state.phase==='open')orderMenu?.close();
     if(navigating||reviewSelecting||disposed||!pageRoute)return;
     if(state.phase==='closed'&&route.kind==='account'){activeAccountPanel=null;route=researchRoute(route.parent||pageRoute);updateLocation(true);emit();return;}
     if(state.phase!=='open'||state.page===activeAccountPanel)return;
@@ -75,7 +87,7 @@ export async function mountResearchApplication(config, environment) {
   }
   const brandContext={...originalBrandContext,navigate:navigatePanelDestination,onStateChange:accountState,
     renderPanel(args){
-      if(['profile.personal','profile.account','profile.connections','notifications'].includes(args.id))return mountResearchAccountPanel({...args,adapter,services,onNavigate:navigate,setUnread:count=>brandMenu?.setUnread(count)});
+      if(['profile.personal','profile.account','profile.connections','notifications'].includes(args.id))return mountResearchAccountPanel({...args,adapter,services,beforeSwitch:()=>!doc.querySelector('dialog[open]')&&(!workspace||workspace.canLeave())&&(!priceWorkspace||priceWorkspace.canLeave()&&!priceWorkspace.snapshot().model?.dirty),onNavigate:navigate,setUnread:count=>brandMenu?.setUnread(count)});
       if(args.id==='manage.business')return mountResearchBusinessPanel({...args,adapter,services,onNavigate:navigate,loadModule:environment.loadBusinessModule,initialState:route.screen==='store-settings'?route.state:'list',businessId:reviewSelecting||config.inspect?adapter.fixture?.inspect().data.businesses.find(item=>item.id==='qa-business-01')?.id:undefined});
       const target=panelRoute(args.id);
       if(target?.screen==='saved-quote')return mountResearchSavedQuotePanel({...args,repository,onOpenDraft:async record=>{if(!await navigate({screen:'q1',mode:record.mode},{restartQuote:true}))return {ok:false,status:'NAVIGATION_CANCELLED'};return record.hasInput?workspace.restoreDraft(record):{ok:true};}});
@@ -84,8 +96,25 @@ export async function mountResearchApplication(config, environment) {
     }};
   win.ORDER_BRAND_ACCOUNT_CONTEXT=brandContext;
   const brand=createOrderBrand(doc);header.querySelector('[data-app-brand]').append(brand);
-  function refreshBrand(){brandContext.authenticated=authenticated();brandContext.unread=originalBrandContext.unread||0;brandMenu=mountOrderBrandElement(brand,{...brandContext,authenticated:authenticated()});const action=header.querySelector('[data-app-auth]');action.textContent=authenticated()?'내 계정':'회원가입';action.onclick=()=>authenticated()?navigate({screen:'profile',state:'menu'}):navigate({screen:'signup',state:'empty'});}
+  let orderMenu=null;
+  function refreshBrand(){brandContext.authenticated=authenticated();brandContext.unread=originalBrandContext.unread||0;brandMenu=mountOrderBrandElement(brand,{...brandContext,authenticated:authenticated()});const action=header.querySelector('[data-app-auth]');action.hidden=authenticated();action.textContent='회원가입';action.onclick=()=>navigate({screen:'signup',state:'empty'});}
   refreshBrand();await adapter.ready;refreshBrand();
+  async function closeAccountForOrder(){
+    if(!brandMenu||brandMenu.inspect().phase==='closed')return true;
+    let finish;
+    const completed=new Promise(resolve=>{
+      const observe=state=>{if(state.phase==='closed')finish(true);},abort=()=>finish(false);
+      finish=value=>{brandListeners.delete(observe);signal.removeEventListener('abort',abort);resolve(value);};
+      brandListeners.add(observe);signal.addEventListener('abort',abort,{once:true});
+    });
+    if(await brandMenu.requestClose()===false)finish(false);
+    else if(brandMenu.inspect().phase==='closed')finish(true);
+    return completed;
+  }
+  orderMenu=mountResearchOrderMenu({brand,adapter,signal,getRoute:()=>route,beforeOpen:closeAccountForOrder,onChoose:mode=>{
+    if(route.kind==='quote'&&workspace){quote.querySelector('#quote-mode-switch')?.click();return;}
+    return navigate({screen:'q1',mode});
+  }});
   const headerStyle=doc.createElement('style');headerStyle.dataset.researchBrandCss='';
   headerStyle.textContent=doc.querySelector('[data-order-brand-header-css]').textContent.replaceAll('.order-product-brand','#order-app-header .order-product-brand');doc.head.append(headerStyle);
   const back=header.querySelector('[data-app-back]');back.onclick=()=>{if(workspace&&route.kind==='quote'&&workspace.back())return;return route.kind==='quote'&&/^q[2-4]$/.test(route.screen)?navigate({screen:'q'+(Number(route.screen.slice(1))-1),mode:route.mode}):navigate(route.parent||{screen:'onboarding',state:authenticated()?'member-4':'guest-4'});};
@@ -118,6 +147,11 @@ export async function mountResearchApplication(config, environment) {
     catch(error){created.dispose();throw error;}
   }
   async function mountPage(next,sequence,{restartQuote=false,introScene=null,priceSelected=false}={}){
+    if(next.screen==='notifications'){
+      clearPage();page.hidden=false;quote.hidden=true;pricing.hidden=true;
+      pageDispose=mountResearchNotifications({container:page,adapter,signal,mode:'full',setUnread:count=>brandMenu?.setUnread(count)});
+      page.dataset.researchSceneConnection='connected';pageRoute=next;return;
+    }
     if(next.kind==='pricing'){
       if(!priceWorkspace)await preparePrice(next);
       else if(!priceSelected&&await priceWorkspace.select({state:next.state,scenario:fixtureSelecting})===false)return false;
@@ -207,6 +241,11 @@ export async function mountResearchApplication(config, environment) {
       if(!accepted||sequence!==epoch){if(!history)updateLocation(true);return false;}
     }
     if(scenario&&environment.configure){await environment.configure(next,adapter,input.fixture);refreshBrand();}
+    if(next.screen==='notifications'&&!authenticated()){
+      authReturn=next;
+      return await navigate({screen:'login',state:'empty',parent:pageRoute||{screen:'onboarding',state:'guest-4',variant:'email',mode:next.mode}},{replace,history});
+    }
+    page.dispatchEvent(new win.CustomEvent('order:research-leave'));
     drawerDispose?.();drawerDispose=null;
     if(['auth','account','sheet'].includes(next.kind)){
       const parent=researchRoute(next.parent||{},route);
@@ -221,7 +260,8 @@ export async function mountResearchApplication(config, environment) {
       }
       else if(next.kind==='account'){
         authSheet?.close?.({immediate:true});
-        const panel=input.panel||(next.screen==='profile'?(next.state==='notification'?'notifications':next.state==='menu'?null:'profile.personal'):next.screen==='account-settings'&&next.state==='edit'?'profile.personal':['account-settings','saved-quote','delivery-schedule'].includes(next.screen)?(next.screen==='account-settings'?'profile':'manage')+'.research.'+next.screen+'.'+next.state:next.panel);
+        const workingAccount=config.accountRun&&(next.screen==='profile'&&next.state==='restricted'||next.screen==='account-settings'&&next.state==='normal');
+        const panel=workingAccount?'profile.account':input.panel||(next.screen==='profile'?(next.state==='notification'?'notifications':next.state==='menu'?null:'profile.personal'):next.screen==='account-settings'&&next.state==='edit'?'profile.personal':['account-settings','saved-quote','delivery-schedule'].includes(next.screen)?(next.screen==='account-settings'?'profile':'manage')+'.research.'+next.screen+'.'+next.state:next.panel);
         if(!authenticated())return await navigate({screen:'login',state:'empty',parent});
         activeAccountPanel=panel||'root';brandMenu?.open?.(panel,{title:panelTitles[next.screen]||null});
       }else{
@@ -237,7 +277,8 @@ export async function mountResearchApplication(config, environment) {
       if(!retained&&await mountPage(next,sequence,{restartQuote,introScene,priceSelected})===false){route=previousRoute;if(!history)updateLocation(true);return false;}
     }
     if(sequence!==epoch||disposed)return false;
-    back.hidden=route.screen==='onboarding';header.dataset.appRoute=route.screen;
+    if(route.kind!=='auth')authReturn=null;
+    back.hidden=route.screen==='onboarding'||route.kind==='quote';header.dataset.appRoute=route.screen;
     if(history)updateLocation(replace);emit();return true;
     }finally{navigating--;fixtureSelecting=priorFixtureSelecting;}
   }
@@ -248,7 +289,7 @@ export async function mountResearchApplication(config, environment) {
     // legacy handlers still reading input.value must not receive a split DOM.
     if(started&&!navigating&&!disposed&&route.kind==='auth'){
       const current=authSheet?.inspect();
-      if(!current?.open){route=researchRoute(route.parent||pageRoute);updateLocation(true);emit();}
+      if(!current?.open){authReturn=null;route=researchRoute(route.parent||pageRoute);updateLocation(true);emit();}
       else if(current.screen!==route.screen||current.state!==route.state){route={...route,screen:current.screen,state:current.state};updateLocation(true);emit();}
     }
   }
@@ -266,7 +307,7 @@ export async function mountResearchApplication(config, environment) {
     get priceWorkspace(){return priceWorkspace;},
     snapshot:()=>({instance,build:config.build,route:{...route},pageRoute:{...pageRoute},quote:workspace?.snapshot?.()||null,price:priceWorkspace?.snapshot?.()||null,environment:environment.kind||'injected',headerOwners:header.querySelectorAll('[data-order-brand-source]').length}),
     async inspectRoute(next){reviewSelecting=true;try{return await navigate(next,{replace:true,scenario:true});}finally{reviewSelecting=false;}},
-    dispose(){if(disposed)return;disposed=true;epoch++;controller.abort();observer.disconnect();drawerDispose?.();authSheet?.dispose();brandMenu?.destroy();workspace?.dispose();priceWorkspace?.dispose();repository.dispose();clearPage();for(const field of fields.values())field.dispose();fields.clear();headerStyle.remove();releaseRegular();services.dispose();environment.dispose?.();delete root.__researchApplication;}
+    dispose(){if(disposed)return;disposed=true;epoch++;controller.abort();observer.disconnect();arrowMotion();drawerDispose?.();authSheet?.dispose();brandMenu?.destroy();orderMenu?.destroy();brandListeners.clear();workspace?.dispose();priceWorkspace?.dispose();repository.dispose();clearPage();workflowPolish.destroy();releasePasses.destroy();for(const field of fields.values())field.dispose();fields.clear();headerStyle.remove();releaseRegular();services.dispose();environment.dispose?.();delete root.__researchApplication;}
   };
   root.__researchApplication=app;win.ORDER_RESEARCH_APP=app;
   win.addEventListener('pagehide',()=>app.dispose(),{once:true,signal});

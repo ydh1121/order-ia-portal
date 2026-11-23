@@ -1,3 +1,4 @@
+import {workingMemberships} from './product-account-context.mjs';
 // Only bounded grayscale pixels and the explicit submission attestation are accepted.
 import {evidenceSignatureBinding} from './evidence-signature.mjs';
 export const packetType='application/vnd.order.masked-rasters';
@@ -23,8 +24,8 @@ async function boundedBody(request){
   for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>maxBytes){await reader.cancel();return null;}chunks.push(value);}
   const b=new Uint8Array(size);let offset=0;for(const v of chunks){b.set(v,offset);offset+=v.length;}return b;
 }
-const scope=`EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.active=1 AND ((m.org_id=c.org_id AND ((m.role='BUYER' AND m.site_id=c.site_id) OR (m.role='OPERATOR' AND m.site_id=''))) OR (c.kind='delivery' AND m.role='SUPPLIER' AND m.org_id=c.supplier_org_id)))`;
-const writer=`EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.active=1 AND ((c.kind<>'delivery' AND m.org_id=c.org_id AND m.role='BUYER' AND m.site_id=c.site_id) OR (c.kind='delivery' AND m.role='SUPPLIER' AND m.org_id=c.supplier_org_id)))`;
+const scope=`EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 AND ((m.org_id=c.org_id AND ((m.role='BUYER' AND m.site_id=c.site_id) OR (m.role='OPERATOR' AND m.site_id=''))) OR (c.kind='delivery' AND m.role='SUPPLIER' AND m.org_id=c.supplier_org_id)))`;
+const writer=`EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 AND ((c.kind<>'delivery' AND m.org_id=c.org_id AND m.role='BUYER' AND m.site_id=c.site_id) OR (c.kind='delivery' AND m.role='SUPPLIER' AND m.org_id=c.supplier_org_id)))`;
 const eligible=`((c.kind='business' AND c.state IN('EVIDENCE_REQUIRED','NEEDS_INFO')) OR (c.kind='reprice' AND c.state IN('DRAFT','NEEDS_INFO')) OR (c.kind='delivery' AND c.state IN('RECEIVED','DOCUMENT_REVIEWED')))`;
 const hex=async bytes=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
 export async function handleR3Evidence({request,env,actor}){

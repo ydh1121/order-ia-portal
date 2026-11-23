@@ -13,6 +13,7 @@ const connectedPages=[
  {id:'store-purchase',label:'매장 구매·입금 확인',view:'product-r3',screen:'store-purchase',state:'default',kind:'product'},
  {id:'delivery-request',label:'납품 요청·오더패스',view:'product-r3',screen:'delivery-request',state:'default',kind:'product'},
  {id:'store-settings',label:'사업장 등록·관리',view:'businesses-r3',kind:'product'},
+ {id:'account-context',label:'조직·사업장 계정 전환',view:'research-r3',screen:'profile',state:'restricted',kind:'product'},
  {id:'account-settings',label:'회원정보·회원탈퇴',view:'product-r3',screen:'account-settings',state:'default',kind:'product'},
  {id:'customer-orders',label:'주문·납품·거래 문서',view:'product-r3',screen:'store-purchase',state:'select',kind:'product'},
  {id:'application-status',label:'납품 신청·증빙 심사',view:'roles-r3',menu:'delivery',kind:'product'},

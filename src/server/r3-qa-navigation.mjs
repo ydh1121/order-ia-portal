@@ -2,7 +2,7 @@
 export const mvpScreens = new Set([
   'onboarding','q1','q2','q3','q4','quote-review','quote-result','quote-wait',
   'delivery-request','application-status','saved-quote','passes','search',
-  'login','signup','otp','password','terms','profile','account-settings','session-access',
+  'login','signup','otp','password','terms','profile','notifications','account-settings','session-access',
   'business','proof','signature','store-home','store-settings','customer-orders','order-detail',
   'delivery-schedule','trade-documents','price-policy','consultation','help-center',
   'admin-access','admin-overview','admin-buyers','admin-business-review','admin-quotes',
@@ -42,7 +42,8 @@ export async function handleQaNavigation({request,env,actor}) {
   if(!env.ORDER_QA_DB)return json({error:'STORAGE_UNAVAILABLE'},503);
   const {catalog}=await import('./r3-ui/catalog.gen.mjs');
   const {supplementalScreenIds}=await import('./r3-qa-assets.mjs');
-  const screens=[...new Set([...catalog.map(r=>r.screen),...supplementalScreenIds])];
+  const {researchNativeRows}=await import('./research-app/page.mjs');
+  const screens=[...new Set([...catalog.map(r=>r.screen),...supplementalScreenIds,...researchNativeRows.map(row=>row.screen)])];
   const db=env.ORDER_QA_DB;
   const latest=async()=>{
     const row=await db.prepare('SELECT revision, layout_json, updated_at FROM qa_navigation_revisions WHERE actor_id=? ORDER BY revision DESC LIMIT 1').bind(actor.id).first();

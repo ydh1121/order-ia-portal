@@ -1,4 +1,4 @@
-import {researchReleases} from './releases.gen.mjs';
+import {researchReleases} from '../research-release-runtime-index.gen.mjs';
 
 // Call this server-only store after the application's ordinary authorization.
 // The static binding bypasses the public route; the public pack URL is denied
@@ -143,7 +143,7 @@ export function serveResearchReleaseAsset(release,path){
 /** Rebind only request nonce and route data in a sealed application shell.
  * A trusted current-build identity is required to label an inspection current;
  * the URL alone cannot relabel an archived release. */
-export async function renderResearchReleaseApplication(release,nonce,parameters=new URLSearchParams(),{inspectionVersion='recorded',currentBuild=null}={}){
+export async function renderResearchReleaseApplication(release,nonce,parameters=new URLSearchParams(),{inspectionVersion='recorded',currentBuild=null,accountRun=null}={}){
   if(!/^[a-zA-Z0-9_-]{16,128}$/.test(nonce||''))throw TypeError('RESEARCH_RELEASE_NONCE_INVALID');
   const html=release?.shell?.html,token=release?.shell?.nonce;
   const marker=/<script type="application\/json" id="order-app-config">([\s\S]*?)<\/script>/g;
@@ -160,7 +160,7 @@ export async function renderResearchReleaseApplication(release,nonce,parameters=
   if(!RESEARCH_RELEASE_WIDTHS.includes(width))throw TypeError('RESEARCH_RELEASE_WIDTH_INVALID');
   const expected=await textHash(JSON.stringify(researchReviewIdentity(build,row.id,width,initial.mode)));
   if(inspect&&(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(channel||'')||artifact!==expected))throw TypeError('INVALID_RESEARCH_INSPECTION');
-  const config={...prior,build,assetBase:base,initial,inspect,inspection:inspect?{channel,artifact,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:inspectionVersion,...(initial.mode==='detailed'?{mode:'detailed'}:{})}:null};
+  const config={...prior,...(accountRun&&!inspect&&inspectionVersion==='current'?{accountRun}:{}),build,assetBase:base,initial,inspect,inspection:inspect?{channel,artifact,screen:row.screen,state:row.state,variant:row.variant,viewport:width,version:inspectionVersion,...(initial.mode==='detailed'?{mode:'detailed'}:{})}:null};
   const nonceAttribute='nonce="'+token+'"';if(!html.includes(nonceAttribute))fail('RESEARCH_RELEASE_NONCE_MISSING');
   return html.replaceAll(nonceAttribute,'nonce="'+nonce+'"').replace(blocks[0][0],'<script type="application/json" id="order-app-config">'+json(config)+'</script>');
 }

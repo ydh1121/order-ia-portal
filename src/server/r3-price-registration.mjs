@@ -1,3 +1,4 @@
+import {workingMemberships} from './product-account-context.mjs';
 import {PolicyError} from './order-engine/calculation/supply-policy.mjs';
 import {validateDefinition} from './r3-price-catalog.mjs';
 
@@ -15,12 +16,12 @@ export async function registrationDesk(db,actor,requestId){
   const organizations=await rows(db,`SELECT m.org_id supplierId,MIN(m.role) role,
     (SELECT ${names} FROM r3_price_catalog c WHERE c.supplier_id=m.org_id ORDER BY c.updated_at DESC LIMIT 1) supplierName,
     (SELECT id FROM r3_price_registration r WHERE r.supplier_id=m.org_id ORDER BY created_at LIMIT 1) invitation
-    FROM r3_membership m WHERE actor_id=? AND ${staff} GROUP BY m.org_id ORDER BY m.org_id`,actor.id);
+    FROM ${workingMemberships} m WHERE actor_id=? AND ${staff} GROUP BY m.org_id ORDER BY m.org_id`,actor.id);
   const own=await rows(db,'SELECT id,company,state,changed_at FROM r3_price_connection WHERE actor_id=? ORDER BY changed_at DESC LIMIT 30',actor.id);
   const review=await rows(db,`SELECT DISTINCT a.id,a.applicant,a.company,a.state,a.verified_subject AS verified,a.origin_id AS linkedOrigin,a.product_id AS linkedProduct,c.supplier_id AS supplierId
     FROM r3_price_connection a JOIN r3_price_catalog c ON
     (a.target_org=c.supplier_id OR (a.target_org IS NULL AND a.id=? AND a.company=${names}) OR (a.supplier_id=c.supplier_id AND a.state='LINKED'))
-    JOIN r3_membership m ON ${territory}
+    JOIN ${workingMemberships} m ON ${territory}
     WHERE a.state IN('PENDING','LINKED') AND a.actor_id<>? ORDER BY a.changed_at DESC LIMIT 100`,
     uuid(requestId)?requestId:'',actor.id,actor.id);
   return {organizations,own,review};
@@ -29,7 +30,7 @@ export async function registrationDesk(db,actor,requestId){
 export async function registerProduct(db,actor,b,now){
   if(!uuid(b.requestKey) || !(/^[\w.:-]{1,100}$/.test(b.supplierId||'')) || !validName(b.supplierName) || !validName(b.originName) || !validName(b.productName))
     fail('REGISTRATION_FIELDS_REQUIRED',400);
-  const allowed=await statement(db,`SELECT 1 FROM r3_membership WHERE actor_id=? AND org_id=? AND ${staff}`,actor.id,b.supplierId).first();
+  const allowed=await statement(db,`SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND org_id=? AND ${staff}`,actor.id,b.supplierId).first();
   if(!allowed)fail('ACCESS_REQUIRED',403);
   const d=validateDefinition({supplierName:b.supplierName,originName:b.originName,productName:b.productName,shells:[b.shell],packSizes:[b.packSize],grades});
   const existing=await statement(db,`SELECT c.origin_id,c.product_id,c.definition,p.active FROM r3_price_catalog c
@@ -48,7 +49,7 @@ export async function registerProduct(db,actor,b,now){
   const originId=origin?.origin_id||'depot-'+Array.from(digest,n=>n.toString(16).padStart(2,'0')).join('');
   const productId=crypto.randomUUID(),definition=JSON.stringify(d);
   await statement(db,`INSERT INTO r3_price_registration(id,supplier_id,origin_id,product_id,origin_name,product_name,definition,created_by,created_at)
-    VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING`,b.requestKey,b.supplierId,originId,productId,b.originName,b.productName,definition,actor.id,now).run();
+    SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND org_id=? AND ${staff}) ON CONFLICT DO NOTHING`,b.requestKey,b.supplierId,originId,productId,b.originName,b.productName,definition,actor.id,now,actor.id,b.supplierId).run();
   const saved=await statement(db,'SELECT supplier_id,origin_id,product_id,definition FROM r3_price_registration WHERE supplier_id=? AND origin_name=? AND product_name=?',b.supplierId,b.originName,b.productName).first();
   if(!saved||saved.definition!==definition)fail('CATALOG_EXISTS',409);
   return {supplier_id:saved.supplier_id,origin_id:saved.origin_id,product_id:saved.product_id};
@@ -77,7 +78,7 @@ export async function updateConnection(db,actor,b,now){
     WHERE a.id=? AND a.actor_id<>? AND a.state=? AND (?<>'LINKED' OR (a.verified_subject=1 AND NOT EXISTS(SELECT 1 FROM r3_membership revoked
         WHERE revoked.actor_id=a.actor_id AND revoked.org_id=? AND revoked.active=0 AND revoked.role='SUPPLIER')))
     AND EXISTS(SELECT 1 FROM r3_price_catalog c JOIN r3_price_scope p USING(supplier_id,origin_id,product_id)
-      JOIN r3_membership m ON ${territory} WHERE c.supplier_id=? AND c.origin_id=? AND c.product_id=? AND p.active=1
+      JOIN ${workingMemberships} m ON ${territory} WHERE c.supplier_id=? AND c.origin_id=? AND c.product_id=? AND p.active=1
       AND (a.target_org=c.supplier_id OR (a.target_org IS NULL AND a.company=${names}))
       AND (a.state<>'LINKED' OR (a.supplier_id=c.supplier_id AND a.origin_id=c.origin_id AND a.product_id=c.product_id)))`,
       after,b.supplierId,b.originId,b.productId,actor.id,now,b.id,actor.id,before,after,b.supplierId,actor.id,b.supplierId,b.originId,b.productId).run();

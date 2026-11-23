@@ -12,7 +12,8 @@ import shutil
 import subprocess
 from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
-from r3_feedback_browser_support import frame_click, prepare_frame_pointer
+from research_account_origin_browser import check_account_origin
+from r3_feedback_browser_support import frame_click, frame_pointer_position, prepare_frame_pointer
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-application'
@@ -126,6 +127,53 @@ def ready_review_route(page, frame, screen, state):
     same_review_application(page, frame)
 
 
+def measured_badge(dot):
+    return dot.evaluate('''node => {
+        const r=node.getBoundingClientRect(), css=getComputedStyle(node);
+        const range=document.createRange();range.selectNodeContents(node);
+        const text=range.getBoundingClientRect(), row=node.closest('.obm-row')?.getBoundingClientRect();
+        return {text:node.textContent,width:r.width,height:r.height,
+            textCenterOffset:text.y+text.height/2-r.y-r.height/2,
+            rowCenterOffset:row?r.y+r.height/2-row.y-row.height/2:null,
+            alignItems:css.alignItems,justifyContent:css.justifyContent,borderRadius:css.borderRadius};
+    }''')
+
+
+def measured_arrow_hover(page, control, direction):
+    """Use the real pointer and sample the rendered transition without clicks."""
+    page.mouse.move(250, 140)
+    arrow=control.locator('.order-arrow-direction')
+    expect(arrow).to_have_attribute('data-direction', direction)
+    x,y=frame_pointer_position(page, control)
+    control.evaluate('''control => {
+        const node=control.querySelector('.order-arrow-direction');
+        const chevron=node.querySelector('.t-learn-chevron'),top=node.querySelector('.t-learn-arm-top');
+        const probe={samples:[],started:false};
+        probe.done=new Promise(resolve=>{probe.resolve=resolve;});control.__researchHoverProbe=probe;
+        control.addEventListener('pointerenter',event=>{
+            probe.started=true;probe.trusted=event.isTrusted;const start=performance.now();
+            const sample=()=>{
+                const c=getComputedStyle(chevron),a=getComputedStyle(top),m=new DOMMatrixReadOnly(c.transform);
+                probe.samples.push({elapsed:performance.now()-start,x:m.m41,arm:a.transform,duration:c.transitionDuration});
+                if(performance.now()-start<430)requestAnimationFrame(sample);
+                else probe.resolve({trusted:probe.trusted,samples:probe.samples});
+            };sample();
+        },{once:true});
+    }''')
+    page.mouse.move(x,y)
+    observed=control.evaluate('''async control => {
+        const probe=control.__researchHoverProbe;
+        if(!probe?.started)throw Error('The real pointer did not enter the observed control');
+        return probe.done;
+    }''')
+    assert observed['trusted'], 'The hover receipt must come from native pointer input'
+    samples=observed['samples']
+    assert abs(samples[-1]['x']-2)<0.02, samples[-1]
+    assert any(0<sample['x']<1.98 for sample in samples), 'Native hover must animate through intermediate positions'
+    assert samples[-1]['arm']!='none', samples[-1]
+    return {'direction':direction,**observed}
+
+
 def review_target_snapshot(page):
     """Observe the acknowledged target, including its inspector identity."""
     return page.evaluate('''() => {
@@ -142,6 +190,80 @@ def choose_review_route(page, frame, screen, state):
     page.locator('#catalog-search').fill(screen + '/' + state + '/email')
     page.locator('#catalog button[data-module="' + screen + '"]').click()
     ready_review_route(page, frame, screen, state)
+
+
+def check_detailed_q3_actions(page, frame):
+    """Measure the retained 390px product with two actual fixture locations."""
+    choose_review_route(page, frame, 'q4', 'mixed')
+    quote = frame.locator('#order-app-quote')
+    expect(quote.locator('[data-research-quote]')).to_have_attribute('data-research-quote', 'detailed')
+    frame_click(page, quote.locator('.accordion-trigger[data-open="q3"]'))
+    sites = quote.locator('#q3-sites .q3-site-accordion')
+    expect(sites).to_have_count(2)
+    site = sites.first
+    summary = site.locator(':scope > .accordion-trigger')
+    if summary.get_attribute('aria-expanded') != 'true':
+        frame_click(page, summary)
+    expect(summary).to_have_attribute('aria-expanded', 'true')
+    address = site.locator('.q3-address-row')
+    edit = address.locator('[data-site-edit]')
+    delete = address.locator('[data-site-delete]')
+    if not delete.is_visible():
+        frame_click(page, address.locator('[data-saved-actions-toggle]'))
+    copy = site.locator('.q3-contact-grid [data-contact-copy]')
+    expect(edit).to_have_accessible_name(re.compile('수정'))
+    expect(edit).to_have_css('text-indent', '0px')
+    for action in [edit, delete, copy]:
+        expect(action).to_be_visible()
+
+    address.scroll_into_view_if_needed()
+    geometry = site.evaluate("""site => {
+        const box = selector => {
+            const r=site.querySelector(selector).getBoundingClientRect();
+            return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,width:r.width,height:r.height};
+        };
+        const addressValue = site.querySelector('[data-q3-summary-value="address"]');
+        const valueRect = addressValue.getBoundingClientRect();
+        const hit=site.ownerDocument.elementFromPoint(valueRect.left+2, valueRect.top+valueRect.height/2);
+        return {viewport:innerWidth, addressEditTarget:!!hit?.closest('[data-site-edit]'),
+            address:box('.q3-address-row'), edit:box('[data-site-edit]'),
+            delete:box('[data-site-delete]'), email:box('[data-q3-summary-field="email"]'),
+            contacts:box('.q3-contact-grid'), copy:box('[data-contact-copy]')};
+    }""")
+    assert geometry['viewport'] == 390, geometry
+    assert geometry['addressEditTarget'], geometry
+    assert 0 <= geometry['address']['right'] - geometry['delete']['right'] <= 1, geometry
+    assert geometry['edit']['right'] <= geometry['delete']['left'] + 1, geometry
+    assert geometry['address']['bottom'] <= geometry['contacts']['top'] + 1, geometry
+    assert geometry['email']['bottom'] <= geometry['copy']['top'] + 1, geometry
+    assert abs(geometry['contacts']['left'] - geometry['copy']['left']) <= 1, geometry
+    for action in ['edit', 'delete', 'copy']:
+        rect = geometry[action]
+        assert 0 <= rect['left'] < rect['right'] <= geometry['viewport'] + 1, geometry
+
+    site.screenshot(path=str(OUT / 'q3-detailed-site-actions-390.png'))
+    model = quote.evaluate('() => JSON.stringify(ORDER_RESEARCH_APP.snapshot().quote.locations)')
+    assert len(json.loads(model)) == 2
+    for name, trigger, dialog_id, cancel in [
+            ('copy', copy, 'q3-contact-copy', '[data-copy-cancel]'),
+            ('edit', edit, 'site-editor-dialog', '#cancel-site'),
+            ('delete', delete, 'q3-action-confirm', '[data-q3-confirm-cancel]')]:
+        if name == 'delete' and not delete.is_visible():
+            frame_click(page, address.locator('[data-saved-actions-toggle]'))
+        frame_click(page, trigger)
+        dialog = frame.locator('#' + dialog_id)
+        expect(dialog).to_be_visible()
+        assert dialog.evaluate("node => node.open && node.matches(':modal')"), name
+        if name == 'copy':
+            expect(dialog.locator('[data-contact-copy-target]')).to_have_count(1)
+        frame_click(page, dialog.locator(cancel))
+        expect(dialog).to_be_hidden()
+        assert quote.evaluate('() => JSON.stringify(ORDER_RESEARCH_APP.snapshot().quote.locations)') == model, name
+    return {'commentId': '86fd2971-843f-4444-8fb8-5e689f26ff8e',
+            'legacySource': 'q3/open/email/390', 'mode': 'detailed', 'siteCount': 2,
+            'fixtureOrigin': 'q4/mixed with the product Q3 accordion', 'geometry': geometry,
+            'trustedOpenAndCancel': ['copy','edit','delete'], 'siteDataPreserved': True,
+            'screenshot': 'q3-detailed-site-actions-390.png'}
 
 
 def remember_review_quote(frame):
@@ -421,6 +543,7 @@ def main():
         receipt['checks'].append('private release packs remain unavailable over HTTP')
 
         phase = 'qa-shell'
+        prepare_frame_pointer(page)
         page.set_viewport_size({'width': 1440, 'height': 1000})
         page.goto(cfg['url'] + '/ia?view=qa-lab&screen=onboarding%2Fguest-2%2Femail&width=390')
         wait_for_expression(page, 'document.querySelector("#frame")?.src.includes("view=research-r3")', timeout=30000)
@@ -454,6 +577,185 @@ def main():
         page.locator('#close-drawer').click()
         receipt['checks'].append('drawer location picking returns to the same unsaved text without creating a QA record')
         page.screenshot(path=str(OUT / 'qa-shell-1440.png'), full_page=True)
+
+        # Exercise the new member paths through native Chrome input. The QA
+        # controls select existing scenarios; no test changes fixture records,
+        # invokes app.navigate, dispatches a click, or relaxes a native barrier.
+        phase = 'qa-member-header-and-order'
+        remember_review_application(page)
+        choose_review_route(page, frame, 'onboarding', 'member-1')
+        header = frame.locator('#order-app-header')
+        account_trigger = header.locator('[data-order-account-trigger]')
+        order_trigger = header.locator('.research-order-trigger')
+        expect(header.locator('[data-app-auth]')).to_be_hidden()
+        expect(frame.locator('[data-order-account-trigger]:visible')).to_have_count(1)
+        expect(account_trigger).to_be_enabled()
+        expect(order_trigger).to_be_visible()
+        expect(header).to_have_js_property('inert', False)
+        appearance={}
+        quick_dot=frame.locator('#order-app-page .quick-unread .t-badge-dot')
+        expect(quick_dot).to_be_visible()
+        appearance['quickBadge']=measured_badge(quick_dot)
+        quick=appearance['quickBadge']
+        assert quick['text'].isdigit() and int(quick['text'])>0, quick
+        assert abs(quick['height']-20)<0.5 and abs(quick['width']-quick['height'])<0.5, quick
+        assert abs(quick['textCenterOffset'])<=2.5, quick
+        page.screenshot(path=str(OUT / 'member-header-1440.png'), full_page=True)
+
+        frame_click(page, account_trigger)
+        ready_review_route(page, frame, 'profile', 'menu')
+        expect(frame.locator('.obm-panel')).to_be_visible()
+        assert frame.locator('.obm-panel').evaluate('''panel =>
+            panel.getBoundingClientRect().top >=
+            document.querySelector('#order-app-header').getBoundingClientRect().bottom
+        '''), 'The native account popover must leave the retained header controls reachable'
+        appearance['accountSurface']=frame.locator('.obm-panel').evaluate('''panel => {
+            const surface=panel.querySelector('.obm-surface'),menu=panel.querySelector('.obm-menu');
+            const s=getComputedStyle(surface),m=getComputedStyle(menu),p=getComputedStyle(panel);
+            const trigger=document.querySelector('[data-order-account-trigger]'),t=getComputedStyle(trigger);
+            return {surfaceShadow:s.boxShadow,menuBackground:m.backgroundColor,menuShadow:m.boxShadow,
+                menuBorder:m.borderWidth,panelBorder:p.borderWidth,triggerBackground:t.backgroundColor,
+                triggerShadow:t.boxShadow,triggerBorder:t.borderWidth};
+        }''')
+        surface=appearance['accountSurface']
+        assert surface['menuBackground']=='rgb(255, 255, 255)' and surface['menuBorder']=='0px' and surface['panelBorder']=='0px', surface
+        assert surface['surfaceShadow']!='none' and surface['menuShadow']=='none', surface
+        assert surface['triggerBackground']=='rgba(0, 0, 0, 0)' and surface['triggerShadow']=='none' and surface['triggerBorder']=='0px', surface
+        account_dot=frame.locator('.obm-panel [data-obm-item="notifications"] .t-badge-dot')
+        appearance['accountBadge']=measured_badge(account_dot)
+        badge=appearance['accountBadge']
+        assert abs(badge['height']-20)<0.5 and abs(badge['width']-badge['height'])<0.5, badge
+        assert abs(badge['textCenterOffset'])<=2.5 and abs(badge['rowCenterOffset'])<=0.5, badge
+        page.emulate_media(reduced_motion='no-preference')
+        appearance['rightHover']=measured_arrow_hover(page, frame.locator('.obm-panel [data-obm-item="profile"]'), 'right')
+        expect(frame.locator('.obm-panel [data-obm-item="profile"]')).to_have_css('background-color','rgb(243, 244, 246)')
+        page.screenshot(path=str(OUT / 'member-account-surface-1440.png'), full_page=True)
+        page.emulate_media(reduced_motion='reduce')
+        # One physical click must complete the account close and Order open.
+        frame_click(page, order_trigger)
+        expect(frame.locator('.research-order-stack')).to_be_visible()
+        expect(order_trigger).to_have_attribute('aria-expanded', 'true')
+        expect(frame.locator('.obm-panel')).to_be_hidden()
+        ready_review_route(page, frame, 'onboarding', 'member-1')
+        page.screenshot(path=str(OUT / 'member-account-to-order-1440.png'), full_page=True)
+        frame.locator('.research-order-stack').press('Escape')
+        expect(frame.locator('.research-order-stack')).to_be_hidden()
+        receipt['checks'].append('the member header has one visible account opener; one trusted Order-selector click closes the account stack and opens Order')
+
+        phase = 'qa-company-sheet-to-account'
+        frame_click(page, frame.locator('#order-app-page [data-company-open]'))
+        expect(frame.locator('.ob-shade')).to_be_visible()
+        expect(header).to_have_js_property('inert', True)
+        page.screenshot(path=str(OUT / 'company-sheet-1440.png'), full_page=True)
+        # A parent QA control remains usable while the product header is inert.
+        # The product itself must release its sheet before the next page opens.
+        choose_review_route(page, frame, 'q1', 'before')
+        expect(frame.locator('#order-app-quote #app')).to_be_visible()
+        expect(header).to_have_js_property('inert', False)
+        expect(frame.locator('.ob-shade')).to_have_count(0)
+        expect(account_trigger).to_be_enabled()
+        frame_click(page, account_trigger)
+        ready_review_route(page, frame, 'profile', 'menu')
+        expect(frame.locator('.obm-panel')).to_be_visible()
+        assert_no_hidden_modal(frame)
+        page.screenshot(path=str(OUT / 'company-to-quote-account-1440.png'), full_page=True)
+
+        # Also cover the retained introduction -> account path, where the
+        # onboarding controller stays mounted and must resume its shared brand.
+        choose_review_route(page, frame, 'onboarding', 'member-1')
+        frame_click(page, frame.locator('#order-app-page [data-company-open]'))
+        expect(header).to_have_js_property('inert', True)
+        choose_review_route(page, frame, 'profile', 'menu')
+        expect(header).to_have_js_property('inert', False)
+        expect(frame.locator('.ob-shade')).to_be_hidden()
+        expect(frame.locator('.obm-panel')).to_be_visible()
+        same_review_application(page, frame)
+        receipt['checks'].append('leaving the open company sheet releases the header and shared account controller for quote navigation and a retained-parent account panel')
+
+        phase = 'qa-notification-preview-to-full'
+        frame_click(page, frame.locator('.obm-panel [data-obm-item="notifications"]'))
+        ready_review_route(page, frame, 'profile', 'notification')
+        preview = frame.locator('.research-notifications[data-notifications-mode="preview"]')
+        expect(preview.locator('[data-action="research-all-notifications"]')).to_be_visible()
+        messages = frame.locator('#order-single').evaluate('''async () => {
+            const response=await ORDER_RESEARCH_APP.adapter.request('/notifications');
+            return response.items.map(({id,title,body,createdAt,readAt})=>({id,title,body,createdAt,readAt}));
+        }''')
+        assert messages, 'The original member scenario must supply actual notification records'
+        expect(preview.locator('[data-notification-id]')).to_have_count(min(3, len(messages)))
+        assert preview.locator('time').evaluate_all('nodes => nodes.every(time => time.dateTime && time.title.startsWith("발송 "))')
+        back=frame.locator('.obm-panel [data-obm-page="notifications"] .obm-back')
+        appearance['backHeading']=back.evaluate('''button => {
+            const b=button.getBoundingClientRect(),h=button.parentElement.querySelector('.obm-heading').getBoundingClientRect(),s=getComputedStyle(button);
+            return {centerOffset:b.y+b.height/2-h.y-h.height/2,background:s.backgroundColor,border:s.borderWidth,shadow:s.boxShadow,radius:s.borderRadius};
+        }''')
+        alignment=appearance['backHeading']
+        assert abs(alignment['centerOffset'])<=0.5, alignment
+        assert alignment['background']=='rgba(0, 0, 0, 0)' and alignment['border']=='0px' and alignment['shadow']=='none' and alignment['radius']=='0px', alignment
+        page.emulate_media(reduced_motion='no-preference')
+        appearance['leftHover']=measured_arrow_hover(page, back, 'left')
+        page.screenshot(path=str(OUT / 'notifications-preview-1440.png'), full_page=True)
+        page.emulate_media(reduced_motion='reduce')
+        receipt['memberAppearance']=appearance
+        receipt['checks'].append('native 390px layout has circular centered unread badges, one borderless white account surface with an unclipped resting shadow, aligned plain Back and measured real-pointer left/right hover motion')
+        frame_click(page, preview.locator('[data-action="research-all-notifications"]'))
+        ready_review_route(page, frame, 'notifications', 'list')
+        full = frame.locator('#order-app-page .research-notifications[data-notifications-mode="full"]')
+        expect(full.locator('h1')).to_have_text('알림')
+        expect(full.locator('[data-notification-id]')).to_have_count(min(20, len(messages)))
+        expect(frame.locator('.obm-panel')).to_be_hidden()
+        expect(full.locator('[data-notification-preferences]')).to_be_visible()
+        page.screenshot(path=str(OUT / 'notifications-full-1440.png'), full_page=True)
+
+        phase = 'qa-notification-detail-and-settings'
+        unread = full.locator('[data-notification-id][data-read="false"]').first
+        expect(unread).to_be_visible()
+        notification_id = unread.get_attribute('data-notification-id')
+        message = next(item for item in messages if item['id'] == notification_id)
+        frame_click(page, unread)
+        detail = full.locator('[data-notification-detail]')
+        expect(detail).to_have_attribute('data-notification-detail', notification_id)
+        expect(detail.locator('.research-notification-body')).to_have_text(message['body'])
+        expect(detail.locator('time')).to_have_attribute('title', re.compile(r'^발송 '))
+        expect(detail).not_to_have_attribute('aria-busy', 'true')
+        readback = frame.locator('#order-single').evaluate('''async (root, id) => {
+            const response=await root.ownerDocument.defaultView.ORDER_RESEARCH_APP.adapter.request('/notifications');
+            return response.items.find(item=>item.id===id) || null;
+        }''', notification_id)
+        assert readback and readback['id'] == notification_id, notification_id
+        assert readback['readAt'] and readback['createdAt'] == message['createdAt'], readback
+        page.screenshot(path=str(OUT / 'notification-detail-1440.png'), full_page=True)
+        frame_click(page, full.locator('[data-action="research-notification-back"]'))
+        expect(full.locator('[data-notification-detail]')).to_have_count(0)
+        expect(full.locator('[data-notification-id="' + notification_id + '"]')).to_have_attribute('data-read', 'true')
+
+        preferences = full.locator('[data-notification-preferences]')
+        frame_click(page, preferences.locator('summary'))
+        expect(preferences).to_have_js_property('open', True)
+        expect(preferences.locator('fieldset')).to_be_visible()
+        expect(preferences.locator('fieldset')).to_be_enabled()
+        before_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
+        price_preference = preferences.locator('[data-notification-preference="price"]')
+        frame_click(page, price_preference)
+        expect(preferences.locator('[role="status"]')).to_have_text('수신 설정을 저장했어요.')
+        after_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
+        assert after_preferences['revision'] == before_preferences['revision'] + 1
+        assert after_preferences['preferences'] == {**before_preferences['preferences'], 'price': not before_preferences['preferences']['price']}
+        assert after_preferences['updatedAt']
+        expect(preferences).to_contain_text('웹 푸시 발송은 아직 연결되지 않았어요.')
+        same_review_application(page, frame)
+        assert_no_hidden_modal(frame)
+        page.screenshot(path=str(OUT / 'notification-preferences-1440.png'), full_page=True)
+        receipt['checks'].append('trusted notification clicks open the three-item preview, full reader, actual message and consent settings; read and consent acknowledgements stay in the existing research fixture')
+        receipt['nativeMemberInteractions'] = {
+            'viewport': {'host': 1440, 'researchFrame': 390},
+            'singleAccountOpener': True, 'oneClickAccountToOrder': True,
+            'companyToQuoteAccountUsable': True, 'companyToRetainedAccountUsable': True,
+            'notificationCount': len(messages), 'openedNotificationId': notification_id,
+            'readAcknowledged': True, 'preferenceRevision': after_preferences['revision'],
+            'trustedPointerReceipts': True, 'fixtureRecordsInjected': False,
+            'commercialAcceptance': False,
+        }
 
         # The remaining MVP product families use this same running app. Their
         # canonical phase metadata and explicit QA scenarios remain separate.
@@ -870,8 +1172,13 @@ def main():
         # The detailed Q3 fixture opens the original site editor. It owns a
         # real unsaved text field, whose value and identity must survive both
         # selecting a point and cancelling another pick with Escape.
+        phase = 'qa-detailed-business-actions'
+        receipt['q3BusinessActions390'] = check_detailed_q3_actions(page, frame)
         phase = 'qa-visible-editor-location-picking'
         choose_review_route(page, frame, 'q3', 'open')
+        expect(frame.locator('#q3-sites .q3-site-accordion')).to_have_count(1)
+        expect(frame.locator('#q3-sites [data-contact-copy]')).to_have_count(0)
+        receipt['q3BusinessActions390']['singleSiteSourceHasNoCopyDestination'] = True
         editor = frame.locator('#order-app-quote #site-editor-dialog')
         expect(editor).to_be_visible()
         assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
@@ -914,6 +1221,9 @@ def main():
                                          'editorAcceptsInputAfterPick': True, 'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'native-modal-location-picking-1440.png'), full_page=True)
 
+        phase = 'qa-account-panel-origin-and-pin'
+        receipt['accountTriggerMotion'] = check_account_origin(context, cfg['url'], OUT)
+        receipt['checks'].append('The account panel opens from the native trigger and returns there at both widths; an inside pin preserves the popover and unsaved draft')
         critical = [item for item in failed if item['phase'] != 'owner-login' and (
             item['resource'] in ('document', 'script', 'stylesheet') or item['path'].startswith('/ia/research-assets/'))]
         assert not errors, errors
