@@ -3,8 +3,8 @@ const once = (source, marker, replacement) => {
   return source.replace(marker, replacement);
 };
 
-/** Research-only lifetime seam. Original layout, focus, motions and stack pages
- * remain canonical; a panel may veto disposal through its own beforeLeave. */
+/** Research-only lifetime and retained-header placement seams. Original focus,
+ * motions and stack pages remain canonical; panels may veto beforeLeave. */
 export function researchBrandSource(original) {
   let source = once(original, '  function disposePage(page){', String.raw`
   let researchLeavePending=null,researchAccessPending=null,researchDestroying=false;
@@ -64,6 +64,11 @@ export function researchBrandSource(original) {
   }
   function disposePage(page){`);
   source = once(source, '  function push(id,source=null,title=null){', '  function push(id,source=null,title=null){\n    if(researchLeavePending)return false;');
+  // A native popover is above every document z-index. Keep its interactive
+  // surface below the shared header so Order and the account opener remain
+  // reachable; the original start-y still morphs from the actual logo origin.
+  source = once(source, 'const top=Math.max(y+12,Math.min(r.top,bottom-1));',
+    "const researchHeader=brand.closest('#order-app-header');const top=Math.max(y+12,Math.min(researchHeader?researchHeader.getBoundingClientRect().bottom+8:r.top,bottom-1));");
   source = once(source, '  function pop(settings={}){', '  function pop(settings={}){\n    if(researchLeaveGuards([pages.at(-1)]).length){void requestBack(settings);return false;}');
   source = once(source, '  function close({focus=true,immediate=false}={}){', '  function close({focus=true,immediate=false}={}){\n    if(phase!==\'closed\'&&researchLeaveGuards(pages.slice(1)).length){void requestClose({focus,immediate});return false;}');
   source = once(source,

@@ -146,14 +146,22 @@ def check(page, origin, width):
     })""")
     assert diagnostics["role"] == "combobox", diagnostics
     expect(next_input).to_have_accessible_name("업종 필수")
+    field.focus()
+    expect(frame.locator('[data-business-classification]')).to_have_text(
+        "국세청 2026.04 공개 목록 · 사업자등록증과 동일하게 입력해 주세요.")
+    catalogue = field.evaluate("""el=>{
+        const data=el.ownerDocument.defaultView.ORDER_RESEARCH_WORKFLOW_POLISH.businessClasses;
+        return {rows:data.rows.length,sectors:data.sectors.length};
+    }""")
+    assert catalogue == {"rows":1542,"sectors":20}, catalogue
     before = next_input.evaluate("e=>e.getBoundingClientRect().top + scrollY")
-    field.fill("ㅇㅅ")
-    option = frame.get_by_role("option", name="음식점업", exact=True)
+    field.fill("ㅅㅂ")
+    option = frame.get_by_role("option", name="숙박 및 음식점업", exact=True)
     expect(option).to_be_visible()
     after = next_input.evaluate("e=>e.getBoundingClientRect().top + scrollY")
     assert abs(before - after) < 1
     field.press("ArrowDown"); field.press("Enter")
-    expect(field).to_have_value("음식점업")
+    expect(field).to_have_value("숙박 및 음식점업")
     field.fill("정보통신")
     expect(frame.get_by_role("option",name="정보통신업",exact=True)).to_be_visible()
     next_input.fill("ㅍㅂㅁㅇ")
@@ -180,7 +188,7 @@ def check(page, origin, width):
     expect(frame.get_by_role("button",name="내 사업장 인증·보완")).to_be_visible()
 
     frame = screen("proof", "empty")
-    expect(frame.get_by_role("heading",name="거래내역 증빙과 서명",exact=True)).to_be_visible()
+    expect(frame.get_by_role("heading",name="거래내역 증빙",exact=True)).to_be_visible()
     expect(frame.get_by_text("거래내역 증빙 시 주의사항",exact=True)).to_be_visible()
     expect(frame.get_by_text("최근 3개월 내 자료",exact=False)).to_be_visible()
     memo = frame.locator("[name=document-memo]")

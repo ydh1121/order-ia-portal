@@ -475,6 +475,10 @@ def main():
         frame_click(page, account_trigger)
         ready_review_route(page, frame, 'profile', 'menu')
         expect(frame.locator('.obm-panel')).to_be_visible()
+        assert frame.locator('.obm-panel').evaluate('''panel =>
+            panel.getBoundingClientRect().top >=
+            document.querySelector('#order-app-header').getBoundingClientRect().bottom
+        '''), 'The native account popover must leave the retained header controls reachable'
         # One physical click must complete the account close and Order open.
         frame_click(page, order_trigger)
         expect(frame.locator('.research-order-stack')).to_be_visible()

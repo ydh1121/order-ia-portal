@@ -105,6 +105,7 @@ export function mountResearchNotifications({container, adapter, signal, mode = '
     for (const item of filtered.slice(0, mode === 'preview' ? PREVIEW_LIMIT : visible)) {
       const row = node('li');
       const control = button(undefined, 'research-open-notification', 'research-notification-item', () => open(item));
+      control.id = `order-notification-${mode}-${encodeURIComponent(item.id)}`;
       control.dataset.notificationId = item.id; control.dataset.read = String(!!item.readAt);
       control.append(titleRow(item), node('span', item.body, 'research-notification-summary')); row.append(control); list.append(row);
     }

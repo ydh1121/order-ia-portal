@@ -6,17 +6,17 @@ import shutil
 import subprocess
 
 from playwright.sync_api import expect, sync_playwright
-from r3_feedback_browser_support import PreservedReviewScreens, ReviewScreens, frame_click
+from r3_feedback_browser_support import PreservedReviewScreens, ReviewScreens, frame_click, frame_pointer_position
 from r3_brand_browser_support import ArchivedBrandScreens, check_current_brand_menu
-from r3_workflow_browser_support import check_consultation_flow, inspect_fixture
+from r3_workflow_browser_support import check_consultation_flow, configure, inspect_fixture, release
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYOUT_OUT = ROOT / 'artifacts/frame-pointer'
 
 
-def record_pass_layout(page, frame, width, checkpoint):
+def record_pass_layout(page, frame, width, checkpoint, target_id):
     """Read physical layout without scrolling, clicking or changing product styles."""
-    snapshot = frame.locator('#order-single').evaluate('''root=>{
+    snapshot = frame.locator('#order-single').evaluate('''(root,targetId)=>{
       const rect=el=>{if(!el)return null;const r=el.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,top:r.top,right:r.right,bottom:r.bottom,left:r.left};};
       const details=el=>{if(!el)return null;const s=getComputedStyle(el);return {
         node:el.localName,id:el.id,className:typeof el.className==='string'?el.className:'',rect:rect(el),
@@ -26,7 +26,7 @@ def record_pass_layout(page, frame, width, checkpoint):
         scrollTop:el.scrollTop,scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,
         scrollLeft:el.scrollLeft,scrollWidth:el.scrollWidth,clientWidth:el.clientWidth,
         hidden:el.hidden,inert:el.inert};};
-      const target=root.querySelector('[data-pass-id="b09"] button'),ancestors=[];
+      const target=[...root.querySelectorAll('[data-pass-id]')].find(el=>el.dataset.passId===targetId)?.querySelector('button'),ancestors=[];
       for(let el=target;el;el=el.parentElement)ancestors.push(details(el));
       const box=rect(target),x=box?box.x+box.width/2:0,y=box?box.y+box.height/2:0;
       const hit=box?document.elementFromPoint(x,y):null;
@@ -37,7 +37,7 @@ def record_pass_layout(page, frame, width, checkpoint):
         gooey:details(root.querySelector('[data-product-gooey]')),
         target:details(target),centerHit:details(hit),centerReachesTarget:!!target&&target.contains(hit),
         documentScroller:details(document.scrollingElement),ancestors};
-    }''')
+    }''', target_id)
     snapshot['checkpoint'] = checkpoint
     LAYOUT_OUT.mkdir(parents=True, exist_ok=True)
     path = LAYOUT_OUT / f'navigation-layout-{width}.json'
@@ -48,12 +48,40 @@ def record_pass_layout(page, frame, width, checkpoint):
     return snapshot
 
 
+def open_expired_pass(page, frame, width, target_id, count, scope):
+    frame_click(page, frame.locator('[data-action="dismiss-expired"]'))
+    expect(frame.locator('.expired-reminder')).to_be_hidden()
+    layout = record_pass_layout(page, frame, width, scope+'-before-expired-pass-detail', target_id)
+    try:
+        # Ticket paper styling must keep every real card within its stage.
+        assert len(layout['cards']) == count
+        assert all(card['position'] == 'absolute' for card in layout['cards']), layout
+        stage = layout['stage']['rect']
+        assert all(card['rect']['top'] >= stage['top'] - 1 and card['rect']['bottom'] <= stage['bottom'] + 1
+                   for card in layout['cards']), layout
+        frame_click(page, frame.locator('[data-pass-id="'+target_id+'"] button'))
+    except Exception:
+        record_pass_layout(page, frame, width, scope+'-failed-expired-pass-detail', target_id)
+        page.screenshot(path=str(LAYOUT_OUT / f'navigation-layout-{width}-{scope}-failure.png'), full_page=True)
+        raise
+    expect(frame.locator('[data-action="tear-ticket"]')).to_have_count(0)
+
+
 def check_preserved_pass_receipt(page, origin, width):
-    """Keep the historical sample's tear/sort contract at its exact source hash."""
-    frame = PreservedReviewScreens(page, origin, width).screen("passes", "grid")
+    """Keep sample IDs, compound details, expiration and tear/sort at their exact hash."""
+    preserved = PreservedReviewScreens(page, origin, width)
+    frame = preserved.screen("passes", "grid")
     digest = page.locator("#frame").get_attribute("data-test-ready-hash")
     cards = frame.locator("[data-pass-id]")
     expect(cards).to_have_count(4)
+    frame_click(page, frame.locator('[data-site="샘플카페"]'))
+    expect(cards).to_have_count(1)
+    frame_click(page, frame.locator('[data-site="전체"]'))
+    frame_click(page, frame.locator('[data-pass-id="b17"] button'))
+    expect(frame.locator('.expanded-pass .ticket-item')).to_have_count(2)
+    frame_click(page, frame.locator('[data-action="close-ticket"]'))
+    open_expired_pass(page, frame, width, 'b09', 4, 'preserved')
+    frame_click(page, frame.locator('[data-action="close-ticket"]'))
     frame_click(page, frame.locator('[data-pass-id="c15"] button'))
     frame_click(page, frame.locator('[data-action="tear-ticket"]'))
     confirm = frame.get_by_role("alertdialog", name="납품 수령 확인")
@@ -65,101 +93,162 @@ def check_preserved_pass_receipt(page, origin, width):
     expect(cards.last).to_have_attribute("data-pass-id", "c15")
     expect(cards.last.locator(".pass-state")).to_have_text("수령 확인")
     expect(frame.locator('.expanded-pass')).to_be_hidden()
+    frame = preserved.screen('search', 'empty')
+    field = frame.locator('.tag-field input')
+    field.fill('특란')
+    frame_click(page, frame.locator('[data-suggestion="특란"]'))
+    expect(field).to_have_attribute('placeholder', '')
+    frame_click(page, frame.locator('[data-detail="b17"]'))
+    expect(frame.locator('[data-search-detail] .ticket-item')).to_have_count(2)
+    frame_click(page, frame.locator('[data-action="back-results"]'))
+    field.press('Backspace')
+    expect(frame.locator('[data-tag]')).to_have_count(0)
+    frame = preserved.screen('search', 'none')
+    frame_click(page, frame.get_by_role('button', name='태그 지우기'))
+    expect(frame.locator('.quote-search-row')).to_have_count(4)
     return {"source": "preserved authored document", "artifactHash": digest,
-            "scope": "historical in-memory sample only", "received": "c15", "sortedLast": True}
+            "scope": "historical in-memory sample only", "received": "c15", "sortedLast": True,
+            "compoundPassAndSearch": True, "expiredReceiptBlocked": True}
 
 
 def check(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     screen = screens.screen
 
+    # The real issued-quote fixture expires at the end of 2027. Fix Date only,
+    # leaving animation and pointer timers live, to exercise its expired state.
+    page.clock.set_fixed_time("2028-01-01T00:00:00Z")
     frame = screen("passes", "grid")
+    expect(frame.locator('#order-app-page')).to_have_attribute('data-pass-data-state', 'ready')
+    source = frame.locator('#order-single').evaluate('''async el=>{
+      const a=el.ownerDocument.defaultView.ORDER_APP_ADAPTER;
+      const [purchases,workspace]=await Promise.all([a.request('/purchases'),a.roleRequest('/workspace')]);
+      return {purchases,workspace};
+    }''')
+    purchases, workspace = source['purchases']['items'], source['workspace']
+    assert len(purchases) == 5 and len(workspace['quotes']) == 1, source
+    ordered = {item['quoteId'] for item in purchases}
+    quote_ids = ['quote:'+item['id'] for item in workspace['quotes'] if item['id'] not in ordered]
+    expected_ids = {item['id'] for item in purchases} | set(quote_ids)
+    assert len(expected_ids) == 6 and quote_ids == ['quote:qa-existing-quote'], source
     cards = frame.locator("[data-pass-id]")
-    expect(cards).to_have_count(4)
-    frame_click(page, frame.locator('[data-site="샘플카페"]'))
+    expect(cards).to_have_count(len(expected_ids))
+    assert set(cards.evaluate_all('els=>els.map(el=>el.dataset.passId)')) == expected_ids
+    frame_click(page, frame.locator('[data-site="QA 공동구매"]'))
     expect(cards).to_have_count(1)
+    expect(cards).to_have_attribute('data-pass-id', 'qa-order-campaign')
     frame_click(page, frame.locator('[data-site="전체"]'))
+    expect(cards).to_have_count(len(expected_ids))
     cards.first.evaluate("(card)=>{window.originalPass=card}")
     frame_click(page, frame.locator('[data-view="deck"]'))
     assert cards.first.evaluate("(card)=>card===window.originalPass")
     frame_click(page, frame.get_by_role("button", name="다음", exact=True))
-    expect(frame.locator(".deck-position")).to_have_text("2 / 4")
+    expect(frame.locator(".deck-position")).to_have_text("2 / "+str(len(expected_ids)))
     front=cards.nth(1)
-    front.evaluate("""card=>{
-      const fire=(name,x,y)=>card.dispatchEvent(new PointerEvent(name,{bubbles:true,button:0,pointerId:4,isPrimary:true,clientX:x,clientY:y}));
-      fire('pointerdown',150,90);fire('pointermove',152,130);fire('pointerup',152,130);
-    }""")
-    expect(frame.locator(".deck-position")).to_have_text("2 / 4")
+    x, y = frame_pointer_position(page, front)
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x+2, y+40, steps=5)
+    page.mouse.up()
+    expect(frame.locator(".deck-position")).to_have_text("2 / "+str(len(expected_ids)))
     frame_click(page, frame.locator('[data-view="grid"]'))
-    frame_click(page, frame.locator('[data-pass-id="b17"] button'))
-    expect(frame.locator(".expanded-pass .ticket-item")).to_have_count(2)
+    frame_click(page, frame.locator('[data-pass-id="qa-order-paid"] button'))
+    expect(frame.locator(".expanded-pass .ticket-item")).to_have_count(1)
+    expect(frame.locator('.expanded-pass')).to_contain_text('40판')
     frame_click(page, frame.locator('[data-action="close-ticket"]'))
-    frame_click(page, frame.locator('[data-action="dismiss-expired"]'))
-    expect(frame.locator(".expired-reminder")).to_be_hidden()
-    layout = record_pass_layout(page, frame, width, 'before-expired-pass-detail')
-    try:
-        # Ticket paper styling must not turn the absolute grid/deck cards into
-        # relative normal-flow blocks extending beyond the stage's height.
-        assert len(layout['cards']) == 4
-        assert all(card['position'] == 'absolute' for card in layout['cards']), layout
-        stage = layout['stage']['rect']
-        assert all(card['rect']['top'] >= stage['top'] - 1 and card['rect']['bottom'] <= stage['bottom'] + 1
-                   for card in layout['cards']), layout
-        frame_click(page, frame.locator('[data-pass-id="b09"] button'))
-    except Exception:
-        record_pass_layout(page, frame, width, 'failed-expired-pass-detail')
-        page.screenshot(path=str(LAYOUT_OUT / f'navigation-layout-{width}-failure.png'), full_page=True)
-        raise
-    expect(frame.locator('[data-action="tear-ticket"]')).to_have_count(0)
+    open_expired_pass(page, frame, width, quote_ids[0], len(expected_ids), 'current')
+    expect(frame.locator('.expanded-pass')).to_contain_text('지난 견적')
     frame_click(page, frame.locator('[data-action="close-ticket"]'))
-    frame_click(page, frame.locator('[data-pass-id="c15"] button'))
+    shipped = next(item for item in purchases if item['id'] == 'qa-order-shipped')
+    assert shipped['status'] == 'DISPATCHED' and 'receive' in shipped['actions'], shipped
+    frame_click(page, frame.locator('[data-pass-id="qa-order-shipped"] button'))
     frame_click(page, frame.get_by_role("button", name="수령 확인하기", exact=False))
     confirm = frame.get_by_role("alertdialog", name="납품 수령 확인")
     expect(confirm).to_contain_text("복원할 수 없어요")
     frame_click(page, confirm.get_by_role("button", name="취소", exact=True))
     expect(confirm).to_be_hidden()
     frame_click(page, frame.locator('[data-action="tear-ticket"]'))
-    # Current product mode has no receipt handler for these authored sample IDs.
-    # It must keep the original detail and data instead of manufacturing success.
+    # Current product mode writes through the same purchase contract. Neither a
+    # failed request nor its pending retry may manufacture a received ticket.
     before = inspect_fixture(frame)
     detail = frame.locator('.expanded-pass')
-    detail_node, detail_before = detail.element_handle(), detail.text_content()
+    detail_node = detail.element_handle()
+    detail_before = detail.locator('.ticket-item').all_text_contents()
     cards_before = cards.evaluate_all('els=>els.map(el=>({id:el.dataset.passId,state:el.querySelector(".pass-state").textContent}))')
-    frame_click(page, confirm.get_by_role("button", name="수령 확인", exact=True))
-    expect(frame.locator('#order-app-status')).to_have_text('아직 연결되지 않은 기능이에요.')
+    frame.locator('#order-single').evaluate('''el=>{
+      const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER,send=a.request.bind(a);
+      w.__passWrites=[];
+      a.request=(path,body,signal)=>{if(path==='/purchases'&&body)w.__passWrites.push(JSON.parse(JSON.stringify(body)));return send(path,body,signal);};
+    }''')
+    accept = confirm.get_by_role('button', name='수령 확인', exact=True)
+    configure(frame, {'requests': {'product POST /purchases': {'scenario': 'error', 'status': 503}}})
+    frame_click(page, accept)
+    expect(accept).to_have_attribute('data-async-phase', 'error')
+    expect(confirm.locator('[data-receipt-message]')).not_to_be_empty()
     expect(confirm).to_be_visible()
     assert detail_node.evaluate('el=>el===document.querySelector(".expanded-pass")')
-    assert detail.text_content() == detail_before
+    assert detail.locator('.ticket-item').all_text_contents() == detail_before
     assert cards.evaluate_all('els=>els.map(el=>({id:el.dataset.passId,state:el.querySelector(".pass-state").textContent}))') == cards_before
     expect(frame.locator('.ticket-received')).to_have_count(0)
     after = inspect_fixture(frame)
     assert after['data'] == before['data']
     writes = lambda snapshot: [call for call in snapshot['calls'] if call['method'] != 'GET']
-    assert writes(after) == writes(before)
+    assert len(writes(after)) == len(writes(before)) + 1
+    configure(frame, {'requests': {'product POST /purchases': {'scenario': 'loading'}}})
+    frame_click(page, accept)
+    expect(accept).to_have_attribute('data-async-phase', 'pending')
+    expect(accept).to_be_disabled()
+    expect(frame.locator('.ticket-received')).to_have_count(0)
+    pending = inspect_fixture(frame)
+    assert pending['pending'] == 1 and pending['data'] == before['data'], pending
+    release(frame)
+    expect(cards.last).to_have_attribute('data-pass-id', shipped['id'])
+    expect(cards.last.locator('.pass-state')).to_have_text('수령 확인')
+    expect(frame.locator('.expanded-pass')).to_be_hidden()
+    saved = next(item for item in inspect_fixture(frame)['data']['purchases'] if item['id'] == shipped['id'])
+    assert saved['status'] == 'RECEIVED' and saved['revision'] == shipped['revision'] + 1, saved
+    commands = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__passWrites')
+    assert len(commands) == 2 and commands[0] == commands[1], commands
+    assert commands[0]['action'] == 'receive' and commands[0]['id'] == shipped['id']
+    assert commands[0]['expectedRevision'] == shipped['revision'] and commands[0]['requestKey']
+    assert before['source']['persistent'] is False and before['source']['commercial'] is False
     pass_receipt = {"width": width, "current": {
         "source": "current standalone research application", "mode": "product",
         "artifactHash": page.locator('#frame').get_attribute('data-test-ready-hash'),
-        "outcome": "unconnected", "detailUnchanged": True, "cardsUnchanged": True,
-        "dataUnchanged": True, "newMutationCalls": 0}}
-    frame_click(page, confirm.get_by_role("button", name="취소", exact=True))
-    frame_click(page, frame.locator('[data-action="close-ticket"]'))
+        "outcome": "QA fixture acknowledgement", "loadedIds": sorted(expected_ids),
+        "failureRetainedDetailAndData": True, "pendingDidNotReceive": True,
+        "retryCommandUnchanged": True, "received": saved['id'], "revision": saved['revision'],
+        "sortedLast": True, "newMutationCalls": 2, "commercialWrites": 0}}
+    page.screenshot(path=str(LAYOUT_OUT / f'navigation-current-received-{width}.png'), full_page=True)
 
     frame = screen("search", "empty")
+    expect(frame.locator('#order-app-page')).to_have_attribute('data-pass-data-state', 'ready')
+    expect(frame.locator('.quote-search-row')).to_have_count(len(expected_ids))
     field = frame.locator(".tag-field input")
     field.evaluate("""e=>{e.dispatchEvent(new CompositionEvent('compositionstart'));e.value='특';e.dispatchEvent(new InputEvent('input',{isComposing:true,bubbles:true}));}""")
     expect(field).to_have_attribute("aria-expanded","false")
     field.evaluate("""e=>e.dispatchEvent(new CompositionEvent('compositionend'))""")
-    field.fill("특란")
-    frame_click(page, frame.locator('[data-suggestion="특란"]'))
+    product = shipped['product']
+    field.fill(product)
+    frame_click(page, frame.locator('[data-suggestion="'+product+'"]'))
     expect(field).to_have_attribute("placeholder", "")
-    frame_click(page, frame.locator('[data-detail="b17"]'))
-    expect(frame.locator("[data-search-detail] .ticket-item")).to_have_count(2)
+    expect(frame.locator('.quote-search-row')).to_have_count(len(purchases))
+    frame_click(page, frame.locator('[data-detail="qa-order-paid"]'))
+    expect(frame.locator("[data-search-detail] .ticket-item")).to_have_count(1)
+    expect(frame.locator('[data-search-detail]')).to_contain_text('40판')
     frame_click(page, frame.locator('[data-action="back-results"]'))
     field.press("Backspace")
     expect(frame.locator("[data-tag]")).to_have_count(0)
     frame = screen("search", "none")
+    expect(frame.locator('#order-app-page')).to_have_attribute('data-pass-data-state', 'ready')
+    expect(frame.locator('[data-suggestion="QA 공동구매"]')).to_have_count(1)
+    field = frame.locator('.tag-field input')
+    for term in ['QA 공동구매', 'QA 샘플 사업장']:
+        field.fill(term)
+        frame_click(page, frame.locator('[data-suggestion="'+term+'"]'))
+    expect(frame.locator('.quote-search-row')).to_have_count(0)
     frame_click(page, frame.get_by_role("button",name="태그 지우기"))
-    expect(frame.locator(".quote-search-row")).to_have_count(4)
+    expect(frame.locator(".quote-search-row")).to_have_count(len(expected_ids))
 
     pass_receipt['preserved'] = check_preserved_pass_receipt(page, origin, width)
     assert pass_receipt['current']['artifactHash'] != pass_receipt['preserved']['artifactHash']

@@ -52,6 +52,28 @@ test('an empty preview still opens the full notification page and its reception 
   } finally {f.close();}
 });
 
+test('notification controls keep unique native identities across preview, full page and list rerenders', async () => {
+  const common={title:'같은 알림 제목',body:'같은 알림 내용',createdAt:new Date(now).toISOString()};
+  const items=[notice(0,{...common,id:'notice / one'}),notice(1,{...common,id:'notice %2F one'})];
+  const f=fixture(items),full=f.dom.window.document.createElement('section');f.dom.window.document.body.append(full);
+  const disposeFull=mountResearchNotifications({container:full,adapter:f.adapter,mode:'full',now:()=>now});
+  try {
+    await Promise.all([f.dispose.ready,disposeFull.ready]);
+    const rows=[...f.dom.window.document.querySelectorAll('[data-notification-id]')],identities=rows.map(row=>row.id);
+    assert.equal(rows.length,4);assert.ok(identities.every(Boolean),'each repeated control needs its own native identity');
+    assert.equal(new Set(identities).size,4,'preview and full page may coexist in the retained application');
+    for(const row of rows)assert.equal(f.dom.window.document.getElementById(row.id),row);
+    const previewIds=[...f.container.querySelectorAll('[data-notification-id]')].map(row=>row.id),fullIds=[...full.querySelectorAll('[data-notification-id]')].map(row=>row.id);
+    const selected=f.container.querySelector('[data-notification-id]');selected.click();await tick();
+    f.container.querySelector('[data-action="research-notification-back"]').click();
+    assert.deepEqual([...f.container.querySelectorAll('[data-notification-id]')].map(row=>row.id),previewIds,'list return must preserve stored location identities');
+    assert.equal(f.dom.window.document.activeElement.id,previewIds[0]);
+    const filter=full.querySelector('[data-notification-filter]');filter.dispatchEvent(new f.dom.window.Event('change',{bubbles:true}));
+    assert.deepEqual([...full.querySelectorAll('[data-notification-id]')].map(row=>row.id),fullIds,'an ordinary list repaint must not regenerate identities');
+    assert.equal(f.calls.filter(call=>call.body).length,1,'only the explicit notification open marks its own message read');
+  } finally {disposeFull();f.close();}
+});
+
 test('full page progressively reveals messages and opens a full body before confirming that single read', async () => {
   const items = Array.from({length: 45}, (_, index) => notice(index, index === 21 ? {body: '첫 단락\n\n둘째 단락을 줄 제한 없이 읽어요.'} : {}));
   const f = fixture(items, {mode: 'full'});

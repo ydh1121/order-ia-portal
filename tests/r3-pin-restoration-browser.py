@@ -50,10 +50,58 @@ def install_probe(page):
       window.__pinMessages=[];window.addEventListener('message',event=>{
         const frame=document.getElementById('frame'),m=event.data;
         if(event.source!==frame?.contentWindow||event.origin!==(frame?.hasAttribute('src')?location.origin:'null')||m?.scope!=='ORDER_R3_FRAME')return;
-        if(['ready','point','openPins'].includes(m.type))window.__pinMessages.push(m);
+        if(['ready','point','openPins','missing','pinProjectionChanged'].includes(m.type))window.__pinMessages.push(m);
         if(m.type==='ready'){window.__pinSession={channel:m.channel,artifact:m.artifact};frame.dataset.pinReadyHash=m.artifact;}
       });
     }""")
+    page.add_init_script("""if(window!==top){
+      // Read-only evidence for a disappearing current anchor. Never reindex,
+      // refocus or repair the product/inspector while collecting this timeline.
+      const fields=['id','data-action','data-mf-go','data-mf-state','data-op-route','name','for','role','aria-label','class'];
+      const describe=n=>n?.nodeType===1?{tag:n.localName,id:n.id,class:n.getAttribute('class')}: {nodeType:n?.nodeType};
+      const fingerprint=()=>{
+        const root=document.getElementById('order-single'),el=root?.querySelector('input[name=email]');
+        if(!el)return null;
+        const chain=[];for(let n=el;n&&n!==root;n=n.parentElement)chain.unshift([n.localName,...fields.map(k=>n.getAttribute(k)||'')].join('|'));
+        const path='screen/'+chain.join('/');let hash=2166136261;
+        for(const c of path)hash=Math.imul(hash^c.charCodeAt(0),16777619);
+        return {computedId:'a-'+(hash>>>0).toString(36),path,domId:el.id,domIdCount:[...root.querySelectorAll('[id]')].filter(n=>n.id===el.id).length};
+      };
+      window.__pinDomTimeline=[];
+      window.__pinDomFingerprint=fingerprint;
+      const record=value=>{window.__pinDomTimeline.push({at:performance.now(),...value});if(window.__pinDomTimeline.length>120)window.__pinDomTimeline.shift();};
+      let root;
+      const observer=new MutationObserver(records=>{
+        if(!root){root=document.getElementById('order-single');if(!root)return;observer.disconnect();observer.observe(root,{subtree:true,childList:true});return;}
+        const changes=records.filter(r=>!r.target.closest?.('[data-research-annotation]')).map(r=>({
+          target:describe(r.target),added:[...r.addedNodes].slice(0,8).map(describe),removed:[...r.removedNodes].slice(0,8).map(describe)
+        }));
+        if(changes.length)record({type:'childList',changes:changes.slice(0,12),email:fingerprint()});
+      });
+      observer.observe(document,{subtree:true,childList:true});
+      for(const type of ['focusin','focusout'])window.addEventListener(type,event=>record({type,target:describe(event.target),email:fingerprint()}),true);
+    }""")
+
+
+def pin_diagnostic(page, result, stage, anchor=None):
+    """Persist real state before a failing context manager closes Chromium."""
+    entry = {"stage": stage, "capturedAnchor": anchor}
+    try:
+        entry["host"] = page.evaluate("""()=>({url:location.href,
+          messages:window.__pinMessages?.slice(-100),surface:{x:document.getElementById('surface')?.scrollLeft,y:document.getElementById('surface')?.scrollTop},
+          drawerHidden:document.getElementById('drawer')?.hidden,
+          notes:[...document.querySelectorAll('#notes article')].map(n=>({id:n.id,text:n.textContent}))})""")
+        entry["frame"] = page.frame_locator("#frame").locator("html").evaluate("""()=>({
+          url:location.href,active:{tag:document.activeElement?.localName,id:document.activeElement?.id},
+          inspector:document.getElementById('order-single')?.__orderResearchInspector?.inspect(),
+          email:window.__pinDomFingerprint?.(),timeline:window.__pinDomTimeline,
+          markers:[...document.querySelectorAll('#r3-pins .r3-pin')].map(n=>({label:n.getAttribute('aria-label'),previous:n.dataset.previousCount,current:n.dataset.currentCount,rect:n.getBoundingClientRect().toJSON()})),
+          auth:document.getElementById('order-single')?.__orderAuthSheet?.inspect()
+        })""")
+    except Exception as error:
+        entry["diagnosticError"] = str(error)
+    result.setdefault("pinDiagnostics", []).append(entry)
+    (OUT / "pin-diagnostics.json").write_text(json.dumps(result["pinDiagnostics"], ensure_ascii=False, indent=2))
 
 
 def read_json(page, path):
@@ -569,6 +617,7 @@ def main():
             frame = ready(page, current["hash"])
 
             mixed_anchor = capture_anchor(page, frame, EMAIL)
+            pin_diagnostic(page, result, "mixed-anchor-captured", mixed_anchor)
             mixed_id = store_pin(page, mixed_anchor, MIXED_BODY)
             page.reload()
             frame = ready(page, current["hash"])
@@ -582,11 +631,13 @@ def main():
             mixed_colors = mixed.evaluate("el=>getComputedStyle(el).backgroundImage")
             assert "rgb(124, 58, 237)" in mixed_colors and "rgb(49, 93, 230)" in mixed_colors, mixed_colors
             expect(frame.locator(".r3-pin")).to_have_count(2)
+            pin_diagnostic(page, result, "mixed-before-click", mixed_anchor)
             frame_click(page, mixed)
             expect(page.locator("#notes article").filter(has=page.get_by_text(OLD_BODY, exact=True))).to_be_visible()
             expect(page.locator("#notes article").filter(has=page.get_by_text(MIXED_BODY, exact=True))).to_be_visible()
             opened = page.evaluate("window.__pinMessages.filter(m=>m.type==='openPins').at(-1).payload.ids")
             assert set(opened) == {old_id, mixed_id}, opened
+            pin_diagnostic(page, result, "mixed-after-click", mixed_anchor)
             page.screenshot(path=str(OUT / "mixed-cluster-comments.png"))
 
             # Restore the recorded real stage scroll through the old comment's UI.
@@ -600,7 +651,16 @@ def main():
             restore.click()
             expect(page.locator("#drawer")).to_have_js_property("hidden", True)
             page.wait_for_function("x=>Math.abs(document.getElementById('surface').scrollLeft-x)<=1", arg=saved_scroll)
-            restored = geometry(frame, mixed, EMAIL, old_anchor)
+            pin_diagnostic(page, result, "mixed-after-restore", mixed_anchor)
+            try:
+                restored = geometry(frame, mixed, EMAIL, old_anchor)
+            except Exception:
+                pin_diagnostic(page, result, "mixed-geometry-failure", mixed_anchor)
+                try:
+                    page.screenshot(path=str(OUT / "mixed-geometry-failure.png"))
+                except Exception:
+                    pass
+                raise
             page.reload()
             frame = ready(page, current["hash"])
             expect(frame.locator('.r3-pin.is-mixed[data-previous-count="1"][data-current-count="1"]')).to_have_count(1)

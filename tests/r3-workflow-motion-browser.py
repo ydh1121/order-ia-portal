@@ -88,9 +88,10 @@ def check_business(page, frame, reduced):
     number.fill('1234567890')
     frame.locator('[name=business-name]').fill('검수용 합성 사업장')
     frame.locator('[name=owner-name]').fill('검수 담당자')
-    for name, value in [('business-sector', '음식점업'), ('business-type', '제과점업')]:
+    for name, value in [('business-sector', '숙박 및 음식점업'), ('business-type', '제과점업')]:
         field = frame.locator('[name='+name+']')
         field.fill(value)
+        expect(frame.get_by_role('option', name=value, exact=True)).to_be_visible()
         field.press('ArrowDown')
         field.press('Enter')
         expect(field).to_have_value(value)
@@ -120,8 +121,9 @@ def check_business(page, frame, reduced):
     step('business acknowledgement and registration file reuse')
     release(frame)
     expect(verify).to_have_attribute('data-async-phase', 'success')
-    expect(frame.locator('.wf-status')).to_contain_text('검토용 인증 결과')
-    expect(frame.locator('.wf-status')).to_contain_text('실제 국세청 조회가 아니')
+    expect(frame.locator('.wf-status')).to_have_text('검토용 인증 응답입니다. 실제 국세청 인증이 아닙니다.')
+    expect(frame.locator('[data-business-confirmed]')).to_have_text('사업자 정보를 확인했어요. 등록증을 제출해 주세요.')
+    expect(frame.locator('.business-fields')).to_have_js_property('inert', True)
     writes = requests(frame, '/business-verifications')
     assert len(writes) == 2 and writes[0]['body'] == writes[1]['body'], writes
     snapshot = inspect_fixture(frame)

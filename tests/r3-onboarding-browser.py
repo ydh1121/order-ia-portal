@@ -43,7 +43,7 @@ def frame_identity(locator):
     }""")
 
 
-def pick_panel_point(page, frame, target, marker, *, native_popover=False):
+def pick_panel_point(page, frame, target, marker, *, native_popover=False, horizontal_fraction=.5):
     """Use the real QA toolbar and physical pointer, stopping before any save."""
     frame_pointer_position(page, target)
     expected_id = frame_identity(target)
@@ -70,7 +70,9 @@ def pick_panel_point(page, frame, target, marker, *, native_popover=False):
         expect(frame.locator('.obm-panel:popover-open')).to_have_count(1)
     # Opening the outer toolbar can move its viewport. Read the target again
     # after it has opened; frame_click maps this child point to the live canvas.
-    point = target.evaluate("el=>{const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};}")
+    # Composite buttons contain independently annotatable title/summary nodes.
+    # Their real padding targets the button itself without activating its child.
+    point = target.evaluate("(el,fraction)=>{const r=el.getBoundingClientRect();return {x:r.x+r.width*fraction,y:r.y+r.height/2};}", horizontal_fraction)
     frame_click(page, veil, position=point)
     wait_for_expression(page, 'window.__onboardingReviewPoint!==null')
     envelope = page.evaluate('window.__onboardingReviewPoint')
@@ -540,14 +542,24 @@ def check_notification_pin(page, screens):
     expect(panel).to_be_visible()
     pass_panel=panel.locator('[data-obm-page="manage.research.passes.grid"]')
     expect(pass_panel.locator('.obm-heading')).to_have_text('오더 패스')
-    expect(pass_panel.locator('.research-scene-panel')).to_have_attribute('data-research-scene-connection','connected')
+    pass_scene=pass_panel.locator('.research-scene-panel')
+    expect(pass_scene).to_have_attribute('data-research-scene-connection','connected')
+    expect(pass_scene).to_have_attribute('data-pass-data-state','ready')
+    # The research renderer now uses the controlled purchase/workspace response,
+    # rather than the four historical artwork samples. Check the exact current
+    # fixture identities before exercising the same native deck controls.
+    expected_pass_ids={'qa-order-cash','qa-order-paid','qa-order-shipped',
+                       'qa-order-card','qa-order-campaign','quote:qa-existing-quote'}
+    pass_cards=pass_panel.locator('.pass-stage [data-pass-id]')
+    expect(pass_cards).to_have_count(len(expected_pass_ids))
+    assert set(pass_cards.evaluate_all('(cards)=>cards.map(card=>card.dataset.passId)'))==expected_pass_ids
     expect(pass_panel.locator('.pass-stage [data-pass-id]').first).to_be_visible()
     expect(pass_panel.locator('[data-open-quote-draft]')).to_have_count(0)
     wait_review_session(page,'passes','grid')
     frame_click(page,pass_panel.locator('[data-view="deck"]'))
     expect(pass_panel.locator('[data-view="deck"]')).to_have_attribute('aria-pressed','true')
     frame_click(page,pass_panel.locator('[data-action="deck-next"]'))
-    expect(pass_panel.locator('.deck-position')).to_have_text('2 / 4')
+    expect(pass_panel.locator('.deck-position')).to_have_text(f'2 / {len(expected_pass_ids)}')
     expect(bell).to_have_attribute('aria-expanded','false')
     expect(panel.locator('[data-product-gooey]')).to_have_count(0)
     expect(frame.locator('[data-product-gooey]')).to_have_count(1)
@@ -560,21 +572,28 @@ def check_notification_pin(page, screens):
     frame_click(page,bell)
     frame_click(page,actions.nth(1))
     expect(panel).to_be_visible()
-    read = panel.get_by_role('button', name='읽음', exact=True)
-    expect(read).to_be_visible()
+    notice = panel.locator('button[data-action="research-open-notification"][data-notification-id="qa-notice-1"]')
+    expect(notice).to_be_visible()
+    expect(notice).to_have_attribute('data-read','false')
     snapshot = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
-    envelope = pick_panel_point(page, frame, read, '#r3-panel-state-account-notifications', native_popover=True)
+    envelope = pick_panel_point(page, frame, notice, '#r3-panel-state-account-notifications', native_popover=True, horizontal_fraction=.02)
     after = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
-    assert after['data']['notifications'] == snapshot['data']['notifications'], 'Selecting the read-button location must not activate it'
+    assert after['data']['notifications'] == snapshot['data']['notifications'], 'Selecting the notification location must not open or mark it read'
     assert not any(call['method'] == 'POST' for call in after['calls']), after['calls']
+    expect(notice).to_have_attribute('data-read','false')
+    expect(panel.locator('[data-notification-detail]')).to_have_count(0)
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
     wait_review_session(page,'onboarding','member-1')
     frame_click(page,bell)
     frame_click(page,actions.nth(1))
     restore_panel_point(page, envelope)
-    expect(read).to_be_focused()
-    assert frame_identity(read) == envelope['payload']['id']
+    expect(notice).to_be_focused()
+    expect(notice).to_have_attribute('data-read','false')
+    assert frame_identity(notice) == envelope['payload']['id']
+    restored = frame.locator('#order-single').evaluate('()=>window.ORDER_APP_ADAPTER.fixture.inspect()')
+    assert restored['data']['notifications'] == snapshot['data']['notifications']
+    assert not any(call['method'] == 'POST' for call in restored['calls']), restored['calls']
     panel.locator('.obm-heading').press('Escape')
     expect(panel).to_be_hidden()
     print('PASS existing bell: only two radial icons, real Order Pass and notification panels, pin restore and zero mutation')
@@ -727,7 +746,7 @@ def check(page, origin, width):
                       "authOverlay":"same introduction, Escape/scrim/drag close","horizontalDrag":"2→1→2",
                       "wordTypography":{"guest":guest_typography,"member":member_typography},
                       "directCompanyHeader":company_geometry,
-                      "panelPins":"auth email + real notification read button; restore without comment save","reviewWrites":0}))
+                      "panelPins":"auth email + real notification open control; restore without reading or comment save","reviewWrites":0}))
 
 
 def main():

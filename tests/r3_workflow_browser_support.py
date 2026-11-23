@@ -73,7 +73,10 @@ def check_consultation_flow(page, frame):
     expect(memo).to_be_disabled()
     release(frame)
     expect(submit).to_have_attribute('data-request-saved', 'true')
-    expect(frame.locator('.consult-request-message')).to_contain_text('상담 요청을 접수했습니다.')
+    expect(frame.locator('.consult-complete h2')).to_have_text('상담을 예약했어요')
+    expect(frame.locator('.consult-complete')).to_contain_text('예약시간 확정 후 담당자가 연락드릴 예정이에요')
+    expect(memo).to_be_hidden()
+    expect(submit).to_be_hidden()
     saved = next(item for item in inspect_fixture(frame)['data']['cases'] if item['kind'] == 'consult')
     assert saved['state'] == 'OPEN'
     writes = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__consultationWrites')
@@ -88,7 +91,7 @@ def check_consultation_flow(page, frame):
 
 def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: None):
     on_step('signature editor startup')
-    expect(frame.get_by_role('heading', name='거래내역 증빙과 서명', exact=True)).to_be_visible()
+    expect(frame.get_by_role('heading', name='서명이 필요해요', exact=True)).to_be_visible()
     expect(frame.locator('.wf-panel select').first.locator('option')).not_to_have_count(0)
     frame.locator('#order-single').evaluate('''el=>{
       const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER,original=a.workflows.evidenceOptions;
@@ -156,6 +159,9 @@ def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: N
     release(frame)
     expect(frame.locator('.wf-panel')).to_have_attribute('data-success', 'true')
     expect(frame.locator('.wf-status')).to_contain_text('검토 중')
+    expect(frame.locator('.research-workflow-receipt')).to_contain_text('거래내역 증빙과 서명을 접수했어요.')
+    expect(frame.locator('.research-workflow-receipt')).to_contain_text('최대 2영업일 이내')
+    expect(frame.get_by_role('heading', name='서명이 필요해요', exact=True, include_hidden=True)).to_be_hidden()
     packets = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signaturePackets')
     assert len(packets) == (2 if fail_first else 1), packets
     for packet in packets:

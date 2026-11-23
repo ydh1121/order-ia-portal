@@ -8,14 +8,14 @@ export function mountResearchOrderMenu({brand,adapter,signal,getRoute,onChoose,b
   const create=(tag,text,className)=>{const element=doc.createElement(tag);if(text!==undefined)element.textContent=text;if(className)element.className=className;return element;};
   const listen=(node,event,handler,options={})=>node.addEventListener(event,handler,{...options,signal:ctl.signal});
   const host=create('div',undefined,'research-order-menu');host.hidden=true;
-  const trigger=create('button','▾','research-order-trigger');trigger.type='button';trigger.setAttribute('aria-label','Order 품목과 견적 모드 선택');trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');
+  const trigger=create('button','▾','research-order-trigger');trigger.id='research-order-trigger';trigger.type='button';trigger.setAttribute('aria-label','Order 품목과 견적 모드 선택');trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');
   const panel=create('section',undefined,'research-order-stack');panel.hidden=true;panel.id='research-order-menu';panel.setAttribute('role','menu');panel.setAttribute('aria-label','Order');trigger.setAttribute('aria-controls',panel.id);
   const head=create('header',undefined,'research-order-head'),back=create('button','‹','obm-back'),title=create('h2','Order');
-  back.type='button';back.hidden=true;back.setAttribute('aria-label','품목 목록으로');head.append(back,title);
+  back.id='research-order-back';back.type='button';back.hidden=true;back.setAttribute('aria-label','품목 목록으로');head.append(back,title);
   const slider=create('div',undefined,'research-order-pages'),rootPage=create('div',undefined,'research-order-page'),modePage=create('div',undefined,'research-order-page');modePage.hidden=true;
   const row=(text)=>{const b=create('button',undefined,'research-order-row');b.type='button';b.setAttribute('role','menuitem');b.append(create('span',text));return b;};
-  const eggs=row('계란');eggs.append(create('span','›','obm-chevron'));rootPage.append(eggs);
-  const modes=[['simple','간편 견적'],['detailed','상세 견적']].map(([mode,label])=>{const b=row(label);b.dataset.orderMode=mode;b.setAttribute('role','menuitemradio');b.setAttribute('aria-checked','false');modePage.append(b);listen(b,'click',()=>{const route=getRoute();close(true);if(route.kind==='quote'&&route.mode===mode)return;onChoose(mode);});return b;});
+  const eggs=row('계란');eggs.id='research-order-eggs';eggs.append(create('span','›','obm-chevron'));rootPage.append(eggs);
+  const modes=[['simple','간편 견적'],['detailed','상세 견적']].map(([mode,label])=>{const b=row(label);b.id='research-order-mode-'+mode;b.dataset.orderMode=mode;b.setAttribute('role','menuitemradio');b.setAttribute('aria-checked','false');modePage.append(b);listen(b,'click',()=>{const route=getRoute();close(true);if(route.kind==='quote'&&route.mode===mode)return;onChoose(mode);});return b;});
   slider.append(rootPage,modePage);panel.append(head,slider);host.append(trigger,panel);brand.querySelector('.brand-word').after(host);
   let disposed=false,enabled=false,page=0,refreshEpoch=0,openEpoch=0,gesture=null,animations=[];
   const reduced=()=>win.matchMedia?.('(prefers-reduced-motion: reduce)').matches===true;
@@ -30,7 +30,7 @@ export function mountResearchOrderMenu({brand,adapter,signal,getRoute,onChoose,b
     const direction=page===1?1:-1,nextHeight=target.getBoundingClientRect().height;
     animate(target,[{transform:'translateX('+direction*width+'px)',opacity:.5},{transform:'translateX(0)',opacity:1}],{duration:420,easing:'cubic-bezier(.23,1,.32,1)'});
     // The retained departing page is visual only during its parallax travel.
-    const copy=previous.cloneNode(true);copy.hidden=false;copy.inert=true;copy.setAttribute('aria-hidden','true');copy.classList.add('research-order-departing');slider.append(copy);
+    const copy=previous.cloneNode(true);copy.removeAttribute('id');for(const node of copy.querySelectorAll('[id]'))node.removeAttribute('id');copy.hidden=false;copy.inert=true;copy.setAttribute('aria-hidden','true');copy.classList.add('research-order-departing');slider.append(copy);
     animate(copy,[{transform:'translateX(0)',opacity:1},{transform:'translateX('+(-direction*width*.3)+'px)',opacity:0}],{duration:420,easing:'cubic-bezier(.23,1,.32,1)'});
     const departing=animations.at(-1);if(departing?.finished)departing.finished.catch(()=>{}).finally(()=>copy.remove());else copy.remove();
     if(oldHeight&&nextHeight)animate(slider,[{height:oldHeight+'px'},{height:nextHeight+'px'}],{duration:380,easing:'cubic-bezier(.23,1,.32,1)'});
