@@ -14,6 +14,9 @@ from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
 from research_account_origin_browser import check_account_origin
 from r3_feedback_browser_support import frame_click, frame_pointer_position, prepare_frame_pointer
+from research_login_order_browser import (check_guest_order, check_login_input_layout,
+    check_order_panel, finish_order_arrival, observe_order_arrival,
+    same_wordmark_geometry, wordmark_geometry)
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-application'
@@ -583,8 +586,24 @@ def main():
         # invokes app.navigate, dispatches a click, or relaxes a native barrier.
         phase = 'qa-member-header-and-order'
         remember_review_application(page)
+        choose_review_route(page, frame, 'login', 'empty')
+        receipt['loginInputLayout'] = check_login_input_layout(page, frame)
+        page.screenshot(path=str(OUT / 'login-input-layout-1440.png'), full_page=True)
+        receipt['checks'].append('login email and password keep equal input geometry; email suggestions remain below the field, SR feedback stays visually hidden, inline errors restore the original input and password visibility retains its value')
+        choose_review_route(page, frame, 'onboarding', 'guest-2')
+        guest_word = check_guest_order(page, frame)
+        original_word = frame.locator('#order-app-header .brand-word').element_handle()
+        original_period = frame.locator('#order-app-header .brand-word .brand-dot').element_handle()
+        page.emulate_media(reduced_motion='no-preference')
+        observe_order_arrival(frame.locator('#order-app-header .order-product-brand'))
         choose_review_route(page, frame, 'onboarding', 'member-1')
         header = frame.locator('#order-app-header')
+        receipt['orderMemberArrival'] = finish_order_arrival(header.locator('.order-product-brand'))
+        member_word = wordmark_geometry(header.locator('.brand-word'))
+        same_wordmark_geometry(guest_word, member_word)
+        assert original_word.evaluate("word => word.isConnected && document.querySelector('#order-app-header .brand-word')===word")
+        assert original_period.evaluate("dot => dot.isConnected && document.querySelector('#order-app-header .brand-word .brand-dot')===dot")
+        page.emulate_media(reduced_motion='reduce')
         account_trigger = header.locator('[data-order-account-trigger]')
         order_trigger = header.locator('.research-order-trigger')
         expect(header.locator('[data-app-auth]')).to_be_hidden()
@@ -638,8 +657,18 @@ def main():
         expect(frame.locator('.obm-panel')).to_be_hidden()
         ready_review_route(page, frame, 'onboarding', 'member-1')
         page.screenshot(path=str(OUT / 'member-account-to-order-1440.png'), full_page=True)
-        frame.locator('.research-order-stack').press('Escape')
+        receipt['orderMenuLayout'] = check_order_panel(page, frame)
         expect(frame.locator('.research-order-stack')).to_be_hidden()
+        choose_review_route(page, frame, 'onboarding', 'guest-2')
+        same_wordmark_geometry(guest_word, check_guest_order(page, frame))
+        choose_review_route(page, frame, 'onboarding', 'member-1')
+        expect(order_trigger).to_be_visible()
+        same_wordmark_geometry(guest_word, wordmark_geometry(header.locator('.brand-word')))
+        assert original_word.evaluate("word => word.isConnected && document.querySelector('#order-app-header .brand-word')===word")
+        assert original_period.evaluate("dot => dot.isConnected && document.querySelector('#order-app-header .brand-word .brand-dot')===dot")
+        receipt['orderWordmarkGeometry'] = {'guest': guest_word, 'member': member_word,
+                                            'originalNodeRetained': True, 'originalPeriodRetained': True}
+        receipt['checks'].append('Order has no guest dropdown; its unified member trigger appears during the original icon arrival without moving or resizing the text; the compact panel has only two icon rows and supports both trigger halves, keyboard and outside close')
         receipt['checks'].append('the member header has one visible account opener; one trusted Order-selector click closes the account stack and opens Order')
 
         phase = 'qa-company-sheet-to-account'

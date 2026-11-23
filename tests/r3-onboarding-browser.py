@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def current_wordmark_typography(frame):
     """Read today's rendered QA wordmark; immutable archived frames keep their own styles."""
-    word = frame.locator("#order-app-header .order-product-brand > .brand-word")
+    word = frame.locator("#order-app-header .order-product-brand .brand-word")
     expect(word).to_be_visible()
     typography = word.evaluate("e=>{const s=getComputedStyle(e);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
     assert typography["fontFamily"].split(",")[0].strip().strip("\"'") == "Arial Black", typography
