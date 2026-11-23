@@ -1,0 +1,17 @@
+// Shared presentation bytes used by both authored archives and legacy pins.
+const esc=s=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+export const frameStyle=`
+[data-order-menu]{position:relative;display:inline-block;z-index:10;margin-inline-start:4px}[data-order-menu] summary{list-style:none;cursor:pointer;padding:8px}[data-order-menu] summary::-webkit-details-marker{display:none}[data-order-menu]>div{position:absolute;min-width:9rem;display:grid;background:white;padding:.45rem;border-radius:.7rem;box-shadow:0 4px 22px #1f355533}[data-order-menu] button{min-height:44px;background:white;color:#203149;border:0;text-align:start}
+
+#r3-veil{position:fixed;inset:0;z-index:2147483647;cursor:crosshair;touch-action:pan-x pan-y;background:transparent;outline:none}#r3-veil:not([hidden]):focus-visible:after{content:"+";position:absolute;left:var(--x,50%);top:var(--y,50%);color:#214ca8}
+#r3-pins{position:fixed;inset:0;pointer-events:none;z-index:2147483646}.r3-pin,.approval-draft-pin{position:absolute;transform:translate(-50%,-50%);width:25px;height:25px;min-width:25px;border:2px solid white;border-radius:50% 50% 50% 4px;background:#315de6;color:white;box-shadow:0 2px 7px #19316f40;font:750 10px/1 system-ui;padding:0;display:grid;place-items:center}.r3-pin{pointer-events:auto;cursor:pointer}.r3-pin:hover,.r3-pin.is-selected{background:#213c9a;box-shadow:0 0 0 4px #315de62b}.r3-pin.is-resolved{background:#74808e}.r3-pin[data-cluster]:not([data-cluster=""])::after{content:attr(data-cluster);position:absolute;left:16px;top:-6px;font:700 9px/12px system-ui;padding:0 3px;border-radius:5px;background:white;color:#315de6;box-shadow:0 0 0 1px #d5dff5}.approval-draft-pin{position:fixed;background:#fa8b13;pointer-events:none;z-index:2147483646}.approval-draft-pin[hidden]{display:none}.r3-options{position:fixed;z-index:10000;left:var(--left);top:var(--top);width:var(--width);max-height:32vh;overflow:auto;background:white;border:1px solid #b0b8c1;box-shadow:0 3px 12px #0002;scrollbar-width:thin;scrollbar-color:#c4ccd8 transparent;overscroll-behavior:contain}.r3-options::-webkit-scrollbar{display:block;width:5px;height:0}.r3-options::-webkit-scrollbar-thumb{border-radius:8px;background:#c4ccd8}.r3-options[hidden]{display:none}.r3-options button{display:block;text-align:left;padding:8px;width:100%;border:0;background:white}
+`;
+
+export function authoredFrameDocuments({r,width,release,artifactHash,version,bodyDigest,styleDigest,body,css}){
+  const title=esc(r.label+' · '+r.stateLabel);
+  const common='<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>'+title+'</title>';
+  const meta=JSON.stringify({release,artifactHash,version,screen:r.screen,state:r.state,variant:r.variant,viewport:width,bodySha256:bodyDigest,cssSha256:styleDigest}).replaceAll('<','\\u003c');
+  const page=common+'<!--R3-POLICY--><style>'+css+frameStyle+'</style></head><body>'+body+'<!--R3-FRAME--></body></html>';
+  const editable=common+'<meta http-equiv="Content-Security-Policy" content="default-src \'none\';style-src \'unsafe-inline\';img-src data:;form-action \'none\';base-uri \'none\'"><style>'+css+'\nbody{max-width:'+width+'px}</style></head><body>'+body+'<script type="application/json" id="frame-meta">'+meta+'</script></body></html>';
+  return {page,editable};
+}

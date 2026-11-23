@@ -49,6 +49,11 @@ export async function serveDeliveredQaArtifact(request,env){
     }
     const id=q.get('id'),width=Number(q.get('width')),version=q.get('version'),pinned=q.get('artifactHash');
     const validQuery=RESEARCH_RELEASE_WIDTHS.includes(width)&&[...q.keys()].every(key=>supportedKeys.has(key));
+    if(validQuery&&version==='previous'&&mode==='simple'){
+      const {previousAuthoredArtifact}=await import('./r3-previous-artifact.mjs');
+      const previous=await previousAuthoredArtifact(id,width,pinned);
+      return previous?json(previous):json({error:'UNKNOWN_REVIEW_TARGET'},404);
+    }
     if(validQuery&&version==='prior-r3'&&pinned&&mode==='simple'){
       // The approved shell rewrites a restored original pin to prior-r3 on reload.
       const {serveDeliveredRecordedArtifact}=await import('./r1-recorded-delivery.mjs');
@@ -69,6 +74,9 @@ export async function serveDeliveredQaArtifact(request,env){
         const {serveDeliveredRecordedArtifact}=await import('./r1-recorded-delivery.mjs');
         const recorded=await serveDeliveredRecordedArtifact(id,width,pinned,env,url.origin);
         if(recorded)return json(recorded);
+        const {serveDeliveredReviewedArtifact}=await import('./reviewed-delivery.mjs');
+        const successor=await serveDeliveredReviewedArtifact(id,width,pinned,env,url.origin);
+        if(successor)return json(successor);
       }
     }
   }

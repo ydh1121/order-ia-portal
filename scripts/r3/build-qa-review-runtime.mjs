@@ -13,8 +13,16 @@ import {installQaReviewRuntime} from '../../src/server/r3-ui/qa-review-runtime.m
 import {sharedCoreScript,commonMotionScript} from '../../src/server/product-ui/assets.gen.mjs';
 import {getProductUiBootstrap} from '../../src/server/product-ui/bootstrap.gen.mjs';
 import {getProductAuthSheetBootstrap} from '../../src/server/product-auth-sheet.mjs';
+import {catalog} from '../../src/server/product-ui/catalog.gen.mjs';
 
 if(!process.argv.includes('--review-phase')){
+  // The review frame needs these state pairs, while the complete product catalog lives in the server renderer.
+  const screens=new Set(['login','signup','otp','password','terms']);
+  const authStates=[...new Map(catalog.filter(row=>screens.has(row.screen)).map(row=>[row.screen+'/'+row.state,[row.screen,row.state]])).values()];
+  const authFile=new URL('../../src/server/r3-ui/qa-shell-auth-states.gen.mjs',import.meta.url);
+  const authOutput='// Generated from the product catalog by scripts/r3/build-qa-review-runtime.mjs.\nexport const reviewPanelAuthStates='+JSON.stringify(authStates)+';\n';
+  if(process.argv.includes('--check')){if(await readFile(authFile,'utf8')!==authOutput)throw Error('QA shell auth state list needs regeneration');}
+  else await writeFile(authFile,authOutput);
   const hostFile=new URL('../../src/server/r3-ui/review-engine.gen.mjs',import.meta.url),oldHost=await readFile(hostFile,'utf8');
   const nextHost=oldHost.replace(/^export const hostCode=.*;$/m,()=> 'export const hostCode='+JSON.stringify(browserFunction(bootQaHost))+';');
   if(process.argv.includes('--check')){if(nextHost!==oldHost)throw Error('QA host runtime needs regeneration');}

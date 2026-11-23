@@ -12,6 +12,7 @@ import {researchReleases} from '../src/server/research-app/releases.gen.mjs';
 import {gunzipSync} from 'node:zlib';
 import {deliveryBuild,deliveryManifest} from '../src/server/research-delivery-identity.gen.mjs';
 import {qaCatalogIdentity} from '../src/server/r3-qa-catalog-identity.gen.mjs';
+import {reviewedDelivery} from '../src/server/reviewed-delivery-index.gen.mjs';
 import {r1Recorded} from '../src/server/r1-recorded-index.gen.mjs';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const domain='https://ia-testing.cloudflareaccess.com',audience='R0PLACEHOLDER_1234567890';
@@ -56,7 +57,7 @@ test('public entry remains nonconfidential and private releases are confined to 
  assert.deepEqual(readdirSync(join(publicRoot,'ia')),['research-releases']);
  const releasesRoot=join(publicRoot,'ia','research-releases');
  const packs=Object.keys(researchReleases).map(build=>build+'.json.gz');
- assert.deepEqual(readdirSync(releasesRoot).sort(),[...packs,deliveryBuild,'qa-catalog','r1-recorded'].sort());
+ assert.deepEqual(readdirSync(releasesRoot).sort(),[...packs,deliveryBuild,'qa-catalog','r1-recorded','reviewed-recorded'].sort());
  const deliveryRoot=join(releasesRoot,deliveryBuild),indexBytes=readFileSync(join(deliveryRoot,'index.bin'));
  assert.equal(createHash('sha256').update(indexBytes).digest('hex'),deliveryManifest[2]);
  const index=JSON.parse(gunzipSync(indexBytes));
@@ -72,6 +73,8 @@ test('public entry remains nonconfidential and private releases are confined to 
  const recorded=[r1Recorded.shared,...r1Recorded.buckets].map(hash=>hash+'.json.gz');
  assert.equal(recorded.length,17);
  assert.deepEqual(readdirSync(join(releasesRoot,'r1-recorded')).sort(),recorded.sort());
+ const reviewed=[...reviewedDelivery.records,...reviewedDelivery.fragments].map(hash=>hash+'.json.gz');
+ assert.deepEqual(readdirSync(join(releasesRoot,'reviewed-recorded')).sort(),reviewed.sort());
  // The HTTP-denial and exact internal binding bytes are independently exercised
  // in research-browser-assets.test.mjs; no public index links to these packs.
  assert.deepEqual(readdirSync(join(publicRoot,'vendor')).sort(),['r3-pdf','research']);

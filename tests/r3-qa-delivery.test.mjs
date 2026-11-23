@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {serveDeliveredQaArtifact,isDeliveredReviewTarget} from '../src/server/r3-qa-delivery.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
@@ -74,4 +75,28 @@ test('an original R1 login pin and a prior research pin keep their recorded resp
       assert.ok(reads.every(path=>path.includes('/r1-recorded/')));
     }
   }
+});
+
+
+test('legacy previous pin projection preserves the authored response, requires the exact width/hash and avoids other archives',async()=>{
+  const {env,reads}=fixture();
+  // Full response SHA-256 from the merged PR24 recorded endpoint, including export and frame replay.
+  const cases=[
+    ['login/empty/email',390,'814bb4b857e421c73373b66ae6a61de3694e42e82509a87ea81d1e6ad41cca55'],
+    ['login/empty/compact',320,'e8240e2950416447a0721644c31909a7c8fd99c877821722a55aeae6e90aacb0'],
+    ['q3/open/email',1440,'f532d8873aed5e5ffaf5d0e55f6c0204c92d5ed95195b9475e59821b4f5d0f66'],
+  ];
+  for(const [id,width,digest] of cases){
+    const params={id,width:String(width),version:'previous'};
+    const response=await serveDeliveredQaArtifact(url(params),env);
+    assert.equal(response.status,200);
+    const bytes=Buffer.from(await response.arrayBuffer());
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),digest);
+    const hash=JSON.parse(bytes).hash;
+    const pinned=await serveDeliveredQaArtifact(url({...params,artifactHash:hash}),env);
+    assert.ok(bytes.equals(Buffer.from(await pinned.arrayBuffer())));
+    assert.equal((await serveDeliveredQaArtifact(url({...params,artifactHash:'0'.repeat(64)}),env)).status,404);
+  }
+  assert.equal((await serveDeliveredQaArtifact(url({id:'unknown/empty/email',width:'390',version:'previous'}),env)).status,404);
+  assert.deepEqual(reads,[]);
 });
