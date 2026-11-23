@@ -17,7 +17,7 @@ import {createResearchEnvironment} from './environment.mjs';
 import {researchRoute} from './routes.mjs';
 import {researchQuoteCss} from './quote-style.mjs';
 import {researchAssets,researchBuild} from './assets.gen.mjs';
-import {getResearchInspectorPanelsModule} from './inspector-panels-source.mjs';
+import {getResearchInspectorPanelsModule,getResearchPinProjectionModule} from './inspector-panels-source.mjs';
 import {researchSceneSource} from './scene-source-adapter.mjs';
 import {getResearchBusinessPanelSource} from './business-panel-source.mjs';
 import {researchAuthSheetSource} from './auth-sheet-source.mjs';
@@ -80,7 +80,8 @@ export async function serveResearchAsset(path,env,origin='https://order-ia-porta
   if(match[1]!==researchBuild.digest||env!==undefined&&hasResearchRelease(match[1])){const saved=hasResearchRelease(match[1])?await readResearchRelease(match[1],env,origin):null;return saved?serveResearchReleaseAsset(saved,match[2]):response('Research build not available.','text/plain; charset=utf-8',404);}
   const name=match[2];if(staticCache.has(name))return response(await staticCache.get(name));
   let body,type='text/javascript; charset=utf-8';
-  if(Object.hasOwn(researchAssets,name)){body=await inflate(researchAssets[name]);if(name==='order-engine/browser/brand-account-menu.mjs')body=researchBrandSource(body);}
+  if(name==='r3-ui/pin-projection.mjs')body=getResearchPinProjectionModule();
+  else if(Object.hasOwn(researchAssets,name)){body=await inflate(researchAssets[name]);if(name==='order-engine/browser/brand-account-menu.mjs')body=researchBrandSource(body);}
   else if(name==='research/bootstrap.js')body=(await researchFoundation()).script;
   else if(name==='research/application.css'){body=(await researchFoundation()).css;type='text/css; charset=utf-8';}
   else if(name==='research/inspector-panels.mjs')body=getResearchInspectorPanelsModule();

@@ -5,7 +5,7 @@ import {createQuoteDraftSync,mountQuoteDraftSync} from '../r3-quote-draft-client
 
 // Only the research asset endpoint applies these adapters. The sealed source,
 // current regular endpoint, business calculations and validation remain intact.
-export const researchQuoteSourceVersion='regular-workspace-20261122-1';
+export const researchQuoteSourceVersion='regular-workspace-20261123-1';
 export const researchQuoteOrigin=quoteCommit;
 const once=(source,marker,replacement)=>{
   if(source.split(marker).length!==2)throw Error('RESEARCH_QUOTE_SOURCE_MISMATCH: '+marker.slice(0,100));
@@ -33,11 +33,24 @@ const matchMedia=researchEnvironment?.matchMedia??globalThis.matchMedia.bind(glo
 
 const appBridge=`
 let researchDisposed=false;
+const researchModalShell=window.OrderModalShell;
+function prepareResearchNavigation(){
+  if(researchDisposed)return false;
+  const opened=[...document.querySelectorAll('dialog[open]')];
+  if(!opened.length)return true;
+  if(!guardPendingEdits('research-route')||opened.some(dialog=>dialog.id!=='input-review-dialog'))return false;
+  // The input review is read-only. Retiring it through its owning shell also
+  // releases the native top layer, scroll lock and workspace-local history.
+  // Editors and confirmations must stay visible until the user finishes them.
+  researchModalShell.close(opened[0],{immediate:true});
+  return !document.querySelector('dialog[open]');
+}
 const researchBridge=Object.freeze({
   snapshot:()=>projectStoredPayload(bodyCheckpoint()),
   inspect:()=>researchDisposed?{mode:quoteMode,disposed:true}:({mode:quoteMode,page:current,step:S.open,ready:storageReady,pending:storagePending,
     storageStatus:storageFailure?.status??'READY',validation:orderValidationProjection()}),
   canLeave:()=>!researchDisposed&&guardPendingEdits('research-route'),
+  prepareNavigation:prepareResearchNavigation,
   async save(){
     if(researchDisposed||!storageReady||!guardPendingEdits('research-save'))return {ok:false,status:'EDIT_PENDING'};
     return save(bodyCheckpoint(),{errorId:'form-error',canCommit:()=>!researchDisposed});
@@ -90,6 +103,7 @@ const researchBridge=Object.freeze({
   },
   navigate({step=null,page='form'}={}){
     if(researchDisposed||!['home','form','result'].includes(page))return false;
+    if(!(page==='form'&&step==='review'&&$('input-review-dialog').open)&&!prepareResearchNavigation())return false;
     if(!show(page,false))return false;
     if(page==='form'&&step==='review'){if(!canReviewInput())return false;inputReview.open();}
     else if(page==='form'&&['q1','q2','q3','q4'].includes(step)){
@@ -105,7 +119,7 @@ const researchBridge=Object.freeze({
     addressEditor.invalidate();simpleUI?.destroy?.();q2Numeric.destroy();q2UnitMenu.close();
     for(const counter of q2CostCounters.values())counter.destroy();q2CostCounters.clear();
     q4ReviewUI?.destroy?.();resultScreen.clear();resultStyle.remove();
-    window.OrderModalShell.destroy();
+    researchModalShell.destroy();
     researchEnvironment?.dispose?.();
   }
 });
@@ -145,6 +159,9 @@ export function getResearchQuoteSource(path,source){
   }
   if(path==='web/quote-mode-switch.mjs'){
     source=once(source,'export function bindQuoteModeSwitch({simple,dialog,trigger,shell,source,guard,saveCurrent,detailedStore,navigate,preference}){','export function bindQuoteModeSwitch({simple,dialog,trigger,shell,source,guard,saveCurrent,detailedStore,navigate,preference,researchEnvironment}){'+environmentBindings);
+    // The regular module navigates to another document after a confirmed save.
+    // In the retained app, finish that successful confirmation before routing.
+    source=once(source,'if(active())navigate(!simple);','if(active()){if(researchEnvironment&&dialog.open)shell.close(dialog,{immediate:true});navigate(!simple);}');
     return once(source,'mountOrderMenu({simple,switchMode:()=>trigger.click()});','if(!researchEnvironment?.externalHeader)mountOrderMenu({simple,switchMode:()=>trigger.click()});');
   }
   if(path==='web/quantity-menu.mjs'){

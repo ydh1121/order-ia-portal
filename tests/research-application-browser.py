@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
+from r3_feedback_browser_support import frame_click, prepare_frame_pointer
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-application'
@@ -136,6 +137,86 @@ def review_target_snapshot(page):
     }''')
 
 
+def choose_review_route(page, frame, screen, state):
+    """Select the exact QA row through its existing search and navigation UI."""
+    page.locator('#catalog-search').fill(screen + '/' + state + '/email')
+    page.locator('#catalog button[data-module="' + screen + '"]').click()
+    ready_review_route(page, frame, screen, state)
+
+
+def remember_review_quote(frame):
+    """Observe the original quote document and model before hiding its owner."""
+    return frame.locator('#order-app-quote').evaluate('''root => {
+        window.__researchQuoteBoundary={root,content:root.querySelector('[data-research-quote]'),
+            app:root.querySelector('#app'),review:root.querySelector('#input-review-dialog')};
+        if(!window.__researchQuoteBoundary.content || !window.__researchQuoteBoundary.app)
+            throw Error('QUOTE_BOUNDARY_OWNER');
+        return ORDER_RESEARCH_APP.snapshot().quote;
+    }''')
+
+
+def same_review_quote(frame, snapshot):
+    assert frame.locator('#order-app-quote').evaluate('''root => {
+        const before=window.__researchQuoteBoundary;
+        return root===before.root && root.querySelector('[data-research-quote]')===before.content &&
+            root.querySelector('#app')===before.app && root.querySelector('#input-review-dialog')===before.review;
+    }'''), 'Leaving the quote must retain its original workspace document'
+    assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().quote') == snapshot
+
+
+def assert_no_hidden_modal(frame):
+    hidden = frame.locator('dialog[open]').evaluate_all('''dialogs => dialogs.flatMap(dialog => {
+        if(!dialog.matches(':modal'))return [];
+        const hidden=[];
+        for(let owner=dialog;owner;owner=owner.parentElement){
+            const style=getComputedStyle(owner);
+            if(owner.hidden || owner.inert || style.display==='none' || ['hidden','collapse'].includes(style.visibility))
+                hidden.push(owner.id||owner.localName);
+        }
+        return hidden.length?[{id:dialog.id,hidden}]:[];
+    })''')
+    assert not hidden, 'A hidden native modal still blocks the application: ' + json.dumps(hidden)
+
+
+def pick_native_modal_note(page, frame, dialog, heading, text):
+    """Pick a real product heading through the veil while its native modal stays open."""
+    page.locator('#points').click()
+    page.locator('#general').click()
+    page.locator('#body-text').fill(text)
+    before = page.evaluate('window.__researchModalPoints.length')
+    page.locator('#reposition').click()
+    veil = frame.locator('#r3-veil')
+    expect(veil).to_be_visible()
+    assert dialog.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+    heading.element_handle().wait_for_element_state('stable')
+    point = heading.evaluate('''heading => {
+        const target=heading.getBoundingClientRect(),veil=document.getElementById('r3-veil').getBoundingClientRect();
+        return {x:target.left+target.width/2-veil.left,y:target.top+target.height/2-veil.top};
+    }''')
+    # Physical input must hit the real annotation surface above the modal.
+    # Do not dismiss the modal, lower the veil, or synthesize the point message.
+    frame_click(page, veil, position=point)
+    wait_for_expression(page, 'window.__researchModalPoints.length===' + str(before + 1))
+    expect(page.locator('#drawer')).to_be_visible()
+    expect(page.locator('#point-state')).to_have_text('위치 지정됨')
+    expect(page.locator('#body-text')).to_have_value(text)
+    expect(veil).to_be_hidden()
+    assert dialog.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+    anchor = page.evaluate('window.__researchModalPoints.at(-1)')
+    session = review_target_snapshot(page)['session']
+    assert re.fullmatch(r'a-[a-z0-9]+', anchor['id']), 'A modal heading must resolve to a product element, not the screen fallback'
+    assert anchor['instance'] == session['screen'] and anchor['artifactHash'] == session['artifact']
+    assert anchor.get('mode', 'simple') == session.get('mode', 'simple')
+    assert all(0 <= anchor[key] <= 1 for key in ('x', 'y')) and anchor['layers']
+    expect(frame.locator('.approval-draft-pin')).to_be_visible()
+    assert heading.evaluate('''heading => {
+        const target=heading.getBoundingClientRect(),marker=document.querySelector('.approval-draft-pin').getBoundingClientRect();
+        const x=marker.left+marker.width/2,y=marker.top+marker.height/2;
+        return x>=target.left-2 && x<=target.right+2 && y>=target.top-2 && y<=target.bottom+2;
+    }'''), 'The draft marker must remain at the picked modal heading after returning to the comment'
+    return anchor
+
+
 def capture_product_scope_diagnostics(page):
     """Read app ownership/layout only; omit account fields and private payloads."""
     return page.evaluate('''() => {
@@ -154,9 +235,13 @@ def capture_product_scope_diagnostics(page):
             price:price && {state:price.state,scenario:price.scenario,source:price.source,model:price.model,
                 ready:price.ready,error:price.error,pendingRequests:price.pendingRequests,pendingWrites:price.pendingWrites,
                 transportMode:price.transportMode,disposed:price.disposed},
-            layout:['#order-app-header','#order-app-page','#order-app-pricing','#pw-main','#pw-nav']
+            layout:['#order-app-header','#order-app-page','#order-app-quote','#order-app-pricing','#pw-main','#pw-nav']
                 .flatMap(selector=>[...doc.querySelectorAll(selector)].map(node=>({selector,...box(node)}))),
-            dialogs:[...doc.querySelectorAll('dialog')].map(node=>({...box(node),open:node.open})),
+            dialogs:[...doc.querySelectorAll('dialog')].map(node=>({...box(node),open:node.open,
+                modal:node.matches(':modal'),hiddenOwner:node.closest('[hidden]')?.id||null})),
+            annotations:[...doc.querySelectorAll('#r3-veil,#r3-pins,.approval-draft-pin')].map(node=>({...box(node),
+                parent:node.parentElement?.id,modalOwner:node.closest('dialog[open]')?.id||null,
+                popoverOpen:node.matches(':popover-open')})),
             activeElement:{id:doc.activeElement?.id,tag:doc.activeElement?.tagName},
             appStatus:doc.querySelector('#order-app-status')?.textContent,
             priceStatus:doc.querySelector('#pw-notice')?.textContent};
@@ -590,6 +675,244 @@ def main():
                                                     'section': 'classification', 'classTab': 'fees'},
                                   'qaDraftRevision': saved['model']['revision'], 'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'product-scope-1440.png'), full_page=True)
+
+        # A retained native dialog can block the entire child document even
+        # when its quote section is hidden and the QA frame itself is usable.
+        # Start from the actual QA review scenario and use physical clicks to
+        # exercise the next owner; never close the dialog from the test.
+        phase = 'qa-quote-modal-boundary'
+        prepare_frame_pointer(page)
+        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=quote-review/normal/email&width=390')
+        frame = page.frame_locator('#frame')
+        frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
+        expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
+        remember_review_application(page)
+        ready_review_route(page, frame, 'quote-review', 'normal')
+        page.locator('.lab-role-filter [data-role="all"]').click()
+        page.evaluate('''() => {
+            window.__researchQuoteBoundaryErrors=[];
+            window.addEventListener('message',event=>{
+                const frame=document.querySelector('#frame'),message=event.data;
+                if(event.source===frame?.contentWindow && event.origin===location.origin &&
+                    message?.scope==='ORDER_R3_FRAME' && message.type==='researchError')
+                    window.__researchQuoteBoundaryErrors.push(message.payload);
+            });
+        }''')
+        read_only_targets = [('onboarding', 'guest-2'), ('admin-campaigns', 'normal'),
+                             ('price-workspace', 'costs')]
+        for index, (screen, state) in enumerate(read_only_targets):
+            phase = 'qa-quote-modal-to-' + screen
+            if index:
+                choose_review_route(page, frame, 'quote-review', 'normal')
+            review = frame.locator('#order-app-quote #input-review-dialog')
+            expect(review).to_be_visible()
+            expect(review).to_have_js_property('open', True)
+            assert review.evaluate("dialog => dialog.matches(':modal')"), 'The regression requires a native top-layer modal'
+            snapshot = remember_review_quote(frame)
+            assert snapshot['lines'], 'The retained quote must have its real scenario model'
+
+            choose_review_route(page, frame, screen, state)
+            expect(frame.locator('#order-app-quote')).to_be_hidden()
+            expect(review).to_have_js_property('open', False)
+            expect(frame.locator('dialog:modal')).to_have_count(0)
+            assert_no_hidden_modal(frame)
+            same_review_quote(frame, snapshot)
+
+            if screen == 'onboarding':
+                frame_click(page, frame.locator('#order-app-page [data-mf-intro="3"]'))
+                ready_review_route(page, frame, 'onboarding', 'guest-3')
+                frame_click(page, frame.locator('#order-app-header [data-app-auth]'))
+                ready_review_route(page, frame, 'signup', 'empty')
+                expect(frame.locator('.product-auth-sheet')).to_be_visible()
+                frame.locator('.product-auth-sheet [name="email"]:visible').press('Escape')
+                expect(frame.locator('.product-auth-sheet')).not_to_be_visible()
+                ready_review_route(page, frame, 'onboarding', 'guest-3')
+                same_review_quote(frame, snapshot)
+                assert_no_hidden_modal(frame)
+
+                page.locator('#points').click()
+                page.locator('#general').click()
+                draft_text = '견적 검토 모달 전환 후 위치 선택 · 저장하지 않는 초안'
+                page.locator('#body-text').fill(draft_text)
+                page.locator('#reposition').click()
+                veil = frame.locator('#r3-veil')
+                expect(veil).to_be_visible()
+                frame_click(page, veil, position={'x': 100, 'y': 160})
+                expect(page.locator('#point-state')).to_have_text('위치 지정됨')
+                expect(page.locator('#body-text')).to_have_value(draft_text)
+                expect(veil).to_be_hidden()
+                page.locator('#close-drawer').click()
+                expect(page.locator('#drawer')).to_be_hidden()
+            elif screen == 'admin-campaigns':
+                frame_click(page, frame.locator('#order-app-page [data-action="more"]'))
+                ready_review_route(page, frame, 'admin-campaigns', 'more')
+            else:
+                frame_click(page, frame.locator('#pw-nav [data-section="products"]'))
+                ready_review_route(page, frame, 'price-workspace', 'store-products')
+                expect(frame.locator('[data-sales-product]')).to_have_count(160)
+            same_review_quote(frame, snapshot)
+            assert_no_hidden_modal(frame)
+        receipt['checks'].append('QA quote review releases its native modal before onboarding, campaign and pricing; original quote survives and trusted app/header/pin clicks work')
+
+        # The exception is only for read-only input review. A different open
+        # canonical dialog must retain its local choice and reject QA routing,
+        # including another quote stage and an authentication overlay.
+        phase = 'qa-quote-confirm-boundary'
+        choose_review_route(page, frame, 'q2', 'filled')
+        frame_click(page, frame.locator('#order-app-quote #quote-mode-switch'))
+        confirm = frame.locator('#order-app-quote #quote-mode-dialog')
+        expect(confirm).to_be_visible()
+        assert confirm.evaluate("dialog => dialog.matches(':modal')")
+        frame_click(page, confirm.locator('label'))
+        expect(confirm.locator('[data-mode-option]')).to_be_checked()
+        snapshot = remember_review_quote(frame)
+        confirmed_target = review_target_snapshot(page)
+        blocked_targets = [('q1', 'before'), ('login', 'empty'), ('onboarding', 'guest-2')]
+        for screen, state in blocked_targets:
+            rejected_before = page.evaluate('window.__researchQuoteBoundaryErrors.length')
+            page.locator('#catalog-search').fill(screen + '/' + state + '/email')
+            page.locator('#catalog button[data-module="' + screen + '"]').click()
+            wait_for_expression(page, 'window.__researchQuoteBoundaryErrors.length===' + str(rejected_before + 1))
+            assert page.evaluate('window.__researchQuoteBoundaryErrors.at(-1).code') == 'INSPECTION_NAVIGATION_CANCELLED'
+            ready_review_route(page, frame, 'q2', 'filled')
+            assert review_target_snapshot(page) == confirmed_target
+            expect(confirm).to_be_visible()
+            expect(confirm.locator('[data-mode-option]')).to_be_checked()
+            assert confirm.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+            expect(frame.locator('.product-auth-sheet')).not_to_be_visible()
+            same_review_quote(frame, snapshot)
+            assert_no_hidden_modal(frame)
+        frame_click(page, confirm.locator('[data-mode-cancel]'))
+        expect(confirm).to_have_js_property('open', False)
+        choose_review_route(page, frame, 'onboarding', 'guest-2')
+        same_review_quote(frame, snapshot)
+        frame_click(page, frame.locator('#order-app-page [data-mf-intro="3"]'))
+        ready_review_route(page, frame, 'onboarding', 'guest-3')
+        assert_no_hidden_modal(frame)
+
+        # Completing that confirmation is legitimate navigation. The original
+        # save/copy flow must finish and retire its own native modal before the
+        # retained app changes mode; the guard must not block its success.
+        phase = 'qa-quote-mode-confirm-success'
+        choose_review_route(page, frame, 'q2', 'filled')
+        assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().route.mode') == 'simple'
+        read_simple_draft = '''async () => {
+            const {ok,status,data,revision,versionToken,hasInput}=await ORDER_RESEARCH_APP.repository.read('simple');
+            return {ok,status,data,revision,versionToken,hasInput};
+        }'''
+        stored_simple_before = frame.locator('#order-single').evaluate(read_simple_draft)
+        assert stored_simple_before['ok'] and stored_simple_before['hasInput'], 'The earlier ordinary simple draft must still exist'
+        frame_click(page, frame.locator('#order-app-quote #quote-mode-switch'))
+        confirm = frame.locator('#order-app-quote #quote-mode-dialog')
+        expect(confirm).to_be_visible()
+        expect(confirm.locator('[data-mode-option]')).not_to_be_checked()
+        assert confirm.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        original_confirmation = confirm.element_handle()
+        frame_click(page, confirm.locator('[data-mode-confirm]'))
+        expect(frame.locator('#order-app-quote [data-research-quote]')).to_have_attribute('data-research-quote', 'detailed', timeout=30000)
+        ready_review_route(page, frame, 'q1', 'before')
+        assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().route.mode') == 'detailed'
+        assert original_confirmation.evaluate("dialog => !dialog.open && !dialog.matches(':modal')"), 'The confirmed original dialog must release its native top-layer entry'
+        expect(frame.locator('dialog:modal')).to_have_count(0)
+        assert_no_hidden_modal(frame)
+        # QA fixtures have their own storage scope. This comparison protects
+        # the ordinary simple draft rather than treating a QA reset as a save.
+        assert frame.locator('#order-single').evaluate(read_simple_draft) == stored_simple_before
+        receipt['checks'].append('an open quote confirmation rejects unrelated QA navigation, cancel restores trusted clicks, and an actual successful confirmation closes its native modal before changing to detailed mode')
+        receipt['quoteModalBoundary'] = {'readOnlyReviewTargets': read_only_targets,
+                                        'blockedConfirmationTargets': blocked_targets,
+                                        'retainedQuoteDocumentAndModel': True,
+                                        'nativeModalReleased': True,
+                                        'trustedOnboardingHeaderAndLocationClicks': True,
+                                        'confirmedModeSwitch': {'from': 'simple', 'to': 'detailed', 'copy': False,
+                                                                'originalDialogClosed': True,
+                                                                'ordinarySimpleDraftUnchanged': True},
+                                        'commercialAcceptance': False}
+        page.screenshot(path=str(OUT / 'quote-modal-boundary-1440.png'), full_page=True)
+
+        # A visible native modal also makes body-owned QA controls inert. The
+        # location picker must operate within that modal without closing it or
+        # losing the product editor's unsaved input.
+        phase = 'qa-visible-modal-location-picking'
+        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=quote-review/normal/email&width=390&mode=detailed')
+        frame = page.frame_locator('#frame')
+        frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
+        expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
+        remember_review_application(page)
+        ready_review_route(page, frame, 'quote-review', 'normal')
+        page.locator('.lab-role-filter [data-role="all"]').click()
+        page.evaluate('''() => {
+            window.__researchModalPoints=[];
+            window.addEventListener('message',event=>{
+                const frame=document.querySelector('#frame'),message=event.data;
+                if(event.source===frame?.contentWindow && event.origin===location.origin &&
+                    message?.scope==='ORDER_R3_FRAME' && message.type==='point')
+                    window.__researchModalPoints.push(message.payload);
+            });
+        }''')
+        review = frame.locator('#order-app-quote #input-review-dialog')
+        expect(review).to_be_visible()
+        assert review.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        snapshot = remember_review_quote(frame)
+        review_note = '열린 견적 검토 모달 안의 위치 · 저장하지 않는 초안'
+        review_anchor = pick_native_modal_note(page, frame, review, review.locator('#input-review-title'), review_note)
+        same_review_quote(frame, snapshot)
+        same_review_application(page, frame)
+        page.locator('#close-drawer').click()
+        frame_click(page, review.locator('#input-review-back'))
+        expect(review).to_have_js_property('open', False)
+        expect(frame.locator('dialog:modal')).to_have_count(0)
+        wait_for_expression(page, '''(() => {
+            const frame=document.getElementById('frame'),state=frame.contentDocument.getElementById('order-single').__orderResearchInspector.inspect();
+            return state.active && !state.pendingRoute && !frame.inert;
+        })()''')
+
+        # The detailed Q3 fixture opens the original site editor. It owns a
+        # real unsaved text field, whose value and identity must survive both
+        # selecting a point and cancelling another pick with Escape.
+        phase = 'qa-visible-editor-location-picking'
+        choose_review_route(page, frame, 'q3', 'open')
+        editor = frame.locator('#order-app-quote #site-editor-dialog')
+        expect(editor).to_be_visible()
+        assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        name = editor.locator('#site-name')
+        draft_name = '위치 선택 중 유지할 사업장 초안'
+        name.fill(draft_name)
+        original_name = name.element_handle()
+        snapshot = remember_review_quote(frame)
+        editor_note = '편집 모달 안의 위치 · 제품 입력을 유지하는 초안'
+        editor_anchor = pick_native_modal_note(page, frame, editor, editor.locator('#site-editor-title'), editor_note)
+        expect(name).to_have_value(draft_name)
+        same_review_quote(frame, snapshot)
+        points_before_cancel = page.evaluate('window.__researchModalPoints.length')
+        page.locator('#reposition').click()
+        veil = frame.locator('#r3-veil')
+        expect(veil).to_be_visible()
+        veil.press('Escape')
+        expect(veil).to_be_hidden()
+        expect(page.locator('#drawer')).to_be_visible()
+        expect(page.locator('#point-state')).to_have_text('위치 지정됨')
+        expect(page.locator('#body-text')).to_have_value(editor_note)
+        assert page.evaluate('window.__researchModalPoints.length') == points_before_cancel
+        assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')"), 'Cancelling annotation must not cancel the product editor'
+        expect(name).to_have_value(draft_name)
+        assert original_name.evaluate("input => input===document.getElementById('site-name') && input.isConnected")
+        same_review_quote(frame, snapshot)
+        same_review_application(page, frame)
+        page.locator('#close-drawer').click()
+        frame_click(page, name)
+        name.press('End')
+        name.press('X')
+        expect(name).to_have_value(draft_name + 'X')
+        assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        assert_no_hidden_modal(frame)
+        receipt['checks'].append('visible native quote review and editable site dialogs accept trusted location picks while retaining the modal, quote and input; annotation Escape preserves the editor and original controls remain usable')
+        receipt['nativeModalPicking'] = {'reviewAnchor': review_anchor, 'editorAnchor': editor_anchor,
+                                         'trustedModalHeadingPicks': True, 'draftMarkersAtHeadings': True,
+                                         'retainedQuoteDocumentAndModel': True, 'unsavedEditorInputRetained': True,
+                                         'annotationEscapeRetainsEditor': True, 'originalReviewBackButtonWorks': True,
+                                         'editorAcceptsInputAfterPick': True, 'commercialAcceptance': False}
+        page.screenshot(path=str(OUT / 'native-modal-location-picking-1440.png'), full_page=True)
 
         critical = [item for item in failed if item['phase'] != 'owner-login' and (
             item['resource'] in ('document', 'script', 'stylesheet') or item['path'].startswith('/ia/research-assets/'))]

@@ -4,8 +4,7 @@ import {createRequire} from 'node:module';
 import {readFileSync} from 'node:fs';
 import {browserFunction} from '../src/server/browser-source.mjs';
 import {installResearchInspector} from '../src/server/research-app/review-inspector.mjs';
-import {getResearchInspectorPanelsModule} from '../src/server/research-app/inspector-panels-source.mjs';
-import {installPinProjection} from '../src/server/r3-ui/pin-projection.mjs';
+import {getResearchInspectorPanelsModule,getResearchPinProjectionModule} from '../src/server/research-app/inspector-panels-source.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const hash='c'.repeat(64),oldHash='a'.repeat(64),origin='https://order-ia-portal.pages.dev';
 const initial={channel:'11111111-1111-4111-8111-111111111111',artifact:hash,screen:'onboarding',state:'guest-1',variant:'email',viewport:390};
@@ -22,7 +21,7 @@ function harness(t,{panels=false,animationFrames=true,initialSession=initial,set
   let hit=root.querySelector('#continue')||root.querySelector('button')||root;
   w.document.elementFromPoint=()=>hit;
   setup(w,root);
-  w.eval('var installPinProjection = '+browserFunction(installPinProjection)+';');
+  w.eval(getResearchPinProjectionModule().replace('export const installPinProjection =','var installPinProjection ='));
   w.eval(getResearchInspectorPanelsModule().replace('export const installResearchReviewPanels =','window.installResearchReviewPanels ='));
   const install=w.eval('('+browserFunction(installResearchInspector)+')');
   const api=install(initialSession,{root,...panels?{installPanels:w.installResearchReviewPanels}:{}});
@@ -37,6 +36,55 @@ function harness(t,{panels=false,animationFrames=true,initialSession=initial,set
   const point=()=>{send('mode',true);w.document.getElementById('r3-veil').dispatchEvent(new w.MouseEvent('click',{bubbles:true,cancelable:true,button:0,clientX:57,clientY:70}));send('mode',false);return messages('point').at(-1)?.payload;};
   return {w,root,api,send,messages,sent,point,hit:node=>{hit=node;}};
 }
+
+// JSDOM has no native top layer. Model only its input boundary here: a modal
+// permits hits/focus on its descendants, in opening order rather than DOM order.
+// Native browser gates separately verify actual layout and trusted pointer hits.
+function nativeModalSurface(w){
+  const stack=[],popovers=new WeakSet(),returns=new WeakMap(),calls={open:0,close:0},focuses=[];
+  const matches=w.Element.prototype.matches,focus=w.HTMLElement.prototype.focus,rects=w.HTMLElement.prototype.getClientRects;
+  const top=()=>stack.filter(dialog=>dialog.open&&dialog.isConnected).at(-1)||null;
+  let hit=null,documentFocused=true;
+  w.Element.prototype.matches=function(selector){
+    if(selector===':modal'||selector==='dialog:modal')return this.open&&this.isConnected&&stack.includes(this);
+    if(selector===':popover-open')return popovers.has(this)&&this.isConnected;
+    return matches.call(this,selector);
+  };
+  w.HTMLElement.prototype.getClientRects=function(){const dialog=this.closest('dialog');return dialog&&!dialog.open?[]:rects.call(this);};
+  w.HTMLElement.prototype.focus=function(options){const modal=top();if(modal&&!modal.contains(this))return;focuses.push({node:this,options});return focus.call(this,options);};
+  w.document.hasFocus=()=>documentFocused;
+  w.HTMLElement.prototype.showPopover=function(){popovers.add(this);};
+  w.HTMLElement.prototype.hidePopover=function(){popovers.delete(this);};
+  const transition=(dialog,type,oldState,newState)=>{
+    const event=new w.Event(type);Object.defineProperties(event,{oldState:{value:oldState},newState:{value:newState}});dialog.dispatchEvent(event);
+  };
+  w.HTMLDialogElement.prototype.showModal=function(){
+    assert.equal(this.open,false);returns.set(this,w.document.activeElement);transition(this,'beforetoggle','closed','open');
+    this.open=true;stack.push(this);calls.open++;
+    this.querySelector('[autofocus],input,button,[tabindex]')?.focus();transition(this,'toggle','closed','open');
+  };
+  w.HTMLDialogElement.prototype.close=function(){
+    if(!this.open)return;transition(this,'beforetoggle','open','closed');this.open=false;const index=stack.indexOf(this);if(index>=0)stack.splice(index,1);calls.close++;
+    const previous=returns.get(this);if(previous?.isConnected)previous.focus();
+    w.queueMicrotask(()=>{this.dispatchEvent(new w.Event('close'));transition(this,'toggle','open','closed');});
+  };
+  w.document.elementFromPoint=()=>{
+    const modal=top(),allowed=node=>node?.isConnected&&(!modal||modal.contains(node));
+    const veil=w.document.getElementById('r3-veil'),markers=w.document.getElementById('r3-pins');
+    if(allowed(veil)&&!veil.hidden&&veil.style.pointerEvents!=='none')return veil;
+    const pin=markers?.style.visibility!=='hidden'&&markers?.querySelector('.r3-pin');
+    if(allowed(pin))return pin;
+    return allowed(hit)?hit:modal?.querySelector('h2,input,button')||modal||w.document.body;
+  };
+  return {calls,focuses,top,hit:node=>{hit=node;},documentFocused:value=>{documentFocused=value;},
+    click(){const target=w.document.elementFromPoint(57,70);for(const type of ['pointerdown','pointerup','click']){const accepted=target.dispatchEvent(new w.MouseEvent(type,{bubbles:true,cancelable:true,button:0,detail:1,clientX:57,clientY:70}));if(type==='pointerdown'&&accepted&&target.matches('button,input,[tabindex]'))target.focus({preventScroll:true});}return target;},
+    escape(){const event=new w.KeyboardEvent('keydown',{bubbles:true,cancelable:true,key:'Escape'});if(w.document.activeElement.dispatchEvent(event))top()?.close();return event;}
+  };
+}
+
+const nativeModalMarkup='<main id="order-single"><button id="outside-action" type="button">다른 화면</button><input id="quote-quantity" value="37"><dialog id="child-dialog"><h2 id="child-title" tabindex="-1">하위 확인</h2><button id="child-action" type="button">계속</button></dialog><dialog id="input-review-dialog"><h2 id="input-review-title" tabindex="-1">입력 검토</h2><label class="field"><input id="review-field" value="보존할 입력"></label><button id="review-action" type="button">확인</button></dialog><dialog id="modeless-dialog"><button type="button">일반 창</button></dialog></main>';
+const annotationNodes=w=>[w.document.getElementById('r3-veil'),w.document.getElementById('r3-pins'),w.document.querySelector('.approval-draft-pin')];
+const productMarkup=root=>{const copy=root.cloneNode(true);copy.querySelectorAll('[data-research-annotation]').forEach(node=>node.remove());return copy.outerHTML;};
 
 test('inspection observes the running app without mounting, blocking forms or intercepting navigation',async t=>{
   const h=harness(t),{w,root,api,messages}=h;let submitted=0,navigated=0;
@@ -70,6 +118,93 @@ test('only the picking veil consumes pointer input and recorded coordinates pres
   w.document.getElementById('r3-veil').dispatchEvent(new w.KeyboardEvent('keydown',{bubbles:true,key:'Escape'}));
   assert.equal(messages('cancelPick').length,1);assert.equal(w.document.getElementById('r3-veil').hidden,true);
   assert.equal(h.point().id,a.id);assert.equal(input.value,'작성 중인 전화번호');
+});
+
+test('native modal annotation ownership permits picking and existing pin clicks without closing the product dialog or changing its model',async t=>{
+  let surface;
+  const h=harness(t,{panels:true,markup:nativeModalMarkup,setup(w){surface=nativeModalSurface(w);}}),{w,root,send,messages}=h;
+  const nodes=annotationNodes(w),dialog=root.querySelector('#input-review-dialog'),heading=root.querySelector('#input-review-title');
+  const quantity=root.querySelector('#quote-quantity'),model={quantity:quantity.value};let productClicks=0;
+  quantity.addEventListener('input',()=>{model.quantity=quantity.value;});root.querySelector('#review-action').addEventListener('click',()=>productClicks++);
+  dialog.showModal();await until(()=>nodes.every(node=>node.parentElement===dialog),w);
+  assert.ok(nodes.every(node=>node.hasAttribute('data-research-annotation')));assert.equal(w.document.querySelectorAll('[data-research-annotation]').length,3);
+  surface.hit(heading);send('mode',true);
+  assert.equal(w.document.activeElement,nodes[0]);assert.equal(surface.click(),nodes[0]);
+  const anchor=messages('point').at(-1)?.payload;assert.ok(anchor);assert.equal(anchor.artifactHash,hash);assert.equal(anchor.instance,initial.screen);
+  assert.equal(anchor.x,.37);assert.equal(anchor.y,.6);assert.equal(anchor.layers.length,1,'only the real product dialog is recorded as a visible layer');
+  send('mode',false);
+  const pin={id:'saved-modal-pin',ordinal:4,anchor},original=JSON.stringify(pin);
+  send('pins',[pin]);send('pin-view',{draft:anchor,selected:[pin.id]});
+  await until(()=>dialog.querySelector('.r3-pin')&&!nodes[2].hidden,w);
+  const marker=dialog.querySelector('.r3-pin');assert.equal(surface.click(),marker);
+  assert.deepEqual(Array.from(messages('openPins').at(-1).payload.ids),[pin.id]);assert.equal(marker.textContent,'4');
+  assert.equal(JSON.stringify(pin),original);assert.deepEqual(model,{quantity:'37'});assert.equal(quantity.value,'37');assert.equal(productClicks,0);
+  assert.equal(dialog.open,true);assert.equal(dialog.matches(':modal'),true);assert.equal(surface.calls.close,0);
+  h.api.dispose();assert.equal(dialog.open,true);assert.equal(surface.calls.close,0);assert.equal(root.querySelector('#quote-quantity'),quantity);
+  assert.equal(w.document.querySelectorAll('[data-research-annotation]').length,0);assert.deepEqual(model,{quantity:'37'});
+});
+
+test('annotation nodes follow native modal opening order, nested closure and removal, then return to the body with original anchor identities',async t=>{
+  let surface;
+  const h=harness(t,{panels:true,markup:nativeModalMarkup,setup(w){surface=nativeModalSurface(w);}}),{w,root,send,messages}=h;
+  const nodes=annotationNodes(w),parentDialog=root.querySelector('#input-review-dialog'),child=root.querySelector('#child-dialog'),modeless=root.querySelector('#modeless-dialog');
+  const capture=element=>{surface.hit(element);send('mode',true);surface.click();send('mode',false);return messages('point').at(-1).payload;};
+  modeless.open=true;await frame(w);assert.ok(nodes.every(node=>node.parentElement===w.document.body),'a modeless open dialog is not a native input boundary');modeless.open=false;
+  const outside=root.querySelector('#outside-action'),outsideAnchor=capture(outside);
+  parentDialog.showModal();await until(()=>nodes.every(node=>node.parentElement===parentDialog),w);
+  const parentAnchor=capture(root.querySelector('#input-review-title'));
+  child.showModal();await until(()=>nodes.every(node=>node.parentElement===child),w);
+  assert.ok(child.compareDocumentPosition(parentDialog)&w.Node.DOCUMENT_POSITION_FOLLOWING,'the top modal deliberately precedes its parent in DOM order');
+  const childAnchor=capture(root.querySelector('#child-title'));assert.notEqual(childAnchor.id,parentAnchor.id);
+  child.close();await until(()=>nodes.every(node=>node.parentElement===parentDialog),w);
+  const restoredParent=capture(root.querySelector('#input-review-title'));assert.equal(restoredParent.id,parentAnchor.id);assert.equal(restoredParent.artifactHash,parentAnchor.artifactHash);
+  child.showModal();await until(()=>nodes.every(node=>node.parentElement===child),w);
+  surface.hit(root.querySelector('#child-title'));send('mode',true);assert.equal(w.document.activeElement,nodes[0]);child.remove();
+  await until(()=>nodes.every(node=>node.parentElement===parentDialog)&&w.document.activeElement===nodes[0],w);
+  const cancelled=messages('cancelPick').length;assert.equal(surface.escape().defaultPrevented,true);
+  assert.equal(messages('cancelPick').length,cancelled+1);assert.equal(parentDialog.open,true,'Escape still cancels QA picking after its previous modal owner was removed');
+  parentDialog.close();await until(()=>nodes.every(node=>node.parentElement===w.document.body),w);
+  const restoredOutside=capture(outside);assert.equal(restoredOutside.id,outsideAnchor.id);assert.equal(restoredOutside.artifactHash,outsideAnchor.artifactHash);
+  assert.deepEqual(annotationNodes(w),nodes);assert.equal(w.document.querySelectorAll('[data-research-annotation]').length,3);
+  assert.equal(surface.calls.open,3);assert.equal(surface.calls.close,2,'inspection never closes a product dialog');assert.equal(root.querySelector('#quote-quantity').value,'37');
+});
+
+test('modal picking preserves projected anchors through QA-only mutations and restores focus without closing the editor or stealing parent focus',async t=>{
+  let surface;
+  const h=harness(t,{panels:true,markup:nativeModalMarkup,setup(w,root){
+    surface=nativeModalSurface(w);const input=root.querySelector('#review-field'),label=input.closest('label');
+    input.addEventListener('focus',()=>label.classList.add('is-focused'));input.addEventListener('blur',()=>label.classList.remove('is-focused'));
+    root.querySelector('#input-review-dialog').showModal();input.focus();
+  }}),{w,root,send,messages}=h,dialog=root.querySelector('#input-review-dialog'),input=root.querySelector('#review-field');
+  const nodes=annotationNodes(w);await until(()=>nodes.every(node=>node.parentElement===dialog),w);
+  assert.equal(w.document.activeElement,input);input.value='아직 저장하지 않은 입력';const value=input.value;
+  const capture=()=>{surface.hit(input);send('mode',true);surface.click();send('mode',false);return messages('point').at(-1).payload;};
+  const anchor=capture(),source=productMarkup(root),prior={id:'previous-modal-field',ordinal:2,previous:true,sourceArtifactHash:oldHash,anchor:{...anchor,artifactHash:hash}};
+  const original=JSON.stringify(prior);send('pin-sources',[{artifactHash:oldHash,sourceHash:oldHash,html:source}]);
+  const projected=send('pins',[prior]).data.payload[0].anchor;assert.equal(projected.id,anchor.id);
+  await until(()=>dialog.querySelector('.r3-pin.is-previous'),w);surface.click();
+  assert.deepEqual(Array.from(messages('openPins').at(-1).payload.ids),[prior.id]);
+  input.focus();const again=capture();assert.equal(again.id,anchor.id);assert.equal(again.artifactHash,anchor.artifactHash);
+  send('pins',[prior]);await until(()=>dialog.querySelector('.r3-pin.is-previous'),w);
+  assert.deepEqual(Array.from(messages('missing').at(-1).payload.ids),[]);assert.equal(JSON.stringify(prior),original);
+  // A stored root anchor compares product structure without the moved QA nodes.
+  const rootPin={id:'previous-root',previous:true,sourceArtifactHash:oldHash,anchor:{...anchor,id:'screen'}};
+  assert.equal(send('pins',[rootPin]).data.payload[0].anchor.id,'screen');
+  input.focus();send('mode',true);assert.equal(w.document.activeElement,nodes[0]);
+  const escape=surface.escape();assert.equal(escape.defaultPrevented,true);assert.equal(messages('cancelPick').length,1);
+  assert.equal(w.document.activeElement,input);assert.equal(dialog.open,true);assert.equal(surface.calls.close,0);assert.equal(input.value,value);
+  send('mode',true);surface.documentFocused(false);const focusCount=surface.focuses.length;send('mode',false);
+  assert.equal(surface.focuses.length,focusCount,'finishing a host-side comment must not steal focus back into this document');
+  surface.documentFocused(true);input.focus();const child=root.querySelector('#child-dialog');
+  child.showModal();await until(()=>nodes.every(node=>node.parentElement===child),w);send('mode',true);
+  assert.equal(w.document.activeElement,nodes[0]);surface.documentFocused(false);const removalFocusCount=surface.focuses.length;
+  child.remove();await until(()=>nodes.every(node=>node.parentElement===dialog),w);
+  assert.equal(surface.focuses.length,removalFocusCount,'recovering a removed modal owner must not steal focus from the parent document');
+  send('mode',false);h.api.dispose();
+  assert.equal(surface.focuses.length,removalFocusCount,'ending and disposing the picker must preserve focus outside this document');
+  assert.equal(input.value,value);assert.equal(dialog.open,true);assert.equal(surface.calls.close,0);
+  assert.equal(w.document.querySelectorAll('[data-research-annotation],.r3-panel-state').length,0);
+  const count=messages('point').length;send('mode',true);surface.hit(input);surface.click();await frame(w);assert.equal(messages('point').length,count);
 });
 
 test('same-origin pins use the released projection, preserve original anchors and show stable historical numbering',async t=>{
