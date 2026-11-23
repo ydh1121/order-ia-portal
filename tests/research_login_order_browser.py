@@ -4,17 +4,39 @@ from r3_feedback_browser_support import frame_click, frame_pointer_position
 
 
 def wordmark_geometry(word):
-    return word.evaluate("""node => {
-        const r=node.getBoundingClientRect(),s=getComputedStyle(node);
+    geometry = word.evaluate("""node => {
+        const r=node.getBoundingClientRect(),s=getComputedStyle(node),text=node.firstChild;
+        if(text?.nodeType!==Node.TEXT_NODE||text.textContent!=='Order')throw Error('The original Order text node is missing');
+        const range=document.createRange();range.selectNodeContents(text);const letters=range.getBoundingClientRect();
+        const dot=node.querySelector('.brand-dot'),d=getComputedStyle(dot),period=dot.getBoundingClientRect();
         return {x:r.x,y:r.y,width:r.width,height:r.height,font:s.font,
-            fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight};
+            fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing,
+            authenticated:node.closest('.order-product-brand').dataset.authenticated==='true',
+            wordText:{x:letters.x,y:letters.y,width:letters.width,height:letters.height},
+            period:{text:dot.textContent,position:d.position,display:d.display,width:period.width,
+                opacity:Number(d.opacity),marginInlineStart:d.marginInlineStart}};
     }""")
+    period = geometry['period']
+    assert period['text'] == '.' and period['display'] == 'inline-block', geometry
+    if geometry['authenticated']:
+        assert period['position'] == 'absolute' and period['width'] == 0 and period['opacity'] == 0, geometry
+    else:
+        assert period['position'] == 'static' and period['width'] > 0 and period['opacity'] == 1, geometry
+        assert period['marginInlineStart'] == '3px', geometry
+    return geometry
 
 
 def same_wordmark_geometry(before, after):
-    for key in ('x', 'y', 'width', 'height'):
+    # The existing guest period occupies inline space, while the original
+    # member animation hides it at width zero. Compare the actual Order text
+    # range in both states instead of requiring those two containers to match.
+    for key in ('x', 'y', 'height'):
         assert abs(before[key]-after[key]) < .5, {"before": before, "after": after}
-    for key in ('font', 'fontSize', 'fontWeight', 'lineHeight'):
+    for key in ('x', 'y', 'width', 'height'):
+        assert abs(before['wordText'][key]-after['wordText'][key]) < .5, {"before": before, "after": after}
+    if before['authenticated'] == after['authenticated']:
+        assert abs(before['width']-after['width']) < .5, {"before": before, "after": after}
+    for key in ('font', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing'):
         assert before[key] == after[key], {"before": before, "after": after}
 
 

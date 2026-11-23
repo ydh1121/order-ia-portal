@@ -593,6 +593,7 @@ def main():
         choose_review_route(page, frame, 'onboarding', 'guest-2')
         guest_word = check_guest_order(page, frame)
         original_word = frame.locator('#order-app-header .brand-word').element_handle()
+        original_period = frame.locator('#order-app-header .brand-word .brand-dot').element_handle()
         page.emulate_media(reduced_motion='no-preference')
         observe_order_arrival(frame.locator('#order-app-header .order-product-brand'))
         choose_review_route(page, frame, 'onboarding', 'member-1')
@@ -601,6 +602,7 @@ def main():
         member_word = wordmark_geometry(header.locator('.brand-word'))
         same_wordmark_geometry(guest_word, member_word)
         assert original_word.evaluate("word => word.isConnected && document.querySelector('#order-app-header .brand-word')===word")
+        assert original_period.evaluate("dot => dot.isConnected && document.querySelector('#order-app-header .brand-word .brand-dot')===dot")
         page.emulate_media(reduced_motion='reduce')
         account_trigger = header.locator('[data-order-account-trigger]')
         order_trigger = header.locator('.research-order-trigger')
@@ -662,7 +664,10 @@ def main():
         choose_review_route(page, frame, 'onboarding', 'member-1')
         expect(order_trigger).to_be_visible()
         same_wordmark_geometry(guest_word, wordmark_geometry(header.locator('.brand-word')))
-        receipt['orderWordmarkGeometry'] = {'guest': guest_word, 'member': member_word, 'originalNodeRetained': True}
+        assert original_word.evaluate("word => word.isConnected && document.querySelector('#order-app-header .brand-word')===word")
+        assert original_period.evaluate("dot => dot.isConnected && document.querySelector('#order-app-header .brand-word .brand-dot')===dot")
+        receipt['orderWordmarkGeometry'] = {'guest': guest_word, 'member': member_word,
+                                            'originalNodeRetained': True, 'originalPeriodRetained': True}
         receipt['checks'].append('Order has no guest dropdown; its unified member trigger appears during the original icon arrival without moving or resizing the text; the compact panel has only two icon rows and supports both trigger halves, keyboard and outside close')
         receipt['checks'].append('the member header has one visible account opener; one trusted Order-selector click closes the account stack and opens Order')
 

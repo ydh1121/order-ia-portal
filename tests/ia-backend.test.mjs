@@ -57,19 +57,94 @@ test('public entry remains nonconfidential and private releases are confined to 
  assert.deepEqual(readdirSync(join(publicRoot,'ia')),['research-releases']);
  const releasesRoot=join(publicRoot,'ia','research-releases');
  const packs=Object.keys(researchReleases).map(build=>build+'.json.gz');
- assert.deepEqual(readdirSync(releasesRoot).sort(),[...packs,deliveryBuild,'qa-catalog','r1-recorded','reviewed-recorded'].sort());
- const deliveryRoot=join(releasesRoot,deliveryBuild),indexBytes=readFileSync(join(deliveryRoot,'index.bin'));
- assert.equal(createHash('sha256').update(indexBytes).digest('hex'),deliveryManifest[2]);
- const index=JSON.parse(gunzipSync(indexBytes));
- assert.equal(index.build,deliveryBuild);
- assert.equal(index.source,researchReleases[deliveryBuild].packSha256);
- assert.equal(Object.keys(index.assets).length,541);
- const privateFiles=['index.bin','shell.bin',...index.parts.map((_,i)=>i+'.bin')];
- assert.equal(privateFiles.length,115);
- assert.deepEqual(readdirSync(deliveryRoot).sort(),privateFiles.sort());
+ const releaseEntries=readdirSync(releasesRoot,{withFileTypes:true});
+ // Retain prior delivery projections only for builds in the sealed release index.
+ const deliveryBuilds=releaseEntries.filter(entry=>entry.isDirectory()&&Object.hasOwn(researchReleases,entry.name)).map(entry=>entry.name);
+ const baselineBuild='66cd084a9ab54c49a7921310b32a73c7d53a3d3d4ce3bb94d5fc656c97cabc30';
+ assert.ok(deliveryBuilds.includes(deliveryBuild),'the current indexed delivery is required');
+ assert.ok(deliveryBuilds.includes(baselineBuild),'the previously published baseline delivery URLs must be retained');
+ assert.deepEqual(releaseEntries.map(entry=>entry.name).sort(),[...packs,...deliveryBuilds,'qa-catalog','r1-recorded','reviewed-recorded'].sort());
+ const sha=bytes=>createHash('sha256').update(bytes).digest('hex'),sealedRowsByBuild=new Map();
+ for(const build of deliveryBuilds){
+  const sealed=researchReleases[build],packBytes=readFileSync(join(releasesRoot,build+'.json.gz'));
+  assert.equal(packBytes.length,sealed.bytes);assert.equal(sha(packBytes),sealed.packSha256);
+  const pack=JSON.parse(gunzipSync(packBytes));
+  assert.equal(pack.build.digest,build);assert.equal(sha(JSON.stringify(pack.build.sources)),build);
+  sealedRowsByBuild.set(build,new Set(pack.rows.map(row=>row.id)));
+  const deliveryRoot=join(releasesRoot,build),indexBytes=readFileSync(join(deliveryRoot,'index.bin'));
+  if(build===deliveryBuild)assert.equal(sha(indexBytes),deliveryManifest[2]);
+  if(build===baselineBuild)assert.equal(sha(indexBytes),'559e0d5887646dbe58c5bfc13f4173c927f62cfabd1d0d82f12ed1c877876219','the published baseline index bytes must remain intact');
+  const index=JSON.parse(gunzipSync(indexBytes));
+  assert.deepEqual(Object.keys(index).sort(),['assets','build','parts','rows','shell','source','types']);
+  assert.equal(index.build,build);assert.equal(index.source,sealed.packSha256);
+  const privateFiles=['index.bin','shell.bin',...index.parts.map((_,i)=>i+'.bin')];
+  if(build===deliveryBuild){assert.equal(Object.keys(index.assets).length,541);assert.equal(privateFiles.length,115);}
+  const privateEntries=readdirSync(deliveryRoot,{withFileTypes:true});
+  assert.deepEqual(privateEntries.map(entry=>entry.name).sort(),privateFiles.sort());
+  assert.ok(privateEntries.every(entry=>entry.isFile()),'private delivery paths must be regular files');
+  const readPrivate=(name,manifest)=>{
+   const bytes=readFileSync(join(deliveryRoot,name));
+   assert.equal(manifest.length,3);assert.equal(bytes.length,manifest[0]);assert.equal(sha(bytes),manifest[2]);
+   const raw=gunzipSync(bytes);assert.equal(raw.length,manifest[1]);return raw;
+  };
+  const parts=index.parts.map((manifest,i)=>readPrivate(i+'.bin',manifest)),ranges=parts.map(()=>[]);
+  const originalSlice=(entry,original)=>{
+   const [part,offset,length,digest]=entry;
+   assert.ok([part,offset,length].every(value=>Number.isSafeInteger(value)&&value>=0));
+   assert.ok(part<parts.length&&offset+length<=parts[part].length);
+   const body=parts[part].subarray(offset,offset+length);
+   assert.equal(sha(body),digest);assert.deepEqual(body,Buffer.from(original));ranges[part].push([offset,length]);
+  };
+  assert.deepEqual(Object.keys(index.assets).sort(),Object.keys(pack.assets).sort());
+  assert.deepEqual([...index.types].sort(),[...new Set(Object.values(pack.assets).map(asset=>asset.type))].sort());
+  for(const [name,asset]of Object.entries(pack.assets)){
+   const entry=index.assets[name];assert.equal(entry.length,5);assert.equal(index.types[entry[4]],asset.type);originalSlice(entry,asset.body);
+  }
+  assert.deepEqual(Object.keys(index.rows).sort(),pack.rows.map(row=>row.id).sort());
+  for(const row of pack.rows){const entry=index.rows[row.id];assert.equal(entry.length,4);originalSlice(entry,JSON.stringify(row));}
+  for(const [part,entries]of ranges.entries()){
+   let end=0;for(const [offset,length]of entries.sort((a,b)=>a[0]-b[0])){assert.equal(offset,end);end+=length;}
+   assert.equal(end,parts[part].length,'every private payload byte must belong to the sealed pack');
+  }
+  const provenance=/^export const REGULAR_SOURCE_PROVENANCE=(.+);$/m.exec(pack.assets['bridge/contact-ui.mjs'].body);
+  assert.ok(provenance);
+  assert.deepEqual(JSON.parse(readPrivate('shell.bin',index.shell)),{build:pack.build,shell:pack.shell,regular:JSON.parse(provenance[1])});
+ }
  const catalogs=Object.values(qaCatalogIdentity.modes).map(mode=>mode.sha256+'.json');
  assert.equal(catalogs.length,2);
- assert.deepEqual(readdirSync(join(releasesRoot,'qa-catalog')).sort(),catalogs.sort());
+ const catalogRoot=join(releasesRoot,'qa-catalog'),currentCatalogs={};
+ const catalogEntries=readdirSync(catalogRoot,{withFileTypes:true});
+ for(const name of ['bcf6b14f638157b31c8c270d33133daacd02f015d18e749bcbfec9434b60a79f.json','6027fd3141758ad1129e8c88a8f417c674486d3c9a2c83e30f8687b5ed4bb406.json'])assert.ok(catalogEntries.some(entry=>entry.isFile()&&entry.name===name),'the previously published baseline catalog URL must be retained: '+name);
+ for(const [mode,identity]of Object.entries(qaCatalogIdentity.modes)){
+  const bytes=readFileSync(join(catalogRoot,identity.sha256+'.json'));
+  assert.equal(bytes.length,identity.bytes);assert.equal(sha(bytes),identity.sha256);currentCatalogs[mode]=JSON.parse(bytes);
+ }
+ const reviewHash=(build,id,width,mode)=>sha(JSON.stringify(['order-research-application/v1',build,id,Number(width),...(mode==='detailed'?['detailed']:[])]));
+ const catalogBuildModes=new Set();
+ for(const entry of catalogEntries){
+  assert.ok(entry.isFile());
+  const bytes=readFileSync(join(catalogRoot,entry.name));assert.equal(entry.name,sha(bytes)+'.json');
+  const catalog=JSON.parse(bytes),mode=catalog.mode??'simple',reference=currentCatalogs[mode];
+  assert.ok(reference);const first=catalog.items.find(item=>item.application);assert.ok(first);
+  const width=Object.keys(first.hashes)[0],builds=deliveryBuilds.filter(build=>reviewHash(build,first.id,width,mode)===first.hashes[width]);
+  assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
+  const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
+  // These retained catalogs share their reviewed metadata. Only application
+  // identities may differ, and every one must resolve to that sealed build.
+  assert.equal(catalog.items.length,reference.items.length);
+  for(let i=0;i<catalog.items.length;i++){
+   const item=catalog.items[i],original=reference.items[i];
+   if(!item.application)continue;
+   assert.equal(item.id,original.id);assert.ok(sealedRowsByBuild.get(build).has(item.id));
+   const hashes=Object.fromEntries(Object.keys(original.hashes).map(width=>[width,reviewHash(build,item.id,width,mode)]));
+   assert.deepEqual(item.hashes,hashes);
+   const native=JSON.stringify(original.contentHashes)===JSON.stringify(original.hashes);
+   assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
+   item.hashes=original.hashes;item.contentHashes=original.contentHashes;
+  }
+  assert.deepEqual(catalog,reference);
+ }
+ assert.deepEqual([...catalogBuildModes].sort(),deliveryBuilds.flatMap(build=>Object.keys(currentCatalogs).map(mode=>build+'/'+mode)).sort());
  const recorded=[r1Recorded.shared,...r1Recorded.buckets].map(hash=>hash+'.json.gz');
  assert.equal(recorded.length,17);
  assert.deepEqual(readdirSync(join(releasesRoot,'r1-recorded')).sort(),recorded.sort());
