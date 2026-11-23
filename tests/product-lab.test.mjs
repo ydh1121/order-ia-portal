@@ -25,7 +25,7 @@ test('fresh lab applies canonical schema, actual price approval and 152 defaults
  const db=namespaceDb(w.env.ORDER_LAB_DB,run),policy=JSON.parse((await db.prepare('SELECT policy_json FROM r3_price_version').first()).policy_json);
  assert.equal(policy.matrix.rows.length,19);assert.equal(policy.matrix.rows.flatMap(r=>r.cells).length,152);
  assert.equal((await db.prepare('SELECT count(*) n FROM r3_price_event').first()).n,3);
- assert.equal(w.productionTouches(),0);assert.equal(labSchema.tables.length,27);
+ assert.equal(w.productionTouches(),0);assert.equal(labSchema.tables.length,28);
  assert.equal(namespaceSql("SELECT 'r3_membership',x FROM r3_membership -- r3_membership",run),`SELECT 'r3_membership',x FROM lab_${run}_r3_membership -- r3_membership`);
 });
 test('canonical persisted purchase: server quote, separate manual confirmer, real dispatch, receipt, reload and atomic revision',async()=>{

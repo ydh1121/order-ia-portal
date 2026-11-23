@@ -4,6 +4,7 @@ import {productExperience} from './product-experience-operations.mjs';
 import {handleR3Price} from './r3-price.mjs';
 import {readRoleScope} from './r3-role.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
+import {notificationPreferences} from './notification-preferences.mjs';
 
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>Response.json(data,{status,headers});
@@ -218,6 +219,7 @@ export async function handleProductOperations({request,env,actor,path='/',clock=
   if(state?.state==='WITHDRAWN'&&path!=='/account')fail('ACCOUNT_WITHDRAWN',403);
   if(path==='/account')return json(await account(db,actor,b,now));
   if(path==='/notifications')return json(await notifications(db,actor,b,now));
+  if(path==='/notification-preferences')return json(await notificationPreferences({db,actor,body:b,now},{sql,replay,commit,fail}));
   if(path.startsWith('/drafts/'))return json(await draft(db,actor,path.slice(8),b,now));
   const grants=await readRoleScope(db,actor.id);if(!grants.length&&!path.startsWith('/policies/'))fail('NO_BUSINESS_MEMBERSHIP',403);
   const experience=await productExperience({db,env,actor,path,b,grants,now},{sql,rows,hash,fail,id,text,integer,project,visible,getOperation,replay,commit});
@@ -228,5 +230,5 @@ export async function handleProductOperations({request,env,actor,path='/',clock=
   if(path==='/revenue'||path==='/email-templates')return json(await setting(db,actor,b,grants,path.slice(1),now));
   if(path.startsWith('/documents/')&&!b)return json(await documents(db,actor,path.slice(11)));
   return json({error:'NOT_FOUND'},404);
- }catch(error){return json({error:error.status?error.message:'PRODUCT_SERVICE_UNAVAILABLE'},error.status||503);}
+ }catch(error){return json({error:error.status?error.message:'PRODUCT_SERVICE_UNAVAILABLE',...(error.businessVerification?{businessVerification:error.businessVerification}:{})},error.status||503);}
 }

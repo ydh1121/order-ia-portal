@@ -346,12 +346,17 @@ test('notification read state changes only after a matching server revision and 
       return body ? new Promise(resolve => {finish = resolve;}) : Promise.resolve({items: [structuredClone(item)]});
     }};
     dispose = mountResearchAccountPanel({id: 'notifications', container: p.container, adapter, services: f.services, setUnread: count => unread.push(count)}); await dispose.ready;
-    const card = p.container.querySelector('[data-notification-id]'), read = p.container.querySelector('[data-action="research-read-notification"]');
-    read.click(); read.click(); assert.equal(calls.filter(call => call.body).length, 1); assert.equal(card.dataset.read, 'false');
-    finish({id: item.id, revision: 4}); await tick(); assert.equal(card.dataset.read, 'false'); assert.deepEqual(unread, [1]);
-    const requestKey = calls.at(-1).body.requestKey; read.click(); assert.equal(calls.at(-1).body.requestKey, requestKey); assert.equal(calls.at(-1).body.expectedRevision, 3);
+    assert.equal(p.container.querySelector('[data-action="research-read-notification"]'), null);
+    const row = p.container.querySelector('[data-notification-id]');
+    row.click(); row.click(); assert.equal(calls.filter(call => call.body).length, 1);
+    assert.equal(p.container.querySelector('[data-notification-detail]').dataset.notificationDetail, item.id);
+    finish({id: item.id, revision: 4}); await tick(); assert.deepEqual(unread, [1]);
+    const requestKey = calls.at(-1).body.requestKey; p.container.querySelector('[data-action="research-retry-notification"]').click();
+    assert.equal(calls.at(-1).body.requestKey, requestKey); assert.equal(calls.at(-1).body.expectedRevision, 3);
     finish({id: item.id, revision: 4, readAt: '2026-11-22T01:00:00Z'}); await tick();
-    assert.equal(card.dataset.read, 'true'); assert.deepEqual(unread, [1, 0]); assert.equal(card.querySelector('button'), null);
+    p.container.querySelector('[data-action="research-notification-back"]').click();
+    assert.equal(p.container.querySelector('[data-notification-id]').dataset.read, 'true'); assert.deepEqual(unread, [1, 0]);
+    assert.equal(p.container.querySelector('[data-action="research-read-notification"]'), null);
   } finally {dispose?.(); f.close();}
 });
 
@@ -439,6 +444,22 @@ function businessFixture(f) {
     form: () => container.querySelector('[data-business-ref="business-form"]'), status: () => container.querySelector('[data-business-ref="business-status"]').textContent,
     submit() {this.form().dispatchEvent(new w.Event('submit', {bubbles: true, cancelable: true}));}};
 }
+
+test('business information opens the existing members-and-permissions stack without navigating or saving', async () => {
+  const f = await setup(); let dispose, adapter;
+  try {
+    const b = businessFixture(f), pushes = [], navigations = []; adapter = b.adapter;
+    dispose = mountResearchBusinessPanel({container: b.container, adapter, services: f.services, loadModule,
+      push: (...args) => pushes.push(args), onNavigate: (...args) => navigations.push(args)});
+    assert.equal(await dispose.ready, true); await until(() => b.container.querySelector('[data-action="research-business-members"]'));
+    b.field('name').value = '보존할 사업장 입력'; b.container.querySelector('[data-action="research-business-members"]').click();
+    assert.deepEqual(pushes, [['manage.business.members', '구성원과 권한']]); assert.deepEqual(navigations, []);
+    assert.equal(b.field('name').value, '보존할 사업장 입력'); assert.equal(dispose.dirty(), true);
+    const calls = adapter.fixture.inspect().calls;
+    assert.ok(calls.some(call => call.domain === 'role' && call.path === '/account' && call.method === 'GET'));
+    assert.equal(calls.some(call => call.method === 'POST'), false);
+  } finally {dispose?.(); adapter?.fixture.dispose(); f.close();}
+});
 
 test('business management saves full controllers and the original Q3 picker consumes the same adapter record', async () => {
   const f = await setup({address: {fetcher: async (_url, init) => json({version: 1, status: 'OK', reason: 'RESULTS', items: [juso()], page: JSON.parse(init.body).page, total: 1, hasMore: false})}});

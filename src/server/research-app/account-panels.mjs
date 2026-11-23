@@ -1,3 +1,5 @@
+import {mountResearchNotifications} from './notifications.mjs';
+
 export const researchAccountPanelIds = Object.freeze(['profile.personal', 'profile.account', 'profile.connections', 'notifications']);
 let panelSequence = 0;
 
@@ -6,6 +8,8 @@ let panelSequence = 0;
 export function mountResearchAccountPanel({id, container, signal, push, adapter, services, onNavigate, setUnread} = {}) {
   if (!researchAccountPanelIds.includes(id)) throw TypeError('RESEARCH_ACCOUNT_PANEL_UNSUPPORTED');
   if (!container?.ownerDocument || typeof adapter?.request !== 'function' || !services) throw TypeError('RESEARCH_ACCOUNT_PANEL_CONTEXT');
+  if (id === 'notifications') return mountResearchNotifications({container, adapter, signal, setUnread,
+    onOpenAll: typeof onNavigate === 'function' ? () => onNavigate({screen: 'notifications', state: 'list'}) : undefined});
   const document = container.ownerDocument, window = document.defaultView, U = window.QAUI;
   if (!U?.field || !U?.button) throw Error('COMMON_UI_UNAVAILABLE');
   const controller = new AbortController(), cleanups = [], fields = new Set(), sequence = ++panelSequence;
@@ -117,38 +121,7 @@ export function mountResearchAccountPanel({id, container, signal, push, adapter,
     }
     return true;
   }
-  async function renderNotifications() {
-    const response = await adapter.request('/notifications', null, controller.signal); if (!alive()) return false;
-    if (!Array.isArray(response?.items)) throw Error('NOTIFICATIONS_RESPONSE_INVALID');
-    root.replaceChildren(); let unread = response.items.filter(item => !item.readAt).length;
-    const announce = () => {
-      if (!alive()) return; setUnread?.(unread);
-      root.dispatchEvent(new window.CustomEvent('research-notifications-state', {bubbles: true, detail: {unread}}));
-    };
-    announce();
-    if (!response.items.length) root.append(node('p', '새 알림이 없어요.', 'muted'));
-    for (const item of response.items) {
-      const card = node('article', undefined, 'ops-panel'); card.dataset.notificationId = item.id;
-      card.dataset.read = String(!!item.readAt);
-      card.append(node('strong', item.title), node('p', item.body), node('small', item.createdAt)); root.append(card);
-      if (item.readAt) continue;
-      let pending = false, requestKey = null;
-      const read = button('읽음', 'research-read-notification', async () => {
-        if (pending || !alive()) return; pending = true; read.disabled = true;
-        requestKey ??= globalThis.crypto.randomUUID();
-        try {
-          const result = await adapter.request('/notifications', {id: item.id, action: 'read', expectedRevision: item.revision, requestKey}, controller.signal);
-          if (!alive()) return;
-          if (result?.id !== item.id || result.revision !== item.revision + 1 || typeof result.readAt !== 'string' || !result.readAt) throw Error('NOTIFICATION_RESPONSE_INVALID');
-          item.revision = result.revision; item.readAt = result.readAt; card.dataset.read = 'true'; read.remove(); unread--; announce();
-        } catch (error) {if (alive()) {status.textContent = message(error); if (status.parentNode !== root) root.append(status);}}
-        finally {pending = false; if (alive()) read.disabled = false;}
-      });
-      card.append(read);
-    }
-    return true;
-  }
-  dispose.ready = (id === 'notifications' ? renderNotifications() : renderAccount()).catch(error => {
+  dispose.ready = renderAccount().catch(error => {
     if (alive()) {status.textContent = message(error); if (status.parentNode !== root) root.append(status);} return false;
   });
   return dispose;

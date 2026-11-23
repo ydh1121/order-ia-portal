@@ -1,4 +1,4 @@
-import {researchReleases} from './releases.gen.mjs';
+import {researchReleases} from '../research-release-runtime-index.gen.mjs';
 
 // Call this server-only store after the application's ordinary authorization.
 // The static binding bypasses the public route; the public pack URL is denied

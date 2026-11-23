@@ -8,7 +8,7 @@ import {signedEvidencePacket} from './r3-evidence-signature.fixture.mjs';
 
 function workspace(){
   const sql=new DatabaseSync(':memory:');
-  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0008_r3_role_workspace','0010_r3_member_requests','0013_owner_session_revocations','0017_product_operations'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
+  for(const n of ['0002_r3_price','0003_r3_roles','0004_r3_evidence','0006_r3_price_catalog','0008_r3_role_workspace','0010_r3_member_requests','0013_owner_session_revocations','0017_product_operations'])sql.exec(readFileSync(new URL(`../migrations/${n}.sql`,import.meta.url),'utf8'));
   const prepare=(query,params=[])=>({query,params,bind:(...v)=>prepare(query,v),first:async()=>sql.prepare(query).get(...params),all:async()=>({results:sql.prepare(query).all(...params)})});
   const db={prepare,batch:async rows=>{sql.exec('BEGIN');try{for(const {query,params} of rows)sql.prepare(query).run(...params);sql.exec('COMMIT');}catch(e){sql.exec('ROLLBACK');throw e;}}};
   const grant=(actor,role,org,site='')=>sql.prepare('INSERT INTO r3_membership VALUES(?,?,?,?,1)').run(actor,role,org,site);
@@ -150,4 +150,13 @@ test('in-panel requests stay pending, retain one request on retry, and reveal no
   assert.equal((await request('other',null,'/account')).requests.length,0);
   assert.equal((await request('ops',null,'/account')).requests.length,1);
   assert.equal(members(),before);
+});
+
+test('workspace compound display lines are scoped to the verified site and never expose source policies or private inputs',async()=>{
+  const {sql,request}=workspace();sql.exec("INSERT INTO r3_business_site VALUES('store','one','VERIFIED',1); INSERT INTO r3_business_site VALUES('other','two','VERIFIED',1); INSERT INTO r3_price_destination VALUES('store','one','r','v',NULL); INSERT INTO r3_price_destination VALUES('other','two','r','v',NULL);");
+  const source={versions:[{id:'v1',policy:{displayName:'계란',matrix:{grades:[{id:'g1',name:'특란'}]},privateRate:123456}}],lines:[{id:'a',versionId:'v1',productId:'egg',deliveryQty:20,unit:'tray',serviceDate:'2026-12-01',grade:'g1',packing:'packed',zip:'private-postcode'},{id:'b',versionId:'v1',productId:'egg',deliveryQty:5,unit:'box',serviceDate:'2026-12-02',packing:'raw',region:'private-region'}],stats:{internal:'private-performance'},destination:{region_code:'r',region_version:'v',private:'secret'}};
+  source.versions[0].revision=1;source.versions[0].policy.originId='origin';source.versions[0].policy.productId='egg';sql.exec("INSERT INTO r3_price_scope VALUES('farm','origin','egg',1)");sql.prepare("INSERT INTO r3_price_version VALUES('v1','farm','scope',NULL,1,'APPROVED',?,'farmer','farmer','ops','2026-11-23','2026-11-23')").run(JSON.stringify(source.versions[0].policy));
+  const insert=sql.prepare('INSERT INTO r3_price_quote VALUES(?,?,?,?,?,1,?,?,?,?,?,?,?)');for(const [id,actor,org,site] of [['q','buyer','store','one'],['foreign','other','other','two']])insert.run(id,actor,org,site,'farm','2026-11-23','2999-01-01','key-'+id,'hash','digest',JSON.stringify(source),'{}');
+  const result=await request('buyer',null,'/workspace');assert.equal(result.status,200);assert.equal(result.quotes.length,1);assert.deepEqual(result.quotes[0].lines,[{productName:'계란 · 특란 · 포장',quantity:20,unit:'tray',serviceDate:'2026-12-01'},{productName:'계란 · 원란',quantity:5,unit:'box',serviceDate:'2026-12-02'}]);assert.doesNotMatch(JSON.stringify(result),/displayLineInputs|displayLineVersions|privateRate|123456|private-postcode|private-region|private-performance|secret|foreign/);
+  sql.exec("UPDATE r3_business_site SET verification='REVOKED' WHERE org_id='store'");assert.equal((await request('buyer',null,'/workspace')).quotes.length,0);
 });

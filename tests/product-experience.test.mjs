@@ -134,6 +134,19 @@ test('business verification fails closed without a provider and never accepts cl
   assert.doesNotMatch(JSON.stringify(mismatched.body),/1234567890|시험 대표|test-only-key/);
 });
 
+test('business outages identify the failing boundary and enqueue one private alert for active same-organization operators',async t=>{
+  const w=await workspace(t);await w.business();
+  for(const [actor,org,active] of [['same-operator','lab-store',1],['foreign-operator','other-store',1],['inactive-operator','lab-store',0]])await w.db.prepare('INSERT INTO r3_membership VALUES(?,?,?,\'\',?)').bind(actor,'OPERATOR',org,active).run();
+  const input=verification(w),configuration=await w.direct('lab-buyer','/business-verifications',input);assert.deepEqual(configuration.body.businessVerification,{source:'configuration',alertQueued:true});
+  const failed={NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async()=>{throw Error('private-provider-failure');}};const provider=await w.direct('lab-buyer','/business-verifications',input,failed);assert.equal(provider.body.businessVerification.source,'provider');assert.equal(provider.body.businessVerification.alertQueued,true);
+  for(const malformed of [null,[],0,'OK',{bad:'response'},{status_code:'OK',request_cnt:1,data:{0:{b_no:input.number,valid:'01',status:{b_stt_cd:'01'}},length:1}}]){
+    const invalid=await w.direct('lab-buyer','/business-verifications',input,{NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async()=>Response.json(malformed)});assert.equal(invalid.status,502);assert.equal(invalid.body.error,'BUSINESS_PROVIDER_RESPONSE_INVALID');assert.deepEqual(invalid.body.businessVerification,{source:'invalid-response',alertQueued:true});
+  }
+  const alerts=(await w.db.prepare('SELECT actor_id,data_json FROM order_notification').all()).results.filter(row=>JSON.parse(row.data_json).caseId==='verify-case');assert.deepEqual(alerts.map(row=>row.actor_id).sort(),['lab-operator','same-operator']);assert.ok(alerts.every(row=>JSON.parse(row.data_json).priority==='urgent'));assert.doesNotMatch(JSON.stringify(alerts),/1234567890|시험 대표|시험 사업장|test-only-key|private-provider-failure/);assert.equal((await w.db.prepare("SELECT count(*) n FROM order_operation WHERE kind='business-verification'").first()).n,0);
+  await w.business('no-recipient');await w.db.prepare("UPDATE r3_membership SET active=0 WHERE role='OPERATOR' AND org_id='lab-store'").run();const absent=await w.direct('lab-buyer','/business-verifications',verification(w,{caseId:'no-recipient'}));assert.equal(absent.body.businessVerification.alertQueued,false);
+  await w.db.prepare('DROP TABLE order_notification').run();const storage=await w.direct('lab-buyer','/business-verifications',input);assert.equal(storage.status,503);assert.equal(storage.body.businessVerification.alertQueued,false);
+});
+
 test('NTS request/response bindings, exact replay and data minimization are enforced',async t=>{
   const w=await workspace(t);await w.business();let calls=0;const input=verification(w),env={NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async(url,init)=>{calls++;assert.equal(url.origin,'https://api.odcloud.kr');assert.equal(url.pathname,'/api/nts-businessman/v1/validate');assert.equal(init.redirect,'error');assert.ok(init.signal);const data=JSON.parse(init.body);assert.deepEqual(data.businesses,[{b_no:input.number,start_dt:input.openingDate,p_nm:input.owner,b_nm:input.name,b_sector:input.industry,b_type:input.trade}]);return ntsResponse();}};
   const result=await w.direct('lab-buyer','/business-verifications',input,env);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.item.verified,true);assert.equal(result.body.item.status,'VERIFIED');assert.match(result.body.item.inputDigest,/^[a-f0-9]{64}$/);assert.equal(calls,1);

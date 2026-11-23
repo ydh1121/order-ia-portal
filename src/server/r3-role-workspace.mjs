@@ -15,6 +15,8 @@ export async function workspaceOptions(db,actorId) {
     json_extract(pc.definition,'$.supplierName') AS supplierName,
     CASE WHEN julianday(q.expires_at)>julianday('now') THEN json_extract(q.result_json,'$.quotes[0].total.decimal') END AS total,
     json_array_length(q.sources_json,'$.lines') AS lineCount,
+    json_extract(q.sources_json,'$.lines') AS displayLineInputs,
+    json_extract(q.sources_json,'$.versions') AS displayLineVersions,
     (SELECT c.id FROM r3_case c WHERE c.kind='delivery' AND c.quote_id=q.id AND c.state NOT IN ('CANCELLED','REJECTED') LIMIT 1) AS deliveryCase,
     (SELECT c.state FROM r3_case c WHERE c.kind='delivery' AND c.quote_id=q.id AND c.state NOT IN ('CANCELLED','REJECTED') LIMIT 1) AS deliveryState
     FROM r3_price_quote q JOIN r3_business_site s ON s.org_id=q.org_id AND s.site_id=q.site_id AND s.verification='VERIFIED'
@@ -29,7 +31,18 @@ export async function workspaceOptions(db,actorId) {
     (SELECT json_extract(n.context_json,'$.businessName') FROM r3_case c JOIN r3_case_note n ON n.case_id=c.id AND n.revision=1
     WHERE c.kind='business' AND c.org_id=m.org_id AND c.site_id=m.site_id AND json_extract(n.context_json,'$.businessName') IS NOT NULL ORDER BY c.updated_at DESC LIMIT 1) AS businessName
     FROM r3_membership m WHERE m.actor_id=? AND m.active=1 ORDER BY m.org_id,m.site_id`,actorId);
-  return {quotes,products,businesses,publication};
+  // The issued snapshot owns these values. Return only the display projection;
+  // private policies, performance, destinations and calculation inputs stay here.
+  const displayedQuotes=quotes.map(({displayLineInputs,displayLineVersions,...quote})=>{
+    const inputs=JSON.parse(displayLineInputs||'[]'),versions=JSON.parse(displayLineVersions||'[]');
+    const lines=inputs.map(input=>{
+      const policy=versions.find(version=>version.id===input.versionId)?.policy;
+      const grade=policy?.matrix?.grades?.find(grade=>grade.id===input.grade)?.name;
+      return {productName:[policy?.displayName||quote.productName||'발급 품목',grade,input.packing==='raw'?'원란':input.packing==='packed'?'포장':null].filter(Boolean).join(' · '),quantity:input.deliveryQty,unit:input.unit,serviceDate:input.serviceDate};
+    });
+    return {...quote,lines};
+  });
+  return {quotes:displayedQuotes,products,businesses,publication};
 }
 
 export async function publishMenu(db,actorId,body,now){

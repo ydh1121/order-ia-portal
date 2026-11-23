@@ -103,11 +103,25 @@ export async function productExperience(ctx,h){
   const date=b.openingDate.slice(0,4)+'-'+b.openingDate.slice(4,6)+'-'+b.openingDate.slice(6),parsed=new Date(date+'T00:00:00Z');if(!Number.isFinite(+parsed)||parsed.toISOString().slice(0,10)!==date)fail('INVALID_BUSINESS');
   const business=await sql(db,"SELECT * FROM r3_case WHERE id=? AND kind='business'",b.caseId).first();if(!business||business.created_by!==actor.id||!['DRAFT','EVIDENCE_REQUIRED','NEEDS_INFO'].includes(business.state)||!role('BUYER',business.org_id,business.site_id))fail('NOT_FOUND',404);
   const scope=grants.find(g=>g.role==='BUYER'&&g.org_id===business.org_id&&g.site_id===business.site_id);
-  if(!env.NTS_SERVICE_KEY)fail('BUSINESS_PROVIDER_UNAVAILABLE',503);
+  async function unavailable(source,error='BUSINESS_PROVIDER_UNAVAILABLE',status=503){
+   const notificationId=await hash(['business-provider',business.id]);let alertQueued=false;
+   const notice=JSON.stringify({title:'사업자 조회 연결 확인이 필요해요',body:'사업자 인증 신청 '+business.id+'의 조회가 중단됐어요. 연결 상태와 등록증 수동 확인 요청을 확인해 주세요.',category:'other',priority:'urgent',route:'business',caseId:business.id,source});
+   try{
+    await db.batch([sql(db,`INSERT OR IGNORE INTO order_notification(id,actor_id,revision,data_json,created_at)
+     SELECT ?,m.actor_id,1,?,? FROM r3_membership m WHERE m.active=1 AND m.role='OPERATOR' AND m.org_id=?
+     AND EXISTS(SELECT 1 FROM r3_membership buyer WHERE buyer.actor_id=? AND buyer.active=1 AND buyer.role='BUYER' AND buyer.org_id=? AND buyer.site_id=?)
+     AND EXISTS(SELECT 1 FROM r3_case WHERE id=? AND kind='business' AND created_by=? AND revision=? AND state IN ('DRAFT','EVIDENCE_REQUIRED','NEEDS_INFO'))`,notificationId,notice,now,business.org_id,actor.id,business.org_id,business.site_id,business.id,actor.id,business.revision)]);
+    alertQueued=Boolean(await sql(db,'SELECT 1 ok FROM order_notification WHERE id=? LIMIT 1',notificationId).first());
+   }catch{ /* A failed notification is explicitly reported, never acknowledged. */ }
+   throw Object.assign(Error(error),{status,businessVerification:{source,alertQueued}});
+  }
+  if(!env.NTS_SERVICE_KEY)return unavailable('configuration');
   const url=new URL('https://api.odcloud.kr/api/nts-businessman/v1/validate');url.searchParams.set('serviceKey',env.NTS_SERVICE_KEY);url.searchParams.set('returnType','JSON');
   const input={b_no:b.number,start_dt:b.openingDate,p_nm:b.owner,b_nm:b.name,b_sector:b.industry,b_type:b.trade};
-  let result;try{const response=await (env.NTS_FETCH||fetch)(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({businesses:[input]}),redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok)fail('BUSINESS_PROVIDER_UNAVAILABLE',503);result=await response.json();}catch{fail('BUSINESS_PROVIDER_UNAVAILABLE',503);}
-  const entry=result?.data?.[0];if(result.status_code!=='OK'||result.request_cnt!==1||result.data?.length!==1||entry?.b_no!==b.number||!['01','02'].includes(entry.valid))fail('BUSINESS_PROVIDER_RESPONSE_INVALID',502);
+  let response,result;try{response=await (env.NTS_FETCH||fetch)(url,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({businesses:[input]}),redirect:'error',signal:AbortSignal.timeout(10000)});}catch{return unavailable('provider');}
+  if(!response.ok)return unavailable('provider');try{result=await response.json();}catch{return unavailable('invalid-response','BUSINESS_PROVIDER_RESPONSE_INVALID',502);}
+  if(!result||typeof result!=='object'||Array.isArray(result)||!Array.isArray(result.data))return unavailable('invalid-response','BUSINESS_PROVIDER_RESPONSE_INVALID',502);
+  const entry=result.data[0];if(result.status_code!=='OK'||result.request_cnt!==1||result.data.length!==1||entry?.b_no!==b.number||!['01','02'].includes(entry.valid))return unavailable('invalid-response','BUSINESS_PROVIDER_RESPONSE_INVALID',502);
   const verified=entry.valid==='01'&&entry.status?.b_stt_cd==='01';
   const data={caseId:b.caseId,actorId:actor.id,provider:'NTS',verified,valid:entry.valid,businessStatus:entry.status?.b_stt_cd||null,inputDigest:await hash(input),checkedAt:now,maskedNumber:b.number.slice(0,3)+'-**-'+b.number.slice(-2),consentVersion:'business-verification-v1'};
   const entityId=crypto.randomUUID();return save(kind,entityId,scope,verified?'VERIFIED':'MISMATCH',data,null,{guard:"EXISTS(SELECT 1 FROM r3_case WHERE id=? AND kind='business' AND org_id=? AND site_id=? AND created_by=? AND revision=? AND state IN ('DRAFT','EVIDENCE_REQUIRED','NEEDS_INFO'))",params:[b.caseId,business.org_id,business.site_id,actor.id,business.revision]});

@@ -421,6 +421,7 @@ def main():
         receipt['checks'].append('private release packs remain unavailable over HTTP')
 
         phase = 'qa-shell'
+        prepare_frame_pointer(page)
         page.set_viewport_size({'width': 1440, 'height': 1000})
         page.goto(cfg['url'] + '/ia?view=qa-lab&screen=onboarding%2Fguest-2%2Femail&width=390')
         wait_for_expression(page, 'document.querySelector("#frame")?.src.includes("view=research-r3")', timeout=30000)
@@ -454,6 +455,138 @@ def main():
         page.locator('#close-drawer').click()
         receipt['checks'].append('drawer location picking returns to the same unsaved text without creating a QA record')
         page.screenshot(path=str(OUT / 'qa-shell-1440.png'), full_page=True)
+
+        # Exercise the new member paths through native Chrome input. The QA
+        # controls select existing scenarios; no test changes fixture records,
+        # invokes app.navigate, dispatches a click, or relaxes a native barrier.
+        phase = 'qa-member-header-and-order'
+        remember_review_application(page)
+        choose_review_route(page, frame, 'onboarding', 'member-1')
+        header = frame.locator('#order-app-header')
+        account_trigger = header.locator('[data-order-account-trigger]')
+        order_trigger = header.locator('.research-order-trigger')
+        expect(header.locator('[data-app-auth]')).to_be_hidden()
+        expect(frame.locator('[data-order-account-trigger]:visible')).to_have_count(1)
+        expect(account_trigger).to_be_enabled()
+        expect(order_trigger).to_be_visible()
+        expect(header).to_have_js_property('inert', False)
+        page.screenshot(path=str(OUT / 'member-header-1440.png'), full_page=True)
+
+        frame_click(page, account_trigger)
+        ready_review_route(page, frame, 'profile', 'menu')
+        expect(frame.locator('.obm-panel')).to_be_visible()
+        # One physical click must complete the account close and Order open.
+        frame_click(page, order_trigger)
+        expect(frame.locator('.research-order-stack')).to_be_visible()
+        expect(order_trigger).to_have_attribute('aria-expanded', 'true')
+        expect(frame.locator('.obm-panel')).to_be_hidden()
+        ready_review_route(page, frame, 'onboarding', 'member-1')
+        page.screenshot(path=str(OUT / 'member-account-to-order-1440.png'), full_page=True)
+        frame.locator('.research-order-stack').press('Escape')
+        expect(frame.locator('.research-order-stack')).to_be_hidden()
+        receipt['checks'].append('the member header has one visible account opener; one trusted Order-selector click closes the account stack and opens Order')
+
+        phase = 'qa-company-sheet-to-account'
+        frame_click(page, frame.locator('#order-app-page [data-company-open]'))
+        expect(frame.locator('.ob-shade')).to_be_visible()
+        expect(header).to_have_js_property('inert', True)
+        page.screenshot(path=str(OUT / 'company-sheet-1440.png'), full_page=True)
+        # A parent QA control remains usable while the product header is inert.
+        # The product itself must release its sheet before the next page opens.
+        choose_review_route(page, frame, 'q1', 'before')
+        expect(frame.locator('#order-app-quote #app')).to_be_visible()
+        expect(header).to_have_js_property('inert', False)
+        expect(frame.locator('.ob-shade')).to_have_count(0)
+        expect(account_trigger).to_be_enabled()
+        frame_click(page, account_trigger)
+        ready_review_route(page, frame, 'profile', 'menu')
+        expect(frame.locator('.obm-panel')).to_be_visible()
+        assert_no_hidden_modal(frame)
+        page.screenshot(path=str(OUT / 'company-to-quote-account-1440.png'), full_page=True)
+
+        # Also cover the retained introduction -> account path, where the
+        # onboarding controller stays mounted and must resume its shared brand.
+        choose_review_route(page, frame, 'onboarding', 'member-1')
+        frame_click(page, frame.locator('#order-app-page [data-company-open]'))
+        expect(header).to_have_js_property('inert', True)
+        choose_review_route(page, frame, 'profile', 'menu')
+        expect(header).to_have_js_property('inert', False)
+        expect(frame.locator('.ob-shade')).to_be_hidden()
+        expect(frame.locator('.obm-panel')).to_be_visible()
+        same_review_application(page, frame)
+        receipt['checks'].append('leaving the open company sheet releases the header and shared account controller for quote navigation and a retained-parent account panel')
+
+        phase = 'qa-notification-preview-to-full'
+        frame_click(page, frame.locator('.obm-panel [data-obm-item="notifications"]'))
+        ready_review_route(page, frame, 'profile', 'notification')
+        preview = frame.locator('.research-notifications[data-notifications-mode="preview"]')
+        expect(preview.locator('[data-action="research-all-notifications"]')).to_be_visible()
+        messages = frame.locator('#order-single').evaluate('''async () => {
+            const response=await ORDER_RESEARCH_APP.adapter.request('/notifications');
+            return response.items.map(({id,title,body,createdAt,readAt})=>({id,title,body,createdAt,readAt}));
+        }''')
+        assert messages, 'The original member scenario must supply actual notification records'
+        expect(preview.locator('[data-notification-id]')).to_have_count(min(3, len(messages)))
+        assert preview.locator('time').evaluate_all('nodes => nodes.every(time => time.dateTime && time.title.startsWith("발송 "))')
+        page.screenshot(path=str(OUT / 'notifications-preview-1440.png'), full_page=True)
+        frame_click(page, preview.locator('[data-action="research-all-notifications"]'))
+        ready_review_route(page, frame, 'notifications', 'list')
+        full = frame.locator('#order-app-page .research-notifications[data-notifications-mode="full"]')
+        expect(full.locator('h1')).to_have_text('알림')
+        expect(full.locator('[data-notification-id]')).to_have_count(min(20, len(messages)))
+        expect(frame.locator('.obm-panel')).to_be_hidden()
+        expect(full.locator('[data-notification-preferences]')).to_be_visible()
+        page.screenshot(path=str(OUT / 'notifications-full-1440.png'), full_page=True)
+
+        phase = 'qa-notification-detail-and-settings'
+        unread = full.locator('[data-notification-id][data-read="false"]').first
+        expect(unread).to_be_visible()
+        notification_id = unread.get_attribute('data-notification-id')
+        message = next(item for item in messages if item['id'] == notification_id)
+        frame_click(page, unread)
+        detail = full.locator('[data-notification-detail]')
+        expect(detail).to_have_attribute('data-notification-detail', notification_id)
+        expect(detail.locator('.research-notification-body')).to_have_text(message['body'])
+        expect(detail.locator('time')).to_have_attribute('title', re.compile(r'^발송 '))
+        expect(detail).not_to_have_attribute('aria-busy', 'true')
+        readback = frame.locator('#order-single').evaluate('''async id => {
+            const response=await ORDER_RESEARCH_APP.adapter.request('/notifications');
+            const item=response.items.find(value=>value.id===id);
+            return {id:item.id,readAt:item.readAt,createdAt:item.createdAt};
+        }''', notification_id)
+        assert readback['readAt'] and readback['createdAt'] == message['createdAt']
+        page.screenshot(path=str(OUT / 'notification-detail-1440.png'), full_page=True)
+        frame_click(page, full.locator('[data-action="research-notification-back"]'))
+        expect(full.locator('[data-notification-detail]')).to_have_count(0)
+        expect(full.locator('[data-notification-id="' + notification_id + '"]')).to_have_attribute('data-read', 'true')
+
+        preferences = full.locator('[data-notification-preferences]')
+        frame_click(page, preferences.locator('summary'))
+        expect(preferences).to_have_js_property('open', True)
+        expect(preferences.locator('fieldset')).to_be_visible()
+        expect(preferences.locator('fieldset')).to_be_enabled()
+        before_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
+        price_preference = preferences.locator('[data-notification-preference="price"]')
+        frame_click(page, price_preference)
+        expect(preferences.locator('[role="status"]')).to_have_text('수신 설정을 저장했어요.')
+        after_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
+        assert after_preferences['revision'] == before_preferences['revision'] + 1
+        assert after_preferences['preferences'] == {**before_preferences['preferences'], 'price': not before_preferences['preferences']['price']}
+        assert after_preferences['updatedAt']
+        expect(preferences).to_contain_text('웹 푸시 발송은 아직 연결되지 않았어요.')
+        same_review_application(page, frame)
+        assert_no_hidden_modal(frame)
+        page.screenshot(path=str(OUT / 'notification-preferences-1440.png'), full_page=True)
+        receipt['checks'].append('trusted notification clicks open the three-item preview, full reader, actual message and consent settings; read and consent acknowledgements stay in the existing research fixture')
+        receipt['nativeMemberInteractions'] = {
+            'viewport': {'host': 1440, 'researchFrame': 390},
+            'singleAccountOpener': True, 'oneClickAccountToOrder': True,
+            'companyToQuoteAccountUsable': True, 'companyToRetainedAccountUsable': True,
+            'notificationCount': len(messages), 'openedNotificationId': notification_id,
+            'readAcknowledged': True, 'preferenceRevision': after_preferences['revision'],
+            'trustedPointerReceipts': True, 'fixtureRecordsInjected': False,
+            'commercialAcceptance': False,
+        }
 
         # The remaining MVP product families use this same running app. Their
         # canonical phase metadata and explicit QA scenarios remain separate.

@@ -175,6 +175,75 @@ test('actual introduction and auth controls retain email focus through regular m
  }finally{await f.close();}
 });
 
+test('company sheet locks the retained header, removes its redundant title and restores the same controls when dismissed',async()=>{
+ const f=await setup({screen:'onboarding',state:'company'});try{
+  const header=f.doc.getElementById('order-app-header'),scene=f.doc.querySelector('.ob'),shade=scene.querySelector('.ob-shade');
+  assert.equal(header.inert,true);assert.equal(shade.hidden,false);assert.equal(scene.querySelector('.ob-drawer h2'),null);
+  shade.click();await settle();assert.equal(header.inert,false);assert.equal(shade.hidden,true);assert.equal(f.doc.querySelector('.ob'),scene);
+  assert.equal(header.querySelector('[data-app-auth]').hidden,false);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('member account has one opener and notification preview opens a full reader with actual sent times and settings',async()=>{
+ const f=await setup();try{
+  await f.app.inspectRoute({screen:'onboarding',state:'member-1'});await settle();
+  const header=f.doc.getElementById('order-app-header');assert.equal(header.querySelector('[data-app-auth]').hidden,true);
+  header.querySelector('[data-order-account-trigger]').click();await settle();f.doc.querySelector('[data-obm-item=notifications]').click();
+  await waitFor(()=>f.doc.querySelector('[data-action=research-all-notifications]'));
+  const preview=f.doc.querySelector('.research-notifications');assert.ok(preview);assert.equal(preview.dataset.notificationsMode,'preview');
+  const messages=await f.app.adapter.request('/notifications');assert.equal(preview.querySelectorAll('[data-notification-id]').length,Math.min(3,messages.items.length));
+  assert.ok([...preview.querySelectorAll('time')].every(time=>time.dateTime));
+  f.doc.querySelector('[data-action=research-all-notifications]').click();await waitFor(()=>f.app.snapshot().route.screen==='notifications');await settle();
+  const full=f.doc.querySelector('#order-app-page .research-notifications');assert.equal(full.dataset.notificationsMode,'full');assert.equal(full.querySelector('h1').textContent,'알림');
+  assert.ok(f.doc.querySelector('[data-notification-preferences]'));assert.equal(f.doc.getElementById('order-app-header'),header);
+  const item=full.querySelector('[data-notification-id]');item.click();await waitFor(()=>full.querySelector('[data-notification-detail]'));
+  assert.equal(full.querySelector('[data-notification-detail]').textContent.includes(messages.items.find(value=>value.id===item.dataset.notificationId).body),true);
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('global Order menu preserves the actual quote mode confirmation and quote draft on cancellation',async()=>{
+ const f=await setup();try{
+  await f.app.navigate({screen:'q1',mode:'simple'});await settle();const quote=f.doc.querySelector('[data-research-quote]'),before=f.app.snapshot().quote;
+  assert.equal(f.doc.querySelector('[data-app-back]').hidden,true);
+  const trigger=f.doc.querySelector('.research-order-trigger');assert.equal(trigger.closest('.research-order-menu').hidden,false);trigger.click();await settle();
+  f.doc.querySelector('.research-order-row').click();f.doc.querySelector('[data-order-mode=detailed]').click();await settle();
+  const dialog=quote.querySelector('#quote-mode-dialog');assert.equal(dialog.open,true);assert.equal(dialog.querySelector('[data-mode-option]').checked,false);
+  dialog.querySelector('[data-mode-cancel]').click();await settle();assert.equal(f.app.snapshot().route.mode,'simple');assert.equal(f.doc.querySelector('[data-research-quote]'),quote);assert.deepEqual(f.app.snapshot().quote,before);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('guest notification entry opens login and dismissal returns to the unchanged parent without private reads',async()=>{
+ const f=await setup({screen:'onboarding',state:'guest-3'});try{
+  const parent=f.doc.querySelector('#order-app-page .ob'),before=f.app.adapter.fixture.inspect().calls.length;
+  await f.app.navigate({screen:'notifications'});await settle();assert.equal(f.app.snapshot().route.screen,'login');assert.equal(f.app.snapshot().route.parent.state,'guest-3');
+  assert.equal(f.doc.querySelector('#order-app-page .research-notifications'),null);assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);
+  assert.equal(f.app.adapter.fixture.inspect().calls.slice(before).some(call=>call.path==='/notifications'||call.path==='/notification-preferences'),false);
+  f.doc.activeElement.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await settle();
+  assert.equal(f.app.snapshot().route.screen,'onboarding');assert.equal(f.app.snapshot().route.state,'guest-3');assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('one Order-selector click closes the actual account stack and opens its own menu after that transition',async()=>{
+ const f=await setup({screen:'onboarding',state:'member-1'});try{
+  const header=f.doc.getElementById('order-app-header');header.querySelector('[data-order-account-trigger]').click();await settle();
+  assert.equal(f.app.snapshot().route.kind,'account');assert.equal(f.doc.querySelector('.obm-panel').hidden,false);
+  header.querySelector('.research-order-trigger').click();await waitFor(()=>!f.doc.querySelector('.research-order-stack').hidden);
+  assert.equal(f.doc.querySelector('.obm-panel').hidden,true);assert.equal(f.app.snapshot().route.screen,'onboarding');assert.equal(header.querySelector('.research-order-trigger').getAttribute('aria-expanded'),'true');assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('leaving an open company sheet releases the shared account controller for quote and account navigation',async()=>{
+ const f=await setup({screen:'onboarding',state:'member-1'});try{
+  const header=f.doc.getElementById('order-app-header');f.doc.querySelector('[data-company-open]').click();assert.equal(header.inert,true);
+  await f.app.navigate({screen:'q1',mode:'simple'});await settle();assert.equal(header.inert,false);assert.equal(f.doc.querySelector('.ob-shade'),null);
+  header.querySelector('[data-order-account-trigger]').click();await settle();assert.equal(f.doc.querySelector('.obm-panel').hidden,false);assert.equal(f.app.snapshot().route.kind,'account');
+  await f.app.navigate({screen:'onboarding',state:'member-1'});f.doc.querySelector('[data-company-open]').click();assert.equal(header.inert,true);
+  const focused=[];f.doc.addEventListener('focusin',event=>focused.push({tag:event.target.tagName,id:event.target.id,class:event.target.className,text:event.target.textContent.slice(0,30)}));
+  await f.app.navigate({screen:'profile',state:'menu'});await settle();assert.equal(header.inert,false,'company header restored');assert.equal(f.doc.querySelector('.ob-shade').hidden,true,'company shade closed');assert.equal(f.doc.querySelector('.obm-panel').hidden,false,JSON.stringify({focused,paused:header.querySelector('.brand').dataset.motionPaused,disabled:header.querySelector('[data-order-account-trigger]').disabled,route:f.app.snapshot().route,failures:f.failures}));assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
 test('research auth source adapter rejects a missing or duplicated email validation seam',async()=>{
  const source=(await getProductAuthSheetBootstrap()).script,marker='input.validity.typeMismatch';
  assert.match(researchAuthSheetSource(source),/!w\.OrderEmail\.parse\(input\.value\)\.valid/);
@@ -466,7 +535,10 @@ test('the actual Gooey pass action opens real passes over its parent and direct 
   assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(header.querySelector('svg'),brand);assert.equal(f.app.instance,instance);
   assert.ok(panel.querySelector('.pass-stage [data-pass-id]'));assert.equal(panel.querySelector('[data-open-quote-draft]'),null);
   panel.querySelector('[data-view="deck"]').click();assert.equal(panel.querySelector('[data-view="deck"]').getAttribute('aria-pressed'),'true');
-  panel.querySelector('[data-action="deck-next"]').click();assert.equal(panel.querySelector('.deck-position').textContent,'2 / 4');
+  const purchases=await f.app.adapter.request('/purchases'),roles=await f.app.adapter.roleRequest('/workspace');
+  const passTotal=purchases.items.length+roles.quotes.filter(item=>!purchases.items.some(purchase=>purchase.quoteId===item.id)).length;
+  assert.equal(passTotal,6,'the retained fixture owns five actual purchase records and one unpurchased quote');
+  panel.querySelector('[data-action="deck-next"]').click();assert.equal(panel.querySelector('.deck-position').textContent,'2 / '+passTotal);
   const heading=panel.querySelector('.obm-heading');heading.focus();heading.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
   await waitFor(()=>f.app.snapshot().route.screen==='onboarding');assert.equal(f.app.snapshot().route.state,'member-1');
   assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.equal(f.doc.getElementById('order-app-header'),header);

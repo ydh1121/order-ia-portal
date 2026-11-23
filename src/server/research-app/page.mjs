@@ -22,6 +22,12 @@ import {researchSceneSource} from './scene-source-adapter.mjs';
 import {getResearchBusinessPanelSource} from './business-panel-source.mjs';
 import {researchAuthSheetSource} from './auth-sheet-source.mjs';
 import {researchBrandSource} from './brand-source-adapter.mjs';
+import {researchOnboardingMarkup,researchOnboardingCss} from './onboarding-polish.mjs';
+import {researchInteractionCss} from './interaction-polish.mjs';
+import {researchAuthPolishCss} from './auth-polish.mjs';
+import {researchNotificationsCss} from './notifications-style.mjs';
+import {researchNotificationFixtureSource} from './notification-fixture-source.mjs';
+import {researchOrderMenuCss} from './order-menu.mjs';
 import {getPriceWorkspaceQaDocuments} from '../r3-price-workspace-qa.mjs';
 import {getResearchPriceModuleSource} from './price-source-adapter.mjs';
 import {RESEARCH_RELEASE_WIDTHS,readResearchRelease,serveResearchReleaseAsset,renderResearchReleaseApplication,findResearchReleaseTarget,hasResearchRelease,researchReviewIdentity,researchReviewMode} from './release-store.mjs';
@@ -38,6 +44,7 @@ export const isResearchRow=row=>Boolean(row&&(row.phase!=='future'||row.screen==
 const staticCache=new Map(),scenes=new Map();let styles;
 const response=(body,type='text/javascript; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','X-Order-Research-Build':researchBuild.digest}});
 const fallbackFamily=screen=>['login','signup','otp','password','terms'].includes(screen)?'accountFeedback':['business','proof','signature'].includes(screen)?'business':screen.startsWith('admin-')||screen==='receipt'?'adminCommon':'member';
+const notificationRow=Object.freeze({id:'notifications/list/email',screen:'notifications',state:'list',variant:'email',group:'내 견적·메뉴',label:'알림',stateLabel:'전체 알림',defaultWidth:390,role:'customer',phase:'current',runtimeFamily:'researchNotifications'});
 let runtimeSources;
 async function researchRuntime(family){
   if(!runtimeSources)runtimeSources=new Map();if(runtimeSources.has(family))return runtimeSources.get(family);
@@ -51,6 +58,7 @@ async function researchRuntime(family){
 export async function listResearchRows(){
   const {rows}=await getProductDocuments(),pricing=await getPriceWorkspaceQaDocuments(),byId=new Map([...catalog,...rows,...pricing.map(document=>document.row)].map(row=>[row.id,row]));
   const purchase=byId.get('store-purchase/select/email');
+  byId.set(notificationRow.id,notificationRow);
   for(const [state,fixture]of [['qa-loading',{scenario:'loading'}],['qa-error',{scenario:'error'}],['qa-empty',{scenario:'empty'}],['qa-guest',{authenticated:false}]])byId.set('store-purchase/'+state+'/email',{...purchase,id:'store-purchase/'+state+'/email',state,fixture});
   return [...byId.values()].filter(isResearchRow);
 }
@@ -60,6 +68,7 @@ export async function listResearchAssetPaths(){
 }
 
 export async function researchScene(screen,state='default',variant='email'){
+  if(screen==='notifications'&&['list','default'].includes(state)&&variant==='email')return {row:notificationRow,html:'<section class="research-notifications" aria-label="알림"></section>',family:'researchNotifications',mount:'',css:''};
   const key=[screen,state,variant].join('/');if(scenes.has(key))return scenes.get(key);
   const source=(async()=>{
     let document=await getProductApplicationDocument(screen,state.startsWith('qa-')?'default':state,variant),family=document?'product':null;
@@ -68,7 +77,7 @@ export async function researchScene(screen,state='default',variant='email'){
       if(!row)return null;
       family=row.runtimeFamily||fallbackFamily(screen);document={row,body:await inflate(frames[row.current]),mount:runtimes[family]||'',css:''};
     }
-    return {row:document.row,html:document.body,family,mount:await researchRuntime(family),css:document.css||''};
+    return {row:document.row,html:screen==='onboarding'?researchOnboardingMarkup(document.body):document.body,family,mount:await researchRuntime(family),css:document.css||''};
   })();scenes.set(key,source);return source;
 }
 export async function serveResearchAsset(path,env,origin='https://order-ia-portal.pages.dev'){
@@ -97,7 +106,7 @@ export async function serveResearchAsset(path,env,origin='https://order-ia-porta
   }
   else if(/^scene\/[\w-]+\/[\w-]+\/[\w-]+\.mjs$/.test(name)){
     const [screen,state,variant]=name.slice(6,-4).split('/'),scene=await researchScene(screen,state,variant);if(!scene)return response('Unknown application route.','text/plain; charset=utf-8',404);
-    body='export {modules} from "'+researchAssetBase+'runtime/'+scene.family+'.mjs";export const scene='+js({screen:scene.row.screen,state:scene.row.state,html:scene.html,styles:scene.css?[scene.css]:[]})+';';
+    body=(scene.family==='researchNotifications'?'export const modules=[];':'export {modules} from "'+researchAssetBase+'runtime/'+scene.family+'.mjs";')+'export const scene='+js({screen:scene.row.screen,state:scene.row.state,html:scene.html,styles:scene.css?[scene.css]:[]})+';';
   }else{
     const original=r3ProductAsset('/ia/r3-product/'+name);if(!original.ok)return response('Unknown application asset.','text/plain; charset=utf-8',404);
     body=await original.text();type=original.headers.get('Content-Type')||type;
@@ -118,8 +127,8 @@ html,body{margin:0;min-height:100%;background:#fff}body{overflow-x:clip}#order-s
 let foundation;
 function researchFoundation(){return foundation??=(async()=>{
   styles??=inflate(cssGzip);const [css,panels,auth]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap()]);
-  return {css:css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss,
-    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+getProductUiBootstrap().script+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+browserFunction(installQaFixtureAdapter)+'),('+browserFunction(installProductAdapter)+'));'};
+  return {css:css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
+    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+getProductUiBootstrap().script+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+browserFunction(installProductAdapter)+'));'};
 })();}
 
 export async function renderResearchApplication(nonce,parameters=new URLSearchParams(),env,origin='https://order-ia-portal.pages.dev'){
@@ -155,7 +164,8 @@ export async function researchArtifact(row,width,env,origin='https://order-ia-po
 export async function archivedResearchTarget(target){return findResearchReleaseTarget({rowId:[target.screen,target.state,target.variant].join('/'),width:target.viewport,hash:target.artifactHash,mode:target.mode});}
 export async function archivedResearchArtifact(rowId,width,hash,env,origin,mode='simple'){
   const target=await findResearchReleaseTarget({rowId,width,hash,mode});if(!target)return null;
-  const saved=await readResearchRelease(target.build,env,origin),row=target.row;
+  const saved=await readResearchRelease(target.build,env,origin),row=saved.rows.find(value=>value.id===target.row.id);
+  if(!row)throw Object.assign(Error('RESEARCH_RELEASE_ROW_NOT_FOUND'),{status:503});
   const parameters=new URLSearchParams({view:'research-r3',build:target.build,screen:row.screen,state:row.state,variant:row.variant,mode,version:'recorded'});
   const html=await renderResearchReleaseApplication(saved,'a'.repeat(36),parameters),source={kind:'research-application',build:target.build,productSource:saved.build.sources,environment:'research-fixture',archived:true};
   const editable=html.replace('</body>','<script type="application/json" id="frame-meta">'+js({source,hash,viewport:width,route:row.id,...(mode==='detailed'?{mode}:{})})+'</script></body>');
