@@ -96,10 +96,10 @@ export async function onRequest({request,env}){
    headers['Content-Security-Policy']+="; frame-src 'self'; object-src 'none'";
    // Keep the approved review tool as the default. Existing isolated runs remain
    // reachable through explicit run links; recorded artifacts take precedence.
-   const {isArchivedQaRequest,renderProductLab}=await import('../../src/server/product-lab-page.mjs');
    const savedRun=['run','labRun'].some(key=>/^[a-f0-9]{32}$/.test(url.searchParams.get(key)||''));
-   if(isArchivedQaRequest(url.searchParams)||!savedRun){const {renderR3Qa}=await import('../../src/server/r3-qa-page.mjs');html=renderR3Qa(nonce);}
-   else html=renderProductLab(nonce,url.searchParams);
+   const productLab=savedRun?await import('../../src/server/product-lab-page.mjs'):null;
+   if(productLab&&!productLab.isArchivedQaRequest(url.searchParams))html=productLab.renderProductLab(nonce,url.searchParams);
+   else{const {renderR3Qa}=await import('../../src/server/r3-qa-shell.mjs');html=renderR3Qa(nonce);}
  }else if(r3View==='research-r3'){
    headers['X-Frame-Options']='SAMEORIGIN';
    headers['Content-Security-Policy']=`default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dns.google https://cloudflare-dns.com; img-src 'self' data:; font-src 'self' data:; form-action 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`;

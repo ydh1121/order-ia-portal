@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 const releases=fileURLToPath(new URL('../../public/ia/research-releases/',import.meta.url));
 export function createPrivateResearchAssets(directory=releases){
   return {async fetch(request){
-    const url=new URL(request.url),match=/^\/ia\/research-releases\/([a-f0-9]{64}\.json\.gz|[a-f0-9]{64}\/(?:index|shell|\d+)\.bin|qa-catalog\/[a-f0-9]{64}\.json|r1-recorded\/[a-f0-9]{64}\.json\.gz)$/.exec(url.pathname);
+    const url=new URL(request.url),match=/^\/ia\/research-releases\/([a-f0-9]{64}\.json\.gz|[a-f0-9]{64}\/(?:index|shell|\d+)\.bin|qa-catalog\/[a-f0-9]{64}\.json|(?:r1-recorded|reviewed-recorded)\/[a-f0-9]{64}\.json\.gz)$/.exec(url.pathname);
     if(request.method!=='GET'||url.search||!match)return new Response(null,{status:404});
     const path=join(directory,match[1]);
     try{
