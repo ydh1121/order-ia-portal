@@ -5,7 +5,7 @@ let panelSequence = 0;
 
 /** A product panel, shared by the research app and its QA frame. The adapter
  * selects real or fixture transport; this module never manufactures success. */
-export function mountResearchAccountPanel({id, container, signal, push, adapter, services, onNavigate, setUnread} = {}) {
+export function mountResearchAccountPanel({id, container, signal, push, adapter, services, onNavigate, setUnread, beforeSwitch} = {}) {
   if (!researchAccountPanelIds.includes(id)) throw TypeError('RESEARCH_ACCOUNT_PANEL_UNSUPPORTED');
   if (!container?.ownerDocument || typeof adapter?.request !== 'function' || !services) throw TypeError('RESEARCH_ACCOUNT_PANEL_CONTEXT');
   if (id === 'notifications') return mountResearchNotifications({container, adapter, signal, setUnread,
@@ -84,6 +84,7 @@ export function mountResearchAccountPanel({id, container, signal, push, adapter,
     }
     mountReadonlyEmail(current.profile);
     if (id === 'profile.account') {
+      adapter.mountAccountSwitcher?.(root,current,controller.signal,beforeSwitch);
       const actions = node('div', undefined, 'mf-actions');
       actions.append(button('개인 정보', 'research-open-personal', () => navigate('profile.personal', '개인 정보')),
         button('연결된 계정', 'research-open-connections', () => navigate('profile.connections', '연결된 계정')));

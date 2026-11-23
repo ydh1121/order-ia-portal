@@ -59,6 +59,8 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     let evidencePolish;
     root.querySelector('[data-action=business-next]')?.addEventListener('click',()=>win.queueMicrotask(()=>{if(root.querySelector('.wf-panel')){root.__orderSelectedFiles=[];evidencePolish??=polishEvidence(root,{kind:'business',api});}}),{signal:life.signal});
     const observer=new win.MutationObserver(()=>{
+      // The evidence editor replaces the verified form inside this same root.
+      if (!fields || !root.contains(fields)) { observer.disconnect(); return; }
       const status=root.querySelector('.wf-status');
       if(root.dataset.businessVerificationId&&fields){
         fields.hidden=false;fields.inert=true;for(const input of fields.querySelectorAll('input,button'))if(!input.disabled)input.disabled=true;

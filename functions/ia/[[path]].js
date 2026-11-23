@@ -100,7 +100,7 @@ export async function onRequest({request,env}){
    headers['X-Frame-Options']='SAMEORIGIN';
    headers['Content-Security-Policy']=`default-src 'none'; script-src 'nonce-${nonce}' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://dns.google https://cloudflare-dns.com; img-src 'self' data:; font-src 'self' data:; form-action 'self'; frame-ancestors 'self'; base-uri 'none'; object-src 'none'`;
    const {renderResearchApplication}=await import('../../src/server/research-app/page.mjs');
-   try{html=await renderResearchApplication(nonce,url.searchParams,env,url.origin);}catch(error){return new Response('이 연구 빌드를 열 수 없습니다.',{status:error.status||503,headers:{...base,'Content-Type':'text/plain; charset=utf-8'}});}
+   try{html=await renderResearchApplication(nonce,url.searchParams,env,url.origin,productContext.mode==='lab'?productContext:null);}catch(error){return new Response('이 연구 빌드를 열 수 없습니다.',{status:error.status||503,headers:{...base,'Content-Type':'text/plain; charset=utf-8'}});}
  }else if(r3View==='product-r3'){
    const screen=url.searchParams.get('screen')||'store-purchase',state=url.searchParams.get('state')||'default',componentVariant=url.searchParams.get('componentVariant')||null;
    if(screen==='component-library'){
@@ -134,6 +134,10 @@ export async function onRequest({request,env}){
    const {injectProductContext}=await import('../../src/server/product-app-page.mjs');
    const {getProductPanelBootstrap}=await import('../../src/server/product-account-panels.mjs');
    html=injectProductContext(html,nonce,productContext,await getProductPanelBootstrap());
+ }
+ if(r3View&&!['qa-lab','research-r3'].includes(r3View)){
+   const {attachProductAccountContext}=await import('../../src/server/product-app-context-adapter.mjs');
+   html=attachProductAccountContext(html);
  }
  if(productContext.mode==='lab'&&r3View!=='qa-lab'){
    const {installLiveInspection}=await import('../../src/server/product-live-inspection.mjs');

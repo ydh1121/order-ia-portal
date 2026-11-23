@@ -87,7 +87,7 @@ export async function mountResearchApplication(config, environment) {
   }
   const brandContext={...originalBrandContext,navigate:navigatePanelDestination,onStateChange:accountState,
     renderPanel(args){
-      if(['profile.personal','profile.account','profile.connections','notifications'].includes(args.id))return mountResearchAccountPanel({...args,adapter,services,onNavigate:navigate,setUnread:count=>brandMenu?.setUnread(count)});
+      if(['profile.personal','profile.account','profile.connections','notifications'].includes(args.id))return mountResearchAccountPanel({...args,adapter,services,beforeSwitch:()=>!doc.querySelector('dialog[open]')&&(!workspace||workspace.canLeave())&&(!priceWorkspace||priceWorkspace.canLeave()&&!priceWorkspace.snapshot().model?.dirty),onNavigate:navigate,setUnread:count=>brandMenu?.setUnread(count)});
       if(args.id==='manage.business')return mountResearchBusinessPanel({...args,adapter,services,onNavigate:navigate,loadModule:environment.loadBusinessModule,initialState:route.screen==='store-settings'?route.state:'list',businessId:reviewSelecting||config.inspect?adapter.fixture?.inspect().data.businesses.find(item=>item.id==='qa-business-01')?.id:undefined});
       const target=panelRoute(args.id);
       if(target?.screen==='saved-quote')return mountResearchSavedQuotePanel({...args,repository,onOpenDraft:async record=>{if(!await navigate({screen:'q1',mode:record.mode},{restartQuote:true}))return {ok:false,status:'NAVIGATION_CANCELLED'};return record.hasInput?workspace.restoreDraft(record):{ok:true};}});
@@ -260,7 +260,7 @@ export async function mountResearchApplication(config, environment) {
       }
       else if(next.kind==='account'){
         authSheet?.close?.({immediate:true});
-        const panel=input.panel||(next.screen==='profile'?(next.state==='notification'?'notifications':next.state==='menu'?null:'profile.personal'):next.screen==='account-settings'&&next.state==='edit'?'profile.personal':['account-settings','saved-quote','delivery-schedule'].includes(next.screen)?(next.screen==='account-settings'?'profile':'manage')+'.research.'+next.screen+'.'+next.state:next.panel);
+        const panel=input.panel||(config.accountRun&&(next.screen==='profile'&&next.state==='restricted'||next.screen==='account-settings'&&next.state==='normal')?'profile.account':next.screen==='profile'?(next.state==='notification'?'notifications':next.state==='menu'?null:'profile.personal'):next.screen==='account-settings'&&next.state==='edit'?'profile.personal':['account-settings','saved-quote','delivery-schedule'].includes(next.screen)?(next.screen==='account-settings'?'profile':'manage')+'.research.'+next.screen+'.'+next.state:next.panel);
         if(!authenticated())return await navigate({screen:'login',state:'empty',parent});
         activeAccountPanel=panel||'root';brandMenu?.open?.(panel,{title:panelTitles[next.screen]||null});
       }else{

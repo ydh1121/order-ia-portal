@@ -5,7 +5,7 @@ import {getProductUiBootstrap} from '../product-ui/bootstrap.gen.mjs';
 import {getProductPanelBootstrap} from '../product-account-panels.mjs';
 import {getProductAuthSheetBootstrap} from '../product-auth-sheet.mjs';
 import {sharedCoreScript,commonMotionScript,brandMotionScript,brandAccountScript,sharedTemplates} from '../product-ui/assets.gen.mjs';
-import {installProductAdapter} from '../product-app-adapter.mjs';
+import {productAccountAdapterSource} from '../product-app-context-adapter.mjs';
 import {installQaFixtureAdapter} from '../r3-ui/qa-fixture-adapter.mjs';
 import {browserFunction} from '../browser-source.mjs';
 import {r3ProductAsset} from '../r3-product-page.mjs';
@@ -129,17 +129,18 @@ let foundation;
 function researchFoundation(){return foundation??=(async()=>{
   styles??=inflate(cssGzip);const [css,panels,auth]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap()]);
   return {css:css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
-    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+getProductUiBootstrap().script+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+browserFunction(installProductAdapter)+'));'};
+    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+getProductUiBootstrap().script+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 
-export async function renderResearchApplication(nonce,parameters=new URLSearchParams(),env,origin='https://order-ia-portal.pages.dev'){
+export async function renderResearchApplication(nonce,parameters=new URLSearchParams(),env,origin='https://order-ia-portal.pages.dev',labContext=null){
   if(parameters.has('mode'))researchReviewMode(parameters.get('mode'));
   const build=parameters.get('build')||researchBuild.digest,current=build===researchBuild.digest;
+  const accountRun=labContext&&current&&parameters.get('version')!=='recorded'&&parameters.get('inspect')!=='1'?labContext:null;
   if(!current||env!==undefined&&hasResearchRelease(build)){
     const saved=hasResearchRelease(build)?await readResearchRelease(build,env,origin):null;if(!saved)throw Object.assign(Error('RESEARCH_BUILD_NOT_FOUND'),{status:404});
     const target=new URLSearchParams(parameters);
     if(current){const route=researchRoute(Object.fromEntries(['screen','state','variant','mode'].map(key=>[key,parameters.get(key)])));for(const key of ['screen','state','variant','mode'])target.set(key,route[key]);}
-    return renderResearchReleaseApplication(saved,nonce,target,{inspectionVersion:current&&parameters.get('version')!=='recorded'?'current':'recorded',currentBuild:researchBuild.digest});
+    return renderResearchReleaseApplication(saved,nonce,target,{inspectionVersion:current&&parameters.get('version')!=='recorded'?'current':'recorded',currentBuild:researchBuild.digest,accountRun});
   }
   const initial=researchRoute(Object.fromEntries(['screen','state','variant','mode'].map(key=>[key,parameters.get(key)])));
   const inspect=parameters.get('inspect')==='1',channel=parameters.get('channel'),artifact=parameters.get('artifact'),width=Number(parameters.get('width')||390);
@@ -147,7 +148,7 @@ export async function renderResearchApplication(nonce,parameters=new URLSearchPa
     const id=[initial.screen,initial.state,initial.variant].join('/'),row=(await listResearchRows()).find(value=>value.id===id);
     if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(channel||'')||!RESEARCH_RELEASE_WIDTHS.includes(width)||!row||artifact!==await researchArtifactHash(row,width,initial.mode))throw TypeError('INVALID_RESEARCH_INSPECTION');
   }
-  const config={build:researchBuild.digest,assetBase:researchAssetBase,initial,inspect,inspection:inspect?{channel,artifact,screen:initial.screen,state:initial.state,variant:initial.variant,viewport:width,version:parameters.get('version')==='recorded'?'recorded':'current',...(initial.mode==='detailed'?{mode:'detailed'}:{})}:null};
+  const config={...(accountRun?{accountRun}:{}),build:researchBuild.digest,assetBase:researchAssetBase,initial,inspect,inspection:inspect?{channel,artifact,screen:initial.screen,state:initial.state,variant:initial.variant,viewport:width,version:parameters.get('version')==='recorded'?'recorded':'current',...(initial.mode==='detailed'?{mode:'detailed'}:{})}:null};
   return '<!doctype html><html lang="ko" data-product-runtime="research-application" data-product-build="'+researchBuild.digest+'"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Order · 연구본</title><link rel="stylesheet" href="'+researchAssetBase+'research/application.css"><script nonce="'+esc(nonce)+'" src="'+researchAssetBase+'research/bootstrap.js"></script></head><body><main id="order-single" class="ds" data-research-application><header id="order-app-header"><button data-app-back type="button" aria-label="이전 화면" hidden>‹</button><div data-app-brand></div><button data-app-auth type="button">회원가입</button></header><p id="order-app-status" role="status" hidden></p><section id="order-app-page"></section><section id="order-app-quote" hidden></section><section id="order-app-pricing" hidden></section></main><script type="application/json" id="order-app-config">'+js(config)+'</script><script type="module" nonce="'+esc(nonce)+'">import {mountResearchApplication} from "'+researchAssetBase+'research/application.mjs";const config=JSON.parse(document.getElementById("order-app-config").textContent);try{const app=await mountResearchApplication(config,window.ORDER_CREATE_RESEARCH_ENV(config));if(config.inspect){const {attachResearchReview}=await import("'+researchAssetBase+'research/review-bridge.mjs");await attachResearchReview(app,config);}}catch(error){const status=document.getElementById("order-app-status");status.hidden=false;status.textContent="화면을 불러오지 못했어요. 새로고침 후 다시 확인해 주세요.";console.error(error);}</script></body></html>';
 }
 

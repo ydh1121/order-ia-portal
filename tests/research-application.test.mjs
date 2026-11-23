@@ -413,6 +413,26 @@ test('the real consultation drawer opens on the retained result and closes witho
  }finally{await f.close();}
 });
 
+test('the explicit pass loading target holds one read and leaves ordinary product navigation responsive',async()=>{
+ const f=await setup({screen:'passes',state:'grid'});
+ try{
+  await f.app.inspectRoute({screen:'passes',state:'loading'});
+  const fixture=f.app.adapter.fixture;
+  await waitFor(()=>fixture.inspect().pending===1);
+  assert.equal(f.doc.querySelector('.pass-stage').getAttribute('aria-busy'),'true');
+  assert.equal(f.doc.querySelector('#order-app-page').dataset.passDataState,'loading');
+  const other=await f.app.adapter.request('/purchases');
+  assert.ok(other.items.length);
+  assert.equal(fixture.inspect().pending,1);
+  fixture.releasePending();
+  await waitFor(()=>f.doc.querySelector('[data-pass-data-state="ready"]'));
+  assert.equal(fixture.inspect().pending,0);
+  await f.app.inspectRoute({screen:'passes',state:'grid'});
+  await waitFor(()=>f.doc.querySelector('[data-pass-data-state="ready"]'));
+  assert.equal(fixture.inspect().pending,0);
+ }finally{await f.close();}
+});
+
 test('closed consultation owns selection and opener in the parent and retains the original form across Escape/reopen',async()=>{
  const f=await setup({screen:'passes',state:'loading'});try{
   const parent=f.doc.getElementById('order-app-page').firstElementChild,header=f.doc.getElementById('order-app-header'),adapter=f.app.adapter;

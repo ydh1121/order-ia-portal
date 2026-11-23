@@ -7,6 +7,8 @@ from playwright.sync_api import expect
 
 def check_wait_layout(context, origin):
     page = context.new_page()
+    out = Path(__file__).resolve().parents[1] / "artifacts/quote-result"
+    out.mkdir(parents=True, exist_ok=True)
     try:
         for width in (320, 390, 1440):
             page.set_viewport_size({"width": width, "height": 900})
@@ -24,6 +26,27 @@ def check_wait_layout(context, origin):
             assert rect["gap"] >= 15 and 105 <= rect["width"] <= 161, rect
             assert not rect["clipped"], rect
             print("BLOUB R4", width, rect)
+        # The current review shell loads the canonical research app. Capture
+        # its layout separately from the preserved version above.
+        current = []
+        for width in (320, 390, 1440):
+            page.set_viewport_size({"width": width, "height": 900})
+            query = urlencode({"view": "qa-lab", "screen": "quote-wait/comparing/email", "width": width})
+            page.goto(origin + "/ia?" + query)
+            frame = page.frame_locator("#frame")
+            visual = frame.locator(".mf-wait-visual")
+            expect(visual).to_be_visible(timeout=30000)
+            rect = visual.evaluate("""el => {
+                const avatar = el.querySelector('.mf-wait-avatar').getBoundingClientRect();
+                const banner = el.querySelector('.mf-banner-stack').getBoundingClientRect();
+                return {width: innerWidth, avatar: avatar.width, gap: avatar.top - banner.bottom,
+                    banner: banner.width, clipped: document.documentElement.scrollWidth > innerWidth};
+            }""")
+            assert rect["width"] == width and not rect["clipped"], rect
+            assert rect["gap"] >= 15 and 105 <= rect["avatar"] <= 161, rect
+            current.append(rect)
+            visual.screenshot(path=str(out / f"current-wait-visual-{width}.png"))
+        (out / "current-wait-geometry.json").write_text(json.dumps(current, indent=2) + "\n")
         page.set_viewport_size({'width':390,'height':844})
         page.emulate_media(reduced_motion='no-preference')
         query=urlencode({'view':'qa-lab','archive':'1','screen':'quote-wait/entry/email','width':390})

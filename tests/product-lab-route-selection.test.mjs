@@ -10,6 +10,7 @@ import {handlePreview} from '../functions/_middleware.js';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {deriveVerifier,issueSession} from '../src/server/owner-session.mjs';
 import {isArchivedQaRequest,resolveProductLabSelection} from '../src/server/product-lab-page.mjs';
+import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import * as oldBrand from '../src/server/r3-ui/brand-history.gen.mjs';
 
@@ -31,7 +32,7 @@ async function workspace(t){
  const migrations=new URL('../migrations/',import.meta.url);
  for(const file of readdirSync(migrations).filter(file=>file.endsWith('.sql')).sort())review.exec(readFileSync(new URL(file,migrations),'utf8'));
  lab.exec(readFileSync(new URL('../migrations/lab/0001_lab_registry.sql',import.meta.url),'utf8'));
- const env={ORDER_QA_DB:binding(review),ORDER_LAB_DB:binding(lab),IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'route-owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await verifier,IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),CF_PAGES_COMMIT_SHA:'qa-routing-test'};
+ const env={ASSETS:createPrivateResearchAssets(),ORDER_QA_DB:binding(review),ORDER_LAB_DB:binding(lab),IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:'route-owner@example.invalid',IA_OWNER_PASSWORD_VERIFIER:await verifier,IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),CF_PAGES_COMMIT_SHA:'qa-routing-test'};
  const session=await issueSession(env),cookie=session.cookie.split(';')[0];
  const transport=(input,init={})=>{
   const url=new URL(String(input),origin);assert.equal(url.origin,origin);
@@ -163,4 +164,17 @@ test('expired login and preview return preserve archive hashes and live selectio
  const rejected=await loginDestination(t,'?returnView=qa-lab&archive=yes&version=https://other.invalid&artifactHash=invalid&state=../../admin&componentVariant=%3Cscript%3E&returnTo=https://other.invalid');assert.deepEqual(Object.fromEntries(rejected.searchParams),{view:'qa-lab'});
  const historical=await serveR3Artifact(new Request(origin+'/api/ia/r3-qa/artifact?'+query({id:'profile/menu/email',width:'390',version:'recorded',artifactHash:hash})));
  assert.equal(historical.status,200);const artifact=await historical.json();assert.equal(artifact.hash,hash);assert.equal(artifact.version,'prior-r3','the retained comment hash still resolves to its original authored frame');
+});
+
+
+test('current staging account panel receives only an explicit owner-validated run',async t=>{
+ const f=await workspace(t);
+ const url='/ia?view=research-r3&screen=profile&state=restricted&variant=email';
+ const config=async suffix=>{const response=await f.page(url+suffix);assert.equal(response.status,200,await response.clone().text());return JSON.parse((await response.text()).match(/id="order-app-config">([^<]+)<\/script>/)[1]);};
+ assert.equal((await config('')).accountRun,undefined);
+ const run=await config('&labRun='+f.run.id+'&persona=operator');
+ assert.equal(run.accountRun.runId,f.run.id);
+ assert.equal(run.accountRun.endpoints.product,'/api/ia/lab/runs/'+f.run.id+'/as/operator/product');
+ assert.equal((await config('&labRun='+f.run.id+'&persona=operator&version=recorded')).accountRun,undefined);
+ const denied=await f.page(url+'&labRun='+('f'.repeat(32))+'&persona=operator');assert.ok(denied.status>=400);
 });

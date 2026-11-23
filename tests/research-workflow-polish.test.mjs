@@ -39,6 +39,34 @@ test('provider failure offers manual evidence and permits retry without losing s
   const v=await setup(t);business(v.root);v.adapter.fixture.configure({requests:{'product POST /business-verifications':{scenario:'error',errorCode:'BUSINESS_PROVIDER_UNAVAILABLE',status:503}}});const c=v.workflow.mountBusiness(v.root,{api:{adapter:v.adapter,motion:v.motion}});v.owned.push(c.destroy);const verify=v.root.querySelector('[data-action=verify-business]');verify.click();await until(()=>v.root.querySelector('.research-business-manual'));assert.equal(v.root.querySelector('[name=business-name]').value,'테스트 사업장');assert.equal(v.root.querySelector('.business-fields').hidden,true);assert.equal(verify.disabled,false);
   v.adapter.fixture.configure({requests:{}});verify.click();await until(()=>v.root.dataset.businessVerificationId);assert.equal(v.root.querySelector('.business-fields').hidden,false);assert.equal(v.root.querySelector('.research-business-manual'),null);assert.equal(v.root.querySelector('[name=business-name]').disabled,true);
 });
+test('completed business form gives the evidence editor sole ownership of its status', async t => {
+  const v = await setup(t);
+  business(v.root);
+  const controller = v.workflow.mountBusiness(v.root, {api: {adapter: v.adapter, motion: v.motion}});
+  v.owned.push(controller.destroy);
+  v.root.querySelector('[data-action=verify-business]').click();
+  await until(() => v.root.querySelector('[data-business-confirmed]'));
+  v.root.querySelector('[data-action=business-next]').click();
+  const editor = v.root.querySelector('.wf-panel');
+  assert.ok(editor);
+  const status = editor.querySelector('.wf-status');
+  const previousScreenMessage = '검토용 인증 응답입니다. 실제 국세청 인증이 아닙니다.';
+  let overwritten = false;
+
+  // Stop a regressed observer before its microtasks can starve the test runner.
+  const guard = new v.w.MutationObserver(() => {
+    if (status.textContent === previousScreenMessage) {
+      overwritten = true;
+      controller.destroy();
+    }
+  });
+  guard.observe(status, {childList: true});
+  t.after(() => guard.disconnect());
+  await tick();
+  assert.equal(overwritten, false, 'business observer rewrote the evidence editor status');
+  assert.notEqual(status.textContent, previousScreenMessage);
+  assert.equal(v.root.querySelector('[data-business-confirmed]'), null);
+});
 test('an invalid provider response retains the manual business evidence path',async t=>{
   const v=await setup(t);business(v.root);v.adapter.fixture.configure({requests:{'product POST /business-verifications':{scenario:'error',errorCode:'BUSINESS_PROVIDER_RESPONSE_INVALID',status:502}}});const c=v.workflow.mountBusiness(v.root,{api:{adapter:v.adapter,motion:v.motion}});v.owned.push(c.destroy);
   v.root.querySelector('[data-action=verify-business]').click();await until(()=>v.root.querySelector('.research-business-manual'));assert.equal(v.root.dataset.businessVerificationId,undefined);assert.equal(v.root.querySelector('[name=business-name]').value,'테스트 사업장');

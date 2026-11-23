@@ -183,7 +183,12 @@ test('signup success uses the actual Check path, has no continue control, and op
   const f=await setup(t,{state:'guest-3'});await f.open('otp','verified');
   assert.equal(f.sheet().querySelector('h2').textContent,'회원가입이 완료됐어요');assert.equal(f.sheet().querySelector('.sheet-title'),null);
   assert.equal(f.sheet().querySelector('.auth-complete button'),null);assert.equal(f.sheet().querySelector('.sheet-close'),null);
-  const path=f.sheet().querySelector('.success-mark path');assert.ok(Number(path.style.getPropertyValue('--auth-check-length'))>0);
+  const path=f.sheet().querySelector('.success-mark path');
+  assert.equal(path.getAttribute('d'),'M5 13l4 4L19 7');
+  assert.ok(Number(path.style.getPropertyValue('--auth-check-length'))>0);
+  const entry=f.w.getComputedStyle(path.closest('.success-mark')).animation;
+  for(const timing of ['fade 550ms','turn 550ms','blur 500ms','rise 450ms'])assert.ok(entry.includes(timing),entry);
+  assert.match(f.w.getComputedStyle(path).animation,/draw 550ms .* 80ms/);
   await f.advance(250);assert.equal(f.sheet(),null);assert.deepEqual(f.navigation,[['onboarding','member-4']]);
 });
 
@@ -232,4 +237,73 @@ test('ordinary entries cannot open a completion or acquire a simulated authentic
   const f=await setup(t,{review:false});assert.equal(f.controller.select('otp','verified'),false);assert.equal(f.controller.select('signup','success'),false);assert.equal(f.sheet(),null);
   await f.open('otp','empty');assert.match(f.sheet().querySelector('[data-otp-clock]').textContent,/받은 메일/);
   assert.equal(f.sheet().querySelector('[data-auth-expiry]'),null);assert.deepEqual(f.calls,[]);
+});
+
+test('the limited login opens three real recovery choices and an unavailable delivery preserves the email and selection',async t=>{
+  const f=await setup(t,{performAction:async()=>({confirmed:false,error:'AUTH_PROVIDER_UNAVAILABLE'})});
+  await f.open('login','limited');
+  f.sheet().querySelector('[data-action=reset-password]').click();
+  assert.equal(f.sheet().dataset.authScreen,'password');
+  const sheet=f.sheet(),options=[...sheet.querySelectorAll('[name=recovery-method]')],submit=sheet.querySelector('[data-action=send-reset]');
+  assert.deepEqual(options.map(input=>input.value),['send-login-code','send-temporary-password','send-reset']);
+  assert.equal(f.calls.length,0);
+  submit.click();await flush();assert.equal(f.calls.length,0);
+  const email=f.type('[name=email]','buyer@example.com');
+  for(const option of options){
+    option.click();assert.equal(f.calls.length,options.indexOf(option));
+    submit.click();await flush();
+    assert.equal(f.calls.at(-1).action,option.value);
+    assert.equal(option.checked,true);assert.equal(option.disabled,false);
+    assert.equal(email.value,'buyer@example.com');assert.equal(email.readOnly,false);
+    assert.equal(sheet.dataset.authState,'request');assert.equal(sheet.querySelector('.auth-complete'),null);
+    assert.match(sheet.querySelector('[data-auth-feedback]').textContent,/아직 연결되지/);
+  }
+});
+
+test('login-code delivery requires its own challenge and verification before login can finish',async t=>{
+  let issue=false,verified=false;
+  const f=await setup(t,{review:false,performAction:async(action,detail)=>{
+    if(action==='send-login-code')return issue?{confirmed:true,challengeId:'login-challenge'}:{confirmed:true};
+    assert.equal(detail.challengeId,'login-challenge');
+    return {confirmed:verified};
+  }});
+  await f.open('password','request');f.type('[name=email]','buyer@example.com');
+  f.sheet().querySelector('[value=send-login-code]').click();
+  const send=f.sheet().querySelector('[data-action=send-reset]');
+  send.click();await flush();assert.equal(f.sheet().dataset.authScreen,'password');
+  issue=true;send.click();await flush();
+  assert.equal(f.sheet().dataset.authScreen,'otp');assert.equal(f.sheet().querySelector('h1').textContent,'이메일 로그인 코드 입력');
+  f.type('.otp-digit','123456');
+  const verify=f.sheet().querySelector('[data-action=verify-otp]');
+  verify.click();await flush();assert.equal(f.calls.at(-1).action,'verify-login-code');
+  assert.equal(f.sheet().dataset.authState,'empty');assert.equal(f.navigation.length,0);
+  verified=true;verify.click();await flush();await f.advance(160);
+  assert.equal(f.sheet().dataset.authScreen,'login');assert.equal(f.sheet().dataset.authState,'success');
+});
+
+test('issuing a temporary password returns to login and reset retains its own instructions',async t=>{
+  const f=await setup(t,{review:false,performAction:async()=>({confirmed:true})});
+  await f.open('password','request');f.type('[name=email]','buyer@example.com');
+  f.sheet().querySelector('[value=send-temporary-password]').click();
+  f.sheet().querySelector('[data-action=send-reset]').click();await flush();
+  assert.equal(f.sheet().dataset.authScreen,'login');assert.equal(f.sheet().dataset.authState,'empty');
+  assert.match(f.sheet().querySelector('[data-auth-feedback]').textContent,/가입 정보와 일치하면 임시 비밀번호/);
+  assert.deepEqual(f.navigation,[]);
+  f.sheet().querySelector('[data-action=reset-password]').click();f.type('[name=email]','buyer@example.com');
+  f.sheet().querySelector('[data-action=send-reset]').click();await flush();
+  assert.equal(f.sheet().dataset.authScreen,'password');assert.equal(f.sheet().dataset.authState,'sent');
+});
+
+test('reported login failures keep typed values and use only the provider count and retry deadline',async t=>{
+  const f=await setup(t,{review:false,performAction:async()=>({
+    confirmed:false,reason:'password_incorrect',failedAttempts:2,remainingAttempts:0,retryAt:f.w.Date.now()+3000
+  })});
+  await f.open();const email=f.type('[name=email]','buyer@example.com'),pass=f.type('[name=password]','My-password-1!');
+  const submit=f.sheet().querySelector('[data-action=submit-login]');
+  submit.click();await flush();await f.advance(0);
+  assert.equal(email.value,'buyer@example.com');assert.equal(pass.value,'My-password-1!');
+  assert.equal(pass.getAttribute('aria-invalid'),'true');
+  assert.match(f.sheet().querySelector('[data-auth-feedback]').textContent,/2회 연속/);
+  assert.equal(submit.textContent,'00분 03초 후 로그인 가능해요');assert.equal(submit.disabled,true);
+  await f.advance(3000);assert.equal(submit.disabled,false);assert.equal(submit.textContent,'로그인');
 });

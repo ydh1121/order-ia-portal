@@ -44,7 +44,7 @@ test('missing consent, malformed headers, swapped pixels and invalid signature p
 });
 
 test('an attestation database failure rolls the receipt and object locator back and removes only the uncommitted blob',async t=>{
- const f=fixture(t),signed=await signedEvidencePacket();f.sql.exec('DROP TABLE order_operation');
+ const f=fixture(t),signed=await signedEvidencePacket();f.sql.exec("CREATE TRIGGER fail_attestation BEFORE INSERT ON order_operation WHEN NEW.kind='evidence-signature' BEGIN SELECT RAISE(ABORT,'attestation write failed'); END");
  const response=await f.post(signed.bytes,signed.header);assert.equal(response.status,503);assert.equal((await response.json()).error,'SAVE_UNAVAILABLE');assert.equal(f.sql.prepare('SELECT count(*) n FROM r3_evidence_receipt').get().n,0);assert.equal(f.sql.prepare('SELECT count(*) n FROM r3_evidence_object').get().n,0);assert.equal(f.objects.size,0);
 });
 

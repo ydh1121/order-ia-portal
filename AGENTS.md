@@ -1,5 +1,10 @@
 # ORDER 작업 재개 및 사용자 지시 검증
 
+## PR23 재개 원문 — 2026-11-23
+
+- 실행방 수신 원문은 3,473바이트, 45줄이며 SHA256은 `b8321b909c41b7d6ca70fb0b8db8f458b95e50eb5aadb0dd7170304e1538dfec`이다. [원문](https://drive.google.com/file/d/1J5ypRvwpD96Nri8ic-ocK8jTTa1NS0vj/view) · [실행 지시](https://drive.google.com/file/d/1Of3-vHQhedc6rMk88Sk0XUh7xIPwjkx4/view)
+- 같은 WO·MSG0585와 PR23을 이어간다. 원댓글별 결과는 소스, 자동검사, 실제 화면, 배포, 사용자 판정을 각각 기록한다.
+
 ## 미해결 및 추가 코멘트 반영 — 2026-11-23
 
 - 사용자 원문: https://drive.google.com/file/d/11BimpL-ByW0_FDjnCsE8fOwwPY3KecWJ/view . UTF-8 67바이트 / 1줄 / 끝 개행 없음 / SHA256 `8180df6964390461a74c4a3f5801ec012ee715c0a16593105281b7886b83dad8`.

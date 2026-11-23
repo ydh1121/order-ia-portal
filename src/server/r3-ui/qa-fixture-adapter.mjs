@@ -19,6 +19,7 @@ export function installQaFixtureAdapter(session={},installProductAdapter){
  const initial=session.fixture||{};
  const inferred=()=>{const screen=session.screen||'',state=session.state||'',guest=['login','signup','otp','password','terms'].includes(screen)&&!(screen==='login'&&state==='success'||screen==='otp'&&state==='verified')||screen==='onboarding'&&!state.startsWith('member-')||screen==='account-settings'&&state==='closed';return {authenticated:!guest,persona:guest?'guest':screen.startsWith('supplier-')?'supplier':screen.startsWith('admin-')||screen==='member-email-templates'||screen==='receipt'?'operator':'buyer'};};
  const identity=inferred(),controls={persona:initial.persona||identity.persona,authenticated:initial.authenticated??(initial.persona?initial.persona!=='guest':identity.authenticated),scenario:initial.scenario||'normal',requests:copy(initial.requests||{})};
+ let nextReadToHold=null;
  const controller=new AbortController(),pending=new Set(),memory=new Map(),replays=new Map(),quotes=new Map(),evidencePackets=new Map(),calls=[],operations=[];
  let disposed=false,sequence=0,adapter,brandContext,arrivalPending=Boolean(initial.arrival),selectionKey=[session.screen,session.state].join('/');
  const now='2026-11-20T00:00:00.000Z';
@@ -182,7 +183,9 @@ export function installQaFixtureAdapter(session={},installProductAdapter){
    const binary=domain==='role'&&path==='/evidence';
    let body=null;if(method==='POST'&&!binary){try{body=JSON.parse(settings.body);}catch{fail('INVALID_INPUT');}if(!body||typeof body!=='object'||Array.isArray(body)||typeof body.requestKey!=='string'||!body.requestKey)fail('INVALID_INPUT');}
    const rule=()=>controls.requests[domain+' '+method+' '+path]||{};
-   if(path!=='/session'&&(rule().scenario||controls.scenario)==='loading')await hold(signal);
+   const holdThisRead=method==='GET'&&nextReadToHold===domain+' '+path;
+   if(holdThisRead)nextReadToHold=null;
+   if(path!=='/session'&&(holdThisRead||(rule().scenario||controls.scenario)==='loading'))await hold(signal);
    else await Promise.resolve();
    check(signal);
    if(path!=='/session'&&(rule().scenario||controls.scenario)==='error')fail(rule().errorCode||'QA_FIXTURE_ERROR',rule().status||503);
@@ -220,7 +223,8 @@ export function installQaFixtureAdapter(session={},installProductAdapter){
   return {persona:controls.persona,authenticated:controls.authenticated,scenario:controls.scenario,source:copy(source)};
  }
  const fixture={source,configure,
-  releasePending(next={scenario:'normal'}){configure(next);const count=pending.size;for(const request of [...pending])request.finish();return count;},
+  holdNextRead(domain,path){nextReadToHold=domain+' '+path;},
+  releasePending(next={scenario:'normal'}){nextReadToHold=null;configure(next);const count=pending.size;for(const request of [...pending])request.finish();return count;},
   inspect(){return {source:copy(source),controls:copy(controls),data:copy(data),calls:copy(calls),operations:copy(operations),pending:pending.size,disposed,selectedPurchaseId:adapter?.selectedPurchaseId||null};},
   dispose(){if(disposed)return;disposed=true;controller.abort();for(const request of [...pending])request.finish(aborted());memory.clear();}
  };

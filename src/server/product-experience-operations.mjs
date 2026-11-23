@@ -1,3 +1,4 @@
+import {workingMemberships} from './product-account-context.mjs';
 // Product domain operations. Review fixtures implement the same transport contract
 // separately; no review state or client supplied success enters this service.
 export async function productExperience(ctx,h){
@@ -12,7 +13,7 @@ export async function productExperience(ctx,h){
  async function save(kind,entityId,scope,state,data,previous,{immutable=false,personal=false,guard='1',params=[],storageScope=scope}={}){
   if(b.expectedRevision!==(previous?.revision||0))fail('REVISION_CONFLICT',409);
   const revision=b.expectedRevision+1,item={id:entityId,revision,status:state,createdAt:previous?.created_at||now,updatedAt:now,...data};
-  const active=`coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE' AND EXISTS(SELECT 1 FROM r3_membership WHERE actor_id=? AND active=1 AND org_id=? AND role=? AND (role<>'BUYER' OR site_id=?))`;
+  const active=`coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE' AND EXISTS(SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND active=1 AND org_id=? AND role=? AND (role<>'BUYER' OR site_id=?))`;
   const mutation=previous?sql(db,`UPDATE order_operation SET revision=?,state=?,data_json=?,updated_at=?,org_id=?,site_id=? WHERE kind=? AND id=? AND revision=? AND ${immutable?"state='DRAFT'":'1'} AND ${personal?'created_by=? AND ':''}${active} AND (${guard})`,revision,state,JSON.stringify(data),now,storageScope.org_id,storageScope.site_id||'',kind,entityId,b.expectedRevision,...(personal?[actor.id]:[]),actor.id,actor.id,scope.org_id,scope.role,scope.site_id||'',...params):sql(db,`INSERT INTO order_operation(kind,id,org_id,site_id,created_by,revision,state,data_json,created_at,updated_at) SELECT ?,?,?,?,?,1,?,?,?,? WHERE ?=0 AND ${active} AND (${guard})`,kind,entityId,storageScope.org_id,storageScope.site_id||'',actor.id,state,JSON.stringify(data),now,now,b.expectedRevision,actor.id,actor.id,scope.org_id,scope.role,scope.site_id||'',...params);
   return commit(db,actor.id,b,kind,entityId,mutation,{item},now);
  }
@@ -29,7 +30,7 @@ export async function productExperience(ctx,h){
  }
  if(path==='/dashboard'&&!b){
   const scopes=grants.filter(g=>g.role==='OPERATOR');if(!scopes.length)fail('ACCESS_DENIED',403);
-  const purchases=await rows(db,`SELECT date(o.created_at,'+9 hours') day,json_extract(o.data_json,'$.channel') channel,sum(max(0,coalesce(json_extract(o.data_json,'$.paid'),0)-coalesce(json_extract(o.data_json,'$.refunded'),0))) paid FROM order_operation o WHERE kind='purchase' AND EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.role='OPERATOR' AND m.active=1 AND (m.org_id=o.org_id OR m.org_id=json_extract(o.data_json,'$.supplierId'))) GROUP BY day,channel ORDER BY day`,actor.id);
+  const purchases=await rows(db,`SELECT date(o.created_at,'+9 hours') day,json_extract(o.data_json,'$.channel') channel,sum(max(0,coalesce(json_extract(o.data_json,'$.paid'),0)-coalesce(json_extract(o.data_json,'$.refunded'),0))) paid FROM order_operation o WHERE kind='purchase' AND EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.role='OPERATOR' AND m.active=1 AND (m.org_id=o.org_id OR m.org_id=json_extract(o.data_json,'$.supplierId'))) GROUP BY day,channel ORDER BY day`,actor.id);
   const values=purchases.map(p=>({createdAt:p.day+'T00:00:00+09:00',channel:p.channel,paid:p.paid,refunded:0})),today=new Date(Date.parse(now)+9*3600000).toISOString().slice(0,10);
   const dayKey=at=>new Date(Date.parse(at)+9*3600000).toISOString().slice(0,10);
   const make=(count,label)=>{
@@ -66,7 +67,7 @@ export async function productExperience(ctx,h){
   const entityId=await hash([b.model,b.purchaseId,b.recipient]),old=await existing(kind,entityId);
   async function reuse(row){
    const result={item:project(row),existing:true},digest=await hash(b),requestId=await hash([actor.id,b.requestKey]);
-   await sql(db,`INSERT OR IGNORE INTO order_operation_event(actor_id,request_key,request_hash,kind,entity_id,revision,action,data_json,created_at) SELECT ?,?,?,'receipt-reuse',?,1,'read-existing',?,? WHERE EXISTS(SELECT 1 FROM r3_membership WHERE actor_id=? AND org_id=? AND role=? AND active=1) AND coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'`,actor.id,b.requestKey,digest,requestId,JSON.stringify(result),now,actor.id,scope.org_id,scope.role,actor.id).run();
+   await sql(db,`INSERT OR IGNORE INTO order_operation_event(actor_id,request_key,request_hash,kind,entity_id,revision,action,data_json,created_at) SELECT ?,?,?,'receipt-reuse',?,1,'read-existing',?,? WHERE EXISTS(SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND org_id=? AND role=? AND active=1) AND coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'`,actor.id,b.requestKey,digest,requestId,JSON.stringify(result),now,actor.id,scope.org_id,scope.role,actor.id).run();
    const saved=await sql(db,'SELECT * FROM order_operation_event WHERE actor_id=? AND request_key=?',actor.id,b.requestKey).first();if(!saved)fail('ACCESS_DENIED',403);if(saved.request_hash!==digest||!['receipt','receipt-reuse'].includes(saved.kind))fail('IDEMPOTENCY_CONFLICT',409);return JSON.parse(saved.data_json);
   }
   if(old)return reuse(old);
@@ -74,7 +75,7 @@ export async function productExperience(ctx,h){
   document.documentDigest=await hash(document);
   // Store in the original purchase scope so recipient reads use the same boundary.
   const result={item:{id:entityId,revision:1,status:'ISSUED',createdAt:now,updatedAt:now,...document}};
-  const mutation=sql(db,`INSERT INTO order_operation(kind,id,org_id,site_id,created_by,revision,state,data_json,created_at,updated_at) SELECT 'receipt',?,?,?,?,1,'ISSUED',?,?,? WHERE EXISTS(SELECT 1 FROM order_operation WHERE kind='purchase' AND id=? AND revision=? AND state IN ('PAID','DISPATCHED','RECEIVED')) AND EXISTS(SELECT 1 FROM r3_membership WHERE actor_id=? AND org_id=? AND role=? AND active=1) AND coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'`,entityId,purchase.org_id,purchase.site_id,actor.id,JSON.stringify(document),now,now,p.id,p.revision,actor.id,scope.org_id,scope.role,actor.id);
+  const mutation=sql(db,`INSERT INTO order_operation(kind,id,org_id,site_id,created_by,revision,state,data_json,created_at,updated_at) SELECT 'receipt',?,?,?,?,1,'ISSUED',?,?,? WHERE EXISTS(SELECT 1 FROM order_operation WHERE kind='purchase' AND id=? AND revision=? AND state IN ('PAID','DISPATCHED','RECEIVED')) AND EXISTS(SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND org_id=? AND role=? AND active=1) AND coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'`,entityId,purchase.org_id,purchase.site_id,actor.id,JSON.stringify(document),now,now,p.id,p.revision,actor.id,scope.org_id,scope.role,actor.id);
   try{return await commit(db,actor.id,b,kind,entityId,mutation,result,now);}catch(error){const saved=await existing(kind,entityId);if(saved)return reuse(saved);throw error;}
  }
  async function billingAccounts(){
@@ -87,7 +88,7 @@ export async function productExperience(ctx,h){
   if(!b){if(path==='/billing')return {items:(await rows(db,`SELECT o.* FROM order_operation o WHERE kind='billing' AND ${visible} ORDER BY created_at DESC LIMIT 200`,actor.id)).map(project)};const row=await getOperation(db,actor.id,kind,path.slice(9));if(!row)fail('NOT_FOUND',404);return {item:project(row)};}
   const prior=await replay(db,actor.id,b,kind);if(prior)return prior;
   if(path!=='/billing'||!['draft','issue'].includes(b.action)||!id(b.id))fail('INVALID_BILLING');
-  const old=await existing(kind,b.id);if(old&&old.created_by!==actor.id)fail('NOT_FOUND',404);if(old&&old.state!=='DRAFT')fail('DOCUMENT_IMMUTABLE',409);
+  const old=await existing(kind,b.id);if(old&&(old.created_by!==actor.id||!await getOperation(db,actor.id,kind,b.id)))fail('NOT_FOUND',404);if(old&&old.state!=='DRAFT')fail('DOCUMENT_IMMUTABLE',409);
   const target=(await billingAccounts()).find(x=>x.id===b.accountId&&x.issuerOrgId===b.issuerOrgId);if(!target)fail('BILLING_ACCOUNT_UNAVAILABLE',403);
   if(!integer(b.amount,1,999999999)||!text(b.subject,160)||typeof(b.memo||'')!=='string'||(b.memo||'').length>2000||!/^\d{4}-\d{2}-\d{2}$/.test(b.dueDate||'')||!Number.isFinite(Date.parse(b.dueDate+'T00:00:00Z'))||new Date(b.dueDate+'T00:00:00Z').toISOString().slice(0,10)!==b.dueDate)fail('INVALID_BILLING');
   if(Object.keys(b).some(k=>!['action','id','requestKey','expectedRevision','accountId','issuerOrgId','amount','subject','memo','dueDate'].includes(k)))fail('INVALID_BILLING');
@@ -109,7 +110,7 @@ export async function productExperience(ctx,h){
    try{
     await db.batch([sql(db,`INSERT OR IGNORE INTO order_notification(id,actor_id,revision,data_json,created_at)
      SELECT ?,m.actor_id,1,?,? FROM r3_membership m WHERE m.active=1 AND m.role='OPERATOR' AND m.org_id=?
-     AND EXISTS(SELECT 1 FROM r3_membership buyer WHERE buyer.actor_id=? AND buyer.active=1 AND buyer.role='BUYER' AND buyer.org_id=? AND buyer.site_id=?)
+     AND EXISTS(SELECT 1 FROM ${workingMemberships} buyer WHERE buyer.actor_id=? AND buyer.active=1 AND buyer.role='BUYER' AND buyer.org_id=? AND buyer.site_id=?)
      AND EXISTS(SELECT 1 FROM r3_case WHERE id=? AND kind='business' AND created_by=? AND revision=? AND state IN ('DRAFT','EVIDENCE_REQUIRED','NEEDS_INFO'))`,notificationId,notice,now,business.org_id,actor.id,business.org_id,business.site_id,business.id,actor.id,business.revision)]);
     alertQueued=Boolean(await sql(db,'SELECT 1 ok FROM order_notification WHERE id=? LIMIT 1',notificationId).first());
    }catch{ /* A failed notification is explicitly reported, never acknowledged. */ }

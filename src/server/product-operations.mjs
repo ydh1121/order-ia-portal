@@ -1,3 +1,4 @@
+import {readAccountContext,switchAccountContext,workingMemberships,workingRevision} from './product-account-context.mjs';
 // One product service, used by the business route and by the isolated lab.
 // The lab supplies a DB binding and a server-selected identity, never outcomes.
 import {productExperience} from './product-experience-operations.mjs';
@@ -16,7 +17,7 @@ const sql=(db,q,...args)=>db.prepare(q).bind(...args);
 const rows=async(db,q,...args)=>(await sql(db,q,...args).all()).results;
 const hash=async value=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(value)))),v=>v.toString(16).padStart(2,'0')).join('');
 const project=r=>r?{id:r.id,revision:r.revision,status:r.state,createdAt:r.created_at,updatedAt:r.updated_at,...JSON.parse(r.data_json)}:null;
-const visible=`EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.active=1 AND
+const visible=`EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 AND
  ((m.role='BUYER' AND m.org_id=o.org_id AND m.site_id=o.site_id) OR (m.role='OPERATOR' AND m.org_id=o.org_id)
  OR (m.role IN ('SUPPLIER','OPERATOR') AND m.org_id=json_extract(o.data_json,'$.supplierId'))))`;
 const getOperation=(db,actorId,kind,entityId)=>sql(db,`SELECT o.* FROM order_operation o WHERE kind=? AND id=? AND ${visible}`,kind,entityId,actorId).first();
@@ -55,7 +56,7 @@ async function commit(db,actorId,b,kind,entityId,mutation,result,now,extras=[]){
 async function account(db,actor,b,now){
  const current=await sql(db,'SELECT * FROM order_account WHERE actor_id=?',actor.id).first();
  const existing=current?JSON.parse(current.profile_json):{name:'',phone:'',email:actor.email||'',connections:[]};
- if(!b){const grants=await readRoleScope(db,actor.id);return {revision:current?.revision||0,state:current?.state||'ACTIVE',profile:existing,capabilities:{dashboard:grants.some(g=>g.role==='OPERATOR'),accountSwitch:new Set(grants.map(g=>g.org_id)).size>1}};}
+ if(!b){const [grants,context]=await Promise.all([readRoleScope(db,actor.id),readAccountContext(db,actor.id)]);return {context,revision:current?.revision||0,state:current?.state||'ACTIVE',profile:existing,capabilities:{dashboard:grants.some(g=>g.role==='OPERATOR'),accountSwitch:context.options.length>1||context.options.length===1&&!context.selected}};}
  const previous=await replay(db,actor.id,b,'account');if(previous)return previous;
  if(current?.state==='WITHDRAWN')fail('ACCOUNT_WITHDRAWN',403);
  if(!['update','withdraw'].includes(b.action))fail('INVALID_ACTION');
@@ -101,7 +102,7 @@ async function purchaseList(db,actorId,grants,now){
 async function purchaseQuote(db,env,actor,b,grants,now){
  if(!integer(b.quantity,1,1e7))fail('INVALID_PURCHASE');
  const offer=(await offers(db,actor.id,grants,now)).find(v=>v.id===b.offerId);if(!offer)fail('OFFER_UNAVAILABLE',409);
- const scope=grants.find(g=>g.role==='BUYER'&&(!b.siteId||g.site_id===b.siteId));if(!scope)fail('ACCESS_DENIED',403);
+ const buyers=grants.filter(g=>g.role==='BUYER'&&(!b.siteId||g.site_id===b.siteId));if(!buyers.length)fail('ACCESS_DENIED',403);if(buyers.length>1)fail('BUSINESS_SELECTION_REQUIRED',409);const scope=buyers[0];
  const serviceDate=b.serviceDate||new Date(Date.parse(now)+9*3600000+86400000).toISOString().slice(0,10);
  let quote;
  if(b.acceptedQuoteId){
@@ -155,12 +156,12 @@ async function purchases(db,env,actor,b,grants,now){
  const revision=b.expectedRevision+1,item={id:entityId,revision,status:next,createdAt:old?.created_at||now,updatedAt:now,...data,actions:purchaseActions(grants,actor.id,{org_id:scope.org_id,site_id:scope.site_id,created_by:old?.created_by||actor.id,state:next,data_json:JSON.stringify(data)})},result={item};
  const mutation=old?sql(db,`UPDATE order_operation SET revision=revision+1,state=?,data_json=?,updated_at=? WHERE kind='purchase' AND id=? AND revision=?
  AND coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'
- AND EXISTS(SELECT 1 FROM r3_membership m WHERE m.actor_id=? AND m.active=1 AND
+ AND EXISTS(SELECT 1 FROM ${workingMemberships} m WHERE m.actor_id=? AND m.active=1 AND
  ((? IN ('confirm-cash','dispatch','cancel') AND m.role='OPERATOR' AND m.org_id IN (?,?))
  OR (?='dispatch' AND m.role='SUPPLIER' AND m.org_id=?)
  OR (? IN ('receive','cancel') AND m.role='BUYER' AND m.org_id=? AND m.site_id=?)))`,next,JSON.stringify(data),now,entityId,b.expectedRevision,actor.id,actor.id,b.action,scope.org_id,data.supplierId,b.action,data.supplierId,b.action,scope.org_id,scope.site_id):sql(db,`INSERT OR IGNORE INTO order_operation(kind,id,org_id,site_id,created_by,revision,state,data_json,created_at,updated_at)
  SELECT 'purchase',?,?,?,?,1,?,?,?,? WHERE coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'
- AND EXISTS(SELECT 1 FROM r3_membership WHERE actor_id=? AND active=1 AND role='BUYER' AND org_id=? AND site_id=?)`,entityId,scope.org_id,scope.site_id,actor.id,next,JSON.stringify(data),now,now,actor.id,actor.id,scope.org_id,scope.site_id);
+ AND EXISTS(SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND active=1 AND role='BUYER' AND org_id=? AND site_id=?)`,entityId,scope.org_id,scope.site_id,actor.id,next,JSON.stringify(data),now,now,actor.id,actor.id,scope.org_id,scope.site_id);
  const notificationId=entityId+':'+revision,notification=JSON.stringify({title:'주문 상태가 변경됐어요',body:data.product,status:next,route:'purchases',entityId});
  const extras=[sql(db,`INSERT OR IGNORE INTO order_notification(id,actor_id,revision,data_json,created_at)
  SELECT ?,m.actor_id,1,?,? FROM r3_membership m WHERE m.active=1 AND
@@ -185,7 +186,7 @@ async function setting(db,actor,b,grants,kind,now){
  const mutation=sql(db,`INSERT INTO order_operation(kind,id,org_id,site_id,created_by,revision,state,data_json,created_at,updated_at)
  SELECT ?,?,?,'',?,?,'ACTIVE',?,?,? WHERE coalesce((SELECT revision FROM order_operation WHERE kind=? AND id=?),0)=?
  AND coalesce((SELECT state FROM order_account WHERE actor_id=?),'ACTIVE')='ACTIVE'
- AND EXISTS(SELECT 1 FROM r3_membership WHERE actor_id=? AND role='OPERATOR' AND org_id=? AND active=1)
+ AND EXISTS(SELECT 1 FROM ${workingMemberships} WHERE actor_id=? AND role='OPERATOR' AND org_id=? AND active=1)
  ON CONFLICT(kind,id) DO UPDATE SET revision=excluded.revision,data_json=excluded.data_json,updated_at=excluded.updated_at`,kind,entityId,scope.org_id,actor.id,revision,JSON.stringify(data),now,now,kind,entityId,b.expectedRevision,actor.id,actor.id,scope.org_id);
  return commit(db,actor.id,b,kind,entityId,mutation,result,now);
 }
@@ -217,11 +218,20 @@ export async function handleProductOperations({request,env,actor,path='/',clock=
   if(path==='/features'&&!b){const flag=await sql(db,'SELECT enabled FROM r3_menu_publication ORDER BY revision DESC LIMIT 1').first();return json({orderMenu:flag?.enabled===1});}
   const state=await sql(db,'SELECT state FROM order_account WHERE actor_id=?',actor.id).first();
   if(state?.state==='WITHDRAWN'&&path!=='/account')fail('ACCOUNT_WITHDRAWN',403);
+  if(path==='/account-context'){
+   if(!b)return json(await readAccountContext(db,actor.id));
+   return json(await switchAccountContext(db,actor,b,now,{sql,replay,commit,fail}));
+  }
   if(path==='/account')return json(await account(db,actor,b,now));
   if(path==='/notifications')return json(await notifications(db,actor,b,now));
   if(path==='/notification-preferences')return json(await notificationPreferences({db,actor,body:b,now},{sql,replay,commit,fail}));
   if(path.startsWith('/drafts/'))return json(await draft(db,actor,path.slice(8),b,now));
   const grants=await readRoleScope(db,actor.id);if(!grants.length&&!path.startsWith('/policies/'))fail('NO_BUSINESS_MEMBERSHIP',403);
+  if(b){
+   const revision=await workingRevision(db,actor.id,request);
+   // Isolate a retry key from operations issued in an earlier organization.
+   if(revision)b.requestKey=await hash([revision,b.requestKey]);
+  }
   const experience=await productExperience({db,env,actor,path,b,grants,now},{sql,rows,hash,fail,id,text,integer,project,visible,getOperation,replay,commit});
   if(experience!==undefined)return json(experience);
   if(path==='/purchase-quote'&&b)return json((await purchaseQuote(db,env,actor,b,grants,now)).result);

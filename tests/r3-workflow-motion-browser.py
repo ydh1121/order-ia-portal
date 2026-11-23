@@ -23,6 +23,7 @@ WORKFLOWS = ('business', 'receipt-operator', 'receipt-supplier', 'billing', 'sig
 
 def step(name):
     REPORT['lastStep'] = name
+    print(f"{REPORT['case']}: {name}", flush=True)
 
 
 def save_failure(page, name, error):

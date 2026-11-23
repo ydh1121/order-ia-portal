@@ -186,6 +186,32 @@ def check_guest_cards(page, screens):
     return receipts
 
 
+def check_login_recovery(page, screens):
+    frame = screens.screen("login", "limited")
+    sheet = frame.locator(".product-auth-sheet")
+    frame_click(page, sheet.locator("[data-action=reset-password]"))
+    expect(sheet.get_by_role("group", name="복구 방법")).to_be_visible()
+    submit = sheet.locator("[data-action=send-reset]")
+    methods = {
+        "send-login-code": "로그인 코드 받기",
+        "send-temporary-password": "임시 비밀번호 받기",
+        "send-reset": "재설정 안내 받기",
+    }
+    # Exercise the original physical pointer path and keyboard form. An empty
+    # address stops in the shared contact editor, before DNS or mail services.
+    for value, caption in methods.items():
+        radio = sheet.locator(f'input[value="{value}"]')
+        frame_click(page, radio)
+        expect(radio).to_be_checked()
+        expect(submit).to_have_text(caption)
+    frame_click(page, submit)
+    expect(sheet.locator("[name=email]")).to_have_attribute("aria-invalid", "true")
+    expect(sheet).to_have_attribute("data-auth-state", "request")
+    expect(sheet.locator("[value=send-reset]")).to_be_checked()
+    return {"methods": list(methods), "emptyAddressRejected": True,
+            "providerDeliveryVerified": False}
+
+
 def check_auth_motion(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("onboarding", "guest-2")
@@ -285,6 +311,7 @@ def check_auth_motion(page, origin, width):
 
     guest_cards = check_guest_cards(page, screens)
     email_message = check_email_message(page, screens)
+    recovery = check_login_recovery(page, screens)
 
     frame = screens.screen("otp", "error")
     otp = frame.locator(".otp-wrap")
@@ -306,6 +333,7 @@ def check_auth_motion(page, origin, width):
                 "headerNodeSurvived": True, "pagination": "click 2→3, physical drag 3→1",
                 "rubberBandUp30": resistance, "peekAndDragClose": True,
                 "guestCardsStationary": guest_cards, "emailValidationMessage": email_message,
+                "loginRecovery": recovery,
                 "otpHeightBeforeAndAfter": [before, otp.bounding_box()["height"]]}
     frame = screens.screen("signup", "empty")
     meter = frame.locator(".password-meter")

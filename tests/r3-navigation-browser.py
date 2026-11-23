@@ -323,7 +323,12 @@ def check(page, origin, width):
     skeleton = library.locator("details").filter(has_text="목록 뼈대·데이터 표시")
     frame_click(page, skeleton.locator("summary"))
     frame_click(page, skeleton.locator('[data-mf-go="passes"][data-mf-state="loading"]'))
-    expect(page.frame_locator("#frame").locator(".r3-geometry-skeleton i").first).to_be_visible()
+    frame = page.frame_locator("#frame")
+    expect(frame.locator(".r3-geometry-skeleton i").first).to_be_visible()
+    assert inspect_fixture(frame)['pending'] == 1
+    release(frame)
+    expect(frame.locator('[data-pass-data-state="ready"]')).to_be_visible()
+    expect(frame.locator('.r3-geometry-skeleton')).to_have_count(0)
 
     page.clock.set_fixed_time("2026-12-15T05:00:00Z")
     frame = screen("drawer", "closed")

@@ -643,12 +643,12 @@ def main():
         expect(detail.locator('.research-notification-body')).to_have_text(message['body'])
         expect(detail.locator('time')).to_have_attribute('title', re.compile(r'^발송 '))
         expect(detail).not_to_have_attribute('aria-busy', 'true')
-        readback = frame.locator('#order-single').evaluate('''async id => {
-            const response=await ORDER_RESEARCH_APP.adapter.request('/notifications');
-            const item=response.items.find(value=>value.id===id);
-            return {id:item.id,readAt:item.readAt,createdAt:item.createdAt};
+        readback = frame.locator('#order-single').evaluate('''async (root, id) => {
+            const response=await root.ownerDocument.defaultView.ORDER_RESEARCH_APP.adapter.request('/notifications');
+            return response.items.find(item=>item.id===id) || null;
         }''', notification_id)
-        assert readback['readAt'] and readback['createdAt'] == message['createdAt']
+        assert readback and readback['id'] == notification_id, notification_id
+        assert readback['readAt'] and readback['createdAt'] == message['createdAt'], readback
         page.screenshot(path=str(OUT / 'notification-detail-1440.png'), full_page=True)
         frame_click(page, full.locator('[data-action="research-notification-back"]'))
         expect(full.locator('[data-notification-detail]')).to_have_count(0)

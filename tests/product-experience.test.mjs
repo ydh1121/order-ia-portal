@@ -170,3 +170,47 @@ test('a business verification request is bound to the requesting buyer and case 
   const w=await workspace(t);await w.business('verify-case','another-buyer');let calls=0;
   const result=await w.direct('lab-buyer','/business-verifications',verification(w),{NTS_SERVICE_KEY:'test-only-key',NTS_FETCH:async()=>{calls++;return ntsResponse();}});assert.ok([403,404].includes(result.status),JSON.stringify(result));assert.equal(calls,0);
 });
+
+test('account switch persists, scopes reads and writes, and refuses revoked access and stale tabs', async t => {
+  const w=await workspace(t), user='lab-buyer';
+  await w.db.prepare("INSERT INTO r3_membership VALUES(?,'BUYER','second-store','second-site',1)").bind(user).run();
+  const grants=async()=>(await w.db.prepare('SELECT * FROM r3_membership WHERE actor_id=? ORDER BY org_id,site_id').bind(user).all()).results;
+  const before=await grants(), first={orgId:'lab-store',siteId:'lab-site'}, second={orgId:'second-store',siteId:'second-site'};
+  await w.insert('purchase','first-order',first.orgId,first.siteId,{quantity:10,supplierId:'seller'},'AWAITING_CASH',user);
+  await w.insert('purchase','second-order',second.orgId,second.siteId,{quantity:12,supplierId:'seller'},'AWAITING_CASH',user);
+  const get=path=>w.product('buyer',path);
+  const update=async(path,command,revision)=>{
+    const request=new Request('https://product.test/api/ia/product'+path,{method:'POST',
+      headers:{'Content-Type':'application/json','X-Order-Context-Revision':String(revision)},body:JSON.stringify(command)});
+    const result=await handleProductOperations({request,env:{ORDER_PRODUCT_DB:w.db},actor:{id:user},path,clock:()=>w.now});
+    return {status:result.status,body:await result.json()};
+  };
+  const account=(await get('/account')).body;
+  assert.equal(account.capabilities.accountSwitch,true);
+  assert.deepEqual(account.context,{options:[first,second],selected:null,revision:0});
+  const select=w.command('switch',second);
+  assert.equal((await update('/account-context',{...select,siteId:'unknown'},0)).status,403);
+  const change=await update('/account-context',select,0);
+  assert.equal(change.status,200);assert.deepEqual(change.body.selected,second);
+  assert.deepEqual((await update('/account-context',select,0)).body,change.body);
+  assert.deepEqual((await get('/account-context')).body,change.body);
+  assert.deepEqual((await get('/purchases')).body.items.map(r=>r.id),['second-order']);
+  assert.equal((await get('/documents/first-order')).status,404);
+  const sites=await w.api('/runs/'+w.run+'/as/buyer/price/sites');
+  assert.deepEqual(sites.body.sites.map(r=>[r.org_id,r.site_id]),[[second.orgId,second.siteId]]);
+  const role=await w.api('/runs/'+w.run+'/as/buyer/role/workspace');
+  assert.deepEqual(role.body.businesses.map(r=>[r.org_id,r.site_id]),[[second.orgId,second.siteId]]);
+  const cancel=w.command('cancel',{expectedRevision:1,id:'second-order'});
+  assert.equal((await update('/purchases',cancel,0)).body.error,'ACCOUNT_CONTEXT_CHANGED');
+  assert.equal((await update('/purchases',{...cancel,id:'first-order'},1)).status,404);
+  const cancelled=await update('/purchases',cancel,1);assert.equal(cancelled.status,200,JSON.stringify(cancelled.body));assert.equal(cancelled.body.item.status,'CANCELLED');
+  assert.equal((await update('/account-context',w.command('switch',first),0)).status,409);
+  assert.deepEqual(before,await grants());
+  assert.equal((await w.db.prepare("SELECT count(*) n FROM r3_member_request").first()).n,0);
+  await w.db.prepare('UPDATE r3_membership SET active=0 WHERE actor_id=? AND org_id=?').bind(user,second.orgId).run();
+  assert.equal((await get('/purchases')).status,403);
+  assert.equal((await get('/account-context')).body.selected,null);
+  assert.equal((await get('/account')).body.capabilities.accountSwitch,true);
+  assert.deepEqual((await update('/account-context',w.command('switch',{...first,expectedRevision:1}),1)).body.selected,first);
+  assert.deepEqual((await get('/purchases')).body.items.map(r=>r.id),['first-order']);
+});

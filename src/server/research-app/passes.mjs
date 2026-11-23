@@ -55,7 +55,7 @@ export function installResearchPasses(win=window){
       pending.delete(key);return item;
     }
     async function load(){
-      const own=++generation;
+      const own=++generation;root.dataset.passDataState='loading';
       const placeholders=Array.from({length:3},(_,i)=>({id:'loading-'+i,date:'0000.00.00',site:'사업장 견적',status:'불러오는 중',tone:'review',lines:[['주문 품목','000판','납품일']]}));
       paint(renderer.screen==='passes'?'loading':'empty',placeholders);
       const stage=root.querySelector('.pass-stage,.pass-search');stage?.setAttribute('aria-busy','true');

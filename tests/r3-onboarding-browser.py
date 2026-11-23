@@ -749,6 +749,38 @@ def check(page, origin, width):
                       "panelPins":"auth email + real notification open control; restore without reading or comment save","reviewWrites":0}))
 
 
+def capture_member_artboards(page, origin):
+    """Capture the same 375 × 828 CSS viewport as the three preserved Figma artboards."""
+    output = ROOT / 'artifacts' / 'qa-mvp'
+    output.mkdir(parents=True, exist_ok=True)
+    artboard = page.context.new_page()
+    try:
+        artboard.set_viewport_size({'width': 375, 'height': 828})
+        for step in (2, 3, 4):
+            state = f'member-{step}'
+            query = urlencode({'id': f'onboarding/{state}/email', 'width': 375, 'version': 'current'})
+            response = page.context.request.get(f'{origin}/api/ia/r3-qa/artifact?{query}')
+            assert response.ok, (state, response.status)
+            artifact = response.json()
+            assert artifact['source']['kind'] == 'research-application'
+            application = artifact['application']
+            artboard.goto(origin + application['url'])
+            expect(artboard.locator('html')).to_have_attribute('data-product-build', application['build'])
+            scene = artboard.locator('.ob.member')
+            expect(scene).to_have_attribute('data-intro-step', str(step))
+            if step == 2:
+                expect(scene.locator('.ob-art')).to_have_js_property('naturalWidth', 287)
+            if step < 4:
+                expect(scene.locator('.ob-pages [aria-current]')).to_have_attribute('data-mf-intro', str(step))
+            else:
+                expect(scene.locator('.ob-pages')).to_have_count(0)
+                expect(scene.locator('.ob-mode-grid button')).to_have_count(2)
+            artboard.evaluate('document.fonts.ready')
+            artboard.screenshot(path=str(output / f'reference-{state}-375x828.png'))
+    finally:
+        artboard.close()
+
+
 def main():
     host=subprocess.Popen(["node","tests/r3-browser-host.mjs"],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:
@@ -775,6 +807,7 @@ def main():
                     check_archived_entry(page,fixture["url"])
                 check(page,fixture["url"],width)
                 if width == 375:
+                    capture_member_artboards(page, fixture["url"])
                     page.emulate_media(reduced_motion="no-preference")
                     check_auth_overlay_motion(page,fixture["url"],width)
                     check_auth_motion(page,fixture["url"],width)
