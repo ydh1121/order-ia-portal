@@ -1,5 +1,14 @@
 # ORDER 작업 재개 및 사용자 지시 검증
 
+## 로그인 입력란·Order 메뉴 한정 정정 — 2026-11-23
+
+- 최신 사용자 원문: https://drive.google.com/file/d/1978c6w06Hm3IXcdDOvxQOq13szCXw5rU/view . UTF-8 1,105바이트 / 3줄 / 끝 개행 없음 / SHA256 `dcbda9b5ac4ca95c85fe0feae672e67d49b07a18b8c95be5cff55a7fc56d64bb`. 업로드 전문 재조회 일치 확인.
+- 이번 작업은 로그인 입력란 레이아웃 복구와 Order 드롭다운 정정 두 가지에 한정한다. 다른 QA 미해결 사항은 진행하지 않는다. 아래의 이전 광범위 미해결 처리 지시는 이번 범위를 확대하는 근거로 사용하지 않는다.
+- 비회원에게 Order 드롭다운 화살표·열기 동작을 제공하지 않는다. 회원은 기존 아이콘 등장 애니메이션과 함께 화살표가 나타나며, Order 텍스트와 화살표를 하나의 버튼으로 동작시킨다. 기존 텍스트 위치·크기는 유지한다.
+- 패널은 앞쪽 아이콘이 있는 `간편 견적`, `상세 견적` 두 버튼만 둔다. 제목·계란 상위 메뉴·뒤로 이동·선택 체크표시는 제거하고 내용에 맞게 폭을 줄인다.
+- 기존 인증 검증·입력 모션·견적 변경 확인·계정 편집 보호·원댓글·위치 핀·사용자 처리 상태는 보존한다. 소스·자동검사·실화면·IA main 배포·사용자 판정은 구분한다.
+- 같은 `WO-ORDER-20261101-ASTRA-ENGINE-001` / `MSG0585`의 후속 수정이다. PR25 main `e4dc4ec9d2df747268b671968915ae96dd31309b`에서 이어가며 필수 CI 7개가 통과한 후속 PR로 IA main에 반영한다.
+
 ## PR23 재개 원문 — 2026-11-23
 
 - 실행방 수신 원문은 3,473바이트, 45줄이며 SHA256은 `b8321b909c41b7d6ca70fb0b8db8f458b95e50eb5aadb0dd7170304e1538dfec`이다. [원문](https://drive.google.com/file/d/1J5ypRvwpD96Nri8ic-ocK8jTTa1NS0vj/view) · [실행 지시](https://drive.google.com/file/d/1Of3-vHQhedc6rMk88Sk0XUh7xIPwjkx4/view)

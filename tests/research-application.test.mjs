@@ -203,11 +203,11 @@ test('member account has one opener and notification preview opens a full reader
 });
 
 test('global Order menu preserves the actual quote mode confirmation and quote draft on cancellation',async()=>{
- const f=await setup();try{
+ const f=await setup({screen:'onboarding',state:'member-1'});try{
   await f.app.navigate({screen:'q1',mode:'simple'});await settle();const quote=f.doc.querySelector('[data-research-quote]'),before=f.app.snapshot().quote;
   assert.equal(f.doc.querySelector('[data-app-back]').hidden,true);
   const trigger=f.doc.querySelector('.research-order-trigger');assert.equal(trigger.closest('.research-order-menu').hidden,false);trigger.click();await settle();
-  f.doc.querySelector('.research-order-row').click();f.doc.querySelector('[data-order-mode=detailed]').click();await settle();
+  f.doc.querySelector('[data-order-mode=detailed]').click();await settle();
   const dialog=quote.querySelector('#quote-mode-dialog');assert.equal(dialog.open,true);assert.equal(dialog.querySelector('[data-mode-option]').checked,false);
   dialog.querySelector('[data-mode-cancel]').click();await settle();assert.equal(f.app.snapshot().route.mode,'simple');assert.equal(f.doc.querySelector('[data-research-quote]'),quote);assert.deepEqual(f.app.snapshot().quote,before);assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
@@ -275,7 +275,7 @@ test('auth sheets reuse the regular email parser and shared transient error with
    assert.equal(f.doc.activeElement,input);assert.equal(input.getAttribute('aria-invalid'),'true');
    assert.deepEqual({value:input.value,placeholder:input.placeholder,type:input.type,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection},before);
    for(const password of f.doc.querySelectorAll('input[name*=password]'))assert.equal(password.value,'NativeOnly!2026');
-   assert.equal(field.querySelector('.research-field-error').textContent,'');assert.equal(providerCalls,0);
+   assert.equal(field.querySelector('.research-field-error'),null,'auth email errors use the existing field message, never a second message inside the editor');assert.equal(providerCalls,0);
    assert.equal(JSON.stringify(fixture.inspect().data),beforeData);assert.equal(mutations(),beforeMutations);assert.deepEqual(f.failures,[]);
   }finally{await f.close();}
  }
@@ -761,15 +761,15 @@ test('a closed Order menu preserves a live email pin across blur, outside pointe
   input.focus();review=await attachTestReview(f);
   const veil=f.doc.getElementById('r3-veil'),paint=()=>new Promise(resolve=>f.win.requestAnimationFrame(()=>f.win.requestAnimationFrame(resolve)));
   const capture=()=>{review.send('mode',true);veil.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));const point=review.messages.filter(x=>x.message.type==='point').at(-1)?.message.payload;assert.ok(point);review.send('mode',false);return point;};
-  const anchor=capture(),original=JSON.stringify(anchor),text=menu.querySelector('h2').firstChild;
+  const anchor=capture(),original=JSON.stringify(anchor),word=f.doc.querySelector('#order-app-header .brand-word'),text=word.firstChild;
   assert.notEqual(anchor.id,'screen');assert.equal(input.closest('.field').classList.contains('is-focused'),false);
   review.send('pins',[{id:'current-email',anchor,ordinal:1}]);await paint();
   assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1);
-  // The native Chrome receipt showed this outside pointerdown unnecessarily
-  // rewriting the hidden menu's h2, reindexing the blurred email's ancestors.
+  // Closing the hidden selector must leave the retained label untouched,
+  // so an unrelated pointer cannot reindex the blurred email's ancestors.
   f.doc.body.dispatchEvent(new f.win.MouseEvent('pointerdown',{bubbles:true,button:0}));await paint();
   assert.equal(f.doc.querySelectorAll('#r3-pins .r3-pin').length,1,'an outside pointer must retain the current email marker');
-  assert.equal(menu.querySelector('h2').firstChild,text,'closing an already closed selector preserves its title node');
+  assert.equal(word.firstChild,text,'closing an already closed selector preserves its original wordmark node');
   assert.equal(menu.hidden,true);assert.equal(f.doc.querySelector('#order-single input[name=email]'),input);
   assert.equal(capture().id,anchor.id,'the same element keeps its captured identity after an unrelated pointerdown');await paint();
   review.send('restore',anchor);await waitFor(()=>f.doc.activeElement===input);await paint();

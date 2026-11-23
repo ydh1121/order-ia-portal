@@ -4,6 +4,16 @@ import {researchAuthMotionCss} from './auth-motion.mjs';
  * renderer. No fixture value is an authentication result or a sent email. */
 export const researchAuthPolishCss=researchAuthMotionCss+String.raw`
 .ds .product-auth-sheet .auth-sheet .float-hint,.ds .product-auth-sheet .auth-sheet input::placeholder{font-size:16px;line-height:1.5}
+/* The regular email editor retains the input inside its own suggestion owner.
+   Keep the auth field's existing value/label geometry after that late mount. */
+.ds .product-auth-sheet .auth-sheet .field.is-floating .input-shell:has(>.ui-email-field){overflow:visible}
+.ds .product-auth-sheet .auth-sheet .field.is-floating .input-shell>.ui-email-field{position:relative;flex:1 1 0%;width:100%;min-width:0;height:100%;border-radius:inherit}
+.ds .product-auth-sheet .auth-sheet .field.is-floating .input-shell>.ui-email-field>input{display:block;box-sizing:border-box;width:100%;min-width:0;min-height:0;height:100%;padding:25px 38px 8px 14px;border:0;border-radius:inherit;outline:0;background:transparent;font-size:14px;font-weight:500;line-height:24px;color:var(--ink);box-shadow:none}
+.ds .product-auth-sheet .auth-sheet .ui-feedback-sr:not([hidden]){position:absolute!important;width:1px!important;height:1px!important;min-height:0!important;margin:-1px!important;padding:0!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important;pointer-events:none!important}
+.ds .product-auth-sheet .auth-sheet .ui-email-suggestions{position:absolute;z-index:20;inset-inline:0;top:calc(100% + 4px);max-height:192px;overflow-y:auto;overscroll-behavior:contain;padding:4px;border:1px solid #d1d6db;border-radius:10px;background:#fff;box-shadow:0 8px 20px #152b4620}
+.ds .product-auth-sheet .auth-sheet .ui-email-suggestions[hidden]{display:none!important}
+.ds .product-auth-sheet .auth-sheet .ui-email-suggestions>button{display:block;width:100%;min-height:40px;padding:10px 8px;text-align:left;border:0;border-radius:6px;background:#fff;color:var(--ink);font:inherit;font-size:14px;font-weight:400;overflow-wrap:anywhere}
+.ds .product-auth-sheet .auth-sheet .ui-email-suggestions>button:is(:hover,[aria-selected=true]){background:#e7efff;color:var(--blue)}
 .ds .product-auth-sheet .auth-sheet .consent-block .check-row{display:flex;align-items:center;gap:8px;line-height:1.5}
 .ds .product-auth-sheet .auth-sheet .consent-block .check-row input{flex:0 0 auto;accent-color:var(--blue)}
 .ds .product-auth-sheet .auth-sheet .consent-error .check-row:first-child{outline:none;border:0;box-shadow:none;padding-right:0;color:var(--danger,#d33443)}

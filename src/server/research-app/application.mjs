@@ -73,6 +73,7 @@ export async function mountResearchApplication(config, environment) {
     return ({'profile.personal':{screen:'profile',state:'default'},'profile.account':{screen:'account-settings',state:'normal'},'profile.connections':{screen:'profile',state:'menu'},notifications:{screen:'profile',state:'notification'},'manage.business':{screen:'store-settings',state:'list'},'manage.quotes':{screen:'saved-quote',state:'list'},'manage.delivery':{screen:'delivery-schedule',state:'calendar'}})[id]||null;
   }
   function accountState(state){
+    orderMenu?.update(state);
     for(const listener of brandListeners)listener(state);
     if(state.phase==='open')orderMenu?.close();
     if(navigating||reviewSelecting||disposed||!pageRoute)return;
@@ -98,7 +99,6 @@ export async function mountResearchApplication(config, environment) {
   const brand=createOrderBrand(doc);header.querySelector('[data-app-brand]').append(brand);
   let orderMenu=null;
   function refreshBrand(){brandContext.authenticated=authenticated();brandContext.unread=originalBrandContext.unread||0;brandMenu=mountOrderBrandElement(brand,{...brandContext,authenticated:authenticated()});const action=header.querySelector('[data-app-auth]');action.hidden=authenticated();action.textContent='회원가입';action.onclick=()=>navigate({screen:'signup',state:'empty'});}
-  refreshBrand();await adapter.ready;refreshBrand();
   async function closeAccountForOrder(){
     if(!brandMenu||brandMenu.inspect().phase==='closed')return true;
     let finish;
@@ -111,10 +111,13 @@ export async function mountResearchApplication(config, environment) {
     else if(brandMenu.inspect().phase==='closed')finish(true);
     return completed;
   }
-  orderMenu=mountResearchOrderMenu({brand,adapter,signal,getRoute:()=>route,beforeOpen:closeAccountForOrder,onChoose:mode=>{
+  orderMenu=mountResearchOrderMenu({brand,adapter,signal,getAuthenticated:authenticated,getRoute:()=>route,beforeOpen:closeAccountForOrder,onChoose:mode=>{
     if(route.kind==='quote'&&workspace){quote.querySelector('#quote-mode-switch')?.click();return;}
     return navigate({screen:'q1',mode});
   }});
+  // Start the selector's publication read before authentication arrival, but
+  // never make a pending feature read block the application or QA loading state.
+  refreshBrand();await adapter.ready;refreshBrand();
   const headerStyle=doc.createElement('style');headerStyle.dataset.researchBrandCss='';
   headerStyle.textContent=doc.querySelector('[data-order-brand-header-css]').textContent.replaceAll('.order-product-brand','#order-app-header .order-product-brand');doc.head.append(headerStyle);
   const back=header.querySelector('[data-app-back]');back.onclick=()=>{if(workspace&&route.kind==='quote'&&workspace.back())return;return route.kind==='quote'&&/^q[2-4]$/.test(route.screen)?navigate({screen:'q'+(Number(route.screen.slice(1))-1),mode:route.mode}):navigate(route.parent||{screen:'onboarding',state:authenticated()?'member-4':'guest-4'});};
@@ -284,7 +287,11 @@ export async function mountResearchApplication(config, environment) {
   }
   function mountFields(){
     for(const [input,field]of fields)if(!input.isConnected){field.dispose();fields.delete(input);}
-    for(const input of root.querySelectorAll('input[type=email]'))if(!fields.has(input)&&!input.closest('[data-research-quote]'))fields.set(input,services.mountEmail(input));
+    for(const input of root.querySelectorAll('input[type=email]'))if(!fields.has(input)&&!input.closest('[data-research-quote]')){
+      const errorElement=input.closest('.product-auth-sheet .field')?.querySelector('[data-field-message]');
+      const options=errorElement?{errorElement,onError:message=>win.QAUI?.setFieldError(input,message)}:undefined;
+      fields.set(input,services.mountEmail(input,options));
+    }
     // Account/business panels explicitly read phone controllers. Generic
     // legacy handlers still reading input.value must not receive a split DOM.
     if(started&&!navigating&&!disposed&&route.kind==='auth'){
