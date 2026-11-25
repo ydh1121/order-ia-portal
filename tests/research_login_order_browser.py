@@ -180,7 +180,7 @@ def check_login_input_layout(page, frame):
     frame_click(page, sheet.locator('[data-action=submit-login]'))
     message = email.locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," field ")]').locator('.inline-field-state')
     expect(message).to_be_visible()
-    expect(message).to_have_text('이메일 양식을 확인해 주세요.')
+    expect(message).to_have_text('이메일 양식을 확인해 주세요')
     expect(email).to_have_attribute('aria-invalid', 'true')
     expect(message).to_be_hidden(timeout=3500)
     expect(email).to_have_value('invalid-layout-address')
