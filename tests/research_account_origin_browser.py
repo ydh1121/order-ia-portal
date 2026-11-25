@@ -11,11 +11,15 @@ def motion(page, trigger, opening, reduced):
     trigger.evaluate("""t=>{
       const p=document.querySelector('.obm-panel'),s=p.querySelector('.obm-surface'),m=p.querySelector('.obm-menu');
       const compact=n=>{const r=n.getBoundingClientRect();return {right:r.right,y:r.y,w:r.width,h:r.height};};
+      const ink=()=>{const paths=[...t.querySelectorAll('svg g > path')].map(n=>n.getBoundingClientRect());
+        const left=Math.min(...paths.map(r=>r.left)),right=Math.max(...paths.map(r=>r.right));
+        const y=Math.min(...paths.map(r=>r.top)),bottom=Math.max(...paths.map(r=>r.bottom));
+        return {count:paths.length,right,y,w:right-left,h:bottom-y};};
       const samples=[];
       const snapshot=phase=>{
         const css=getComputedStyle(t),ss=getComputedStyle(s),ms=getComputedStyle(m);
         samples.push({phase,now:performance.now(),hidden:p.hidden,travel:!!p.querySelector('[data-points-moving=true]'),
-          tr:compact(t),surf:compact(s),triggerBackground:css.backgroundColor,triggerShadow:css.boxShadow,
+          tr:compact(t),ink:ink(),surf:compact(s),triggerBackground:css.backgroundColor,triggerShadow:css.boxShadow,
           surfaceBackground:ss.backgroundColor,surfaceShadow:ss.boxShadow,menuShadow:ms.boxShadow,menuOpacity:+ms.opacity,
           logoOpacity:+getComputedStyle(t.querySelector('svg')).opacity,flights:p.querySelectorAll('.obm-flight').length,
           staticPoints:[...p.querySelectorAll('[data-obm-point] .obm-point')].filter(n=>getComputedStyle(n).visibility!=='hidden').length});
@@ -47,8 +51,11 @@ def motion(page, trigger, opening, reduced):
                f['surfaceBackground']=='rgba(0, 0, 0, 0)' and f['surfaceShadow']=='none' and
                f['menuShadow']=='none' and f['logoOpacity']==0 for f in moving)
     edge_samples = ([f for f in samples if not f['hidden'] and f['travel']] if opening else moving)
-    edge = min(edge_samples, key=lambda f:abs(f['surf']['w']-f['tr']['w']))
-    assert max(abs(edge['surf'][k]-edge['tr'][k]) for k in ['right','y','w','h']) < 2, (opening,edge)
+    # The user specified the three-circle ink as the origin. Its 44px-high
+    # accessible hit area stays transparent and is not the morphing surface.
+    assert all(f['ink']['count'] == 3 and 0 < f['ink']['h'] <= f['tr']['h'] for f in edge_samples)
+    edge = min(edge_samples, key=lambda f:abs(f['surf']['w']-f['ink']['w']))
+    assert max(abs(edge['surf'][k]-edge['ink'][k]) for k in ['right','y','w','h']) < 2, (opening,edge)
     assert any(f['surf']['w'] > edge['surf']['w']+20 for f in moving)
     if opening:
         assert edge['menuOpacity'] < .1 and actual[-1]['surfaceShadow']!='none'

@@ -126,15 +126,22 @@ def check_retired_result_archives(page, origin, width):
     try:
         for state in ('new-only-detail', 'no-current'):
             target = 'quote-result/' + state + '/email'
-            current = page.request.get(origin + '/api/ia/r3-qa/artifact?' + urlencode(
-                {'id': target, 'width': width, 'version': 'current'}))
-            assert current.status == 404, (state, current.status)
+            # Use the real signed-in document's same-origin session and
+            # browser request context, exactly as the review shell does.
+            current_path = '/api/ia/r3-qa/artifact?' + urlencode(
+                {'id': target, 'width': width, 'version': 'current'})
+            current_status = page.evaluate("async path => (await fetch(path, {credentials:'same-origin'})).status", current_path)
+            assert current_status == 404, (state, current_status)
             identity = ['order-research-application/v1', build, target, width]
             digest = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
-            response = page.request.get(origin + '/api/ia/r3-qa/artifact?' + urlencode(
-                {'id': target, 'width': width, 'version': 'recorded', 'artifactHash': digest}))
-            assert response.ok, (state, response.status)
-            artifact = response.json()
+            recorded_path = '/api/ia/r3-qa/artifact?' + urlencode(
+                {'id': target, 'width': width, 'version': 'recorded', 'artifactHash': digest})
+            response = page.evaluate("""async path => {
+                const response=await fetch(path, {credentials:'same-origin'});
+                return {status:response.status,ok:response.ok,artifact:response.ok?await response.json():null};
+            }""", recorded_path)
+            assert response['ok'], (state, response['status'])
+            artifact = response['artifact']
             assert artifact['hash'] == digest and artifact['version'] == 'recorded'
             assert artifact['source']['build'] == build and artifact['source']['archived'] is True
             archived.goto(origin + artifact['application']['url'])
