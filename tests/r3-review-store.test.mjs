@@ -136,7 +136,9 @@ test('replies attach to an existing comment at the same target and retain indepe
   assert.equal((await send(closed)).status,200);
   const afterDelete=await send({...reply,id:'late',idempotencyKey:'reply-after-delete'});
   assert.equal(afterDelete.status,409);assert.equal((await afterDelete.json()).error,'REPLY_PARENT_UNAVAILABLE');
-  const stillHere=await (await read('/records?release=MSG0585-R3&kind=reply&id=thread-reply')).json();
+  const active=await (await read('/records?release=MSG0585-R3&kind=reply&id=thread-reply')).json();
+  assert.equal(active.items.length,0,'a deleted parent removes its thread from the default active response');
+  const stillHere=await (await read('/records?release=MSG0585-R3&scope=all&kind=reply&id=thread-reply')).json();
   assert.equal(stillHere.items[0].data.body,'답글 정정');
 });
 test('historical replies match the imported comment ID, screen and viewport',async()=>{

@@ -17,7 +17,7 @@ import * as supplementalHistory from './r3-ui/supplemental-history.gen.mjs';
 import {isProductLiveTarget} from './product-lab-page.mjs';
 import {qaReviewHash,qaReviewHashes,withQaReviewRuntime} from './r3-qa-review-runtime.mjs';
 import {isReviewedEpochTarget,readReviewedEpochArtifact,readReviewedEpochBody} from './r3-qa-epoch-history.mjs';
-import {isResearchRow,researchNativeRows,researchArtifactHash,researchArtifact,archivedResearchTarget,archivedResearchArtifact} from './research-app/page.mjs';
+import {isResearchRow,isRetiredResearchRow,researchNativeRows,researchArtifactHash,researchArtifact,archivedResearchTarget,archivedResearchArtifact} from './research-app/page.mjs';
 
 const utf8=new TextEncoder();
 const js=v=>JSON.stringify(v).replaceAll('<','\\u003c');
@@ -78,7 +78,8 @@ export async function serveR3Artifact(request,env){
       if(row.screen==='admin-analytics'&&!salesInserted){salesInserted=true;return [...sales,selected];}
       return [selected];
     }),...supplemental.filter(row=>row.screen!=='admin-analytics'),...researchNativeRows];
-    const items=await Promise.all((mode==='detailed'?inventory.filter(isResearchRow):inventory).map(async row=>{
+    const currentInventory=inventory.filter(row=>!isRetiredResearchRow(row));
+    const items=await Promise.all((mode==='detailed'?currentInventory.filter(isResearchRow):currentInventory).map(async row=>{
       const {id,screen,state,variant,group,label,stateLabel,defaultWidth,phase,role,authoredChange,supplemental}=row;
       const reference=approvedRegistry[screen];
       let contentHashes=row.hashes?await reviewHashes(row):null;
@@ -88,7 +89,7 @@ export async function serveR3Artifact(request,env){
       contentHashes??=hashes;
       return {hashes,contentHashes,application,id,screen,state,variant,group,label:screen==='admin-analytics'?'매출 현황':screen==='q2'?'Q2 구매량·현재 가격':label,stateLabel,defaultWidth,phase,role,
         description:row.description||reference?.description||'',routeIds:reference?.routeIds||[],variantLabel:reference?.variants?.[variant]||variant,
-        authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental)};
+        authoredChange:Boolean(authoredChange),supplemental:Boolean(supplemental),...(['q1','q2'].includes(screen)?{reviewHold:'hi-fi-simple-and-detailed'}:{})};
     }));
     return json({release,items,navigationDefaults:defaultQaNavigation(items.map(row=>row.screen)),publication:await readPublication(env?.ORDER_QA_DB,new URL(request.url).hostname),...(mode==='detailed'?{mode}:{})});
   }
@@ -97,6 +98,7 @@ export async function serveR3Artifact(request,env){
   if(mode==='simple')q.delete('mode');
   if(['current','recorded'].includes(q.get('version'))&&approvedWidths.includes(Number(q.get('width')))&&[...q.keys()].every(key=>['id','width','version','artifactHash','mode'].includes(key))){
     const row=(await getQaSupplemental()).rows.find(row=>row.id===q.get('id'))||catalog.find(row=>row.id===q.get('id'))||researchNativeRows.find(row=>row.id===q.get('id'));
+    if(q.get('version')==='current'&&!q.has('artifactHash')&&isRetiredResearchRow(row))return json({error:'RETIRED_REVIEW_TARGET'},404);
     if(isResearchRow(row)){
       const hash=await researchArtifactHash(row,Number(q.get('width')),mode),pinned=q.get('artifactHash');
       if(pinned===hash||!pinned&&q.get('version')==='current')return json(await researchArtifact(row,Number(q.get('width')),env,new URL(request.url).origin,mode));

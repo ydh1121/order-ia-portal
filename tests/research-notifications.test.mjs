@@ -120,6 +120,9 @@ test('full inbox filters declared message types and existing purchase events wit
   const f = fixture([notice(0, {category: 'price'}), notice(1, {route: 'purchases', status: 'DISPATCHED'}), notice(2, {route: 'purchases', status: 'PAID'}), notice(3, {title: '가격이라는 단어만 있는 소식'})], {mode: 'full'});
   try {
     await f.dispose.ready;
+    const heading=f.container.querySelector('.research-notifications-heading');
+    assert.equal(heading.querySelector('h1').textContent,'알림');assert.ok(heading.querySelector('[data-notification-filter]'));
+    assert.equal(heading.querySelector('.research-notification-filter span'),null,'the visible 종류 label is removed while the select retains its accessible name');
     assert.equal(notificationCategory({title: '배송 완료'}), 'other');
     const select = f.container.querySelector('[data-notification-filter]'); select.value = 'price'; select.dispatchEvent(new f.dom.window.Event('change', {bubbles: true}));
     assert.deepEqual([...f.container.querySelectorAll('[data-notification-id]')].map(row => row.dataset.notificationId), ['notice-0']);
@@ -129,6 +132,24 @@ test('full inbox filters declared message types and existing purchase events wit
     assert.match(f.container.textContent, /혜택 알림이 없어요/); assert.equal(f.calls.filter(call => call.body).length, 0);
     assert.deepEqual(f.unread, [4]);
   } finally {f.close();}
+});
+
+test('announcements open their board post and linked board list while ordinary messages keep their own reader and exact read acknowledgements',async()=>{
+  const items=[notice(0,{category:'delivery'}),notice(1,{category:'news',body:'게시글 원문\n다음 문단'}),notice(2,{category:'benefit'}),notice(3,{title:'안내와 소식이라는 단어만 있는 업무 메시지'})];
+  const f=fixture(items,{mode:'full'});
+  try{
+    await f.dispose.ready;f.container.querySelector('[data-notification-id="notice-1"]').click();await tick();
+    assert.equal(f.container.querySelector('h1').textContent,'안내·소식');
+    const post=f.container.querySelector('[data-notice-post="notice-1"]');assert.ok(post);assert.equal(post.querySelector('.research-notification-body').textContent,items[1].body);
+    f.container.querySelector('[data-action="research-notice-board"]').click();
+    assert.deepEqual([...f.container.querySelectorAll('[data-notice-board] [data-notice-id]')].map(item=>item.dataset.noticeId),['notice-1','notice-2']);
+    assert.deepEqual(f.calls.filter(call=>call.body).map(call=>call.body.id),['notice-1'],'visiting the board list never marks other posts read');
+    f.container.querySelector('[data-notice-id="notice-2"]').click();await tick();assert.ok(f.container.querySelector('[data-notice-post="notice-2"]'));
+    f.container.querySelector('[data-action="research-notification-back"]').click();assert.equal(f.container.querySelector('[data-notification-preferences]').hidden,false);
+    assert.equal(f.dom.window.document.activeElement.dataset.notificationId,'notice-2');
+    f.container.querySelector('[data-notification-id="notice-3"]').click();await tick();assert.equal(f.container.querySelector('[data-notice-post]'),null,'message prose never invents a bulletin destination');
+    assert.deepEqual(f.calls.filter(call=>call.body).map(call=>call.body.id),['notice-1','notice-2','notice-3']);
+  }finally{f.close();}
 });
 
 test('leaving a notification view aborts its request and ignores a later confirmation', async () => {

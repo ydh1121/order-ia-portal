@@ -1,18 +1,19 @@
 import {validNotificationPreferences} from './notification-preferences-contract.mjs';
 
-/** Optional notification consent is fetched on opening and written only in
+/** Optional notification consent is fetched with the settings and written only in
  * response to an explicit control change or retry. Browser push is separate. */
 export function mountNotificationPreferences({container, adapter, signal} = {}) {
   if (!container?.ownerDocument || typeof adapter?.request !== 'function') throw TypeError('NOTIFICATION_PREFERENCES_CONTEXT');
   const document = container.ownerDocument, window = document.defaultView, controller = new AbortController(), cleanups = [], inputs = new Map();
   let disposed = false, loaded = false, pending = false, revision = 0, confirmed = null, retry = null, retryMode = 'load';
   const node = (tag, text, className) => {const result = document.createElement(tag); if (text !== undefined) result.textContent = text; if (className) result.className = className; return result;};
-  const root = node('details', undefined, 'research-notification-preferences'); root.dataset.notificationPreferences = '';
-  root.append(node('summary', '알림 수신 설정'));
+  const root = node('section', undefined, 'research-notification-preferences'); root.dataset.notificationPreferences = '';
+  root.setAttribute('aria-label', '알림 수신 설정'); root.append(node('h2', '알림 수신 설정'));
   const fieldset = node('fieldset'), legend = node('legend', '받을 알림'); fieldset.append(legend); fieldset.hidden = true;
   for (const [key, label] of [['price', '시세 변동'], ['news', '소식'], ['benefits', '혜택']]) {
-    const row = node('label', undefined, 'research-notification-preference'), input = node('input'); input.type = 'checkbox'; input.name = key;
-    input.dataset.notificationPreference = key; inputs.set(key, input); row.append(node('span', label), input); fieldset.append(row);
+    const row = node('label', undefined, 'research-notification-preference'), input = node('input'); input.type = 'checkbox'; input.name = key; input.setAttribute('role', 'switch');
+    const control = node('span', undefined, 'research-notification-switch'), track = node('span', undefined, 'r3-switch-track'); track.setAttribute('aria-hidden', 'true'); track.append(node('span', undefined, 'r3-switch-thumb'));
+    input.dataset.notificationPreference = key; inputs.set(key, input); control.append(input, track); row.append(node('span', label), control); fieldset.append(row);
   }
   const note = node('p', '선택한 수신 동의를 저장합니다. 웹 푸시 발송은 아직 연결되지 않았어요.', 'research-notification-preferences-note');
   const status = node('p', '', 'research-notifications-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
@@ -67,7 +68,6 @@ export function mountNotificationPreferences({container, adapter, signal} = {}) 
       return false;
     } finally {if (alive()) busy(false);}
   }
-  listen(root, 'toggle', () => {if (root.open && !loaded && !pending) dispose.ready = load();});
   for (const input of inputs.values()) listen(input, 'change', () => {void persist();});
   listen(retryButton, 'click', () => {if (retryMode === 'load') dispose.ready = load(loaded); else void persist();});
   listen(reloadButton, 'click', () => {dispose.ready = load(true);});
@@ -76,5 +76,5 @@ export function mountNotificationPreferences({container, adapter, signal} = {}) 
     for (const cleanup of cleanups) cleanup(); if (root.parentNode === container) root.remove();
   }
   if (signal?.aborted) dispose(); else signal?.addEventListener('abort', dispose, {once: true});
-  dispose.ready = Promise.resolve(false); return dispose;
+  dispose.ready = disposed ? Promise.resolve(false) : load(); return dispose;
 }

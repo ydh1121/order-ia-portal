@@ -63,6 +63,20 @@ export async function handleIaRequest(request,env,dependencies={}) {
         if(request.method==='POST'){
           const {isDeliveredReviewTarget}=await import('./r3-qa-delivery.mjs');
           ctx.checkTarget=(target,revision)=>isDeliveredReviewTarget(target,revision,env,url.origin);
+        }else if(request.method==='GET'&&['/records','/legacy'].includes(ctx.path)&&(url.searchParams.get('scope')!=='all'||url.searchParams.get('unresolved')==='1')){
+          const {serveDeliveredQaArtifact}=await import('./r3-qa-delivery.mjs'),catalogs=new Map();
+          const {isRetiredResearchRow}=await import('./research-app/page.mjs');
+          ctx.includeActiveTarget=(target,revision)=>revision!=='MSG0585-R3'||!isRetiredResearchRow(target);
+          ctx.currentArtifactHash=async(target,revision)=>{
+            if(revision!=='MSG0585-R3')return null;
+            const mode=target.mode??'simple';
+            if(!catalogs.has(mode))catalogs.set(mode,(async()=>{
+              const response=await serveDeliveredQaArtifact(new Request(url.origin+'/api/ia/r3-qa/artifact?mode='+mode),env);
+              if(!response.ok)throw Error('QA_CATALOG_UNAVAILABLE');
+              const catalog=await response.json();return new Map(catalog.items.map(row=>[row.id,row.hashes]));
+            })());
+            return (await catalogs.get(mode)).get([target.screen,target.state,target.variant].join('/'))?.[target.viewport]??null;
+          };
         }
         return await handleR3Review(ctx);
       }

@@ -1,7 +1,7 @@
 import {researchBuild} from './research-app/assets.gen.mjs';
 import {qaCatalogIdentity} from './r3-qa-catalog-identity.gen.mjs';
 import {readPublicationReceipt} from './r3-qa-publication-receipt.mjs';
-import {deliveryBuild,deliveryResearchRow,deliveryResearchArtifact,deliveryArchivedResearchArtifact} from './research-release-delivery.mjs';
+import {deliveryBuild,hasDeliveryBuild,deliveryResearchRow,deliveryResearchArtifact,deliveryArchivedResearchArtifact} from './research-release-delivery.mjs';
 import {RESEARCH_RELEASE_WIDTHS,researchReviewIdentity,listResearchReleaseBuilds} from './research-app/release-store.mjs';
 
 const headers={'Cache-Control':'private, no-store, max-age=0','Vary':'Cookie, Cf-Access-Jwt-Assertion','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Content-Security-Policy':"default-src 'none';frame-ancestors 'none';sandbox",'X-Robots-Tag':'noindex'};
@@ -66,7 +66,7 @@ export async function serveDeliveredQaArtifact(request,env){
         const row=await deliveryResearchRow(id,env,url.origin);
         if(row)return json(await deliveryResearchArtifact(row,width,env,url.origin,mode));
       }else if(build){
-        const artifact=await deliveryArchivedResearchArtifact(id,width,pinned,env,url.origin,mode);
+        const artifact=await deliveryArchivedResearchArtifact(id,width,pinned,env,url.origin,mode,build);
         if(artifact)return json(artifact);
       }
       if(mode==='detailed')return json({error:'UNKNOWN_REVIEW_TARGET'},404);
@@ -89,8 +89,9 @@ export async function isDeliveredReviewTarget(target,revision,env,origin){
     const mode=target.mode??'simple';
     if((!Object.hasOwn(target,'mode')||['simple','detailed'].includes(target.mode))&&target.artifactHash){
       const id=[target.screen,target.state,target.variant].join('/');
-      if(target.artifactHash===await identityHash(deliveryBuild,id,target.viewport,mode)){
-        return Boolean(await deliveryResearchRow(id,env,origin));
+      const build=await researchBuildFor(id,target.viewport,target.artifactHash,mode);
+      if(build&&hasDeliveryBuild(build)){
+        return Boolean(await deliveryResearchRow(id,env,origin,build));
       }
     }
   }

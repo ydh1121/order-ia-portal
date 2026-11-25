@@ -13,8 +13,10 @@ export function morphIntroductionModes({shell,from,cards,signal,onFinish}) {
   const document=shell.ownerDocument, window=document.defaultView, moving=[], restores=[];
   let ended=false;
   const layer=document.createElement('div');layer.className='research-mode-transition';layer.setAttribute('aria-hidden','true');
-  Object.assign(layer.style,{position:'fixed',inset:'0',pointerEvents:'none',zIndex:'80'});shell.append(layer);
-  const timing={duration:360,easing:'cubic-bezier(0.22, 1, 0.36, 1)',fill:'both'};
+  // Coordinates come from viewport rectangles, so the overlay must not inherit
+  // a scene's transform/containment. Labels never scale with the button surface.
+  Object.assign(layer.style,{position:'fixed',inset:'0',pointerEvents:'none',zIndex:'80'});document.body.append(layer);
+  const timing={duration:380,easing:'cubic-bezier(0.22, 1, 0.36, 1)',fill:'both'};
   function finish(notify=false){
     if(ended)return;ended=true;signal?.removeEventListener('abort',cancel);
     for(const restore of restores)restore();for(const animation of moving)animation.cancel();layer.remove();
@@ -27,11 +29,11 @@ export function morphIntroductionModes({shell,from,cards,signal,onFinish}) {
     const style=window.getComputedStyle(button),visibility=button.style.visibility;
     button.style.visibility='hidden';restores.push(()=>{button.style.visibility=visibility;});
     const surface=document.createElement('div');
-    Object.assign(surface.style,{position:'absolute',boxSizing:'border-box',background:style.backgroundColor,border:style.border,overflow:'hidden'});
+    Object.assign(surface.style,{position:'absolute',left:end.x+'px',top:end.y+'px',width:end.width+'px',height:end.height+'px',boxSizing:'border-box',background:style.backgroundColor,border:style.border,overflow:'hidden',transformOrigin:'0 0',willChange:'transform'});
     layer.append(surface);
     moving.push(surface.animate([
-      {left:start.x+'px',top:start.y+'px',width:start.width+'px',height:start.height+'px',borderRadius:start.radius||'12px'},
-      {left:end.x+'px',top:end.y+'px',width:end.width+'px',height:end.height+'px',borderRadius:style.borderRadius}
+      {transform:'translate('+(start.x-end.x)+'px,'+(start.y-end.y)+'px) scale('+(start.width/end.width)+','+(start.height/end.height)+')',borderRadius:start.radius||'12px'},
+      {transform:'translate(0,0) scale(1,1)',borderRadius:style.borderRadius}
     ],timing));
     const originalLabel=[...button.querySelectorAll('span')].find(el=>el.textContent.trim()===start.label&&!el.querySelector('span,svg'));
     const target=originalLabel?.getBoundingClientRect(),label=document.createElement('span');label.textContent=start.label;
@@ -60,8 +62,11 @@ export function researchOnboardingSource(source){
   source=once(source,"'<h2>사업자 정보</h2><dl>'","'<dl>'");
   source=once(source,"    const prefix=shell.classList.contains('member')?'member':'guest';",`    const prefix=shell.classList.contains('member')?'member':'guest';
     const researchMorphModes=${browserFunction(morphIntroductionModes)};
-    let companyHeaderInert=null;
+    let companyHeaderInert=null,companyMotion=null,companyEpoch=0;
     const restoreCompanyHeader=()=>{const header=api.applicationHeader?.element;if(header&&companyHeaderInert!==null){header.inert=companyHeaderInert;companyHeaderInert=null;}};`);
+  source=once(source,"      if(prefix==='guest'&&step===4)return null;","      if(step===4)return null;");
+  source=once(source,"if(button){exiting=false;button.focus({preventScroll:true});modeMorph(button,true,()=>{});}","if(button){exiting=false;button.focus({preventScroll:true});}");
+  source=once(source,"if(!exiting){exiting=true;modeMorph(b,false,()=>{if(!ctl.signal.aborted)api.select(target,s);});}","if(!exiting){exiting=true;Promise.resolve(api.select(target,s)).then(accepted=>{if(accepted===false)exiting=false;},()=>{exiting=false;});}");
   source=section(source,'    const go=n=>{','    const brand=shell.querySelector',`    const go=n=>{
       if(exiting || n===step || n<1 || n>4)return;
       const request=++stepRequest;
@@ -105,24 +110,76 @@ export function researchOnboardingSource(source){
         }});
       }
 `);
-  source=once(source,"      shade.hidden=!open;stage.inert=open;shell.classList.toggle('footer-open',open);",`      const header=api.applicationHeader?.element;
-      if(open&&header){if(companyHeaderInert===null)companyHeaderInert=Boolean(header.inert);header.inert=true;}else restoreCompanyHeader();
-      shade.hidden=!open;stage.inert=open;shell.classList.toggle('footer-open',open);`);
+  source=section(source,'    function show(open){',"    on(shell,'click',e=>{",`    function show(open){
+      const wasHidden=shade.hidden||companyEpoch===0,version=++companyEpoch;
+      const fromOpacity=wasHidden?'0':getComputedStyle(shade).opacity;
+      const fromTransform=wasHidden?'translateY(100%)':getComputedStyle(modal).transform;
+      companyMotion?.cancel();companyMotion=null;
+      const header=api.applicationHeader?.element;
+      if(open){
+        if(header){if(companyHeaderInert===null)companyHeaderInert=Boolean(header.inert);header.inert=true;}
+        quickMenu?.close();endDrag();controller?.activate();magnetic?.reset();modeIcons?.pause();brandMenu?.pause();
+        if(wasHidden){
+          paused=stage.getAnimations?.({subtree:true}).filter(a=>a.playState==='running')||[];
+          for(const animation of paused)animation.pause();
+          for(const svg of stage.querySelectorAll('svg'))svg.pauseAnimations?.();
+        }
+        shade.hidden=false;shade.setAttribute('popover','manual');
+        if(shade.showPopover&&!shade.matches(':popover-open'))shade.showPopover();
+        stage.inert=true;shell.classList.add('footer-open');
+      }
+      shade.dataset.researchOpen=String(open);
+      shade.style.opacity=open?'1':'0';modal.style.transform=open?'none':'translateY(100%)';
+      const finish=()=>{
+        if(version!==companyEpoch||ctl.signal.aborted)return;
+        companyMotion=null;
+        if(open){controller?.reset();grip.focus({preventScroll:true});return;}
+        if(shade.hidePopover&&shade.matches(':popover-open'))shade.hidePopover();shade.hidden=true;shade.style.removeProperty('opacity');modal.style.removeProperty('transform');
+        controller?.deactivate();controller?.reset();restoreCompanyHeader();stage.inert=false;shell.classList.remove('footer-open');
+        modeIcons?.resume();brandMenu?.resume();
+        for(const animation of paused)animation.play();paused=[];
+        for(const svg of stage.querySelectorAll('svg'))svg.unpauseAnimations?.();
+        if(opener.isConnected)opener.focus({preventScroll:true});
+      };
+      if(api.reduced?.()||!shade.animate){finish();return;}
+      const timing={duration:open?300:240,easing:'cubic-bezier(0.22, 1, 0.36, 1)',fill:'both'};
+      const motions=[shade.animate([{opacity:fromOpacity},{opacity:open?1:0}],timing),
+        modal.animate([{transform:fromTransform},{transform:open?'translateY(0)':'translateY(100%)'}],timing)];
+      companyMotion={cancel(){for(const animation of motions)animation.cancel();}};
+      Promise.allSettled(motions.map(animation=>animation.finished)).then(()=>{
+        if(version!==companyEpoch||ctl.signal.aborted)return;
+        for(const animation of motions)animation.cancel();finish();
+      });
+    }
+`);
   source=once(source,'return ()=>{endDrag();clearTimeout(clickReset);cancelMode();','return ()=>{restoreCompanyHeader();unsubscribeNotice?.();endDrag();clearTimeout(clickReset);cancelMode();');
   source=once(source,"    if(state==='company')show(true);","    on(root,'order:research-leave',()=>{if(!shade.hidden)show(false);});\n    if(state==='company')show(true);");
-  source=once(source,'return ()=>{restoreCompanyHeader();','return ()=>{if(api.applicationHeader)brandMenu?.resume();restoreCompanyHeader();');
+  source=once(source,'return ()=>{restoreCompanyHeader();',"return ()=>{companyEpoch++;companyMotion?.cancel();if(shade.hidePopover&&shade.matches(':popover-open'))shade.hidePopover();if(api.applicationHeader)brandMenu?.resume();restoreCompanyHeader();");
   return source;
 }
 
 export const researchOnboardingCss=String.raw`
+#order-single #order-app-header .obm-brand[data-authenticated=false]{gap:4px}
+#order-single #order-app-header .obm-brand .obm-trigger:is(:hover,:active){background:transparent;box-shadow:none}
 #order-app-page .ob{isolation:auto}
 #order-app-page .ob.footer-open .ob-stage>:not(header){filter:none;transform:none;border-radius:0}
-#order-app-page .ob .ob-shade{position:fixed;inset:0;z-index:100;background:rgb(22 29 36 / 35%);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px)}
-#order-app-page .ob .ob-drawer{max-height:82dvh}
+#order-app-page .ob .ob-shade{position:fixed;inset:0;z-index:100;width:100%;height:100%;max-width:none;max-height:none;margin:0;padding:0;border:0;background:rgb(22 29 36 / 35%);backdrop-filter:blur(5px);-webkit-backdrop-filter:blur(5px);overflow:hidden}
+#order-app-page .ob .ob-shade::backdrop{background:transparent}
+#order-app-page .ob .ob-drawer{max-height:82dvh;animation:none}
 #order-app-page .ob .ob-art-caption,#order-app-page .ob .ob-art-caption .ob-art-detail,#order-app-page .ob .ob-art-caption small{font-size:14px;line-height:24px}
 /* The member artboards already include the introduction copy's top inset.
    The shared live header occupies its original 78px grid row. */
-#order-app-page .ob.member .ob-main:is(.step-2,.step-3,.step-4){padding-top:0}
+#order-app-page .ob .ob-main{padding-top:0}
+#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3){grid-template-rows:177px minmax(328px,1fr) 91px}
+#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3) .ob-copy{padding-top:46px}
+#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3) .ob-copy h1{height:71px}
+#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3) .ob-copy p{height:45px}
+#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3) .ob-visual{padding-top:32px}
+#order-app-page .ob .ob-art{width:min(100%,287px);height:226px;object-fit:contain}
+#order-app-page .ob .ob-art-caption{margin-top:12px}
+#order-app-page .ob .ob-art-caption small{margin-top:0}
+#order-app-page .ob .ob-mode.card:active{transform:none}
+@media(max-height:720px){#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3){grid-template-rows:151px minmax(268px,1fr) 54px}#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3) .ob-copy{padding-top:20px}#order-app-page .ob .ob-main:is(.step-1,.step-2,.step-3) .ob-visual{padding-top:12px}#order-app-page .ob .ob-art{height:170px}}
 #order-app-page .ob.member .step-2 .ob-art-caption small{font-size:10px}
 #order-app-page .ob.member .ob-tasks .ob-mode.simple{border-width:2px}
 #order-app-page .ob.member .ob-mode.card.simple{border-width:3px}
@@ -131,6 +188,7 @@ export const researchOnboardingCss=String.raw`
 #order-app-page .ob.member .ob-mode.card span:not(:has(svg,span)){position:relative;top:2px}
 #order-app-page .ob.member .ob-mode.card [data-intro-icon=file-search]{width:60px;height:60px}
 #order-app-page .ob .ob-mode.card{cursor:pointer}
+#order-app-page .ob .pm-gooey-surface{fill:#edf1fc;filter:drop-shadow(0 3px 8px #20396718)}
 /* Transitions.dev 03-notification-badge. The badge owns its pop; the bell stays still. */
 #order-single{--badge-slide-dur:260ms;--badge-pop-dur:500ms;--badge-pop-close-dur:180ms;--badge-fade-dur:400ms;--badge-fade-close-dur:180ms;--badge-blur:2px;--badge-offset-x:-8.2px;--badge-offset-y:12.4px;--badge-slide-ease:cubic-bezier(0.22,1,0.36,1);--badge-pop-ease:cubic-bezier(0.34,1.36,0.64,1);--badge-close-ease:cubic-bezier(0.4,0,0.2,1)}
 @keyframes t-badge-slide-in {

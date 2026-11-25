@@ -13,6 +13,7 @@ import {quoteFiles} from '../r3-product-sources.mjs';
 import {regularContactModuleSource,regularServiceSourceIdentity} from './regular-service-assets.mjs';
 import {regularIanaReferenceJson} from './regular-iana-reference.mjs';
 import {getResearchQuoteSource,getResearchQuoteMarkup,getResearchQuoteStyleSource,getResearchQuoteIntegrationSource} from './quote-source-adapter.mjs';
+import {researchQuoteResultMarkup} from './quote-preview.mjs';
 import {createResearchEnvironment} from './environment.mjs';
 import {researchRoute} from './routes.mjs';
 import {researchQuoteCss} from './quote-style.mjs';
@@ -21,6 +22,7 @@ import {getResearchInspectorPanelsModule,getResearchPinProjectionModule} from '.
 import {researchSceneSource} from './scene-source-adapter.mjs';
 import {getResearchBusinessPanelSource} from './business-panel-source.mjs';
 import {researchAuthSheetSource} from './auth-sheet-source.mjs';
+import {researchInputMotionSource} from './input-polish-source.mjs';
 import {researchBrandSource} from './brand-source-adapter.mjs';
 import {researchOnboardingMarkup,researchOnboardingCss} from './onboarding-polish.mjs';
 import {researchInteractionCss} from './interaction-polish.mjs';
@@ -40,7 +42,10 @@ export {researchBuild};
 export const researchAssetBase='/ia/research-assets/'+researchBuild.digest+'/';
 // The campaign family is explicitly part of the MVP navigation. Preserve its
 // historical phase metadata while composing its actual product routes here.
-export const isResearchRow=row=>Boolean(row&&(row.phase!=='future'||row.screen==='admin-campaigns')&&!['component-library','common'].includes(row.screen));
+// Removed on the current review request. The sealed earlier releases remain
+// addressable so feedback can still reopen the exact document it was made on.
+export const isRetiredResearchRow=row=>Boolean(row&&(row.screen==='quote-review'||row.screen==='quote-result'&&['new-only-detail','no-current'].includes(row.state)));
+export const isResearchRow=row=>Boolean(row&&!isRetiredResearchRow(row)&&(row.phase!=='future'||row.screen==='admin-campaigns')&&!['component-library','common'].includes(row.screen));
 const staticCache=new Map(),scenes=new Map();let styles;
 const response=(body,type='text/javascript; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','X-Order-Research-Build':researchBuild.digest}});
 const fallbackFamily=screen=>['login','signup','otp','password','terms'].includes(screen)?'accountFeedback':['business','proof','signature'].includes(screen)?'business':screen.startsWith('admin-')||screen==='receipt'?'adminCommon':'member';
@@ -78,7 +83,7 @@ export async function researchScene(screen,state='default',variant='email'){
       if(!row)return null;
       family=row.runtimeFamily||fallbackFamily(screen);document={row,body:await inflate(frames[row.current]),mount:runtimes[family]||'',css:''};
     }
-    return {row:document.row,html:screen==='onboarding'?researchOnboardingMarkup(document.body):document.body,family,mount:await researchRuntime(family),css:document.css||''};
+    return {row:document.row,html:screen==='onboarding'?researchOnboardingMarkup(document.body):screen==='quote-result'?await researchQuoteResultMarkup(document.body):document.body,family,mount:await researchRuntime(family),css:document.css||''};
   })();scenes.set(key,source);return source;
 }
 export async function serveResearchAsset(path,env,origin='https://order-ia-portal.pages.dev'){
@@ -129,7 +134,7 @@ let foundation;
 function researchFoundation(){return foundation??=(async()=>{
   styles??=inflate(cssGzip);const [css,panels,auth]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap()]);
   return {css:css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
-    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+getProductUiBootstrap().script+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
+    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 
 export async function renderResearchApplication(nonce,parameters=new URLSearchParams(),env,origin='https://order-ia-portal.pages.dev',labContext=null){

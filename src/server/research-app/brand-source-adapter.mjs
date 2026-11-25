@@ -64,11 +64,14 @@ export function researchBrandSource(original) {
   }
   function disposePage(page){`);
   source = once(source, '  function push(id,source=null,title=null){', '  function push(id,source=null,title=null){\n    if(researchLeavePending)return false;');
-  // A native popover is above every document z-index. Keep its interactive
-  // surface below the shared header so Order and the account opener remain
-  // reachable; the original start-y still morphs from the actual logo origin.
-  source = once(source, 'const top=Math.max(y+12,Math.min(r.top,bottom-1));',
-    "const researchHeader=brand.closest('#order-app-header');const top=Math.max(y+12,Math.min(researchHeader?researchHeader.getBoundingClientRect().bottom+8:r.top,bottom-1));");
+  // The panel's upper-right corner follows the actual three-path logo ink,
+  // not the 44px hit area or the bottom of the shared application header.
+  source = once(source, 'if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;',
+    `if(panel.hidden)return;
+    const triggerRect=trigger.getBoundingClientRect(),ink=paths.map(path=>path.getBoundingClientRect()).filter(rect=>rect.width&&rect.height);
+    const r=ink.length===3?{left:Math.min(...ink.map(rect=>rect.left)),top:Math.min(...ink.map(rect=>rect.top)),right:Math.max(...ink.map(rect=>rect.right)),bottom:Math.max(...ink.map(rect=>rect.bottom))}:triggerRect;
+    if(ink.length===3){r.width=r.right-r.left;r.height=r.bottom-r.top;}
+    const view=win.visualViewport;`);
   // A newly displayed popover has no prior layout. Place its closed surface
   // at the trigger before enabling the transition to its measured open size.
   source = once(source, "const from=points(),version=++generation;cancelArrival();halt();",

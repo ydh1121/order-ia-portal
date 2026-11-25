@@ -97,7 +97,7 @@ export async function mountResearchApplication(config, environment) {
     }};
   win.ORDER_BRAND_ACCOUNT_CONTEXT=brandContext;
   const brand=createOrderBrand(doc);header.querySelector('[data-app-brand]').append(brand);
-  let orderMenu=null;
+  let orderMenu=null,closedAuthReview=false;
   function refreshBrand(){brandContext.authenticated=authenticated();brandContext.unread=originalBrandContext.unread||0;brandMenu=mountOrderBrandElement(brand,{...brandContext,authenticated:authenticated()});const action=header.querySelector('[data-app-auth]');action.hidden=authenticated();action.textContent='회원가입';action.onclick=()=>navigate({screen:'signup',state:'empty'});}
   async function closeAccountForOrder(){
     if(!brandMenu||brandMenu.inspect().phase==='closed')return true;
@@ -244,6 +244,17 @@ export async function mountResearchApplication(config, environment) {
       if(!accepted||sequence!==epoch){if(!history)updateLocation(true);return false;}
     }
     if(scenario&&environment.configure){await environment.configure(next,adapter,input.fixture);refreshBrand();}
+    if(scenario&&next.screen==='login'&&next.state==='closed'){
+      // This review example represents the completed return, while ordinary
+      // sheet cancellation continues to preserve the real session state.
+      const target=researchRoute(next.parent||pageRoute||{screen:'onboarding',state:'member-4'},route);
+      const returned=target.screen==='onboarding'?{...target,state:target.state.replace(/^guest-/,'member-')}:target;
+      authSheet?.close?.({immediate:true});authReturn=null;closedAuthReview=true;route=next;
+      await mountPage(returned,sequence);if(sequence!==epoch||disposed)return false;
+      refreshBrand();back.hidden=returned.screen==='onboarding'||returned.screen==='quote-result';header.dataset.appRoute=returned.screen;
+      if(history)updateLocation(replace);emit();return true;
+    }
+    closedAuthReview=false;
     if(next.screen==='notifications'&&!authenticated()){
       authReturn=next;
       return await navigate({screen:'login',state:'empty',parent:pageRoute||{screen:'onboarding',state:'guest-4',variant:'email',mode:next.mode}},{replace,history});
@@ -281,7 +292,7 @@ export async function mountResearchApplication(config, environment) {
     }
     if(sequence!==epoch||disposed)return false;
     if(route.kind!=='auth')authReturn=null;
-    back.hidden=route.screen==='onboarding'||route.kind==='quote';header.dataset.appRoute=route.screen;
+    back.hidden=route.screen==='onboarding'||route.screen==='quote-result'||route.kind==='quote';header.dataset.appRoute=route.screen;
     if(history)updateLocation(replace);emit();return true;
     }finally{navigating--;fixtureSelecting=priorFixtureSelecting;}
   }
@@ -294,7 +305,7 @@ export async function mountResearchApplication(config, environment) {
     }
     // Account/business panels explicitly read phone controllers. Generic
     // legacy handlers still reading input.value must not receive a split DOM.
-    if(started&&!navigating&&!disposed&&route.kind==='auth'){
+    if(started&&!navigating&&!disposed&&!closedAuthReview&&route.kind==='auth'){
       const current=authSheet?.inspect();
       if(!current?.open){authReturn=null;route=researchRoute(route.parent||pageRoute);updateLocation(true);emit();}
       else if(current.screen!==route.screen||current.state!==route.state){route={...route,screen:current.screen,state:current.state};updateLocation(true);emit();}

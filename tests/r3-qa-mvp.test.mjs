@@ -79,7 +79,7 @@ test('navigation accordions support rename, mouse transfer and keyboard transfer
 
 test('new review assets have independent targets and prior delivery artifacts remain byte-identical',async()=>{
   const list=await(await serveR3Artifact(new Request('https://x/api/ia/r3-qa/artifact'))).json();
-  const originals=list.items.filter(r=>!r.supplemental);assert.equal(originals.length,catalog.length);assert.equal(new Set(originals.map(r=>r.screen)).size,97);
+  const originals=list.items.filter(r=>!r.supplemental);assert.equal(originals.length,catalog.length-8);assert.equal(new Set(originals.map(r=>r.screen)).size,96);
   for(const source of extras.assets)for(const use of source.usages){const original=catalog.find(r=>r.id===use.id),supplement=extras.documents.get(use.id);assert.ok(original||supplement,use.id);if(!use.supplemental)assert.equal(original.current,use.source);else assert.ok(supplement,use.id);assert.equal((supplement?.row||original).label,use.label);}
   const item=list.items.find(r=>r.id==='component-library/asset-email/email');assert.ok(item);
   const doc=await(await artifact(item.id)).json();assert.equal(doc.hash,item.hashes[390]);assert.equal(await isR3ReviewTarget({screen:item.screen,state:item.state,variant:'email',viewport:390,artifactHash:doc.hash}),true);

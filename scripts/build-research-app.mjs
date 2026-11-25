@@ -10,6 +10,8 @@ serverOnly.add('onboarding-polish.mjs');
 serverOnly.add('auth-polish.mjs');
 serverOnly.add('auth-provider-assets.mjs');
 serverOnly.add('auth-motion.mjs');
+serverOnly.add('input-polish-source.mjs');
+serverOnly.add('quote-preview.mjs');
 serverOnly.add('passes-source.mjs');
 serverOnly.add('business-classification-source.mjs');
 serverOnly.add('quote-row-swipe.mjs');

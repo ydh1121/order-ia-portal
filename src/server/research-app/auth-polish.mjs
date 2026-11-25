@@ -4,6 +4,8 @@ import {researchAuthMotionCss} from './auth-motion.mjs';
  * renderer. No fixture value is an authentication result or a sent email. */
 export const researchAuthPolishCss=researchAuthMotionCss+String.raw`
 .ds .product-auth-sheet .auth-sheet .float-hint,.ds .product-auth-sheet .auth-sheet input::placeholder{font-size:16px;line-height:1.5}
+.ds .product-auth-sheet .auth-sheet .field.shows-message .inline-field-state{font-size:16px;line-height:24px;font-weight:500}
+.ds .product-auth-sheet .auth-sheet .field.shows-message :is(input,textarea){caret-color:transparent!important}
 /* The regular email editor retains the input inside its own suggestion owner.
    Keep the auth field's existing value/label geometry after that late mount. */
 .ds .product-auth-sheet .auth-sheet .field.is-floating .input-shell:has(>.ui-email-field){overflow:visible}
@@ -21,20 +23,36 @@ export const researchAuthPolishCss=researchAuthMotionCss+String.raw`
 .ds .product-auth-sheet .auth-sheet .consent-error .check-row:first-child::after{content:none}
 .ds .product-auth-sheet .auth-sheet .consent-error .check-row:first-child input{accent-color:var(--danger,#d33443)}
 .ds .product-auth-sheet .auth-sheet .consent-error .check-row:first-child [data-action=open-terms]{color:inherit}
-.ds .product-auth-sheet .auth-sheet .consent-choice{padding:14px 16px;border-radius:16px;background:#f2f5fa;color:var(--ink,#1f2937)}
+.ds .product-auth-sheet .auth-sheet .consent-choice{box-sizing:border-box;padding:22px;border:1px solid #e5e8eb;border-radius:20px;background:#fff;color:var(--ink,#1f2937);box-shadow:0 16px 48px #191f2829}
 .ds .product-auth-sheet .auth-sheet .consent-choice[hidden]{display:none}
-.ds .product-auth-sheet .auth-sheet .consent-choice p{font-size:14px;line-height:1.6}
+.ds .product-auth-sheet .auth-sheet .consent-choice[data-choice-open=true]{position:fixed;inset:50% auto auto 50%;translate:-50% -50%;width:min(342px,calc(100vw - 48px));max-height:calc(100dvh - 48px);overflow:auto;margin:0;z-index:1000;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.ds .product-auth-sheet .auth-sheet .consent-choice::backdrop{background:#191f2866;backdrop-filter:blur(4px)}
+.ds .product-auth-sheet .auth-sheet .consent-choice p{grid-column:1/-1;margin:0 0 8px;font-size:15px;line-height:1.6;word-break:keep-all}
+.ds .product-auth-sheet .auth-sheet .consent-choice .btn{width:100%;min-height:44px;padding:10px 8px;font-size:13px}
+.ds .product-auth-sheet .auth-sheet .consent-choice [data-action=allow-notices]{background:var(--blue);color:white}
 .ds .product-auth-sheet .auth-sheet .otp-wrap.is-error{outline:none;border:0;box-shadow:none}
 .ds .product-auth-sheet .auth-sheet .otp-wrap.is-error .otp-digit{border:0;box-shadow:none;background:#fff0f2;color:var(--danger,#d33443)}
 .ds .product-auth-sheet .auth-sheet .otp-wrap .otp-digit:disabled{background:#f2f4f6;color:#8b95a1;opacity:.7}
 .ds .product-auth-sheet .auth-sheet .otp-meta{font-size:15px;line-height:1.6;text-align:center;gap:10px}
 .ds .product-auth-sheet .auth-sheet .otp-meta>span{white-space:normal}
 .ds .product-auth-sheet .auth-sheet .otp-meta .btn{font-size:14px}
-.ds .product-auth-sheet .auth-sheet [data-auth-expiry]{font-size:14px;line-height:1.6;color:var(--muted,#6b7684);margin-top:12px}
+.ds .product-auth-sheet .auth-sheet [data-auth-expiry]{font-size:14px;line-height:1.6;color:var(--muted,#6b7684);margin-top:12px;white-space:pre-line}
 .ds .product-auth-sheet .auth-sheet .recovery-methods{border:0;margin:0 0 12px;padding:0;min-width:0}
-.ds .product-auth-sheet .auth-sheet .recovery-methods legend{margin-bottom:4px;font-size:14px;font-weight:600}
-.ds .product-auth-sheet .auth-sheet .recovery-methods label{display:flex;align-items:center;gap:9px;min-height:40px;cursor:pointer}
-.ds .product-auth-sheet .auth-sheet .recovery-methods input{width:18px;height:18px;accent-color:var(--blue)}
+.ds .product-auth-sheet .auth-sheet .recovery-methods legend{margin-bottom:10px;font-size:14px;font-weight:600}
+.ds .product-auth-sheet .auth-sheet .recovery-methods label{display:flex;align-items:center;gap:10px;min-height:48px;margin:6px 0;padding:10px 14px;border:1px solid #e5e8eb;border-radius:14px;background:#f9fafb;font-size:14px;cursor:pointer}
+.ds .product-auth-sheet .auth-sheet .recovery-methods label:has(input:checked){border-color:var(--blue);background:#eef3ff;color:var(--blue)}
+.ds .product-auth-sheet .auth-sheet .recovery-methods label:has(input:focus-visible){outline:2px solid var(--blue);outline-offset:2px}
+.ds .product-auth-sheet .auth-sheet .recovery-methods input{width:20px;height:20px;margin:0;flex:none;accent-color:var(--blue)}
+.ds .product-auth-sheet .auth-sheet .terms-page>.page-head{min-height:0;margin:0 0 12px}
+.ds .product-auth-sheet .auth-sheet .terms-page>.page-title,.ds .product-auth-sheet .auth-sheet .terms-page>[data-policy-meta]{display:none}
+.ds .product-auth-sheet .auth-sheet .terms-page>.segmented{display:flex;gap:8px;padding:0;background:transparent}
+.ds .product-auth-sheet .auth-sheet .terms-page>.segmented>button{flex:1;min-height:40px;padding:9px 10px;border:0;border-radius:10px;background:#20272b;color:#fff;font-size:13px}
+.ds .product-auth-sheet .auth-sheet .terms-page>.segmented>button.active{box-shadow:inset 0 0 0 2px #8b95a1}
+.ds .product-auth-sheet .auth-sheet .terms-page>.segmented>button.terms-invalid{background:#fff0f2;color:var(--danger,#d33443)}
+.ds .product-auth-sheet[data-terms-context=read] .terms-page>:is(.page-head,.check-row,.bottom-actions){display:none!important}
+.ds .product-auth-sheet .auth-sheet .password-meter .liquid-segments{overflow:visible}
+.ds .product-auth-sheet .auth-sheet .password-meter .liquid-segments i{overflow:visible}
+.ds .product-auth-sheet .auth-sheet .password-meter .liquid-segments i em{z-index:1;min-height:7px;will-change:transform,opacity}
 .ds .product-auth-sheet .auth-sheet .terms-page>.check-row{display:flex;align-items:center;gap:8px;line-height:1.5}
 .ds .product-auth-sheet .auth-sheet .terms-page>.check-row input{flex:0 0 auto;accent-color:var(--blue)}
 .ds .product-auth-sheet .auth-sheet .terms-page>.check-row.terms-invalid{outline:none;border:0;box-shadow:none;color:var(--danger,#d33443)}
@@ -71,6 +89,42 @@ export function installResearchAuthPolish(win=window){
     {value:'send-temporary-password',label:'임시 비밀번호',button:'임시 비밀번호 받기'},
     {value:'send-reset',label:'새 비밀번호 설정',button:'재설정 안내 받기'}
   ];
+  function mountOptionalChoice(root,signal){
+    const choice=root.querySelector('[data-opt-choice]');
+    if(!choice)return;
+    choice.setAttribute('popover','manual');choice.setAttribute('role','alertdialog');choice.setAttribute('aria-modal','true');
+    const saved=new Map();let opener=null,open=false;
+    function restore(){for(const [element,inert]of saved)element.inert=inert;saved.clear();}
+    function sync(){
+      if(choice.hidden){if(open){choice.hidePopover?.();restore();open=false;delete choice.dataset.choiceOpen;if(opener?.isConnected)opener.focus({preventScroll:true});}return;}
+      if(open)return;
+      open=true;opener=choice.contains(win.document.activeElement)?root.querySelector('[data-action=submit-signup]'):win.document.activeElement;choice.dataset.choiceOpen='true';
+      for(let child=choice,parent=choice.parentElement;parent&&root.contains(parent);child=parent,parent=parent.parentElement){
+        for(const sibling of parent.children)if(sibling!==child&&!['STYLE','SCRIPT'].includes(sibling.tagName)){saved.set(sibling,sibling.inert===true);sibling.inert=true;}
+      }
+      choice.showPopover?.();choice.querySelector('button')?.focus({preventScroll:true});
+    }
+    const observer=new win.MutationObserver(sync);observer.observe(choice,{attributes:true,attributeFilter:['hidden']});
+    choice.addEventListener('keydown',event=>{
+      if(event.key==='Escape'){event.preventDefault();event.stopImmediatePropagation();choice.hidden=true;sync();}
+      if(event.key==='Tab'){
+        const buttons=[...choice.querySelectorAll('button:not(:disabled)')],index=buttons.indexOf(win.document.activeElement);
+        event.preventDefault();event.stopImmediatePropagation();buttons[(index+(event.shiftKey?-1:1)+buttons.length)%buttons.length]?.focus();
+      }
+    },{signal,capture:true});
+    signal.addEventListener('abort',()=>{observer.disconnect();if(open)choice.hidePopover?.();restore();},{once:true});
+  }
+  function polishTerms(root,api){
+    if(api.screen!=='terms')return;
+    root.querySelector('.terms-page>.page-title')?.remove();
+    root.querySelector('.terms-page>[data-policy-meta]')?.remove();
+    if(root.dataset.termsContext==='read'){
+      for(const node of root.querySelectorAll('.terms-page>.page-head,.terms-page>.check-row,.terms-page>.bottom-actions'))node.remove();
+      return;
+    }
+    const header=root.querySelector('.terms-page>.page-head');
+    if(header)for(const child of [...header.children])if(!child.matches('[data-action=back]'))child.remove();
+  }
   function mountRecovery(root,api,signal){
     // A challenge belongs to one open sheet. Signup OTP and a later visit must
     // never inherit the login-code challenge from an earlier request.
@@ -151,7 +205,7 @@ export function installResearchAuthPolish(win=window){
   }
   function mount(root,api){
     const controller=new win.AbortController(),signal=controller.signal;
-    mountRecovery(root,api,signal);observeLoginFailures(root,api,signal);
+    mountRecovery(root,api,signal);observeLoginFailures(root,api,signal);mountOptionalChoice(root,signal);polishTerms(root,api);
     const motion=win.ORDER_RESEARCH_AUTH_MOTION.mount(root,api);
     for(const button of root.querySelectorAll('[data-action=resend],[data-action=verify-otp]'))motions.set(button,motion);
     let timer,pending=null;
@@ -193,7 +247,7 @@ export function installResearchAuthPolish(win=window){
         if(copy){copy.dataset.authExpiry='';const tick=()=>{
           if(signal.aborted||!copy.isConnected)return;
           const remaining=Math.max(0,Math.ceil((expires-Date.now())/1000));
-          copy.textContent=remaining?'인증번호는 '+String(Math.floor(remaining/60)).padStart(2,'0')+'분 '+String(remaining%60).padStart(2,'0')+'초 후 만료돼요. 스팸메일함과 휴면 메일함도 확인해 주세요.':'인증번호가 만료됐어요. 인증번호를 다시 받아 주세요.';
+          copy.textContent=remaining?'인증번호는 '+String(Math.floor(remaining/60)).padStart(2,'0')+'분 '+String(remaining%60).padStart(2,'0')+'초 후 만료돼요.\n\n스팸메일함과 휴면 메일함도 확인해 주세요.':'인증번호가 만료됐어요. 인증번호를 다시 받아 주세요.';
           if(remaining)timer=win.setTimeout(tick,1000);
         };tick();}
       }

@@ -11,8 +11,12 @@ const read=async(q='')=>await(await serveR3Artifact(new Request(url+q))).json();
 const row=(id,width=390,version='current')=>read('?'+new URLSearchParams({id,width:String(width),version}));
 test('the QA menu covers the complete pinned state inventory without copying review decisions',async()=>{
   const list=await read(),original=list.items.filter(row=>!row.supplemental);
-  assert.equal(original.length,498);assert.equal(new Set(original.map(r=>r.screen+'/'+r.state)).size,496);
-  assert.equal(new Set(original.map(r=>r.screen)).size,97);
+  // The 6 retired review states and 2 retired result states keep their pinned
+  // archive identities, but have no current QA catalogue entries.
+  assert.equal(original.length,490);assert.equal(new Set(original.map(r=>r.screen+'/'+r.state)).size,488);
+  assert.equal(new Set(original.map(r=>r.screen)).size,96);
+  assert.equal(original.some(row=>row.screen==='quote-review'||row.screen==='quote-result'&&['new-only-detail','no-current'].includes(row.state)),false);
+  assert.ok(original.filter(row=>['q1','q2'].includes(row.screen)).every(row=>row.reviewHold==='hi-fi-simple-and-detailed'));
   const {getQaSupplemental}=await import('../src/server/r3-qa-assets.mjs');
   const pinnedSupplemental=(await getQaSupplemental()).rows.filter(row=>row.supplemental).map(row=>row.id);
   assert.deepEqual(list.items.filter(row=>row.supplemental).map(row=>row.id).sort(),

@@ -29,7 +29,7 @@ export function createResearchEnvironment(config, installFixture, installAdapter
     async configure(route,current,fixture){
       if(run)return;
       Object.assign(session,route);
-      const authenticated=['login','signup','otp','password','terms'].includes(route.screen)?['success','verified'].includes(route.state):route.screen==='onboarding'?route.state.startsWith('member-'):route.state!=='qa-guest'&&!(route.screen==='price-workspace'&&route.state==='guest');
+      const authenticated=['login','signup','otp','password','terms'].includes(route.screen)?['success','verified'].includes(route.state)||route.screen==='login'&&route.state==='closed':route.screen==='onboarding'?route.state.startsWith('member-'):route.state!=='qa-guest'&&!(route.screen==='price-workspace'&&route.state==='guest');
       const scenario=({'qa-loading':'loading','qa-error':'error','qa-empty':'empty'})[route.state]||'normal';
       const selectedScenario=fixture?.scenario||scenario;
       if(selectedScenario==='empty'&&!scenarioBackup)scenarioBackup=current.fixture.inspect().data;

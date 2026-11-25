@@ -267,7 +267,7 @@ test('auth sheets reuse the regular email parser and shared transient error with
    assert.equal(input.validity.typeMismatch,false,'a text editor cannot supply native email validation');
    assert.equal(f.win.OrderEmail.parse(input.value).valid,false);assert.equal(f.win.OrderEmail.parse('buyer@example.com').valid,true);
    submit.focus();submit.click();await settle();
-   assert.equal(display.textContent,'이메일 양식을 확인해 주세요.');assert.equal(field.classList.contains('shows-message'),true);
+   assert.equal(display.textContent,'이메일 양식을 확인해 주세요');assert.equal(field.classList.contains('shows-message'),true);
    assert.equal(input.getAttribute('aria-invalid'),'true');assert.equal(f.doc.activeElement,input);
    assert.equal(submit.hasAttribute('aria-busy'),false,'syntax failure must remain in the authored field-error path');
    await waitFor(()=>!field.classList.contains('shows-message'));
@@ -517,9 +517,26 @@ test('quote result detail and QA state changes retain the original chart control
   const plot=f.doc.querySelector('.oq-plot');assert.ok(plot);
   f.doc.querySelector('.oq-series[data-kind="current"],.oq-series').click();await waitFor(()=>f.app.snapshot().route.state==='current-detail');
   assert.equal(f.doc.querySelector('.oq-plot'),plot);
+  assert.equal(plot.closest('[data-order-result]').hasAttribute('data-morph'),true,'the identical route echo must not cancel the in-progress graph transition');
+  f.doc.querySelector('.oq-series[data-kind="current"]').click();await waitFor(()=>f.app.snapshot().route.state==='saving');
+  assert.equal(plot.closest('[data-order-result]').hasAttribute('data-morph'),true,'the return morph uses the same retained graph');
   await f.app.inspectRoute({screen:'quote-result',state:'equal'});await settle();
   assert.equal(f.doc.querySelector('.oq-plot'),plot);assert.equal(f.doc.querySelector('[data-review-result]').dataset.view,'equal');
   assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('locked research preview exposes only an already obscured server PNG and recompare has two choices',async()=>{
+ const f=await setup({screen:'quote-result',state:'locked'});try{
+  const plot=f.doc.querySelector('.oq-plot'),image=plot.querySelector('.research-quote-protected-preview');
+  assert.ok(image);assert.match(image.getAttribute('src'),/^data:image\/png;base64,/);assert.equal(image.hidden,false);
+  assert.equal(plot.querySelectorAll('.oq-series:not([hidden])').length,0);
+  for(const selector of ['.oq-number','.oq-price-value','.oq-card-value'])for(const node of f.doc.querySelectorAll(selector))assert.equal(node.textContent,'');
+  await f.app.inspectRoute({screen:'quote-result',state:'recompare'});await settle();
+  const dialog=f.doc.querySelector('.oq-dialog');assert.equal(dialog.open,true);
+  assert.deepEqual([...dialog.querySelectorAll('button')].map(button=>button.textContent),['새로운 견적','동일한 조건']);
+  dialog.querySelectorAll('button')[1].click();await waitFor(()=>f.app.snapshot().route.screen==='quote-wait');
+  assert.equal(f.app.snapshot().route.state,'entry');assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
 
@@ -669,7 +686,8 @@ test('every current page group composes under one retained application header',a
 
 test('every MVP product family has a route in the same app, including campaign and pricing state owners',async()=>{
  const rows=await listResearchRows(),families=new Set(rows.map(row=>row.screen));
- for(const screen of mvpScreens)if(!['common','component-library'].includes(screen))assert.ok(families.has(screen),'Missing MVP product family: '+screen);
+ for(const screen of mvpScreens)if(!['common','component-library','quote-review'].includes(screen))assert.ok(families.has(screen),'Missing MVP product family: '+screen);
+ assert.equal(families.has('quote-review'),false);assert.equal(researchRoute({screen:'quote-review'}).screen,'q2');
  assert.deepEqual(rows.filter(row=>row.screen==='admin-campaigns').map(row=>row.state).sort(),['approved','denied','more','normal','reviewing']);
  assert.deepEqual(rows.filter(row=>row.screen==='price-workspace').map(row=>row.state).sort(),['classification','consumer-products','costs','delivery','empty','error','guest','loading','store-products']);
  assert.equal(researchRoute({screen:'admin-campaigns'}).state,'normal');
@@ -777,4 +795,18 @@ test('a closed Order menu preserves a live email pin across blur, outside pointe
   assert.deepEqual([...review.messages.filter(x=>x.message.type==='missing').at(-1).message.payload.ids],[]);
   assert.equal(JSON.stringify(anchor),original);assert.deepEqual(f.failures,[]);
  }finally{review?.bridge.dispose();await f.close();}
+});
+
+
+test('only the explicit closed-login review shows an authenticated return, while ordinary cancel stays guest',async()=>{
+ const f=await setup({screen:'onboarding',state:'guest-3'});
+ try{
+  await f.app.navigate({screen:'login',state:'empty'});await settle();
+  f.doc.querySelector('.product-auth-sheet .sheet-dim').click();await settle();
+  assert.equal(f.app.snapshot().pageRoute.state,'guest-3');assert.ok(f.doc.querySelector('[data-action="open-login"],[data-mf-go="login/empty"]'));
+  await f.app.inspectRoute({screen:'login',state:'closed'});await settle();
+  assert.equal(f.app.snapshot().route.screen,'login',JSON.stringify(f.app.snapshot()));assert.equal(f.app.snapshot().route.state,'closed');
+  assert.equal(f.app.snapshot().pageRoute.state,'member-3');assert.equal(f.doc.querySelector('.product-auth-sheet'),null);
+  assert.equal(f.doc.querySelector('[data-action="open-login"],[data-mf-go="login/empty"]'),null);assert.equal(f.doc.querySelector('.research-order-trigger').disabled,false);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
 });

@@ -130,10 +130,34 @@ const researchBridge=Object.freeze({
 /** The regular and review routes render the same expiry note from disclosed dates. */
 export function researchQuoteResultSource(source){
   const expiry="m.state==='expired'&&dated(m.end)?'견적 만료일 '+dated(m.end):''";
-  return once(source,expiry,`m.state==='expired'&&dated(m.end)?(
+  source=once(source,expiry,`m.state==='expired'&&dated(m.end)?(
     Number.isFinite(m.issued)&&m.issued>=-8640000000000000&&m.issued<m.end
       ? '견적 유효기간 '+dated(m.issued)+' ~ '+dated(m.end)
       : '견적 만료일 '+dated(m.end)):''`);
+  // A graph click first updates the retained renderer, then the application
+  // echoes the selected route. That identical echo must not remove the CSS
+  // transition halfway through the graph-to-detail morph.
+  source=once(source,"stage.toggleAttribute('data-morph',Boolean(prior && same && selection!==lastSelected));",
+    "if(prior && same && selection!==lastSelected)stage.setAttribute('data-morph','');else if(!prior || !same)stage.removeAttribute('data-morph');");
+  source=once(source,"  const plot = node('div','plot',stage);",`  const plot = node('div','plot',stage);
+  const protectedPreview=options.preview?.tagName==='IMG'?options.preview:null;
+  if(protectedPreview){protectedPreview.classList.add('research-quote-protected-preview');protectedPreview.hidden=true;plot.append(protectedPreview);}`);
+  source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    if(protectedPreview)protectedPreview.hidden=m.state!=='unverified';");
+  source=once(source,"[['new','새로운 견적'],['same','동일한 조건'],['close','닫기']]","[['new','새로운 견적'],['same','동일한 조건']]");
+  source=source.replaceAll('동일한 조건으로 다시 비교하겠어요?','어떤 조건으로 다시 비교할까요?');
+  source=once(source,'    own.showModal();',`    own.addEventListener('click',event=>{
+      if(event.target!==own)return;
+      const rect=own.getBoundingClientRect();
+      if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)own.close();
+    });
+    own.showModal();`);
+  // This branch exists only in the review fixture wrapper. The regular quote
+  // controller keeps its verified recompare/persistence implementation.
+  if(source.includes("same:['quote-review','normal']")){
+    source=once(source,"same:['quote-review','normal'],back:['quote-review','normal']","same:['quote-wait','entry'],back:['q2','filled']");
+    source=once(source,"    const view=mount(host,{","    const view=mount(host,{\n      preview:root.querySelector('template[data-research-result-preview]')?.content.querySelector('img')?.cloneNode(true),");
+  }
+  return source;
 }
 
 /** Applies explicit integration seams to the *served*, extended regular asset. */

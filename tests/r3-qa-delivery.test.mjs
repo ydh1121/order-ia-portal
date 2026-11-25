@@ -6,6 +6,7 @@ import {serveR3Artifact} from '../src/server/r3-qa-page.mjs';
 import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 import {handleIaRequest} from '../src/server/router.mjs';
 import {qaCatalogIdentity} from '../src/server/r3-qa-catalog-identity.gen.mjs';
+import {researchReviewIdentity} from '../src/server/research-app/release-store.mjs';
 
 const origin='https://order-ia-portal.pages.dev';
 const url=params=>new Request(origin+'/api/ia/r3-qa/artifact?'+new URLSearchParams(params));
@@ -48,6 +49,35 @@ test('current research artifacts keep shell, source, exports, mode, fixtures and
     }
   }
   assert.ok(reads.every(path=>path.endsWith('.bin')));
+});
+
+test('active PR26 pins retain their recorded bytes through the API without reading a complete release',async t=>{
+  const build='9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092',id='login/empty/email';
+  const binding=createPrivateResearchAssets(),reads=[];
+  const env={ASSETS:{async fetch(request){
+    const path=new URL(request.url).pathname;
+    assert.ok(path.startsWith('/ia/research-releases/'+build+'/')&&path.endsWith('.bin'),'an old active pin must use its own delivery shards');
+    const response=await binding.fetch(request),bytes=Buffer.from(await response.arrayBuffer());
+    reads.push({path,bytes:bytes.length});return new Response(bytes,{status:response.status,headers:response.headers});
+  }}};
+  const legacyEnv={ASSETS:createPrivateResearchAssets()};
+  for(const mode of ['simple','detailed']){
+    const artifactHash=createHash('sha256').update(JSON.stringify(researchReviewIdentity(build,id,390,mode))).digest('hex');
+    for(const version of ['current','recorded']){
+      const params={id,width:'390',version,mode,artifactHash};
+      const response=await serveDeliveredQaArtifact(url(params),env);
+      assert.equal(response.status,200);
+      const bytes=await response.text();
+      assert.equal(JSON.parse(bytes).source.build,build);assert.equal(JSON.parse(bytes).version,'recorded');
+      assert.equal(bytes,await (await serveR3Artifact(url(params),legacyEnv)).text());
+    }
+    assert.equal(await isDeliveredReviewTarget({screen:'login',state:'empty',variant:'email',viewport:390,artifactHash,mode},'MSG0585-R3',env,origin),true);
+  }
+  assert.equal(reads.filter(value=>value.path.endsWith('/index.bin')).length,1);
+  assert.ok(reads.some(value=>value.path.endsWith('/shell.bin')));
+  const compressed=reads.reduce((total,value)=>total+value.bytes,0);
+  assert.ok(compressed<200000,'four pin requests and target validation remain below one tenth of the old pack');
+  t.diagnostic(JSON.stringify({build,apiPinRequests:4,compressed,reads:reads.length}));
 });
 
 test('the owner gate precedes asset reads and a corrupt authenticated catalog fails closed',async()=>{

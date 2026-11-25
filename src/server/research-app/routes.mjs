@@ -1,6 +1,6 @@
 /** Application routes are independent of the review catalogue and its state chips. */
 export const AUTH_ROUTES = new Set(['login','signup','otp','password','terms']);
-export const QUOTE_ROUTES = new Set(['q1','q2','q3','q4','quote-review']);
+export const QUOTE_ROUTES = new Set(['q1','q2','q3','q4']);
 export const ACCOUNT_PANELS = Object.freeze({
   profile:'profile.personal', 'account-settings':'profile.account', 'store-settings':'manage.business',
   'saved-quote':'manage.quotes', 'delivery-schedule':'manage.delivery',
@@ -9,6 +9,11 @@ export function researchRoute(input={}, previous={}) {
   if (typeof input==='string') input={screen:input};
   let screen=input.screen||'onboarding', state=input.state||'default';
   const mode=input.mode==='detailed'||screen==='detailed-r3'?'detailed':input.mode==='simple'||screen==='simple-r3'?'simple':previous.mode||'simple';
+  // Retired review/no-current pages never become a second product flow. An old
+  // link returns to its existing input stage; published historical packs remain
+  // immutable and keep their original route implementation.
+  if(screen==='quote-review'){screen=mode==='detailed'?'q4':'q2';state=mode==='detailed'?'closed':'filled';}
+  if(screen==='quote-result'&&['no-current','new-only-detail'].includes(state)){screen='q2';state='empty';}
   if(screen==='simple-r3'||screen==='detailed-r3'){screen='q1';state='default';}
   if(screen==='business-manage')screen='store-settings';
   if(screen==='pricing-r3')screen='price-workspace';

@@ -110,8 +110,23 @@ def read_json(page, path):
     }""", path)
 
 
-def records(page):
-    return {row["id"]: row for row in read_json(page, "/api/ia/r3-qa/records?release=MSG0585-R3")["items"]}
+def records(page, scope="all"):
+    # Preservation comparisons intentionally include resolved source rows. The
+    # ordinary QA host keeps using the smaller default active projection.
+    rows, cursor, bound = {}, 0, None
+    while True:
+        query = {"release": "MSG0585-R3", "scope": scope, "limit": 150, "since": cursor}
+        if bound is not None:
+            query["until"] = bound
+        response = read_json(page, "/api/ia/r3-qa/records?" + urlencode(query))
+        rows.update({row["id"]: row for row in response["items"]})
+        if bound is not None:
+            assert response["until"] == bound
+        bound = response["until"]
+        if not response["hasMore"]:
+            return rows
+        assert response["nextCursor"] > cursor
+        cursor = response["nextCursor"]
 
 
 def ready(page, artifact_hash, selector=EMAIL):
@@ -443,8 +458,11 @@ def check_resolved_reload(page, current_hash, source_ids):
     frame = ready(page, current_hash)
     page.locator("#points").click()
     expect(page.locator('[data-comment-filter="open"]')).to_have_class('active')
+    active_rows = records(page, "active")
     for source_id in source_ids:
         expect(page.locator('#notes article[data-feedback-id="' + source_id + '"]')).to_have_count(0)
+        assert source_id not in active_rows, "The default active response omits resolved original bodies"
+        assert not any(row["data"].get("parent", {}).get("id") == source_id for row in active_rows.values()), "The active response omits replies and state payloads for resolved threads"
     page.locator('[data-comment-filter="all"]').click()
     for source_id in source_ids:
         expect(page.locator('#notes article[data-feedback-id="' + source_id + '"]')).to_have_attribute("data-feedback-status", "resolved")

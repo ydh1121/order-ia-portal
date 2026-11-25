@@ -85,11 +85,12 @@ test('the immediately preceding artifact hashes keep their exact body and execut
   }
 });
 
-async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,viewHash=null,viewVersion='current',initialDrafts=[],historicalArtifacts=null,canonicalHost=false,withShell=false,screenRows=null}={}){
+async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,legacyPage=null,viewHash=null,viewVersion='current',initialDrafts=[],historicalArtifacts=null,canonicalHost=false,withShell=false,screenRows=null}={}){
   const {w}=setup(approvedShellBody(),'https://order-ia-portal.pages.dev/ia?view=qa-lab&archive=1&screen=login%2Fempty%2Femail&width=390'+(viewVersion==='current'?'':'&version=recorded&artifactHash='+viewHash));
   const screens=(screenRows||['empty','closed'].map(state=>row(state))).map(entry=>({...entry,hashes:{390:entry.state==='empty'&&viewHash||entry.hashes[390]}})),screen=screens[0];
   const artifact={hash:screen.hashes[390],version:viewVersion,html:'<!doctype html><html><head><!--R3-POLICY--></head><body><main id="order-single"></main><!--R3-FRAME--></body></html>',editable:'',file:'test.html'};
   const writes=[],records=[...initialRecords],messages=[];let failure=null;
+  const close=w.close.bind(w);w.close=()=>{w.dispatchEvent(new w.Event('pagehide'));close();};
   if(initialDrafts.length){
     const owner=Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode('test@example.invalid'))).toString('hex');
     w.sessionStorage.setItem('order.qa.unsent.v1.MSG0585-R3.'+owner,JSON.stringify(initialDrafts));
@@ -104,7 +105,7 @@ async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,vie
       if(pinned&&historicalArtifacts)return historicalArtifacts[pinned]?response({...artifact,...historicalArtifacts[pinned],hash:pinned}):response({error:'UNKNOWN_REVIEW_TARGET'},404);
       return response(url.searchParams.has('id')?{...artifact,hash:screens.find(r=>r.id===url.searchParams.get('id')).hashes[390]}:{release:'MSG0585-R3',items:screens});
     }
-    if(url.pathname.endsWith('/legacy'))return response({items:legacyItems,hasMore:false});
+    if(url.pathname.endsWith('/legacy'))return response(legacyPage?await legacyPage(url.searchParams.get('scope')):{items:legacyItems,hasMore:false});
     if(url.pathname.endsWith('/events'))return response({items:records.filter(r=>r.kind===url.searchParams.get('kind')&&r.id===url.searchParams.get('id'))});
     if(url.pathname.endsWith('/records')){
       if(options.method==='POST'){
@@ -115,7 +116,7 @@ async function hostHarness({initialRecords=[],legacyItems=[],recordPage=null,vie
         const record={...body,revision:(old?.revision||0)+1,cursor:records.length+1,updatedAt:new Date().toISOString(),action:body.action||'save'};
         records.push(record);return response(record);
       }
-      return response(recordPage?await recordPage({since:Number(url.searchParams.get('since')||0),limit:Number(url.searchParams.get('limit')||150),records}):{items:records,nextCursor:records.length,hasMore:false});
+      return response(recordPage?await recordPage({since:Number(url.searchParams.get('since')||0),limit:Number(url.searchParams.get('limit')||150),scope:url.searchParams.get('scope'),records}):{items:records,nextCursor:records.length,hasMore:false});
     }
     throw Error('Unmocked '+url);
   };
@@ -268,7 +269,7 @@ test('the host restores both imported and prior-version pin sources without rewr
     [...oldCard.querySelectorAll('button')].find(b=>b.textContent==='위치 보기').click();
     const restored=messages.filter(m=>m.type==='restore').at(-1).payload;
     assert.equal(restored.sourceArtifactHash,priorTarget.artifactHash);assert.equal(restored.id,old.data.anchor.id);
-    w.document.querySelector('#show-resolved-pins').checked=true;w.document.querySelector('#show-resolved-pins').onchange();
+    w.document.querySelector('#show-resolved-pins').checked=true;await w.document.querySelector('#show-resolved-pins').onchange();
     assert.equal(displayed().find(p=>p.id==='resolved-pin').resolved,true);
     assert.equal(displayed().some(p=>p.id==='deleted-pin'),false);
     assert.equal(JSON.stringify([old,current,removed,otherWidth,otherState,closed,imported]),original);
@@ -279,7 +280,7 @@ test('the host restores both imported and prior-version pin sources without rewr
 test('one three-state control preserves current comment lifecycle reasons, content, pins and independent approval',async()=>{
   const original=seedComment(),h=await hostHarness({initialRecords:[original]}),{w,records,writes,messages}=h;
   const originalBytes=JSON.stringify(original),reasonQueue=['수정 결과를 확인함','추가 검토가 필요함'];w.prompt=()=>reasonQueue.shift();
-  w.document.querySelector('[data-comment-filter=all]').click();
+  await w.document.querySelector('[data-comment-filter=all]').onclick();
   let card=feedbackCard(w,original.id);
   assert.equal(card.querySelectorAll('[data-feedback-state]').length,3);
   assert.equal([...card.querySelectorAll('button')].filter(b=>b.textContent==='해결').length,1,'no competing lifecycle control');
@@ -305,7 +306,7 @@ test('a newer source event wins over an older feedback state, including after a 
   const original=seedComment(),feedback={release:'MSG0585-R3',kind:'feedback',id:'existing-status',revision:1,cursor:2,action:'save',data:{target:original.data.target,parent:{origin:'current',id:original.id},status:'recheck'}};
   const resolved={...original,revision:2,cursor:3,action:'resolve',reason:'기존 해결 사유'};
   const h=await hostHarness({initialRecords:[original,feedback,resolved]}),{w,records,writes}=h;
-  w.document.querySelector('[data-comment-filter=all]').click();assert.equal(feedbackCard(w,original.id).dataset.feedbackStatus,'resolved');
+  await w.document.querySelector('[data-comment-filter=all]').onclick();assert.equal(feedbackCard(w,original.id).dataset.feedbackStatus,'resolved');
   w.prompt=()=>null;feedbackCard(w,original.id).querySelector('[data-feedback-state=unresolved]').click();await tick();assert.equal(writes.length,0,'canceling the reason preserves both histories');
   w.prompt=()=>'원문을 다시 검토함';h.setFailure(body=>body.kind==='feedback'?{error:'STORE_UNAVAILABLE',status:503}:null);
   feedbackCard(w,original.id).querySelector('[data-feedback-state=unresolved]').click();
@@ -323,7 +324,7 @@ test('historical and imported opinions change status individually without mutati
   const legacy={sourceKey:'login/empty/email/390',data:{status:'fix',comments:[{id:'imported-feedback',body:'가져온 원문 의견',status:'resolved',history:[{body:'이전 원문',updatedAt:'2026-11-01'}]}]}};
   const originalBytes=JSON.stringify([original,verdict,legacy]),h=await hostHarness({initialRecords:[original,verdict],legacyItems:[legacy]}),{w,writes,records}=h;
   w.prompt=()=>{throw Error('Historical source must not request a lifecycle reason');};
-  w.document.querySelector('[data-comment-filter=all]').click();
+  await w.document.querySelector('[data-comment-filter=all]').onclick();
   for(const id of ['earlier-feedback','imported-feedback']){
     for(const status of ['unresolved','recheck','resolved']){
       const before=records.length;feedbackCard(w,id).querySelector('[data-feedback-state='+status+']').click();
@@ -345,7 +346,7 @@ test('a full reload never reintroduces resolved pins while later record pages ar
   const sourceRecords=[...originals,open,...padding],sourceBytes=JSON.stringify(sourceRecords),resolvedIds=originals.map(r=>r.id);
   const first=await hostHarness({initialRecords:sourceRecords});let saved;
   try{
-    first.w.document.getElementById('points').click();first.w.document.querySelector('[data-comment-filter=all]').click();
+    first.w.document.getElementById('points').click();await first.w.document.querySelector('[data-comment-filter=all]').onclick();
     for(const id of resolvedIds){
       feedbackCard(first.w,id).querySelector('[data-feedback-state=resolved]').click();
       await until(()=>feedbackCard(first.w,id)?.dataset.feedbackStatus==='resolved');
@@ -367,7 +368,7 @@ test('a full reload never reintroduces resolved pins while later record pages ar
     releaseLastPage();
     await until(()=>restored.messages.filter(m=>m.type==='pins').at(-1)?.payload.length===1&&restored.messages.filter(m=>m.type==='pins').at(-1).payload[0].id===open.id);
     assert.deepEqual(shownDuringReload,[],'saved resolved pins must not flash as unresolved while the remaining 150-row pages load');
-    restored.w.document.getElementById('points').click();restored.w.document.querySelector('[data-comment-filter=all]').click();
+    restored.w.document.getElementById('points').click();await restored.w.document.querySelector('[data-comment-filter=all]').onclick();
     for(const id of resolvedIds)assert.equal(feedbackCard(restored.w,id).dataset.feedbackStatus,'resolved');
     assert.equal(feedbackCard(restored.w,open.id).dataset.feedbackStatus,'unresolved');
     assert.equal(restored.writes.length,0,'reload restores stored decisions without writing new status events');
@@ -393,7 +394,7 @@ test('a new artifact projects prior resolution consistently without writing a ne
     const initialRecords=[...originals,...statuses,verdict,...entry.extra],before=JSON.stringify(initialRecords);
     const h=await hostHarness({...entry,initialRecords,canonicalHost:true}),{w,messages,writes}=h;
     try{
-      w.document.getElementById('points').click();w.document.querySelector('[data-comment-filter=all]').click();
+      w.document.getElementById('points').click();await w.document.querySelector('[data-comment-filter=all]').onclick();
       await until(()=>originals.every(source=>feedbackCard(w,source.id)));
       const displayed=()=>messages.filter(message=>message.type==='pins').at(-1).payload;
       assert.deepEqual(Array.from(displayed(),pin=>pin.id),entry.expected,entry.name);
@@ -405,7 +406,7 @@ test('a new artifact projects prior resolution consistently without writing a ne
         assert.equal(new URL(card.querySelector('[data-pin-resolved-artifact]').href).searchParams.get('artifactHash'),resolvedTarget.artifactHash);
       }
       if(entry.viewHash)assert.ok([...card.querySelectorAll('[data-feedback-state]')].every(button=>button.disabled));
-      w.document.getElementById('show-resolved-pins').checked=true;w.document.getElementById('show-resolved-pins').onchange();
+      w.document.getElementById('show-resolved-pins').checked=true;await w.document.getElementById('show-resolved-pins').onchange();
       const shown=Array.from(displayed());assert.deepEqual(shown.map(pin=>pin.id),originals.map(source=>source.id));
       for(const pin of shown){
         const source=originals.find(value=>value.id===pin.id);
@@ -426,21 +427,23 @@ test('resolved history stays out of the default list, counts and next-unresolved
   const resolution=(origin,id,cursor)=>({release:'MSG0585-R3',kind:'feedback',id:'resolved-'+id,revision:1,cursor,action:'save',data:{target:{...feedbackTarget(),artifactHash:'b'.repeat(64)},parent:{origin,id},status:'resolved'}});
   const open=seedComment('still-open',{...feedbackTarget(),state:'closed',artifactHash:row('closed').hashes[390]});open.cursor=4;
   const original=[source,resolution('current',source.id,2),resolution('legacy','imported-done',3),open],bytes=JSON.stringify([original,legacy]);
-  const h=await hostHarness({initialRecords:original,legacyItems:[legacy],canonicalHost:true,withShell:true}),{w,writes,messages}=h,$=id=>w.document.getElementById(id);
+  const h=await hostHarness({initialRecords:original,canonicalHost:true,withShell:true,
+    recordPage:({scope})=>({items:scope==='all'?original:[open],nextCursor:4,until:4,hasMore:false}),
+    legacyPage:scope=>({items:[scope==='all'?legacy:{...legacy,data:{...legacy.data,comments:[],inactiveCommentsOmitted:true}}],until:4,hasMore:false})}),{w,writes,messages}=h,$=id=>w.document.getElementById(id);
   try{
     $('points').click();
     assert.equal(feedbackCard(w,source.id),null);assert.equal(feedbackCard(w,'imported-done'),null);
-    assert.equal($('comment-count').textContent,'미해결 0개 · 전체 2개');
+    assert.equal($('comment-count').textContent,'미해결 0개 · 전체 0개');
     assert.equal($('open-total').textContent,'1');
     assert.equal(w.document.querySelector('[data-module=login] .nav-comment-count').textContent,'1');
     assert.equal(w.document.querySelector('#state-buttons [data-state=empty] small'),null);
     assert.equal(w.document.querySelector('#state-buttons [data-state=closed] small').textContent,'1');
     assert.equal(messages.filter(m=>m.type==='pins').at(-1).payload.length,0);
     assert.equal($('review-records').textContent,'');
-    w.document.querySelector('[data-comment-filter=resolved]').click();
+    await w.document.querySelector('[data-comment-filter=resolved]').onclick();
     assert.equal(feedbackCard(w,source.id).dataset.feedbackStatus,'resolved');
     assert.equal(feedbackCard(w,'imported-done').dataset.feedbackStatus,'resolved');
-    w.document.querySelector('[data-comment-filter=all]').click();
+    await w.document.querySelector('[data-comment-filter=all]').onclick();
     assert.ok(feedbackCard(w,source.id).textContent.includes(source.data.body));
     assert.ok(feedbackCard(w,'imported-done').textContent.includes(legacy.data.comments[0].body));
     await $('next').onclick();assert.equal(new URL(w.location.href).searchParams.get('screen'),'login/closed/email');
@@ -496,12 +499,13 @@ test('rework composers cannot enter location editing or replace the original com
   }finally{w.close();}
 });
 
-test('Q2 is named in the QA navigation and original-product links remain explicit collapsed comparisons',async()=>{
+test('Q2 keeps its explicit review hold and original-product links without creating a completion verdict',async()=>{
   const q2=catalog.find(r=>r.screen==='q2'&&r.state==='empty');assert.ok(q2);
-  const h=await hostHarness({canonicalHost:true,withShell:true,screenRows:[q2]}),{w,approvedShell}=h;
+  const h=await hostHarness({canonicalHost:true,withShell:true,screenRows:[{...q2,reviewHold:'hi-fi-simple-and-detailed'}]}),{w,approvedShell}=h;
   try{
     assert.equal(w.document.querySelector('[data-module=q2] .nav-label').textContent,'Q2 구매량·현재 가격');
     assert.equal(w.document.getElementById('caption').textContent,'Q2 구매량·현재 가격');
+    assert.equal(w.document.getElementById('stage-hint').textContent,'간편·상세 하이파이 완료 후 검토');assert.equal(h.writes.length,0);
     const comparisons=w.document.getElementById('quote-candidates');assert.equal(comparisons.tagName,'DETAILS');assert.equal(comparisons.open,false);assert.match(comparisons.querySelector('summary').textContent,/정규 원본 비교/);
     assert.ok([...comparisons.querySelectorAll('a')].every(a=>a.target==='_blank'&&a.textContent.includes('원본')&&a.textContent.includes('새 창')));
     assert.equal(w.document.getElementById('version').closest('details').open,false);
@@ -519,7 +523,7 @@ test('rework instructions attach to current, historical and imported unresolved 
   const originals=[prior,current,resolved,deleted,recheck,verdict,imported],before=JSON.stringify(originals);
   const h=await hostHarness({initialRecords:originals.slice(0,-1),legacyItems:[imported]}),{w,records,writes,messages}=h,$=id=>w.document.getElementById(id);
   try{
-    $('points').click();w.document.querySelector('[data-comment-filter=all]').click();
+    $('points').click();await w.document.querySelector('[data-comment-filter=all]').onclick();
     const action=id=>[...feedbackCard(w,id).querySelectorAll('button')].find(b=>b.textContent==='재작업 지시');
     assert.ok(action(current.id));assert.ok(action(prior.id));assert.ok(action('legacy-rework'));assert.equal(action(resolved.id),undefined);
     assert.equal([...w.document.querySelectorAll('#notes article')].find(card=>card.textContent.includes('삭제된 의견')).querySelector('.rework-action'),null);
