@@ -147,8 +147,7 @@ def check(page, origin, width):
     assert diagnostics["role"] == "combobox", diagnostics
     expect(next_input).to_have_accessible_name("업종 필수")
     field.focus()
-    expect(frame.locator('[data-business-classification]')).to_have_text(
-        "국세청 2026.04 공개 목록 · 사업자등록증과 동일하게 입력해 주세요.")
+    expect(frame.locator('[data-business-classification]')).to_have_count(0)
     catalogue = field.evaluate("""el=>{
         const data=el.ownerDocument.defaultView.ORDER_RESEARCH_WORKFLOW_POLISH.businessClasses;
         return {rows:data.rows.length,sectors:data.sectors.length};
@@ -203,9 +202,12 @@ def check(page, origin, width):
     memo.fill("가"*499 + " 👩‍🍳" + "과")
     expect(frame.locator("progress")).to_have_js_property("value",500)
     expect(memo).to_have_value("가"*499 + " 👩‍🍳")
-    frame_click(page, frame.get_by_role("button",name="자료와 서명 준비",exact=True))
+    expect(frame.locator('.wf-panel')).to_have_attribute('data-review-ready', 'true')
+    expect(frame.get_by_role("button",name="자료와 서명 준비",exact=True,include_hidden=True)).to_be_hidden()
     file = frame.locator("[type=file]")
-    expect(file).to_be_visible()
+    expect(frame.locator('.research-file-drop')).to_be_visible()
+    expect(file).to_be_attached()
+    expect(file).to_be_enabled()
     assert file.evaluate("el=>el.multiple")
     file.set_input_files({"name":"invalid-content.png","mimeType":"image/png","buffer":b"not an image"})
     expect(frame.locator(".wf-status")).to_contain_text("파일을 열 수 없습니다.")
@@ -214,7 +216,7 @@ def check(page, origin, width):
     expect(memo).to_have_value("가"*499 + " 👩‍🍳")
 
     frame = screen("signature","empty")
-    signed = check_signature_flow(page, frame)
+    signed = check_signature_flow(page, frame, open_proof=lambda: screen('proof', 'empty'))
     OUT.mkdir(parents=True, exist_ok=True)
     (OUT / f"signature-{width}.json").write_text(json.dumps(signed,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps({"width":width,"business_dropdown_layout_shift_px":after-before,

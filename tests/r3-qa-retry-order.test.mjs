@@ -128,9 +128,10 @@ test('an old idempotency replay preserves newer state and the original draft unt
     $('points').click();
     assert.match($('notes').querySelector('[data-reply-id="'+packet.id+'"]').textContent,/r2/,'replay cannot downgrade the already loaded record');
     const readCount=reads.length;await $('sync').onclick();
-    const incremental=reads.slice(readCount).find(read=>read.path.endsWith('/records'));
-    assert.equal(incremental.since,h.newer.cursor);assert.equal(incremental.result.items.length,0);
-    assert.match($('notes').querySelector('[data-reply-id="'+packet.id+'"]').textContent,/r2/,'an empty incremental sync still retains r2');
+    const snapshot=reads.slice(readCount).find(read=>read.path.endsWith('/records'));
+    assert.equal(snapshot.since,0);assert.equal(snapshot.result.until,h.newer.cursor);
+    assert.equal(snapshot.result.scope,'active');assert.equal(snapshot.result.items.find(row=>row.id===packet.id).revision,2);
+    assert.match($('notes').querySelector('[data-reply-id="'+packet.id+'"]').textContent,/r2/,'the bounded active snapshot retains r2 without adopting the old replay');
     [...$('notes').querySelectorAll('button')].find(button=>button.textContent.startsWith('저장하지 않은 재작업 지시 이어쓰기')).click();
     assert.equal($('save-error').hidden,false);assert.equal($('body-text').value,packet.data.body);
     await $('save').onclick();

@@ -139,8 +139,17 @@ def check(page, origin, width):
     expect(action(frame, "finish-q4")).to_be_hidden()
 
     screen = ReviewScreens(page, origin, width).screen
-    for module, state in (("q2", "empty"), ("quote-review", "normal")):
-        screen(module, state)
+    # The current review remains inside the retained Q2 input stage; the
+    # removed standalone quote-review page must not be selected from QA.
+    for module, state in (("q2", "empty"), ("q2", "filled")):
+        frame = screen(module, state)
+        if state == "filled":
+            frame_click(page, frame.locator('#order-app-quote #input-review-open'))
+            review = frame.locator('#order-app-quote #input-review-dialog')
+            expect(review).to_be_visible()
+            assert review.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+            frame_click(page, review.locator('#input-review-back'))
+            expect(review).to_have_js_property('open', False)
         links = page.locator("#quote-candidates")
         expect(links).to_be_visible()
         expect(links.locator("summary")).to_have_text("정규 원본 비교")
@@ -159,7 +168,7 @@ def check(page, origin, width):
         expect(links).to_be_visible()
         if page.locator("#drawer").is_visible():
             page.locator("#close-drawer").click()
-    print(json.dumps({"width": width, "checks": ["preserved_q1_empty_add_edit_delete", "preserved_q1_tags_icons_errors", "preserved_q3_header_contacts", "preserved_q3_swipe_cancel_scoped_detach", "preserved_q3_empty_completion", "preserved_q4_venue_unlink", "preserved_q4_empty_completion", "current_q2_review_original_comparison_links"]}))
+    print(json.dumps({"width": width, "checks": ["preserved_q1_empty_add_edit_delete", "preserved_q1_tags_icons_errors", "preserved_q3_header_contacts", "preserved_q3_swipe_cancel_scoped_detach", "preserved_q3_empty_completion", "preserved_q4_venue_unlink", "preserved_q4_empty_completion", "current_q2_native_input_review_and_original_comparison_links"]}))
 
 
 def main():

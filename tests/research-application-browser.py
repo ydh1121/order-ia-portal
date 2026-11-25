@@ -624,10 +624,25 @@ def main():
         frame_click(page, account_trigger)
         ready_review_route(page, frame, 'profile', 'menu')
         expect(frame.locator('.obm-panel')).to_be_visible()
-        assert frame.locator('.obm-panel').evaluate('''panel =>
-            panel.getBoundingClientRect().top >=
-            document.querySelector('#order-app-header').getBoundingClientRect().bottom
-        '''), 'The native account popover must leave the retained header controls reachable'
+        appearance['accountAnchor']=frame.locator('.obm-panel').evaluate('''panel => {
+            const p=panel.getBoundingClientRect(),header=document.querySelector('#order-app-header').getBoundingClientRect();
+            const trigger=document.querySelector('[data-order-account-trigger]');
+            const paths=[...trigger.querySelectorAll('svg g > path')].map(path=>path.getBoundingClientRect());
+            const ink={top:Math.min(...paths.map(r=>r.top)),right:Math.max(...paths.map(r=>r.right)),
+                left:Math.min(...paths.map(r=>r.left)),bottom:Math.max(...paths.map(r=>r.bottom))};
+            const number=name=>parseFloat(panel.style.getPropertyValue(name));
+            const order=document.querySelector('.research-order-trigger'),r=order.getBoundingClientRect();
+            const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+            return {pathCount:paths.length,panelTop:p.top,headerBottom:header.bottom,ink,
+                morphTop:p.top+number('--obm-start-y'),morphRight:p.left+number('--obm-open-w')+number('--obm-start-x'),
+                closedWidth:number('--obm-closed-w'),closedHeight:number('--obm-closed-h'),orderHit:hit?.closest('.research-order-trigger')===order};
+        }''')
+        anchor=appearance['accountAnchor']
+        assert anchor['pathCount']==3 and anchor['panelTop']>=anchor['headerBottom']+7.5, anchor
+        assert abs(anchor['morphTop']-anchor['ink']['top'])<=0.5 and abs(anchor['morphRight']-anchor['ink']['right'])<=0.5, anchor
+        assert abs(anchor['closedWidth']-(anchor['ink']['right']-anchor['ink']['left']))<=0.5, anchor
+        assert abs(anchor['closedHeight']-(anchor['ink']['bottom']-anchor['ink']['top']))<=0.5, anchor
+        assert anchor['orderHit'], 'The expanded account popover must leave the unchanged Order trigger physically reachable'
         appearance['accountSurface']=frame.locator('.obm-panel').evaluate('''panel => {
             const surface=panel.querySelector('.obm-surface'),menu=panel.querySelector('.obm-menu');
             const s=getComputedStyle(surface),m=getComputedStyle(menu),p=getComputedStyle(panel);
@@ -708,7 +723,7 @@ def main():
         expect(preview.locator('[data-action="research-all-notifications"]')).to_be_visible()
         messages = frame.locator('#order-single').evaluate('''async () => {
             const response=await ORDER_RESEARCH_APP.adapter.request('/notifications');
-            return response.items.map(({id,title,body,createdAt,readAt})=>({id,title,body,createdAt,readAt}));
+            return response.items.map(({id,title,body,createdAt,readAt,category})=>({id,title,body,createdAt,readAt,category}));
         }''')
         assert messages, 'The original member scenario must supply actual notification records'
         expect(preview.locator('[data-notification-id]')).to_have_count(min(3, len(messages)))
@@ -734,6 +749,18 @@ def main():
         expect(full.locator('[data-notification-id]')).to_have_count(min(20, len(messages)))
         expect(frame.locator('.obm-panel')).to_be_hidden()
         expect(full.locator('[data-notification-preferences]')).to_be_visible()
+        notification_layout = full.evaluate('''root => {
+            const rect=element=>element.getBoundingClientRect().toJSON(),header=root.ownerDocument.querySelector('#order-app-header');
+            const heading=root.querySelector('h1'),filter=root.querySelector('.research-notification-filter .r3-select-trigger')||root.querySelector('[data-notification-filter]');
+            return {heading:rect(heading),filter:rect(filter),brand:rect(header.querySelector('[data-app-brand]')),back:rect(header.querySelector('[data-app-back]')),
+                filterLabel:root.querySelector('[data-notification-filter]').getAttribute('aria-label'),visibleKindLabel:root.querySelector('.research-notification-filter').textContent.replace(/전체|주문|견적|배송|시세|소식|혜택|기타/g,'').trim(),
+                unreadColor:getComputedStyle(root.querySelector('[data-read="false"] .research-notification-title')).color};
+        }''')
+        assert notification_layout['filter']['x'] > notification_layout['heading']['x'] + notification_layout['heading']['width'], notification_layout
+        assert abs(notification_layout['filter']['y'] + notification_layout['filter']['height']/2 - notification_layout['heading']['y'] - notification_layout['heading']['height']/2) <= 1, notification_layout
+        assert notification_layout['back']['y'] >= notification_layout['brand']['y'] + notification_layout['brand']['height'] - 0.5, notification_layout
+        assert notification_layout['back']['y'] + notification_layout['back']['height'] < notification_layout['heading']['y'], notification_layout
+        assert notification_layout['filterLabel'] == '알림 종류' and notification_layout['visibleKindLabel'] == '', notification_layout
         page.screenshot(path=str(OUT / 'notifications-full-1440.png'), full_page=True)
 
         phase = 'qa-notification-detail-and-settings'
@@ -757,10 +784,13 @@ def main():
         frame_click(page, full.locator('[data-action="research-notification-back"]'))
         expect(full.locator('[data-notification-detail]')).to_have_count(0)
         expect(full.locator('[data-notification-id="' + notification_id + '"]')).to_have_attribute('data-read', 'true')
+        read_color = full.locator('[data-notification-id="' + notification_id + '"] .research-notification-title').evaluate('element => getComputedStyle(element).color')
+        channels = [int(value) for value in re.findall(r'\d+', read_color)[:3]]
+        assert len(channels) == 3 and max(channels) - min(channels) <= 24 and read_color != notification_layout['unreadColor'], read_color
 
         preferences = full.locator('[data-notification-preferences]')
-        frame_click(page, preferences.locator('summary'))
-        expect(preferences).to_have_js_property('open', True)
+        expect(preferences.locator('details,summary')).to_have_count(0)
+        expect(preferences.locator('input[role="switch"]')).to_have_count(3)
         expect(preferences.locator('fieldset')).to_be_visible()
         expect(preferences.locator('fieldset')).to_be_enabled()
         before_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
@@ -775,13 +805,27 @@ def main():
         same_review_application(page, frame)
         assert_no_hidden_modal(frame)
         page.screenshot(path=str(OUT / 'notification-preferences-1440.png'), full_page=True)
-        receipt['checks'].append('trusted notification clicks open the three-item preview, full reader, actual message and consent settings; read and consent acknowledgements stay in the existing research fixture')
+        announcement = next(item for item in messages if item.get('category') == 'news')
+        frame_click(page, full.locator('[data-notification-id="' + announcement['id'] + '"]'))
+        expect(full.locator('[data-notice-post]')).to_have_attribute('data-notice-post', announcement['id'])
+        expect(full.locator('h1')).to_have_text('안내·소식')
+        expect(frame.locator('#order-app-header [data-app-back]')).to_be_hidden()
+        expect(full.locator('.research-notifications-navigation [data-action="research-notification-back"]')).to_be_visible()
+        frame_click(page, full.locator('[data-action="research-notice-board"]'))
+        expect(full.locator('[data-notice-board]')).to_be_visible()
+        expect(full.locator('[data-notice-board] [data-notice-id="' + announcement['id'] + '"]')).to_be_visible()
+        page.screenshot(path=str(OUT / 'notification-board-1440.png'), full_page=True)
+        frame_click(page, full.locator('[data-action="research-notification-back"]'))
+        expect(full.locator('h1')).to_have_text('알림')
+        receipt['checks'].append('trusted notification clicks open the preview, full reader and declared announcement board; filters align beside the title, one back sits below the brand, read messages turn gray, and three expanded switches preserve read/consent acknowledgements')
         receipt['nativeMemberInteractions'] = {
             'viewport': {'host': 1440, 'researchFrame': 390},
             'singleAccountOpener': True, 'oneClickAccountToOrder': True,
             'companyToQuoteAccountUsable': True, 'companyToRetainedAccountUsable': True,
             'notificationCount': len(messages), 'openedNotificationId': notification_id,
             'readAcknowledged': True, 'preferenceRevision': after_preferences['revision'],
+            'notificationLayout': notification_layout, 'readMessageColor': read_color,
+            'expandedSwitches': 3, 'announcementBoardId': announcement['id'],
             'trustedPointerReceipts': True, 'fixtureRecordsInjected': False,
             'commercialAcceptance': False,
         }
@@ -1009,16 +1053,16 @@ def main():
 
         # A retained native dialog can block the entire child document even
         # when its quote section is hidden and the QA frame itself is usable.
-        # Start from the actual QA review scenario and use physical clicks to
+        # Open the real read-only review from its input stage, then use clicks to
         # exercise the next owner; never close the dialog from the test.
         phase = 'qa-quote-modal-boundary'
         prepare_frame_pointer(page)
-        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=quote-review/normal/email&width=390')
+        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=q2/filled/email&width=390')
         frame = page.frame_locator('#frame')
         frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
         expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
         remember_review_application(page)
-        ready_review_route(page, frame, 'quote-review', 'normal')
+        ready_review_route(page, frame, 'q2', 'filled')
         page.locator('.lab-role-filter [data-role="all"]').click()
         page.evaluate('''() => {
             window.__researchQuoteBoundaryErrors=[];
@@ -1034,7 +1078,8 @@ def main():
         for index, (screen, state) in enumerate(read_only_targets):
             phase = 'qa-quote-modal-to-' + screen
             if index:
-                choose_review_route(page, frame, 'quote-review', 'normal')
+                choose_review_route(page, frame, 'q2', 'filled')
+            frame_click(page, frame.locator('#order-app-quote #input-review-open'))
             review = frame.locator('#order-app-quote #input-review-dialog')
             expect(review).to_be_visible()
             expect(review).to_have_js_property('open', True)
@@ -1165,12 +1210,12 @@ def main():
         # location picker must operate within that modal without closing it or
         # losing the product editor's unsaved input.
         phase = 'qa-visible-modal-location-picking'
-        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=quote-review/normal/email&width=390&mode=detailed')
+        page.goto(cfg['url'] + '/ia?view=qa-lab&screen=q4/closed/email&width=390&mode=detailed')
         frame = page.frame_locator('#frame')
         frame.locator('#r3-veil').wait_for(state='attached', timeout=30000)
         expect(page.locator('#frame')).to_have_js_property('inert', False, timeout=30000)
         remember_review_application(page)
-        ready_review_route(page, frame, 'quote-review', 'normal')
+        ready_review_route(page, frame, 'q4', 'closed')
         page.locator('.lab-role-filter [data-role="all"]').click()
         page.evaluate('''() => {
             window.__researchModalPoints=[];
@@ -1181,6 +1226,7 @@ def main():
                     window.__researchModalPoints.push(message.payload);
             });
         }''')
+        frame_click(page, frame.locator('#order-app-quote #input-review-open'))
         review = frame.locator('#order-app-quote #input-review-dialog')
         expect(review).to_be_visible()
         assert review.evaluate("dialog => dialog.open && dialog.matches(':modal')")

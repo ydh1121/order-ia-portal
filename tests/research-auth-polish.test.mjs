@@ -8,6 +8,7 @@ import {getProductUiBootstrap} from '../src/server/product-ui/bootstrap.mjs';
 import {sharedCoreScript,commonMotionScript} from '../src/server/product-ui/assets.gen.mjs';
 import {cssGzip} from '../src/server/product-ui/catalog.gen.mjs';
 import {researchAuthSheetSource} from '../src/server/research-app/auth-sheet-source.mjs';
+import {researchInputMotionSource} from '../src/server/research-app/input-polish-source.mjs';
 import {researchAuthPolishCss} from '../src/server/research-app/auth-polish.mjs';
 import {researchGoogleSignInButton} from '../src/server/research-app/auth-provider-assets.mjs';
 
@@ -16,7 +17,7 @@ const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 const canonical=await getProductAuthSheetBootstrap();
 
 async function setup(t,{review=true,state='guest-2',authState,performAction=async()=>({confirmed:false}),reduced=true}={}){
-  const errors=[],navigation=[],calls=[];
+  const errors=[],navigation=[],calls=[],animations=[];
   const virtualConsole=new VirtualConsole();
   virtualConsole.on('jsdomError',error=>{if(error.type!=='css parsing')errors.push(error.message);});
   const dom=new JSDOM('<!doctype html><main id="order-single" class="ds"><section id="parent"><button id="opener">시작하기</button></section></main>',{runScripts:'outside-only',url:'https://research.example/ia',pretendToBeVisual:true,virtualConsole});
@@ -31,14 +32,14 @@ async function setup(t,{review=true,state='guest-2',authState,performAction=asyn
   const advance=async ms=>{const end=now+ms;let iterations=0;while(true){const next=[...timers].filter(([,timer])=>timer.at<=end).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;assert.ok(++iterations<5000,'timers settle');now=next[1].at;timers.delete(next[0]);next[1].callback();await flush();}now=end;await flush();};
   w.matchMedia=()=>({matches:reduced,addEventListener(){},removeEventListener(){}});
   w.ResizeObserver=class{observe(){}unobserve(){}disconnect(){}};
-  w.HTMLElement.prototype.animate=()=>({finished:Promise.resolve(),cancel(){},pause(){},play(){}});
+  w.HTMLElement.prototype.animate=function(frames,options){animations.push({target:this,frames,options});return {finished:Promise.resolve(),cancel(){},pause(){},play(){}};};
   w.HTMLElement.prototype.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};
   w.HTMLCanvasElement.prototype.getContext=()=>({font:'',measureText(value){return {width:Array.from(value).length*8};}});
   // Parser mechanics are exercised with the actual engine by research-application
   // and research-regular-services. Here its narrow interface isolates auth UI.
   w.OrderEmail={parse:value=>({valid:/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)})};
   const style=w.document.createElement('style');style.textContent=gunzipSync(Buffer.from(cssGzip,'base64')).toString()+getProductUiBootstrap().css+canonical.css+researchAuthPolishCss;w.document.head.append(style);
-  w.eval(sharedCoreScript);w.eval(commonMotionScript);w.eval(getProductUiBootstrap().script);w.eval(researchAuthSheetSource(canonical.script));
+  w.eval(sharedCoreScript);w.eval(commonMotionScript);w.eval(researchInputMotionSource(getProductUiBootstrap().script));w.eval(researchAuthSheetSource(canonical.script));
   const adapter={fixture:true};
   const api={mode:'product',interactive:true,reviewScenario:review,reduced:()=>reduced,authState,adapter,
     select(...args){navigation.push(args);},
@@ -47,7 +48,7 @@ async function setup(t,{review=true,state='guest-2',authState,performAction=asyn
   };
   const controller=w.ORDER_AUTH_SHEET.attach(root,api,{getState:()=>state});
   t.after(()=>{controller.dispose();assert.deepEqual(errors,[]);w.close();});
-  return {w,root,api,calls,navigation,controller,advance,timers,sheet:()=>root.querySelector('[data-product-auth-sheet]'),
+  return {w,root,api,calls,navigation,controller,advance,timers,animations,sheet:()=>root.querySelector('[data-product-auth-sheet]'),
     async open(screen='login',value='empty'){w.document.getElementById('opener').focus();assert.equal(controller.select(screen,value),true);await flush();return this.sheet();},
     type(selector,value){const input=this.sheet().querySelector(selector);input.focus();input.value=value;input.dispatchEvent(new w.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));return input;}
   };
@@ -80,7 +81,7 @@ test('password, unknown-email and mismatch errors distinguish the actual invalid
   assert.match(email.closest('.field').querySelector('.inline-field-state').textContent,/등록된 이메일 정보가 없어요/);
   f.controller.open('signup','mismatch');
   const confirm=f.sheet().querySelector('[name=password-confirm]');
-  assert.match(confirm.closest('.field').querySelector('.inline-field-state').textContent,/입력하신 비밀번호가 달라요/);
+  assert.match(confirm.closest('.field').querySelector('.inline-field-state').textContent,/비밀번호를 입력해 주세요/);
   confirm.value='saved-not-valid';confirm.focus();confirm.setSelectionRange(2,5);
   await f.advance(1800);assert.equal(confirm.value,'saved-not-valid');assert.equal(confirm.selectionStart,2);assert.equal(confirm.selectionEnd,5);assert.equal(confirm.getAttribute('aria-invalid'),'true');
   assert.equal(confirm.closest('.field').classList.contains('shows-message'),false);
@@ -121,7 +122,7 @@ test('OTP countdown expires all digits and verify while keeping resend available
 test('signup success shows its response deadline and inbox advice, and cancels its timer on dismissal',async t=>{
   const f=await setup(t);await f.open('signup','success');
   const copy=f.sheet().querySelector('[data-auth-expiry]');
-  assert.match(copy.textContent,/15분 00초/);assert.match(copy.textContent,/스팸메일함과 휴면 메일함/);
+  assert.match(copy.textContent,/15분 00초/);assert.match(copy.textContent,/\n\n스팸메일함과 휴면 메일함/);
   await f.advance(1000);assert.match(copy.textContent,/14분 59초/);
   f.controller.close({immediate:true});const last=copy.textContent;await f.advance(2000);assert.equal(copy.textContent,last);assert.equal(f.sheet(),null);
 });
@@ -154,6 +155,56 @@ test('a pending real request masks the displayed password without clearing value
   assert.equal(f.w.getComputedStyle(button).color,'rgba(0, 0, 0, 0)');
   resolve({confirmed:false});await flush();assert.equal(button.getAttribute('aria-busy'),null);assert.equal(email.readOnly,false);assert.equal(password.readOnly,false);
   assert.equal(f.sheet().querySelector('.auth-pending-placeholder'),null);assert.equal(password.value,'NativeOnly!2026');assert.equal(f.sheet().dataset.authState,'empty');
+});
+
+test('optional consent is a focus-contained popup and Escape keeps the signup draft without opting in',async t=>{
+  const f=await setup(t);await f.open('signup','empty');
+  f.type('[name=email]','draft@example.com');f.type('[name=password]','Saved-pass-123!');f.type('[name=password-confirm]','Saved-pass-123!');
+  const required=f.sheet().querySelector('[name=required-consent]');required.checked=true;required.dispatchEvent(new f.w.Event('change',{bubbles:true}));
+  const submit=f.sheet().querySelector('[data-action=submit-signup]');submit.focus();submit.click();await flush();
+  const popup=f.sheet().querySelector('[data-opt-choice]'),buttons=[...popup.querySelectorAll('button')];
+  assert.equal(popup.getAttribute('role'),'alertdialog');assert.equal(popup.getAttribute('popover'),'manual');assert.equal(popup.dataset.choiceOpen,'true');
+  assert.equal(f.w.document.activeElement,buttons[0]);assert.equal(submit.inert,true);
+  buttons[0].dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));assert.equal(f.w.document.activeElement,buttons.at(-1));
+  buttons.at(-1).dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));await flush();
+  assert.equal(popup.hidden,true);assert.equal(submit.inert,false);assert.equal(f.w.document.activeElement,submit);
+  assert.equal(f.sheet().querySelector('[name=marketing-consent]').checked,false);assert.equal(f.sheet().querySelector('[name=password]').value,'Saved-pass-123!');assert.equal(f.calls.length,0);
+});
+
+test('footer terms stay read-only while signup terms keep their consent and return path',async t=>{
+  const f=await setup(t);await f.open('terms','required');
+  let page=f.sheet().querySelector('.terms-page');assert.equal(f.sheet().dataset.termsContext,'read');
+  assert.equal(page.querySelector('.check-row'),null);assert.equal(page.querySelector('.bottom-actions'),null);
+  assert.equal(page.querySelector('.page-head'),null);assert.equal(page.querySelector('.page-title'),null);assert.equal(page.querySelector('[data-policy-meta]'),null);
+  await f.open('signup','empty');f.sheet().querySelector('[data-action=open-terms]').click();await flush();page=f.sheet().querySelector('.terms-page');
+  assert.equal(f.sheet().dataset.termsContext,'consent');assert.notEqual(f.w.getComputedStyle(page.querySelector('.check-row')).display,'none');
+  assert.equal(page.querySelector('.page-head').children.length,1);assert.ok(page.querySelector('[data-action=back]'));
+});
+
+test('password strength bridges changed capsules on entry and removal and honors reduced motion',async t=>{
+  const f=await setup(t,{reduced:false});await f.open('signup','empty');
+  const meter=f.sheet().querySelector('.password-meter');f.animations.length=0;
+  f.type('[name=password]','abcdef');assert.equal(meter.dataset.level,'2');
+  const neck=f.animations.find(x=>x.target.tagName==='EM'&&x.target.closest('.password-meter'));
+  assert.ok(neck);assert.equal(neck.options.duration,300);assert.equal(neck.options.direction,'normal');
+  assert.equal(neck.frames.find(x=>x.offset===.443).opacity,1);assert.equal(neck.frames.find(x=>x.offset===.667).opacity,0);
+  f.animations.length=0;f.type('[name=password]','a');assert.equal(meter.dataset.level,'1');
+  assert.equal(f.animations.find(x=>x.target.tagName==='EM'&&x.target.closest('.password-meter')).options.direction,'reverse');
+  const reduced=await setup(t,{reduced:true});await reduced.open('signup','empty');reduced.animations.length=0;reduced.type('[name=password]','abcdef');
+  assert.equal(reduced.sheet().querySelector('.password-meter').dataset.level,'2');assert.equal(reduced.animations.filter(x=>x.target.closest('.password-meter')).length,0);
+});
+
+test('floating input motion meets the native asymmetric baseline without changing the submitted value',async t=>{
+  const f=await setup(t,{reduced:false});await f.open('signup','empty');
+  const input=f.sheet().querySelector('[name=password]');
+  Object.assign(input.style,{paddingTop:'25px',paddingBottom:'8px',borderTopWidth:'0px',borderBottomWidth:'0px',lineHeight:'24px',fontSize:'15px'});
+  Object.defineProperty(input,'offsetHeight',{get:()=>62});
+  input.getBoundingClientRect=()=>({left:25,top:418,width:340,height:62,right:365,bottom:480});
+  f.type('[name=password]','abc');await flush();
+  const mirror=f.w.document.querySelector('.r3-input-mirror');assert.ok(mirror);
+  assert.equal(mirror.style.paddingTop,'27.5px');assert.equal(input.value,'abc');assert.equal(mirror.textContent,'•••');
+  input.dispatchEvent(new f.w.FocusEvent('blur',{bubbles:true}));await flush();
+  assert.equal(f.w.document.querySelector('.r3-input-mirror'),null);assert.equal(input.value,'abc');
 });
 
 test('closing a pending auth view disposes presentation and prevents a late response from navigating',async t=>{

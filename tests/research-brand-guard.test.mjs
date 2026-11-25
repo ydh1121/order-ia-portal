@@ -30,6 +30,29 @@ test('the research guard preserves canonical CSS and rejects a changed source se
   assert.equal(original.includes('requestClose'), false, 'the canonical source is not edited');
 });
 
+test('the research menu starts at the logo ink and expands below the unchanged application header', async t => {
+  const f=await fixture(t,()=>true),header=f.doc.querySelector('header');
+  header.id='order-app-header';
+  header.getBoundingClientRect=()=>({left:0,top:0,right:390,bottom:78,width:390,height:78});
+  Object.defineProperty(f.w,'innerWidth',{value:390});Object.defineProperty(f.w,'innerHeight',{value:844});
+  f.api.trigger.getBoundingClientRect=()=>({left:310,top:18,right:370,bottom:62,width:60,height:44});
+  const boxes=[
+    {left:314.125,top:29.25,right:334.875,bottom:50,width:20.75,height:20.75},
+    {left:329.875,top:29.25,right:350.625,bottom:50,width:20.75,height:20.75},
+    {left:345.5,top:29.25,right:366.25,bottom:50,width:20.75,height:20.75}
+  ];
+  [...f.api.trigger.querySelectorAll('g > path')].forEach((path,index)=>{path.getBoundingClientRect=()=>boxes[index];});
+  await f.api.requestClose({immediate:true});f.api.open();await tick();
+  const panel=f.api.panel,value=key=>parseFloat(panel.style.getPropertyValue(key));
+  assert.equal(parseFloat(panel.style.top),86,'the expanded menu leaves all header controls above it');
+  assert.equal(parseFloat(panel.style.top)+value('--obm-start-y'),29.25,'the closed surface retains the actual logo top');
+  assert.equal(parseFloat(panel.style.left)+value('--obm-open-w')+value('--obm-start-x'),366.25,'the closed surface retains the actual logo right');
+  assert.equal(value('--obm-closed-w'),52.125);assert.equal(value('--obm-closed-h'),20.75,'the ink, not the hit box, defines the starting shape');
+  assert.deepEqual(header.getBoundingClientRect(),{left:0,top:0,right:390,bottom:78,width:390,height:78});
+  await f.api.requestClose({immediate:true});header.removeAttribute('id');f.api.open();await tick();
+  assert.equal(parseFloat(panel.style.top),29.25,'a non-application host keeps its canonical ink-top placement');
+});
+
 test('close waits for the panel guard, coalesces repeated dismissal and preserves cancelled input', async t => {
   const decisions = [], f = await fixture(t, () => new Promise(resolve => decisions.push(resolve))), entry = f.entries[0], parent = f.doc.getElementById('parent-draft');
   const pending = f.api.requestClose({immediate: true}); await tick();

@@ -55,7 +55,9 @@ MEASURE = """()=>{
    variants:all('#state-buttons button[data-variant]').map(b=>b.dataset.variant),mode:document.querySelector('.lab-stage').dataset.mode,
    drawerTabs:all('button[data-drawer-tab]').map(b=>b.dataset.drawerTab),
    modeButtons:all('.lab-topbar button[data-mode]').map(b=>b.textContent.trim()),
-   navCount:all('#catalog button[data-module]').length,navModules:all('#catalog button[data-module]').map(b=>b.dataset.module),navGroups:all('#catalog [data-nav-group]').map(g=>g.dataset.navGroup),bodyOverflow:document.documentElement.scrollWidth-innerWidth,
+   navCount:all('#catalog button[data-module]').length,navModules:all('#catalog button[data-module]').map(b=>b.dataset.module),
+   navStateCounts:Object.fromEntries(all('#catalog button[data-module]').map(b=>[b.dataset.module,Number(b.querySelector('.nav-count')?.textContent||0)])),
+   navGroups:all('#catalog [data-nav-group]').map(g=>g.dataset.navGroup),bodyOverflow:document.documentElement.scrollWidth-innerWidth,
    boardOpen:all('#preview-list button[data-open-state]').filter(visible).length,
    shellFonts:Object.fromEntries(['.lab-topbar','.lab-states','.lab-catalog'].map(s=>[s,getComputedStyle(document.querySelector(s)).fontFamily]))};
 }"""
@@ -114,8 +116,12 @@ def compare(name, original, candidate, drawer, mode):
         require(original[key]==candidate[key],f"{key}: {original[key]} / {candidate[key]}")
     # The user's 2026-11-20 directive replaces the flat menu with two editable
     # accordions. All existing preview geometry and other shell gates remain.
-    require(set(original["navModules"]).issubset(candidate["navModules"]),"an approved menu module was lost")
-    require(candidate["navCount"]==103 and len(set(candidate["navModules"]))==103 and {"price-workspace","notifications"}.issubset(candidate["navModules"]),"MVP inventory, the canonical price workspace or the native notification page is missing or duplicated")
+    # Nov 25 explicitly retires the 6 independent quote-review states and
+    # the 2 result states new-only-detail/no-current. All other approved
+    # modules and the shell geometry remain protected by this comparison.
+    require(set(original["navModules"])-set(candidate["navModules"])=={"quote-review"},"the exact authorized retired module was not removed, or another approved module was lost")
+    require(candidate["navCount"]==102 and len(set(candidate["navModules"]))==102 and {"price-workspace","notifications"}.issubset(candidate["navModules"]),"MVP inventory, the canonical price workspace or the native notification page is missing or duplicated")
+    require("quote-review" not in candidate["navStateCounts"] and candidate["navStateCounts"].get("quote-result")==9 and sum(candidate["navStateCounts"].values())==541,"current inventory must remove exactly the 8 retired states and retain all 541 review states")
     require(candidate["navGroups"]==["mvp","future"],"MVP and future accordions missing")
     require(candidate["bodyOverflow"] <= 1, f"document horizontal overflow {candidate['bodyOverflow']}px")
     def compare_box(what, a, b, axes=range(4), tol=2):

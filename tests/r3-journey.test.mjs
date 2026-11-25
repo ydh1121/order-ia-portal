@@ -5,7 +5,7 @@ import {researchScene} from '../src/server/research-app/page.mjs';
 import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 const get=async(id,version='current')=>(await serveR3Artifact(new Request('https://review.test/api/ia/r3-qa/artifact?'+new URLSearchParams({id,width:'390',version})))).json();
 test('current research result scenes retain the shared display fixture and exclude commercial requests and issuer data',async()=>{
-  for(const state of ['saving','new-detail','current-detail','new-only-detail','equal','current-lower','no-current','expired','recompare','no-result','locked']){
+  for(const state of ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result','locked']){
     const doc=await get('quote-result/'+state+'/email');
     assert.ok(doc.application);assert.equal(new URL(doc.application.url,'https://review.test').searchParams.get('state'),state);
     const {html}=await researchScene('quote-result',state,'email');
@@ -25,14 +25,15 @@ test('current research result scenes retain the shared display fixture and exclu
     if(['locked','no-result','expired'].includes(state))assert.doesNotMatch(html,/12,540,000|11,940,000|13,140,000/);
   }
 });
-test('current Q2 and review select one application build while their R1 source controls remain explicitly replayable',async()=>{
-  const q2=await get('q2/empty/email'),review=await get('quote-review/normal/email');
-  assert.equal(q2.application.build,review.application.build);
-  for(const [doc,screen]of [[q2,'q2'],[review,'quote-review']]){
+test('current Q2 and Q4 select one application build while the retired review stays explicitly replayable',async()=>{
+  const q2=await get('q2/empty/email'),q4=await get('q4/closed/email');
+  assert.equal(q2.application.build,q4.application.build);
+  for(const [doc,screen]of [[q2,'q2'],[q4,'q4']]){
     const url=new URL(doc.application.url,'https://review.test');assert.equal(url.pathname,'/ia');assert.equal(url.searchParams.get('view'),'research-r3');assert.equal(url.searchParams.get('screen'),screen);
     assert.equal(doc.source.ownership,'application');assert.equal(Object.hasOwn(doc,'mount'),false);
   }
   const oldQ2=await preservedReviewArtifact('q2/empty/email'),oldReview=await preservedReviewArtifact('quote-review/normal/email');
+  for(const id of ['quote-review/normal/email','quote-result/no-current/email','quote-result/new-only-detail/email'])assert.equal((await get(id)).error,'RETIRED_REVIEW_TARGET');
   assert.match(oldQ2.editable,/data-purchase-form/);assert.match(oldReview.editable,/data-summary-qty/);
   assert.match(oldQ2.mount,/r3-review-journey/);assert.equal((await get('q2/empty/email','previous')).mount,null);
   const html=renderR3Qa('journey');assert.match(html,/journeyDraft/);assert.match(html,/menuPublication/);

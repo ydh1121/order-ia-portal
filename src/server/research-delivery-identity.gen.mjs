@@ -1,3 +1,4 @@
 // Generated from the verified research pack by scripts/build-research-delivery.mjs.
-export const deliveryBuild="9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092";
-export const deliveryManifest=[54847,124882,"6ea000d567c1590e165a670aa927fc79d3a3622318acb174f9cc5f8635dbc59b"];
+export const deliveryBuild="30b2b4a5f5ba187cc34f3db400901a85f2395c8a40f315f960c553cdb525d03d";
+export const deliveryManifest=[54071,122960,"c564885707bff081b4e50cab38c6bebeb45e97146d52c6c6a65387fc84d6755e"];
+export const deliveryManifests={"30b2b4a5f5ba187cc34f3db400901a85f2395c8a40f315f960c553cdb525d03d":[54071,122960,"c564885707bff081b4e50cab38c6bebeb45e97146d52c6c6a65387fc84d6755e"],"9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092":[54847,124882,"6ea000d567c1590e165a670aa927fc79d3a3622318acb174f9cc5f8635dbc59b"]};

@@ -211,7 +211,69 @@ function pageNumber(s,fallback,min,max) {
   if (!/^\d+$/.test(s)) return null;
   const n=Number(s);return integer(n,min,max)?n:null;
 }
-async function read(db,url,path) {
+const feedbackViewKey=target=>JSON.stringify([target.screen,target.state,target.variant,target.viewport,reviewMode(target)]);
+const feedbackParentKey=(parent,target)=>JSON.stringify([parent.origin,parent.id,feedbackViewKey(target)]);
+async function activeFeedbackAt(db,release,until,currentArtifactHash,includeActiveTarget){
+  // Only state and source identity are needed to decide which original bodies
+  // belong in the active queue. The append-only event and legacy bytes stay put.
+  const rows=(await db.prepare(`SELECT e.kind,e.id,e.action,e.cursor,
+    json_extract(e.data,'$.target') AS target,json_extract(e.data,'$.parent') AS parent,json_extract(e.data,'$.status') AS status
+    FROM qa_review_events e WHERE e.release=? AND e.cursor<=? AND e.kind IN ('comment','feedback')
+    AND NOT EXISTS (SELECT 1 FROM qa_review_events n WHERE n.release=e.release AND n.kind=e.kind AND n.id=e.id AND n.revision>e.revision AND n.cursor<=?)
+    ORDER BY e.cursor`).bind(release,until,until).all()).results;
+  const sources=new Map(),feedback=new Map(),hashes=new Map(),states=new Map();
+  for(const row of rows){
+    const target=JSON.parse(row.target),parent=row.kind==='comment'?{origin:'current',id:row.id}:JSON.parse(row.parent);
+    const key=feedbackParentKey(parent,target);
+    if(row.kind==='comment')sources.set(key,{...row,target});
+    else{if(!feedback.has(key))feedback.set(key,[]);feedback.get(key).push({...row,target});}
+  }
+  const legacy=(await db.prepare(`SELECT r.source_key,json_extract(c.value,'$.id') AS id,
+    json_extract(c.value,'$.status') AS status,coalesce(json_extract(c.value,'$.deleted'),0) AS deleted
+    FROM qa_legacy_records r JOIN qa_legacy_sources s ON s.sha256=r.source_sha AND s.complete=1,
+    json_each(r.payload,'$.comments') c WHERE r.source_sha=?`).bind(sourceSha).all()).results;
+  for(const row of legacy){
+    const [screen,state,variant,width]=row.source_key.split('/'),target={screen,state,variant,viewport:Number(width)};
+    sources.set(feedbackParentKey({origin:'legacy',id:row.id},target),{...row,target,cursor:0});
+  }
+  const stateFor=(parent,target)=>{
+    const key=feedbackParentKey(parent,target);
+    if(!states.has(key))states.set(key,(async()=>{
+      if(includeActiveTarget?.(target,release)===false)return 'inactive';
+      const source=sources.get(key);
+      if(source?.action==='delete'||source?.deleted)return 'archived';
+      const viewKey=feedbackViewKey(target);
+      if(!hashes.has(viewKey))hashes.set(viewKey,Promise.resolve(currentArtifactHash?.(target,release)??null));
+      const hash=await hashes.get(viewKey),history=feedback.get(key)||[];
+      const entry=hash?history.findLast(row=>row.target.artifactHash===hash):null,previous=history.at(-1),decision=entry||previous;
+      const newerSource=parent.origin==='current'&&source&&(!decision||source.cursor>decision.cursor)&&(!entry||source.target.artifactHash===hash);
+      const fallback=(parent.origin==='current'?source?.action==='resolve':source?.status==='resolved')?'resolved':'unresolved';
+      return newerSource?(source.action==='resolve'?'resolved':'unresolved'):
+        decision?.status||fallback;
+    })());
+    return states.get(key);
+  };
+  const isActive=async(parent,target)=>!['resolved','archived','inactive'].includes(await stateFor(parent,target));
+  return {
+    async record(row){
+      const data=JSON.parse(row.data),parent=row.kind==='comment'?{origin:'current',id:row.id}:data.parent;
+      if(includeActiveTarget?.(data.target,release)===false)return false;
+      if(parent)return isActive(parent,data.target);
+      const id=data.sourceCommentId||(row.kind==='draft'?row.id:null);
+      if(id)for(const origin of ['current','legacy']){
+        const candidate={origin,id};if(sources.has(feedbackParentKey(candidate,data.target))&&!await isActive(candidate,data.target))return false;
+      }
+      return true;
+    },
+    async legacy(data,sourceKey){
+      const [screen,state,variant,width]=sourceKey.split('/'),target={screen,state,variant,viewport:Number(width)};
+      if(includeActiveTarget?.(target,release)===false)return null;
+      const comments=data.comments||[],keep=await Promise.all(comments.map(comment=>isActive({origin:'legacy',id:comment.id},target)));
+      return {...data,comments:comments.filter((_,i)=>keep[i]),...(keep.some(value=>!value)?{inactiveCommentsOmitted:true}:{})};
+    }
+  };
+}
+async function read(db,url,path,currentArtifactHash,includeActiveTarget) {
   const q=url.searchParams,limit=pageNumber(q.get('limit'),50,1,150);
   if(limit===null) return invalid();
   if(path==='/legacy-source'){
@@ -228,13 +290,19 @@ async function read(db,url,path) {
     if(offset!==bytes.length)return json({error:'SOURCE_INCOMPLETE'},503);
     return new Response(bytes,{headers:{'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','Vary':'Cookie, Cf-Access-Jwt-Assertion','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer'}});
   }
+  const scope=q.get('scope')??'active';if(!['active','all'].includes(scope))return invalid();
   if(path==='/legacy'){
     const after=pageNumber(q.get('after'),0,0,2147483647);if(after===null)return invalid();
+    const release=q.get('release')??'MSG0585-R3';if(!pointId(release))return invalid();
+    const bound=await db.prepare('SELECT coalesce(max(cursor),0) AS n FROM qa_review_events WHERE release=?').bind(release).first();
+    const until=pageNumber(q.get('until'),bound.n,0,bound.n);if(until===null)return invalid();
     const source=await db.prepare('SELECT complete FROM qa_legacy_sources WHERE sha256=?').bind(sourceSha).first();
     if(!source?.complete)return json({error:'SOURCE_IMPORT_PENDING'},503);
     const rows=(await db.prepare('SELECT source_key,source_pointer,ordinal,payload FROM qa_legacy_records WHERE source_sha=? AND ordinal>? ORDER BY ordinal LIMIT ?')
       .bind(sourceSha,after,limit).all()).results;
-    return json({items:rows.map(r=>({sourceKey:r.source_key,sourcePointer:r.source_pointer,sourceSha256:sourceSha,reviewedReleaseId:null,artifactHash:null,data:JSON.parse(r.payload)})),nextCursor:rows.at(-1)?.ordinal??after,hasMore:rows.length===limit});
+    const queue=scope==='active'?await activeFeedbackAt(db,release,until,currentArtifactHash,includeActiveTarget):null;
+    const projected=await Promise.all(rows.map(async r=>({sourceKey:r.source_key,sourcePointer:r.source_pointer,sourceSha256:sourceSha,reviewedReleaseId:null,artifactHash:null,data:queue?await queue.legacy(JSON.parse(r.payload),r.source_key):JSON.parse(r.payload)}))),items=projected.filter(row=>row.data!==null);
+    return json({items,scope,until,nextCursor:rows.at(-1)?.ordinal??after,hasMore:rows.length===limit});
   }
   const release=q.get('release'),since=pageNumber(q.get('since'),0,0,Number.MAX_SAFE_INTEGER),kind=q.get('kind'),id=q.get('id');
   if(!pointId(release)||since===null||(kind&&!kinds.has(kind))||(id&&!recordId(id)))return invalid();
@@ -251,15 +319,22 @@ async function read(db,url,path) {
   if(path==='/events' && !(kind&&id))return invalid();
   const terms=['e.release=?','e.cursor>?'],args=[release,since];
   if(kind){terms.push('e.kind=?');args.push(kind);}if(id){terms.push('e.id=?');args.push(id);}
-  if(path!=='/events')terms.push('NOT EXISTS (SELECT 1 FROM qa_review_events n WHERE n.release=e.release AND n.kind=e.kind AND n.id=e.id AND n.revision>e.revision)');
-  if(q.get('unresolved')==='1')terms.push("e.kind='comment' AND e.action NOT IN ('resolve','delete')");
+  let until=null;
+  if(path!=='/events'){
+    const bound=await db.prepare('SELECT coalesce(max(cursor),0) AS n FROM qa_review_events WHERE release=?').bind(release).first();
+    until=pageNumber(q.get('until'),bound.n,0,bound.n);if(until===null||since>until)return invalid();
+    terms.push('e.cursor<=?','NOT EXISTS (SELECT 1 FROM qa_review_events n WHERE n.release=e.release AND n.kind=e.kind AND n.id=e.id AND n.revision>e.revision AND n.cursor<=?)');args.push(until,until);
+  }
+  if(q.get('unresolved')==='1')terms.push(path==='/events'?"e.kind='comment' AND e.action NOT IN ('resolve','delete')":"e.kind='comment'");
   const rows=(await db.prepare('SELECT e.* FROM qa_review_events e WHERE '+terms.join(' AND ')+' ORDER BY e.cursor LIMIT ?').bind(...args,limit).all()).results;
-  return json({items:rows.map(shape),nextCursor:rows.at(-1)?.cursor??since,hasMore:rows.length===limit});
+  const queue=path!=='/events'&&(scope==='active'||q.get('unresolved')==='1')?await activeFeedbackAt(db,release,until,currentArtifactHash,includeActiveTarget):null;
+  const keep=queue?await Promise.all(rows.map(row=>queue.record(row))):rows.map(()=>true);
+  return json({items:rows.filter((_,i)=>keep[i]).map(shape),...(until===null?{}:{scope,until}),nextCursor:rows.at(-1)?.cursor??since,hasMore:rows.length===limit});
 }
-export async function handleR3Review({request,env,actor,path,checkTarget}) {
+export async function handleR3Review({request,env,actor,path,checkTarget,currentArtifactHash,includeActiveTarget}) {
   if(!env.ORDER_QA_DB)return json({error:'QA_STORE_UNAVAILABLE'},503);
   try {
-    if(request.method==='GET' && ['/records','/events','/legacy','/legacy-source','/backup'].includes(path))return await read(env.ORDER_QA_DB,new URL(request.url),path);
+    if(request.method==='GET' && ['/records','/events','/legacy','/legacy-source','/backup'].includes(path))return await read(env.ORDER_QA_DB,new URL(request.url),path,currentArtifactHash,includeActiveTarget);
     if(request.method==='POST' && path==='/records'){
       const body=await readJson(request);
       if(checkTarget){

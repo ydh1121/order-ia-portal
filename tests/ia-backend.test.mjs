@@ -78,7 +78,7 @@ test('public entry remains nonconfidential and private releases are confined to 
   assert.deepEqual(Object.keys(index).sort(),['assets','build','parts','rows','shell','source','types']);
   assert.equal(index.build,build);assert.equal(index.source,sealed.packSha256);
   const privateFiles=['index.bin','shell.bin',...index.parts.map((_,i)=>i+'.bin')];
-  if(build===deliveryBuild){assert.equal(Object.keys(index.assets).length,541);assert.equal(privateFiles.length,115);}
+  if(build===deliveryBuild){assert.deepEqual(Object.keys(index.assets).sort(),Object.keys(pack.assets).sort());assert.equal(privateFiles.length,index.parts.length+2);}
   const privateEntries=readdirSync(deliveryRoot,{withFileTypes:true});
   assert.deepEqual(privateEntries.map(entry=>entry.name).sort(),privateFiles.sort());
   assert.ok(privateEntries.every(entry=>entry.isFile()),'private delivery paths must be regular files');
@@ -129,19 +129,27 @@ test('public entry remains nonconfidential and private releases are confined to 
   const width=Object.keys(first.hashes)[0],builds=deliveryBuilds.filter(build=>reviewHash(build,first.id,width,mode)===first.hashes[width]);
   assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
-  // These retained catalogs share their reviewed metadata. Only application
-  // identities may differ, and every one must resolve to that sealed build.
-  assert.equal(catalog.items.length,reference.items.length);
-  for(let i=0;i<catalog.items.length;i++){
-   const item=catalog.items[i],original=reference.items[i];
+  // A historical catalogue retains its own approved inventory. Nov 25 removes
+  // eight current targets and adds a review hold without rewriting old files.
+  const retired=item=>item.screen==='quote-review'||item.screen==='quote-result'&&['new-only-detail','no-current'].includes(item.state);
+  assert.equal(catalog.items.filter(item=>!retired(item)).length,reference.items.length);
+  const byId=new Map(reference.items.map(item=>[item.id,item]));
+  for(const item of catalog.items){
+   const original=byId.get(item.id);
+   if(!original){assert.ok(retired(item));assert.notEqual(build,deliveryBuild);}
    if(!item.application)continue;
-   assert.equal(item.id,original.id);assert.ok(sealedRowsByBuild.get(build).has(item.id));
-   const hashes=Object.fromEntries(Object.keys(original.hashes).map(width=>[width,reviewHash(build,item.id,width,mode)]));
+   assert.ok(sealedRowsByBuild.get(build).has(item.id));
+   const hashes=Object.fromEntries(Object.keys(item.hashes).map(width=>[width,reviewHash(build,item.id,width,mode)]));
    assert.deepEqual(item.hashes,hashes);
+   if(!original)continue;
    const native=JSON.stringify(original.contentHashes)===JSON.stringify(original.hashes);
    assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
    item.hashes=original.hashes;item.contentHashes=original.contentHashes;
+   if(original.reviewHold)item.reviewHold=original.reviewHold;
+   assert.deepEqual(item,original);
   }
+  catalog.items=catalog.items.filter(item=>!retired(item));
+  delete catalog.navigationDefaults.assignments['quote-review'];
   assert.deepEqual(catalog,reference);
  }
  assert.deepEqual([...catalogBuildModes].sort(),deliveryBuilds.flatMap(build=>Object.keys(currentCatalogs).map(mode=>build+'/'+mode)).sort());

@@ -18,7 +18,7 @@ function identity(frame){
   const dom=new JSDOM(frame.srcdoc),text=dom.window.document.querySelector('script').textContent;dom.window.close();
   return JSON.parse(text.slice(text.lastIndexOf(')(')+2,-1));
 }
-async function harness(t,{hashes=[oldHash],unknown=false,applicationSource=false}={}){
+async function harness(t,{hashes=[oldHash],unknown=false,applicationSource=false,resolved=false}={}){
   const dom=new JSDOM(approvedShellBody(),{url:'https://order-ia-portal.pages.dev/ia?view=qa-lab&screen=onboarding%2Fguest-1%2Femail&width=390',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
   t.after(()=>w.close());
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
@@ -29,10 +29,11 @@ async function harness(t,{hashes=[oldHash],unknown=false,applicationSource=false
   w.setTimeout=(fn,ms,...args)=>{const id=set(fn,ms,...args);if(ms===8000)timers.set(id,()=>{clear(id);fn();});return id;};
   w.clearTimeout=id=>{timers.delete(id);clear(id);};
   const rows=['guest-1','company'].map((state,i)=>({id:'onboarding/'+state+'/email',screen:'onboarding',state,variant:'email',label:'소개',stateLabel:state,group:'소개',defaultWidth:390,role:'customer',phase:'current',hashes:{390:i?'e'.repeat(64):currentHash}}));
-  const events=hashes.map((hash,i)=>({release,kind:'comment',id:'source-pin-'+i,revision:1,cursor:i+1,action:'create',at:'2026-11-20T00:00:00Z',data:{
+  const events=hashes.map((hash,i)=>({release,kind:'comment',id:'source-pin-'+i,revision:1,cursor:i+1,action:resolved?'resolve':'create',at:'2026-11-20T00:00:00Z',data:{
     target:{screen:'onboarding',state:'guest-1',variant:'email',viewport:390,artifactHash:hash},body:'위치 검증용',
     anchor:{id:'source-anchor-'+i,instance:'onboarding',artifactHash:hash,x:.37,y:.61,viewport:{width:390,height:901},scale:1,scroll:[],layers:[]}
   }}));
+  let activeEvents=resolved?[]:null,snapshotCursor=events.length;
   const original=JSON.stringify(events),requests=[],messages=[],signals=[];
   w.fetch=async(raw,options={})=>{
     const url=new URL(raw,w.location.href);requests.push({url:url.href,method:options.method||'GET'});
@@ -48,8 +49,8 @@ async function harness(t,{hashes=[oldHash],unknown=false,applicationSource=false
       }
       return Response.json({release,hash:row.hashes[390],version:'current',html:html(row.state),editable:'',file:'current.html'});
     }
-    if(url.pathname.endsWith('/legacy'))return Response.json({items:[],hasMore:false});
-    if(url.pathname.endsWith('/records'))return Response.json({items:events,nextCursor:events.length,hasMore:false});
+    if(url.pathname.endsWith('/legacy'))return Response.json({items:[],until:Number(url.searchParams.get('until')??snapshotCursor),hasMore:false});
+    if(url.pathname.endsWith('/records'))return Response.json({items:url.searchParams.get('scope')==='all'?events:activeEvents??events,scope:url.searchParams.get('scope')??'active',until:snapshotCursor,nextCursor:snapshotCursor,hasMore:false});
     throw Error('Unexpected read '+url);
   };
   let context;
@@ -72,8 +73,37 @@ async function harness(t,{hashes=[oldHash],unknown=false,applicationSource=false
     const id=identity(reference);emit(reference,{scope:'ORDER_R3_PIN_SOURCE_FRAME',type:'snapshot',channel:id.channel,artifact:id.artifact,target:id.target,html:markup,...overrides},source);
   }
   const reads=()=>requests.filter(request=>new URL(request.url).searchParams.has('artifactHash'));
-  return {w,dom,rows,events,original,requests,messages,signals,timers,refs,ready,snapshot,emit,reads,mainReady,select:(...args)=>context.select(...args)};
+  return {w,dom,rows,events,original,requests,messages,signals,timers,refs,ready,snapshot,emit,reads,mainReady,select:(...args)=>context.select(...args),setActiveRecords(items){activeEvents=items;snapshotCursor++;}};
 }
+
+test('an open host replaces its active snapshot and cancels removed pins without discarding an unsent editor or original history',async t=>{
+  const h=await harness(t),$=id=>h.w.document.getElementById(id);await until(()=>h.refs().length===1);
+  $('points').click();assert.match($('comment-count').textContent,/미해결 1개/);
+  $('general').click();$('body-text').value='아직 저장하지 않은 별도 의견';$('body-text').dispatchEvent(new h.w.Event('input'));
+  h.setActiveRecords([]);await $('sync').onclick();
+  assert.equal(h.refs().length,0);assert.equal(h.timers.size,0);assert.equal(h.signals.every(signal=>signal.aborted),true);
+  assert.equal(h.messages.filter(message=>message.type==='pins').at(-1).payload.length,0,'a source removed from the snapshot disappears from an already open frame');
+  assert.equal($('authoring').hidden,false);assert.equal($('body-text').value,'아직 저장하지 않은 별도 의견');
+  assert.equal(JSON.stringify(h.events),h.original,'projection replacement does not mutate the archived source');
+  $('points').click();assert.equal($('notes').querySelector('[data-feedback-id="source-pin-0"]'),null);assert.match($('comment-count').textContent,/미해결 0개 · 전체 0개/);
+  assert.equal(h.requests.some(request=>request.method!=='GET'),false);
+  const reads=h.requests.filter(request=>new URL(request.url).pathname.endsWith('/records'));
+  assert.ok(reads.every(request=>new URL(request.url).searchParams.get('since')==='0'),'each refresh starts a complete bounded active snapshot');
+});
+
+test('resolved pin sources load only after explicit history and resolved-pin display are requested',async t=>{
+  const h=await harness(t,{resolved:true}),$=id=>h.w.document.getElementById(id);
+  $('points').click();assert.match($('comment-count').textContent,/미해결 0개 · 전체 0개/);assert.equal(h.reads().length,0);
+  await h.w.document.querySelector('[data-comment-filter="all"]').onclick();
+  assert.ok($('notes').querySelector('[data-feedback-id="source-pin-0"]'));assert.match($('comment-count').textContent,/전체 1개/);
+  assert.equal(h.reads().length,0,'history text does not eagerly restore hidden resolved pin sources');
+  $('show-resolved-pins').checked=true;await $('show-resolved-pins').onchange();await until(()=>h.refs().length===1);
+  assert.equal(h.reads().length,1);assert.equal(h.messages.filter(message=>message.type==='pins').at(-1).payload[0].resolved,true);
+  $('show-resolved-pins').checked=false;await $('show-resolved-pins').onchange();
+  await h.w.document.querySelector('[data-comment-filter="open"]').onclick();
+  assert.equal(h.refs().length,0);assert.match($('comment-count').textContent,/미해결 0개 · 전체 0개/);
+  assert.equal(JSON.stringify(h.events),h.original);assert.equal(h.requests.some(request=>request.method!=='GET'),false);
+});
 
 test('reference frames require their exact window, opaque origin, channel, source hash and target before caching a mounted snapshot',async t=>{
   const h=await harness(t);await until(()=>h.refs().length===1);const ref=h.refs()[0];

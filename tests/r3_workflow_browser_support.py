@@ -89,16 +89,25 @@ def check_consultation_flow(page, frame):
     return {'scope': 'frame-memory QA consultation via canonical product adapter', 'sameForm': True, 'requestRetryPreserved': True, 'savedCase': saved, 'submittedContext': creates[-1]['context']}
 
 
-def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: None):
-    on_step('signature editor startup')
+def check_signature_flow(page, frame, *, open_proof, fail_first=True, on_step=lambda name: None):
+    on_step('signature review and proof editor startup')
     expect(frame.get_by_role('heading', name='서명이 필요해요', exact=True)).to_be_visible()
-    expect(frame.locator('.wf-panel select').first.locator('option')).not_to_have_count(0)
+    expect(frame.locator('.wf-panel')).to_have_attribute('data-review-scenario', 'signature/empty')
+    expect(frame.locator('.wf-panel')).to_have_attribute('data-review-ready', 'true')
+    expect(frame.locator('[name=document-memo]')).to_be_hidden()
+    expect(frame.locator('.research-file-drop')).to_be_hidden()
+    assert not any(call['path'] == '/evidence' and call['method'] == 'POST' for call in inspect_fixture(frame)['calls'])
+    cases_before = inspect_fixture(frame)['data']['cases']
+    # The signature review is a read-only presentation of already prepared
+    # documents. Install the observer before entering the real proof editor:
+    # its single existing case now opens automatically and captures its fetcher
+    # during preparation, rather than after the removed manual-start step.
     frame.locator('#order-single').evaluate('''el=>{
       const w=el.ownerDocument.defaultView,a=w.ORDER_APP_ADAPTER,original=a.workflows.evidenceOptions;
-      w.__signaturePackets=[];
+      w.__signaturePackets=[];w.__signatureEditorPreparations=0;w.__signatureObservedAdapter=a;
       const role=a.roleRequest;w.__signatureAttachments=[];
       a.roleRequest=(path,body,signal)=>{if(body?.action==='attach')w.__signatureAttachments.push(JSON.parse(JSON.stringify(body)));return role(path,body,signal);};
-      a.workflows.evidenceOptions=async()=>{const options=await original();return {...options,fetcher:async(url,settings={})=>{
+      a.workflows.evidenceOptions=async()=>{w.__signatureEditorPreparations++;const options=await original();return {...options,fetcher:async(url,settings={})=>{
         if(settings.method==='POST'){
           const bytes=settings.body,view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),sizes=[];let offset=6,last=6;
           for(let i=0;i<bytes[5];i++){last=offset;const width=view.getUint16(offset),height=view.getUint16(offset+2);sizes.push([width,height]);offset+=4+width*height;}
@@ -110,10 +119,30 @@ def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: N
         return options.fetcher(url,settings);
       }};};
     }''')
+    # The caller selects proof/empty through the real QA sidebar. This keeps
+    # the review artifact identity aligned with the application route as well
+    # as retaining the adapter whose evidence preparation was just observed.
+    frame = open_proof()
+    entered = frame.locator('#order-single').evaluate('''root=>{
+      const w=root.ownerDocument.defaultView,app=w.ORDER_RESEARCH_APP,adapter=w.ORDER_APP_ADAPTER;
+      if(!app||adapter.fixture.inspect().source.kind!=='dummy')throw Error('SIGNED_EVIDENCE_REQUIRES_CURRENT_DUMMY_APP');
+      return {sameAdapter:app.adapter===w.__signatureObservedAdapter,route:app.snapshot().route,inspection:root.__orderResearchInspector.inspect().session};
+    }''')
+    assert entered['sameAdapter'] is True, entered
+    assert entered['route']['screen'] == 'proof' and entered['route']['state'] == 'empty', entered
+    assert entered['inspection']['screen'] == 'proof' and entered['inspection']['state'] == 'empty', entered
+    expect(frame.get_by_role('heading', name='거래내역 증빙', exact=True)).to_be_visible()
+    expect(frame.locator('.wf-panel')).to_have_attribute('data-review-scenario', 'proof/empty')
+    expect(frame.locator('.wf-panel')).to_have_attribute('data-review-ready', 'true')
+    expect(frame.locator('.wf-panel select').first.locator('option')).not_to_have_count(0)
+    expect(frame.get_by_role('button', name='자료와 서명 준비', exact=True, include_hidden=True)).to_be_hidden()
+    assert frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signatureEditorPreparations') == 1
+    assert inspect_fixture(frame)['data']['cases'] == cases_before
     frame.locator('[name=document-memo]').fill('제출 증빙의 검수용 추가 요청')
-    frame_click(page, frame.get_by_role('button', name='자료와 서명 준비', exact=True))
     file = frame.locator('.wf-panel input[type=file]')
-    expect(file).to_be_visible()
+    expect(frame.locator('.research-file-drop')).to_be_visible()
+    expect(file).to_be_attached()
+    expect(file).to_be_enabled()
     on_step('signature actual image load and missing-signature rejection')
     file.set_input_files({'name': 'synthetic-proof.png', 'mimeType': 'image/png', 'buffer': PNG})
     expect(frame.locator('canvas[aria-label="1쪽 가림 영역 선택"]')).to_be_visible()
@@ -161,7 +190,7 @@ def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: N
     expect(frame.locator('.wf-status')).to_contain_text('검토 중')
     expect(frame.locator('.research-workflow-receipt')).to_contain_text('거래내역 증빙과 서명을 접수했어요.')
     expect(frame.locator('.research-workflow-receipt')).to_contain_text('최대 2영업일 이내')
-    expect(frame.get_by_role('heading', name='서명이 필요해요', exact=True, include_hidden=True)).to_be_hidden()
+    expect(frame.get_by_role('heading', name='거래내역 증빙', exact=True, include_hidden=True)).to_be_hidden()
     packets = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signaturePackets')
     assert len(packets) == (2 if fail_first else 1), packets
     for packet in packets:
@@ -177,4 +206,4 @@ def check_signature_flow(page, frame, *, fail_first=True, on_step=lambda name: N
     attachments = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signatureAttachments')
     assert len(attachments) == 1 and attachments[0]['context']['memo'] == '제출 증빙의 검수용 추가 요청'
     assert fixture['source']['persistent'] is False and fixture['source']['commercial'] is False
-    return {'scope': 'same product editor and canonical adapter with frame-memory QA transport', 'savedCase': case, 'packets': packets, 'attachments': attachments, 'confirmation': confirmation_state, 'missingSignatureBlocked': True, 'failureRetry': fail_first, 'pendingAwaited': True}
+    return {'scope': 'current proof preparation and signature submission through the same product editor and canonical adapter with frame-memory QA transport', 'entry': entered, 'observerBeforeAutomaticPreparation': True, 'savedCase': case, 'packets': packets, 'attachments': attachments, 'confirmation': confirmation_state, 'missingSignatureBlocked': True, 'failureRetry': fail_first, 'pendingAwaited': True}

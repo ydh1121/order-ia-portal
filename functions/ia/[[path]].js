@@ -58,10 +58,10 @@ export async function onRequest({request,env}){
  }
  if(actor.role!=='OWNER' && !(actor.role==='BUSINESS' && isBusinessSurface(url)))return new Response(null,{status:403,headers:base});
  if(researchAsset){
-   const {deliveryBuild,deliverResearchAsset}=await import('../../src/server/research-release-delivery.mjs');
-   const prefix='/ia/research-assets/'+deliveryBuild+'/';
-   const response=url.pathname.startsWith(prefix)
-     ?await deliverResearchAsset(url.pathname.slice(prefix.length),env,url.origin)
+   const {hasDeliveryBuild,deliverResearchAsset}=await import('../../src/server/research-release-delivery.mjs');
+   const delivered=/^\/ia\/research-assets\/([a-f0-9]{64})\/(.+)$/.exec(url.pathname);
+   const response=delivered&&hasDeliveryBuild(delivered[1])
+     ?await deliverResearchAsset(delivered[2],env,url.origin,delivered[1])
      :await (await import('../../src/server/research-app/page.mjs')).serveResearchAsset(url.pathname,env,url.origin);
    const headers=new Headers(response.headers);
    for(const [key,value]of Object.entries(base))headers.set(key,value);

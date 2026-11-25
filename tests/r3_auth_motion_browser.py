@@ -107,7 +107,7 @@ def check_email_message(page, screens):
     assert receipt["error"] is None and receipt["trustedClick"], receipt
     assert receipt["typing"] and all(event["trusted"] for event in receipt["typing"]), receipt
     visible = [sample for sample in receipt["samples"] if sample["visible"]]
-    assert len(visible) >= 3 and all(sample["message"] == "이메일 양식을 확인해 주세요." and sample["textHidden"] for sample in visible), receipt
+    assert len(visible) >= 3 and all(sample["message"] == "이메일 양식을 확인해 주세요" and sample["textHidden"] for sample in visible), receipt
     assert 1750 <= receipt["hiddenAt"] <= 2500, receipt
     assert all(sample["sameInput"] and sample["value"] == "invalid-email.order.ooo" and sample["passwordPreserved"] for sample in receipt["samples"]), receipt
     after = receipt["after"]

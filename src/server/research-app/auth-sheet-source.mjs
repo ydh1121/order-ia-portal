@@ -42,7 +42,12 @@ export function researchAuthSheetSource(source){
   result=replaceOne(result,"index=w.ORDER_ADMIN_MOTION?.mountScrollIndex(root,{reduced:api.reduced,regionSelector:'.terms-body',headingSelector:'h3'});",'index=null;');
   result=replaceOne(result,'비밀번호를 확인해 주세요.','비밀번호가 틀렸어요.');
   result=replaceOne(result,'이메일을 확인해 주세요.','등록된 이메일 정보가 없어요.');
-  result=result.replaceAll('입력한 비밀번호가 달라요.','입력하신 비밀번호가 달라요.')
+  result=replaceOne(result,"const c=new AbortController(),session=pendingTermsSession,check=root.querySelector('[name=terms-check]');","const c=new AbortController(),session=pendingTermsSession,check=root.querySelector('[name=terms-check]');root.dataset.termsContext=session?.draft||api.reviewScenario&&s==='missing'?'consent':'read';");
+  result=replaceOne(result,"if(!ready)return;","if(!ready)return;if(root.dataset.termsContext==='read'){api.select('login','closed');return;}");
+  result=result.replaceAll('영문·숫자·특수문자를 포함해 10자 이상 입력해 주세요.','영문, 숫자, 특수문자를 포함해 10자 이상 입력해 주세요.')
+    .replaceAll('이메일 양식을 확인해 주세요.','이메일 양식을 확인해 주세요')
+    .replaceAll('입력한 비밀번호가 달라요.','비밀번호를 입력해 주세요')
+    .replaceAll('비밀번호를 한 번 더 입력해 주세요.','비밀번호를 입력해 주세요')
     .replace('[선택] 시세 변동 알림·소식·혜택 받기','[선택] 시세 변동 알림·소식·혜택 받기 (마케팅 수신 동의)')
     .replace('계란 시세가 바뀌면 알려드려요. 시세 변동 알림을 받으실까요?','계란 시세가 바뀔 때 꼭 필요한 소식만 알려드려요. 알림을 끄면 시세 변동은 직접 확인하셔야 해요. 받아보실까요?');
   return '('+browserFunction(installResearchAuthMotion)+')(window);\n('+browserFunction(installResearchAuthPolish)+')(window);\n'+result;

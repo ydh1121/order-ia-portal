@@ -15,6 +15,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   let screens=[],current=null,artifact=null,target=null,csrf='',filter='all',session='',generation=0,cursor=0,editor=null,pending=null,storing=false,missing=new Set(),subset=null;
   let legacyAvailable=false,reviewAvailable=false,displayPins=true,wantsPoint=false,continuousPoints=false;
   let shell, commentFilter='open';
+  let reviewSnapshotGeneration=0,reviewMutation=0,loadedReviewScope='active';
+  const reviewScope=()=>commentFilter==='all'||commentFilter==='resolved'||$('show-resolved-pins')?.checked?'all':'active';
   let pendingPurchaseFixture=null;
   let navigation=null,navigationPending=false,navigationReady=false;
   // IDs of the recorded two-tab exercise, confirmed by the physical D1 receipts.
@@ -175,7 +177,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   const localKey=(kind,id)=>kind+'/'+id;
   function retainLatestRecord(kind,id,record){
     const key=localKey(kind,id),known=records.get(key);
-    if(record?.id===id&&Number.isInteger(record.revision)&&(!known||record.revision>known.revision))records.set(key,record);
+    if(record?.id===id&&Number.isInteger(record.revision)&&(!known||record.revision>known.revision)){records.set(key,record);reviewMutation++;}
     return records.get(key);
   }
   const match=(t,v,width)=>t&&t.screen===v.screen&&t.state===v.state&&t.variant===v.variant&&t.viewport===width&&modeOf(t)===modeOf(v);
@@ -240,6 +242,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     });
   }
   function list(){
+    const hold=$('stage-hint');if(hold){const deferred=current?.reviewHold==='hi-fi-simple-and-detailed'&&$('version').value==='current';hold.textContent=deferred?'간편·상세 하이파이 완료 후 검토':'화면에서 직접 조작하거나 위치 코멘트를 남겨 주세요.';hold.toggleAttribute('data-review-hold',deferred);}
     const index=showRecords(),rows=filtered();const used=new Set(rows.map(r=>r.id));$('filters').replaceChildren();
     const metrics=$('review-summary');metrics?.replaceChildren();
     for(const [id,icon,name] of filters){const count=id==='all'?screens.length:id==='previous'?screens.filter(row=>historyWidth(row)).length:screens.filter(r=>stateInfo(r,widthFor(r),index)[id]).length;
@@ -401,7 +404,8 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([view,parent])));
       const id=prior?.id||'feedback:'+Array.from(new Uint8Array(hash),n=>n.toString(16).padStart(2,'0')).join('');
       if(action&&!await write('comment',source.id,source.data,source.revision,action,reason))return;
-      if(!await write('feedback',id,{target:view,parent,status:value},prior?.revision??0))await refresh();
+      await write('feedback',id,{target:view,parent,status:value},prior?.revision??0);
+      await refresh();
       // A failed status write can follow a confirmed source event. Render that
       // event so the reviewer sees the actual state and can safely retry.
       if(target&&match(target,view,view.viewport)&&target.artifactHash===view.artifactHash)notes(subset);
@@ -593,11 +597,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   function pinsForDisplay(view,document,post){
     // Original comments can arrive before their later status events. Wait for
     // the complete initial snapshot before drawing them as unresolved pins.
-    const pins=reviewAvailable?reviewPins(view,document):[];
+    const pins=reviewAvailable?reviewPins(view,document).filter(p=>!p.resolved||$('show-resolved-pins')?.checked):[];
     loadPinSources(view,pins);
     const sources=[...new Set(pins.map(p=>p.sourceArtifactHash))].map(hash=>pinSources.get(pinSourceKey(view,hash))).filter(Boolean);
     post('pin-sources',sources);
-    post('pins',pins.filter(p=>!p.resolved||$('show-resolved-pins')?.checked));
+    post('pins',pins);
     post('visible',displayPins);
   }
   function syncSecondaryPins(item){
@@ -776,7 +780,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       }
     if(!ids){
       if(past?.figma?.url){const t=node('p','이전 Figma 링크 · '+past.figma.url);box.append(t);}
-      if(past?.status==='fix'&&!(past.comments||[]).some(c=>!c.deleted))box.append(node('p','본문이 없는 이전 수정 요청'));
+      if(past?.status==='fix'&&!past.inactiveCommentsOmitted&&!(past.comments||[]).some(c=>!c.deleted))box.append(node('p','본문이 없는 이전 수정 요청'));
     }
     for(const r of records.values()){
       if((isTest(r)&&!showTest())||!visible('resolved')||r.kind!=='comment'||r.action!=='delete'||!match(r.data.target,target,target.viewport)||(ids&&!ids.includes(r.id)))continue;
@@ -864,7 +868,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
       return false;
     }finally{storing=false;}
   }
-  async function eventReason(r,action){const why=window.prompt('이유를 입력해 주세요.');if(!why?.trim())return;const ok=await write(r.kind,r.id,r.data,r.revision,action,why.trim());if(ok)notes();}
+  async function eventReason(r,action){const why=window.prompt('이유를 입력해 주세요.');if(!why?.trim())return;const ok=await write(r.kind,r.id,r.data,r.revision,action,why.trim());if(ok){await refresh();notes();}}
   async function saveDraft(draft){if(!editor||!target)return;remember();
     const submitted=editor,view={...target},key=draftKey(submitted.id);
     if(!draft&&!submitted.body.trim()){
@@ -1031,26 +1035,47 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     }catch(e){if(n===generation){if(!researchDocumentBuild)frame.srcdoc='';researchPending=null;target=null;artifact=null;session='';frame.inert=false;announceError(e);}}
   }
   async function refresh(first=false){
+    const snapshot=++reviewSnapshotGeneration,mutation=reviewMutation,scope=reviewScope();
     try{
-      let changed=!reviewAvailable;
+      const nextRecords=new Map();let after=0,until=null;
       for(;;){
-        const page=await api(base+'/records?release='+release+'&since='+cursor+'&limit=150');
-        for(const row of page.items){
-          const key=localKey(row.kind,row.id);
-          if((records.get(key)?.revision??0)>=row.revision)continue;
-          records.set(key,row);changed=true;
-        }
-        cursor=Math.max(cursor,page.nextCursor);
+        const page=await api(base+'/records?release='+release+'&scope='+scope+'&since='+after+'&limit=150'+(until===null?'':'&until='+until));
+        if(snapshot!==reviewSnapshotGeneration)return;
+        if(Number.isSafeInteger(page.until)){if(until!==null&&page.until!==until)throw Error('REVIEW_SNAPSHOT_CHANGED');until=page.until;}
+        for(const row of page.items)nextRecords.set(localKey(row.kind,row.id),row);
+        if(page.hasMore&&(!Number.isSafeInteger(page.nextCursor)||page.nextCursor<=after))throw Error('INVALID_REVIEW_CURSOR');
+        after=Math.max(after,page.nextCursor||0);
         if(!page.hasMore)break;
       }
-      reviewAvailable=true;
+      const nextLegacy=await readLegacy(scope,until);
+      if(snapshot!==reviewSnapshotGeneration)return;
+      // A completed write or a changed history selection wins over an older
+      // in-flight snapshot. Never roll it back while replacing the active set.
+      if(mutation!==reviewMutation||scope!==reviewScope())return refresh(first);
+      const changed=!reviewAvailable||!legacyAvailable||loadedReviewScope!==scope||records.size!==nextRecords.size||legacy.size!==nextLegacy.size||
+        [...nextRecords].some(([key,row])=>records.get(key)?.revision!==row.revision)||
+        [...nextLegacy].some(([key,row])=>JSON.stringify(legacy.get(key))!==JSON.stringify(row));
+      const removed=[...records].some(([key,row])=>row.kind==='comment'&&!nextRecords.has(key))||
+        [...legacy].some(([key,row])=>(row.comments||[]).some(comment=>!(nextLegacy.get(key)?.comments||[]).some(next=>next.id===comment.id)));
+      if(removed)cancelPinSources();
+      records.clear();for(const [key,row]of nextRecords)records.set(key,row);
+      legacy.clear();for(const [key,row]of nextLegacy)legacy.set(key,row);
+      cursor=until??after;loadedReviewScope=scope;reviewAvailable=true;legacyAvailable=true;
       // Focusing a drawer control from the iframe must not replace the button
       // between pointerdown and click when its records already match the server.
       if(changed){list();syncPins();if(!drawer.hidden&&!editor&&shell?.activeTab()==='review')notes(subset);}
-    }catch(e){if(first)reviewAvailable=false;announceError(e);}
+    }catch(e){if(snapshot!==reviewSnapshotGeneration)return;if(first)reviewAvailable=false;announceError(e);}
   }
-  async function readLegacy(){
-    let after=0;try{for(;;){const j=await api(base+'/legacy?after='+after+'&limit=50');for(const r of j.items)legacy.set(r.sourceKey,r.data);if(!j.hasMore)break;after=j.nextCursor;}legacyAvailable=true;list();syncPins();if(!drawer.hidden&&!editor)notes(subset);}catch(e){announceError(e);}
+  async function readLegacy(scope,until){
+    const next=new Map();let after=0;
+    for(;;){
+      const page=await api(base+'/legacy?release='+release+'&scope='+scope+'&after='+after+'&limit=50'+(until===null?'':'&until='+until));
+      if(until!==null&&Number.isSafeInteger(page.until)&&page.until!==until)throw Error('REVIEW_SNAPSHOT_CHANGED');
+      for(const row of page.items)next.set(row.sourceKey,row.data);
+      if(!page.hasMore)return next;
+      if(!Number.isSafeInteger(page.nextCursor)||page.nextCursor<=after)throw Error('INVALID_REVIEW_CURSOR');
+      after=page.nextCursor;
+    }
   }
   let journeyDraft=null;
   let sampleUnread=1;
@@ -1280,7 +1305,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   if($('drawer-new-location'))$('drawer-new-location').onclick=()=>beginPointComment(false);
   $('pick-cancel').onclick=cancelPoint;$('close-drawer').onclick=hideDrawer;$('hide-pins').onclick=()=>{displayPins=!displayPins;syncPins();$('hide-pins').setAttribute('aria-pressed',String(!displayPins));};
   addEventListener('keydown',event=>{if(event.key==='Escape'&&(continuousPoints||wantsPoint)){event.preventDefault();cancelPoint();}});
-  $('save').onclick=()=>saveDraft(false);$('draft').onclick=()=>saveDraft(true);$('sync').onclick=async()=>{pinSourceAttempted.clear();for(const [key,value] of pinSources)if(value===null||value.mountedUnavailable)forgetPinSource(key);await readLegacy();await refresh();};body.oninput=()=>{if(editor){editor.dirty=true;remember();}};
+  $('save').onclick=()=>saveDraft(false);$('draft').onclick=()=>saveDraft(true);$('sync').onclick=async()=>{pinSourceAttempted.clear();for(const [key,value] of pinSources)if(value===null||value.mountedUnavailable)forgetPinSource(key);await refresh();syncPins();};body.oninput=()=>{if(editor){editor.dirty=true;remember();}};
   if(exportReview) exportReview({release, notify:status, getLocalDrafts:()=>{remember();return [...edits];}});
   $('export').onclick=async()=>{if(!artifact)return;if(artifact.application)return exportResearch();const item=artifact, snapshotTarget={...target};download(item.file,item.editable,'text/html');await write('figma',crypto.randomUUID(),{target:snapshotTarget,status:'exported',evidenceRef:'sha256:'+item.exportHash},0);};
   const memoDrafts=new Map();
@@ -1401,9 +1426,9 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const hash=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
     await write('figma',crypto.randomUUID(),{target:snapshotTarget,status:'exported',evidenceRef:'sha256:'+hash},0);
   };
-  if($('show-resolved-pins'))$('show-resolved-pins').onchange=syncPins;
+  if($('show-resolved-pins'))$('show-resolved-pins').onchange=async()=>{syncPins();await refresh();};
   $('audit-demo').onchange=()=>{list();syncPins();};
-  for(const b of document.querySelectorAll('[data-comment-filter]')) b.onclick=()=>{commentFilter=b.dataset.commentFilter;notes();};
+  for(const b of document.querySelectorAll('[data-comment-filter]')) b.onclick=async()=>{commentFilter=b.dataset.commentFilter;await refresh();notes();};
   shell=bootShell({
     snapshot:()=>({screens,current,records,legacy,navigation,navigationPending,navigationReady}),saveNavigation,select,notes,close:hideDrawer,width:widthFor,isTest,label:qaLabel,feedbackFor,feedbackCounts,
     leaveEditor:()=>{remember();editor=null;},info:(r,w)=>stateInfo(r,w,showRecords()),
@@ -1430,7 +1455,7 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
     const requested=u.searchParams.get('version');
     if(['previous','prior-r3'].includes(requested))$('version').value=requested;
     const pinned=u.searchParams.get('artifactHash');
-    list();await Promise.all([select(screens.find(r=>r.id===u.searchParams.get('screen'))||screens.find(r=>r.id==='login/empty/compact')||screens[0],requested==='recorded'&&pinned?'recorded':$('version').value,null,pinned),readLegacy(),refresh(true)]);
+    list();await Promise.all([select(screens.find(r=>r.id===u.searchParams.get('screen'))||screens.find(r=>r.id==='login/empty/compact')||screens[0],requested==='recorded'&&pinned?'recorded':$('version').value,null,pinned),refresh(true)]);
     if(target&&draftsForScreen().length){notes();status('저장하지 않은 글이 이 탭에 남아 있습니다.');}
     addEventListener('focus',()=>refresh());
   }catch(e){announceError(e);}})();

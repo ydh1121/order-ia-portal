@@ -96,18 +96,20 @@ function ui(t, implementation) {
   const container = w.document.querySelector('main');
   const adapter = {request: async (path, body, signal) => {calls.push({path, body, signal}); return implementation ? implementation(path, body, signal) : body ? result(body.preferences, body.expectedRevision + 1) : result();}};
   const dispose = mountNotificationPreferences({container, adapter}); t.after(() => {dispose(); w.close();});
-  const details = container.querySelector('details');
-  const open = async () => {details.open = true; details.dispatchEvent(new w.Event('toggle')); await dispose.ready;};
+  const settings = container.querySelector('[data-notification-preferences]');
+  const open = async () => {await dispose.ready;};
   const change = (key, checked) => {const input = container.querySelector('[data-notification-preference="' + key + '"]'); input.checked = checked; input.dispatchEvent(new w.Event('change', {bubbles: true})); return input;};
   const status = () => container.querySelector('[role=status]').textContent;
-  return {dom, w, calls, container, details, open, change, status, dispose};
+  return {dom, w, calls, container, settings, open, change, status, dispose};
 }
 
-test('settings load only on opening and never opt the person in until an explicit change is confirmed', async t => {
-  const f = ui(t); assert.equal(f.calls.length, 0); await f.open();
+test('settings stay expanded and load their existing values without opting the person in until an explicit switch change is confirmed', async t => {
+  const f = ui(t); assert.equal(f.calls.length, 1); await f.open();
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0].body, null);
+  assert.equal(f.settings.localName, 'section'); assert.equal(f.container.querySelector('details,summary'), null);
+  assert.equal(f.container.querySelectorAll('input[role="switch"]').length, 3); assert.equal(f.settings.hidden, false);
   assert.ok([...f.container.querySelectorAll('input')].every(input => input.checked === false));
-  f.details.open = false; f.details.open = true; f.details.dispatchEvent(new f.w.Event('toggle')); await tick(); assert.equal(f.calls.length, 1);
+  await tick(); assert.equal(f.calls.length, 1, 'rendering settings does not repeat its fetch or create a consent event');
   f.change('price', true); await until(() => f.status() === '수신 설정을 저장했어요.', 'explicit preference is confirmed');
   assert.equal(f.calls.length, 2); assert.deepEqual(f.calls[1].body.preferences, {price: true, news: false, benefits: false});
   assert.equal(f.calls[1].body.expectedRevision, 0); assert.match(f.calls[1].body.requestKey, /^[\w-]+$/);

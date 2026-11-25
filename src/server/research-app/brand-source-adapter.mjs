@@ -64,11 +64,20 @@ export function researchBrandSource(original) {
   }
   function disposePage(page){`);
   source = once(source, '  function push(id,source=null,title=null){', '  function push(id,source=null,title=null){\n    if(researchLeavePending)return false;');
-  // A native popover is above every document z-index. Keep its interactive
-  // surface below the shared header so Order and the account opener remain
-  // reachable; the original start-y still morphs from the actual logo origin.
+  // The morph starts at the actual three-path logo ink, not the 44px hit area.
+  source = once(source, 'if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;',
+    `if(panel.hidden)return;
+    const triggerRect=trigger.getBoundingClientRect(),ink=paths.map(path=>path.getBoundingClientRect()).filter(rect=>rect.width&&rect.height);
+    const r=ink.length===3?{left:Math.min(...ink.map(rect=>rect.left)),top:Math.min(...ink.map(rect=>rect.top)),right:Math.max(...ink.map(rect=>rect.right)),bottom:Math.max(...ink.map(rect=>rect.bottom))}:triggerRect;
+    if(ink.length===3){r.width=r.right-r.left;r.height=r.bottom-r.top;}
+    const view=win.visualViewport;`);
+  // Keep the final menu below the retained header. The canonical start-y
+  // offset still uses r.top, so the closed surface begins at the logo ink
+  // while the expanded menu leaves the unchanged Order trigger reachable.
   source = once(source, 'const top=Math.max(y+12,Math.min(r.top,bottom-1));',
-    "const researchHeader=brand.closest('#order-app-header');const top=Math.max(y+12,Math.min(researchHeader?researchHeader.getBoundingClientRect().bottom+8:r.top,bottom-1));");
+    `const headerBottom=doc.getElementById('order-app-header')?.getBoundingClientRect().bottom;
+    const openTop=Number.isFinite(headerBottom)?Math.max(r.top,headerBottom+8):r.top;
+    const top=Math.max(y+12,Math.min(openTop,bottom-1));`);
   // A newly displayed popover has no prior layout. Place its closed surface
   // at the trigger before enabling the transition to its measured open size.
   source = once(source, "const from=points(),version=++generation;cancelArrival();halt();",

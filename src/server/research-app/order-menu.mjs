@@ -67,13 +67,13 @@ export const researchOrderMenuCss=String.raw`
 #order-single .research-order-menu{position:relative;flex:none;font:inherit;letter-spacing:inherit;color:inherit}
 #order-single .research-order-menu[hidden],#order-single .research-order-menu [hidden]{display:none!important}
 #order-single .research-order-trigger{position:relative;display:flex;align-items:center;justify-content:flex-start;gap:4px;height:44px;min-height:44px;margin:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;letter-spacing:inherit;border-radius:8px;cursor:pointer;touch-action:manipulation}
-#order-single .research-order-trigger:hover{background:#f3f4f6}
+#order-single .research-order-trigger:is(:hover,:active){background:transparent}
 #order-single .research-order-trigger:focus-visible,#order-single .research-order-row:focus-visible{outline:2px solid var(--blue,#315dde);outline-offset:3px}
 /* Match the canonical direct-child geometry after moving the same node into
    the one native button. The word's x/y, size and font never animate. */
 #order-single .order-product-brand.obm-brand .research-order-trigger>.brand-word{position:relative;top:2.5234375px;display:block;box-sizing:border-box;flex:none;width:auto;height:25px;margin:0;font:inherit;line-height:25px;letter-spacing:inherit}
 #order-single .order-product-brand.obm-brand .research-order-trigger>.brand-word>.brand-dot{position:absolute;left:70.625px;top:0;margin:0;line-height:inherit;letter-spacing:0}
-#order-single .research-order-arrow{position:relative;top:2.5234375px;display:block;flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#order-single .research-order-arrow{position:relative;top:1.5234375px;display:block;flex:none;width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #order-single .research-order-stack{position:absolute;z-index:80;top:calc(100% + 6px);left:0;box-sizing:border-box;width:max-content;min-width:164px;max-width:calc(100vw - 52px);border:0;border-radius:14px;padding:6px;background:white;box-shadow:0 8px 32px #17212f24;overflow:hidden;font:500 15px/1.5 var(--font,Arial,sans-serif);color:#20272b}
 #order-single .research-order-row{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:9px;background:white;color:inherit;font:inherit;white-space:nowrap;text-align:left;cursor:pointer}
 #order-single .research-order-row:hover,#order-single .research-order-row:focus-visible{background:#f3f4f6}

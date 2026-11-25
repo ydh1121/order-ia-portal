@@ -2,11 +2,15 @@
  * editor owns rasterization, masking, signature hashes, retries and disposal. */
 export const researchWorkflowPolishCss=String.raw`
 .research-workflow .wf-panel{border:0;padding:0;margin:16px auto}.research-workflow .wf-panel>h2{margin-bottom:24px}
+.research-workflow .wf-panel.research-evidence-page{box-sizing:border-box;max-width:520px;width:100%;margin:0 auto;padding:24px;min-width:0;background:transparent;border-radius:0}.research-evidence-page>h2{font-size:28px;line-height:1.35;letter-spacing:-.7px;margin:8px 0 24px;font-weight:700}.research-evidence-page>.proof-purpose{padding:16px 18px;background:var(--surface,#f7f8fa);border-radius:16px;margin-bottom:24px}.research-evidence-page>.proof-purpose h3{font-size:15px;line-height:1.5;margin:0 0 8px}.research-evidence-page>.proof-purpose ul{padding-inline-start:18px;margin:0;font-size:14px;line-height:1.65}.research-evidence-page>.wf-field{margin:0 0 12px}.research-evidence-page .memo-meter{margin-bottom:24px;gap:10px}.research-evidence-page>.wf-status{font-size:13px;color:var(--muted,#6b7684);margin:12px 0;overflow-wrap:anywhere}.research-evidence-page>.wf-status:empty{display:none}.research-evidence-page>.wf-button{width:100%;min-height:52px;margin:8px 0}
+.research-evidence-settings{border:0;padding:0;margin:0;display:grid;gap:20px;min-width:0}.research-evidence-settings>legend{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}.research-evidence-settings>p{font-size:13px;line-height:1.65;margin:0;color:var(--muted,#6b7684)}.research-evidence-settings>.research-evidence-pages{margin:0}.research-evidence-settings>label:not(.research-file-drop){display:flex;align-items:flex-start;gap:10px;font-size:14px;line-height:1.6}.research-evidence-settings>label>input[type=checkbox]{flex:none;width:18px;height:18px;margin:2px 0;accent-color:var(--blue,#315de6)}.research-evidence-settings>button{min-height:52px;border:0;border-radius:14px;padding:12px 20px;background:var(--blue,#315de6);color:white;font:inherit;font-size:15px;font-weight:600;line-height:1.4}.research-evidence-settings>button:disabled{opacity:.5}.research-evidence-settings>.wf-signature{border:0;padding:0;margin:4px 0}.research-evidence-settings>.wf-signature>legend{font-size:16px;font-weight:650;padding:0 0 10px}.research-evidence-settings .wf-signature canvas{box-sizing:border-box;display:block;max-width:100%;border-radius:16px;background:var(--surface,#f7f8fa)}.research-file-drop .research-file-input{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%)}.research-file-drop:focus-within{outline:2px solid var(--blue,#315de6);outline-offset:3px}.research-file-drop>strong{font-size:16px;line-height:1.5}.research-workflow .business-message.info>span{white-space:pre-line}.research-workflow .opening-date>button{min-height:64px;font-size:15px;font-weight:400;line-height:24px;color:var(--muted,#6b7684)}.research-workflow .opening-date>button output{color:var(--ink,#191f28)}.research-business-number-mask{position:absolute;inset:0;box-sizing:border-box;pointer-events:none;white-space:pre;color:var(--muted,#8b95a1);overflow:hidden}.research-business-number-mask>[data-entered]{visibility:hidden}.research-workflow input[name=business-number]{font-variant-numeric:tabular-nums}
 .research-workflow .wf-business-result{display:flex;align-items:center;gap:10px}.research-business-verified{display:flex;align-items:center;gap:12px;color:#18845a}.research-business-verified svg{width:32px;height:32px;flex:none}.research-business-manual{padding:18px;border-radius:16px;background:#f2f5fa;line-height:1.6}.research-business-manual p{margin:8px 0 0}
 .research-workflow .research-field-error{display:flex;align-items:center;gap:6px;margin:8px 0;color:#b52e43;font-size:13px}.research-field-error svg{width:18px;height:18px;flex:none}.research-workflow .wf-signature[aria-invalid=true]{outline:none;border-color:#cfd5df;box-shadow:none}.research-workflow .wf-signature.is-shaking{animation:research-workflow-shake 280ms both}.research-workflow [data-workflow-invalid].is-shaking{animation:research-workflow-shake 280ms both}
 @keyframes research-workflow-shake{0%,100%{transform:translateX(0);animation-timing-function:cubic-bezier(.22,1,.36,1)}28.57%{transform:translateX(6px);animation-timing-function:cubic-bezier(.22,1,.36,1)}57.14%{transform:translateX(-6px);animation-timing-function:cubic-bezier(.22,1,.36,1)}78.57%{transform:translateX(4px);animation-timing-function:cubic-bezier(.22,1,.36,1)}}
 .research-file-drop{display:grid;gap:10px;padding:20px;border:1px dashed #b5bdcb;border-radius:18px;text-align:center;background:#fafbfc;cursor:pointer}.research-file-drop>svg{width:34px;height:34px;margin:auto;color:#365585;background:none}.research-file-drop input{max-width:100%;font:inherit}.research-file-drop[data-drag=true]{border-color:#355bba;background:#eef3ff}.research-file-drop small{font-weight:400;color:#6a7484}.research-file-drop .research-drop-desktop{display:none}@media(pointer:fine) and (hover:hover){.research-file-drop .research-drop-desktop{display:block}}
 .research-evidence-pages{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}.research-evidence-pages>section{width:150px;padding:12px;border:1px solid #e4e8ef;border-radius:14px;background:#fff}.research-evidence-pages h3{font-size:14px;margin:0 0 8px}.research-evidence-pages canvas{width:100%;max-height:160px;object-fit:contain;cursor:zoom-in}.research-evidence-pages details{display:none}.research-evidence-pages button{margin-top:8px;font:inherit;font-size:13px}
+.research-evidence-pages:empty{display:none}.research-evidence-page .research-workflow-receipt{min-height:min(65svh,600px);align-content:center}
+.research-evidence-page [hidden],.research-workflow .document-section[hidden],.research-workflow .business-fields[hidden],.research-business-number-mask[hidden]{display:none!important}
 .research-evidence-viewer{box-sizing:border-box;width:min(920px,calc(100vw - 24px));max-height:calc(100dvh - 32px);border:1px solid #d9e0eb;border-radius:22px;padding:20px;background:white;color:#202b3c}.research-evidence-viewer::backdrop{background:#14233b70}.research-evidence-viewer .research-viewer-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}.research-evidence-viewer output{margin-right:auto}.research-evidence-viewer button{font:inherit;min-height:40px;border:1px solid #d6dce5;border-radius:12px;background:#f5f7fa;padding:8px 12px}.research-evidence-viewport{max-height:65dvh;overflow:auto;touch-action:pan-y}.research-evidence-viewport canvas{max-width:none!important;width:100%;height:auto!important;border:0!important}.research-evidence-viewport[data-zoom=true] canvas{width:180%}.research-evidence-viewer details{margin-top:16px}.research-evidence-viewer details input{max-width:80px;margin:8px}.research-evidence-viewer[data-editing=true] canvas{cursor:crosshair}
 .research-workflow-receipt{text-align:center;display:grid;justify-items:center;gap:14px;padding:40px 20px}.research-workflow-receipt>svg{width:64px;height:64px;color:#218257}.research-workflow-receipt>p{margin:0;max-width:30em;line-height:1.6}.research-workflow-receipt .wf-status{font-size:13px;color:#6a7484}.research-business-verified svg{animation:research-workflow-check 400ms cubic-bezier(.22,1,.36,1)}@keyframes research-workflow-check{from{opacity:0;transform:translateY(12px) scale(.85)}to{opacity:1;transform:none}}
 .research-evidence-viewer.t-modal{--modal-scale:.96;--modal-close-scale:.98;transform:scale(var(--modal-scale));opacity:0;pointer-events:none;transition:transform 250ms cubic-bezier(.22,1,.36,1),opacity 250ms cubic-bezier(.22,1,.36,1)}.research-evidence-viewer.t-modal.is-open{transform:scale(1);opacity:1;pointer-events:auto}.research-evidence-viewer.t-modal.is-closing{transform:scale(var(--modal-close-scale));opacity:0;pointer-events:none;transition-duration:150ms}
@@ -17,7 +21,7 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
   if(win.ORDER_RESEARCH_WORKFLOW_POLISH)return win.ORDER_RESEARCH_WORKFLOW_POLISH;
   const doc=win.document,workflow=win.ORDER_WORKFLOW_MOTION,editor=win.ORDER_EVIDENCE_EDITOR;
   if(!workflow||typeof editor!=='function')throw Error('RESEARCH_WORKFLOW_DEPENDENCY_MISSING');
-  const originals={mountBusiness:workflow.mountBusiness,mountEvidence:workflow.mountEvidence,signaturePad:workflow.signaturePad},active=new Set();
+  const originals={mountBusiness:workflow.mountBusiness,mountEvidence:workflow.mountEvidence,signaturePad:workflow.signaturePad},active=new Set(),signaturePads=new WeakMap();
   const businessClasses={sectors:[],industries:[],rows:[]};let classesPromise;
   function loadBusinessClasses(){
     if(classesPromise)return classesPromise;
@@ -27,7 +31,9 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
         const bytes=await response.arrayBuffer();if(bytes.byteLength>131072)throw Error('BUSINESS_CLASSIFICATION_INVALID');const hash=Array.from(new Uint8Array(await win.crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');if(hash!=='edfa839b2a2d90fc279aea102b447beccf1623dd04a440aaa3fa5381303fc1b4')throw Error('BUSINESS_CLASSIFICATION_INVALID');data=JSON.parse(new win.TextDecoder().decode(bytes));
       }
       if(data.format!=='order-business-classification/v1'||data.rows?.length!==1542||data.rows.some(row=>row.length!==3||!/^\d{6}$/.test(row[0])||row.slice(1).some(value=>typeof value!=='string'||!value)))throw Error('BUSINESS_CLASSIFICATION_INVALID');
-      businessClasses.rows=data.rows;businessClasses.sectors.splice(0,businessClasses.sectors.length,...new Set(data.rows.map(row=>row[1])));businessClasses.industries.splice(0,businessClasses.industries.length,...new Set(data.rows.map(row=>row[2])));return businessClasses;
+      const sectors=['숙박 및 음식점업','도매 및 소매업','제조업','농업, 임업 및 어업'];
+      const industryRank=value=>/제과점업/.test(value)?0:/한식 일반 음식점업/.test(value)?1:/빵류 제조업/.test(value)?2:/달걀|계란|조란|기타 비가공 식품 도매/.test(value)?3:/음식점|식료품|급식|빵류/.test(value)?4:5;
+      businessClasses.rows=data.rows;businessClasses.sectors.splice(0,businessClasses.sectors.length,...[...new Set(data.rows.map(row=>row[1]))].sort((a,b)=>(sectors.indexOf(a)<0?sectors.length:sectors.indexOf(a))-(sectors.indexOf(b)<0?sectors.length:sectors.indexOf(b))));businessClasses.industries.splice(0,businessClasses.industries.length,...[...new Set(data.rows.map(row=>row[2]))].sort((a,b)=>industryRank(a)-industryRank(b)));return businessClasses;
     })().catch(error=>{classesPromise=null;throw error;});return classesPromise;
   }
   const style=doc.createElement('style');style.dataset.researchWorkflowPolish='';style.textContent=researchWorkflowPolishCss;doc.head.append(style);
@@ -40,12 +46,32 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     note.replaceChildren(icon('alert'),doc.createTextNode(message));field.setAttribute('aria-invalid','true');target.dataset.workflowInvalid='';target.classList.remove('is-shaking');void target.offsetWidth;target.classList.add('is-shaking');
   }
   function clearError(field){field.removeAttribute('aria-invalid');const target=field.closest('.wf-signature,.field')||field.parentElement;target.querySelector('[data-workflow-error]')?.remove();target.classList.remove('is-shaking');delete target.dataset.workflowInvalid;}
-  workflow.signaturePad=function(options){const pad=originals.signaturePad.call(this,options),page=pad.page,life=lifecycle(options?.signal);pad.element.addEventListener('input',()=>clearError(pad.element),{signal:life.signal});pad.element.addEventListener('pointerdown',()=>clearError(pad.element),{signal:life.signal});pad.page=()=>{try{return page.call(pad);}catch(e){error(pad.element,e.message);throw e;}};const destroy=pad.destroy;pad.destroy=()=>{life.dispose();destroy.call(pad);};return pad;};
+  workflow.signaturePad=function(options){const pad=originals.signaturePad.call(this,options),page=pad.page,life=lifecycle(options?.signal);signaturePads.set(pad.element,pad);pad.element.addEventListener('input',()=>clearError(pad.element),{signal:life.signal});pad.element.addEventListener('pointerdown',()=>clearError(pad.element),{signal:life.signal});pad.page=()=>{try{return page.call(pad);}catch(e){error(pad.element,e.message);throw e;}};const destroy=pad.destroy;pad.destroy=()=>{signaturePads.delete(pad.element);life.dispose();destroy.call(pad);};return pad;};
   workflow.mountBusiness=function(root,options={}){
     root.classList.add('research-workflow');const life=lifecycle(options.signal),api=options.api||{},adapter=api.adapter||win.ORDER_APP_ADAPTER,fields=root.querySelector('.business-fields'),verify=root.querySelector('[data-action=verify-business]');let outcome=null,manual,diagnostic;
+    const upload=root.querySelector('.document-section'),next=root.querySelector('[data-action=business-next]'),uploadExample=Boolean(root.querySelector('.verification-mark,.document-section .business-message'));
+    if(upload&&!uploadExample){upload.hidden=true;for(const input of upload.querySelectorAll('input'))input.disabled=true;}
+    if(next)next.hidden=!uploadExample;
+    for(const star of root.querySelectorAll('.required-star'))star.remove();
+    const prompts={'business-name':'상호명을 입력해주세요','owner-name':'대표자명을 입력해주세요','business-sector':'업태를 입력해주세요','business-type':'업종을 입력해주세요'};
+    for(const [name,prompt]of Object.entries(prompts)){
+      const input=fields?.querySelector('[name="'+name+'"]');if(!input)continue;const placeholder=input.getAttribute('placeholder')||'';
+      input.addEventListener('focus',()=>{input.placeholder=prompt;},{signal:life.signal});input.addEventListener('blur',()=>{input.placeholder=placeholder;},{signal:life.signal});
+    }
+    const number=fields?.querySelector('[name=business-number]');
+    if(number){
+      const shell=number.closest('.input-shell')||number.parentElement,mask=el('span',undefined,'research-business-number-mask'),entered=el('span'),remaining=el('span');entered.dataset.entered='';mask.setAttribute('aria-hidden','true');mask.append(entered,remaining);mask.hidden=true;shell.append(mask);const placeholder=number.placeholder;
+      const sync=()=>{const focused=doc.activeElement===number&&!number.disabled;mask.hidden=!focused;number.placeholder=focused?'':placeholder;if(!focused)return;const css=win.getComputedStyle(number);for(const key of ['fontFamily','fontSize','fontWeight','fontVariantNumeric','lineHeight','letterSpacing','paddingTop','paddingRight','paddingBottom','paddingLeft','borderTopWidth','borderRightWidth','borderBottomWidth','borderLeftWidth'])mask.style[key]=css[key];mask.style.borderStyle='solid';mask.style.borderColor='transparent';const digits=number.value.replace(/\D/g,'').slice(0,10),slots=digits.padEnd(10,'□'),formatted=slots.slice(0,3)+'-'+slots.slice(3,5)+'-'+slots.slice(5);entered.textContent=number.value;remaining.textContent=formatted.slice(number.value.length);};
+      for(const type of ['focus','blur','input','compositionend'])number.addEventListener(type,event=>{if(event.isComposing){mask.hidden=true;return;}sync();},{signal:life.signal});win.addEventListener('resize',sync,{signal:life.signal});life.add(()=>mask.remove());
+    }
+    if(!fields){
+      const text=root.querySelector('.business-message.info>span');if(text)text.textContent='사업자 조회에 연결하지 못했어요.\n잠시 후 다시 시도해 주세요.';
+      root.querySelector('[data-action=open-case-business]')?.remove();
+      const actions=root.querySelector('.bottom-actions');if(actions&&typeof api.select==='function'){const retry=el('button','다시 시도','btn primary');retry.type='button';retry.addEventListener('click',()=>api.select('business','empty'),{signal:life.signal});actions.append(retry);}
+    }
     for(const input of fields?.querySelectorAll('[name="business-sector"],[name="business-type"]')||[])input.addEventListener('focus',()=>{
       let note=input.closest('.business-combobox,.field')?.querySelector('[data-business-classification]');if(!note){note=el('small','국세청 업종 목록을 불러오는 중이에요.');note.dataset.businessClassification='';input.closest('.business-combobox,.field')?.append(note);}
-      loadBusinessClasses().then(()=>{if(life.signal.aborted)return;note.textContent='국세청 2026.04 공개 목록 · 사업자등록증과 동일하게 입력해 주세요.';if(doc.activeElement===input&&!input.disabled)input.dispatchEvent(new win.Event('input',{bubbles:true}));}).catch(()=>{if(!life.signal.aborted)note.textContent='업종 목록을 불러오지 못했어요. 등록증에 적힌 명칭을 직접 입력해 주세요.';});
+      loadBusinessClasses().then(()=>{if(life.signal.aborted)return;note.remove();if(doc.activeElement===input&&!input.disabled)input.dispatchEvent(new win.Event('input',{bubbles:true}));}).catch(()=>{if(!life.signal.aborted)note.textContent='업종 목록을 불러오지 못했어요. 등록증에 적힌 명칭을 직접 입력해 주세요.';});
     },{once:true,signal:life.signal});
     const proxy=Object.create(adapter||null);proxy.request=async(...args)=>{try{const result=await adapter.request(...args);if(args[0]==='/business-verifications')outcome=result.item?.verified?'verified':'mismatch';return result;}catch(e){if(args[0]==='/business-verifications'){diagnostic=e.data?.businessVerification;outcome=['BUSINESS_PROVIDER_UNAVAILABLE','BUSINESS_PROVIDER_RESPONSE_INVALID'].includes(e.message)?'provider':e.message==='BUSINESS_INFORMATION_MISMATCH'?'mismatch':'application';}throw e;}};
     if(verify)verify.addEventListener('click',e=>{
@@ -63,19 +89,81 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
       if (!fields || !root.contains(fields)) { observer.disconnect(); return; }
       const status=root.querySelector('.wf-status');
       if(root.dataset.businessVerificationId&&fields){
+        if(next){next.hidden=false;if(next.textContent!=='사업자등록증 제출')next.textContent='사업자등록증 제출';}
         fields.hidden=false;fields.inert=true;for(const input of fields.querySelectorAll('input,button'))if(!input.disabled)input.disabled=true;
         if(!root.querySelector('[data-business-confirmed]')){const success=el('div',undefined,'research-business-verified');success.dataset.businessConfirmed='';success.setAttribute('role','status');success.append(icon('check'),el('span','사업자 정보를 확인했어요. 등록증을 제출해 주세요.'));fields.after(success);if(status)status.textContent=adapter.fixture?'검토용 인증 응답입니다. 실제 국세청 인증이 아닙니다.':'확인한 정보는 사업자 정보 페이지에서 수정할 수 있어요.';}
         if(verify&&!verify.disabled)verify.disabled=true;
       }else if(outcome==='provider'&&status?.dataset.error==='true'&&fields&&!manual){
+        if(next){next.hidden=false;if(next.textContent!=='등록증으로 확인 요청')next.textContent='등록증으로 확인 요청';}
         fields.hidden=true;fields.inert=true;for(const input of fields.querySelectorAll('input,button'))input.disabled=true;
         manual=el('section',undefined,'research-business-manual t-panel-slide');manual.setAttribute('role','status');manual.append(el('strong',diagnostic?.source==='configuration'?'사업자 조회 서비스의 연결 설정을 확인하고 있어요.':diagnostic?.source==='invalid-response'?'사업자 조회 기관의 응답을 확인하지 못했어요.':'사업자 조회 기관에 연결하지 못했어요.'),el('p','입력한 정보는 보관되어 있어요. 아래에 사업자등록증을 첨부하고 다음을 눌러 담당자 확인을 요청해 주세요.'));if(diagnostic?.alertQueued===true)manual.append(el('p','담당자의 알림 목록에 연결 확인 요청을 등록했어요.'));fields.after(manual);const entry=manual;win.requestAnimationFrame(()=>{if(!life.signal.aborted&&entry.isConnected)entry.dataset.open='true';});if(verify){verify.textContent='사업자 조회 다시 시도';verify.disabled=false;}
       }else if(outcome==='mismatch'&&status?.dataset.error==='true'&&!fields?.querySelector('[data-workflow-invalid]')){for(const input of fields?.querySelectorAll('[name="business-number"],[name="business-name"],[name="owner-name"]')||[])error(input,'등록증의 내용과 입력값을 다시 확인해 주세요.');}
     });observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['data-business-verification-id','disabled','data-error']});life.add(()=>observer.disconnect());life.add(()=>{evidencePolish?.();root.__orderSelectedFiles=[];base?.destroy?.();});return {destroy:life.dispose};
   };
+  function evidenceReceipt(panel,kind,reviewOnly=false){
+    if(panel.querySelector('.research-workflow-receipt'))return;const receipt=el('section',undefined,'research-workflow-receipt'),status=panel.querySelector('.wf-status');
+    for(const child of panel.children)if(child!==status)child.hidden=true;
+    receipt.append(icon('check'),el('p',kind==='business'?'사업자등록증을 접수했어요.':'거래내역 증빙과 서명을 접수했어요.'),el('p','최대 2영업일 이내에 검토 결과를 안내해 드릴게요.'));
+    if(reviewOnly){receipt.dataset.reviewOnly='true';receipt.setAttribute('aria-label','검토용 접수 예시');if(status)status.hidden=true;}else if(status)receipt.append(status);panel.append(receipt);
+  }
+  function evidenceReviewState(panel,options,life){
+    const {api,state}=options,screen=api?.screen,allowed=screen==='signature'?['empty','drawn','missing','processing','done']:screen==='proof'?['empty','selected','oversize','format','checking','blocked','error','ready']:[];
+    // Only an explicitly selected review scenario may supply synthetic state.
+    // No upload, attach, receipt or case mutation is used to draw these examples.
+    if(api?.reviewScenario!==true||!allowed.includes(state)||api.adapter?.fixture?.inspect?.().source?.kind!=='dummy')return false;
+    const settings=panel.querySelector('.research-evidence-settings'),file=settings?.querySelector('input[type=file]');if(!file)return false;
+    panel.dataset.reviewScenario=screen+'/'+state;panel.dataset.reviewOnly='true';panel.dataset.reviewReady='false';
+    const status=panel.querySelector('.wf-status'),save=[...settings.querySelectorAll(':scope > button')].find(button=>button.textContent==='가림 처리본 제출'),finish=()=>{if(!life.signal.aborted)panel.dataset.reviewReady='true';};
+    if(screen==='signature'){
+      panel.querySelector('.proof-purpose')?.setAttribute('hidden','');panel.querySelector('[name=document-memo]')?.closest('.wf-field')?.setAttribute('hidden','');panel.querySelector('.memo-meter')?.setAttribute('hidden','');
+      file.closest('label').hidden=true;
+    }
+    if(state==='done'){evidenceReceipt(panel,options.kind,true);finish();return true;}
+    if(screen==='proof'&&state==='empty'){finish();return true;}
+    if(screen==='proof'&&['blocked','error'].includes(state)){
+      status.textContent=state==='blocked'?'이 파일은 차단됐어요. 다른 파일을 다시 올려주세요.':'파일을 올리지 못했어요. 다시 올려주세요.';status.dataset.error='true';file.setAttribute('aria-invalid','true');file.addEventListener('change',()=>file.removeAttribute('aria-invalid'),{once:true,signal:life.signal});finish();return true;
+    }
+    const pending=label=>{
+      if(!save)return;file.disabled=true;
+      if(api.motion)api.motion.run(save,()=>new Promise((resolve,reject)=>{const abort=()=>reject(new win.DOMException('Review scenario ended','AbortError'));if(life.signal.aborted)abort();else life.signal.addEventListener('abort',abort,{once:true});}),{labels:{pending:label}}).catch(()=>{});
+      else{save.replaceChildren(el('span',undefined,'spinner'));save.setAttribute('aria-busy','true');save.setAttribute('aria-label',label);save.disabled=true;}
+    };
+    panel.addEventListener('research-evidence-loaded',()=>{
+      if(life.signal.aborted)return;
+      if(screen==='signature'){
+        const element=settings.querySelector('.wf-signature'),pad=signaturePads.get(element),typed=element?.querySelector('input');
+        if(state==='missing'){try{pad?.page();}catch{}}
+        else if(['drawn','processing'].includes(state)&&typed){typed.value='검토 예시';typed.dispatchEvent(new win.Event('input',{bubbles:true}));pad?.page();const consent=settings.querySelector(':scope > label>input[type=checkbox]');if(consent)consent.checked=true;}
+        if(state==='processing')pending('자료와 서명 제출 중');
+      }else if(state==='checking'){status.textContent='파일을 안전하게 확인하고 있어요.';status.dataset.error='false';pending('파일 확인 중');}
+      finish();
+    },{once:true,signal:life.signal});
+    const bytes=state==='oversize'?new Uint8Array(10_000_001):state==='format'?new Uint8Array([81,65]):Uint8Array.from(win.atob('iVBORw0KGgoAAAANSUhEUgAAAMAAAACQCAIAAADRMPOnAAACbklEQVR4nO3SsU0DURREUddJFVRDHcRUQEMIiQQCEkS2jHaMx+fohT9Yzd7L2/uHc3++y9W/wN30CchFJyAXnYBcdAJy0QnIRScgF52AXHQCctEJyEUnIBedgFx0hwN6eHxy33f1n/cfTkACEpCABHSLd/Wf9x9OQALqBuTczxOQi05ALjoBuegE5KITkItOQC46AbnoBOSiE5CLTkAuOgG56C6fEBAQEQERERARAREREBEBEREQEQERERARAREREBEBEREQkWMBPb+8unu4EwM69H7b6hoCKlldQ0Alq2sIqGR1DQGVrK4hoJLVNQRUsrqGgEpW1xBQyeoaAipZXUNAJatrCKhkdQ0BlayuIaCS1TUEVLK6hoBKVtcQUMnqGgIqWV1DQCWrawioZHUNAZWsriGgktU1BFSyusa5Abl7uBMDOvR+2+oaAipZXUNAJatrCKhkdQ0BlayuIaCS1TUEVLK6hoBKVtcQUMnqGgIqWV1DQCWrawioZHUNAZWsriGgktU1BFSyuoaASlbXEFDJ6hoCKlldQ0Alq2sIqGR1DQGVrK4hoJLVNQRUsrrGuQG5e7gTAzr0ftvqGgIqWV1DQCWrawioZHUNAZWsriGgktU1BFSyuoaASlbXEFDJ6hoCKlldQ0Alq2sIqGR1DQGVrK4hoJLVNQRUsrqGgEpW1xBQyeoaAipZXUNAJatrCKhkdQ0BlayuIaCS1TUEVLK6xrkBuXu4swKCXwREREBEBEREQEQERERARAREREBEBEREQEQERERARAREREBEBEREQEQERERARAREREBEBEREQEQERERARAREREBEvgDfXHnfLUcT/gAAAABJRU5ErkJggg=='),char=>char.charCodeAt(0));
+    const sample=new win.File([bytes],state==='format'?'검토용 형식 오류.txt':'검토용 거래명세서.png',{type:state==='format'?'text/plain':'image/png'});
+    if(typeof sample.arrayBuffer!=='function')Object.defineProperty(sample,'arrayBuffer',{value:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)});
+    let restore;
+    if(typeof win.DataTransfer==='function'){const transfer=new win.DataTransfer();transfer.items.add(sample);file.files=transfer.files;}
+    else{const before=Object.getOwnPropertyDescriptor(file,'files');Object.defineProperty(file,'files',{value:[sample],configurable:true});restore=()=>before?Object.defineProperty(file,'files',before):delete file.files;}
+    file.dispatchEvent(new win.Event('change',{bubbles:true}));restore?.();
+    if(['oversize','format'].includes(state)){
+      const errors=new win.MutationObserver(()=>{if(status.dataset.error==='true'){errors.disconnect();finish();}});errors.observe(status,{childList:true,attributes:true,attributeFilter:['data-error']});life.add(()=>errors.disconnect());if(status.dataset.error==='true'){errors.disconnect();finish();}
+    }
+    return true;
+  }
   function polishEvidence(root,options){
     root.classList.add('research-workflow');const panel=root.querySelector('.wf-panel'),heading=panel?.querySelector('h2');if(!panel)return ()=>{};
+    panel.classList.add('page','research-evidence-page',options.kind==='business'?'business-page':options.api?.screen==='signature'?'signature-page':'proof-page');
     if(heading&&options.kind!=='business')heading.textContent=options.api?.screen==='signature'?'서명이 필요해요':'거래내역 증빙';
-    const observer=new win.MutationObserver(()=>{if(panel.dataset.success!=='true'||panel.querySelector('.research-workflow-receipt'))return;const receipt=el('section',undefined,'research-workflow-receipt'),status=panel.querySelector('.wf-status');for(const child of panel.children)if(child!==status)child.hidden=true;receipt.append(icon('check'),el('p',options.kind==='business'?'사업자등록증을 접수했어요.':'거래내역 증빙과 서명을 접수했어요.'),el('p','최대 2영업일 이내에 검토 결과를 안내해 드릴게요.'));if(status)receipt.append(status);panel.append(receipt);});observer.observe(panel,{attributes:true,attributeFilter:['data-success']});return()=>observer.disconnect();
+    const select=panel.querySelector(':scope > .wf-field select'),start=panel.querySelector(':scope > .wf-button'),life=lifecycle(options.signal);let opened=false,reviewApplied=false;
+    const enhance=()=>{
+      const ready=Boolean(panel.querySelector('.research-evidence-settings')),status=panel.querySelector('.wf-status');
+      if(ready&&start){start.hidden=true;start.disabled=true;if(select?.options.length===1)select.closest('.wf-field').hidden=true;}
+      else if(!opened&&select?.options.length===1&&start&&!start.disabled&&['proof','signature'].includes(options.api?.screen)){opened=true;select.closest('.wf-field').hidden=true;start.click();start.hidden=true;start.disabled=true;}
+      else if(opened&&!ready&&status?.dataset.error==='true'&&start){start.hidden=false;start.disabled=false;}
+      if(ready&&!reviewApplied)reviewApplied=evidenceReviewState(panel,options,life);
+      if(panel.dataset.success==='true')evidenceReceipt(panel,options.kind);
+    };
+    const observer=new win.MutationObserver(enhance);observer.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:['data-success','data-error']});life.add(()=>observer.disconnect());enhance();return life.dispose;
   }
   workflow.mountEvidence=function(root,options={}){const base=originals.mountEvidence.call(this,root,options),life=lifecycle(options.signal);life.add(polishEvidence(root,options));life.add(()=>base?.destroy?.());return {destroy:life.dispose};};
   win.ORDER_EVIDENCE_EDITOR=function(options){
@@ -84,6 +172,13 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     const base=editor({...options,onError:message=>{options.onError?.(selectedProblem||(/파일/.test(message)?message+' 다른 파일을 다시 올려주세요.':message));}});
     container.classList.add('research-workflow');
     const file=container.querySelector('input[type=file]'),settings=container.querySelector('fieldset');
+    if(settings){
+      settings.classList.add('research-evidence-settings');
+      const upload=file?.closest('label'),hint=settings.querySelector(':scope > p'),pages=settings.querySelector(':scope > div'),signature=settings.querySelector(':scope > .wf-signature'),consent=settings.querySelector(':scope > label>input[type=checkbox]')?.parentElement,save=[...settings.querySelectorAll(':scope > button')].find(button=>button.textContent==='가림 처리본 제출');
+      pages?.classList.add('research-evidence-pages');
+      for(const item of [upload,hint,pages,signature,consent,save])if(item)settings.append(item);
+      const legend=signature?.querySelector('legend');if(legend)legend.textContent='서명';
+    }
     const viewer=el('dialog',undefined,'research-evidence-viewer t-modal'),toolbar=el('div',undefined,'research-viewer-toolbar'),count=el('output'),viewport=el('div',undefined,'research-evidence-viewport'),controls=el('div');viewer.setAttribute('aria-label','첨부 자료 크게 보기');viewer.append(toolbar,viewport,controls);container.append(viewer);
     const button=(text,fn)=>{const b=el('button',text);b.type='button';on(b,'click',fn);return b;};
     const sections=()=>[...settings?.querySelectorAll(':scope > div > section')||[]].filter(section=>section.querySelector('canvas')||section===current?.section);
@@ -94,7 +189,7 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     on(viewer,'cancel',e=>{e.preventDefault();close();});on(viewer,'click',e=>{if(e.target===viewer)close();});on(viewer,'keydown',e=>{if(editing||/INPUT|TEXTAREA/.test(e.target.tagName))return;if(e.key==='ArrowLeft'){e.preventDefault();show(position-1);}if(e.key==='ArrowRight'){e.preventDefault();show(position+1);}});
     let swipe;
     on(viewport,'pointerdown',e=>{if(editing)return;e.stopPropagation();swipe={x:e.clientX,y:e.clientY};},{capture:true});on(viewport,'pointerup',e=>{if(editing)return;e.stopPropagation();if(swipe&&Math.abs(e.clientX-swipe.x)>48&&Math.abs(e.clientY-swipe.y)<32)show(position+(e.clientX<swipe.x?1:-1));swipe=null;},{capture:true});
-    if(file){const label=file.closest('label');label.classList.add('research-file-drop');label.prepend(icon('upload'));label.append(el('small',file.multiple?'PDF, JPG, PNG · 파일당 10MB · 최대 8쪽':'PDF, JPG, PNG · 파일당 10MB'),el('small','파일을 이곳에 끌어놓을 수도 있어요.','research-drop-desktop'));on(file,'change',()=>{close(true);const files=[...file.files||[]];selectedProblem=files.some(f=>!f.size||f.size>10_000_000)?'파일당 10MB 이하로 줄여 다시 올려주세요.':files.some(f=>!['application/pdf','image/png','image/jpeg'].includes(f.type))?'PDF, JPG 또는 PNG 파일을 다시 올려주세요.':'';},{capture:true});on(label,'dragover',e=>{if(!file.disabled){e.preventDefault();label.dataset.drag='true';}});on(label,'dragleave',()=>delete label.dataset.drag);on(label,'drop',e=>{e.preventDefault();delete label.dataset.drag;if(file.disabled||!e.dataTransfer?.files.length)return;if(!file.multiple&&e.dataTransfer.files.length>1){options.onError?.('사업자등록증은 한 파일만 선택해 주세요.');return;}file.files=e.dataTransfer.files;file.dispatchEvent(new win.Event('change',{bubbles:true}));});}
+    if(file){const label=file.closest('label');label.classList.add('research-file-drop');file.classList.add('research-file-input');for(const node of [...label.childNodes])if(node.nodeType===3)node.remove();label.prepend(icon('upload'),el('strong',options.kind==='business'?'사업자등록증을 선택해 주세요':'증빙 파일을 선택해 주세요'));label.append(el('small',file.multiple?'PDF, JPG, PNG · 파일당 10MB · 최대 8쪽':'PDF, JPG, PNG · 파일당 10MB'),el('small','파일을 이곳에 끌어놓을 수도 있어요.','research-drop-desktop'));on(file,'change',()=>{close(true);const files=[...file.files||[]];selectedProblem=files.some(f=>!f.size||f.size>10_000_000)?'파일당 10MB 이하로 줄여 다시 올려주세요.':files.some(f=>!['application/pdf','image/png','image/jpeg'].includes(f.type))?'PDF, JPG 또는 PNG 파일을 다시 올려주세요.':'';},{capture:true});on(label,'dragover',e=>{if(!file.matches(':disabled')){e.preventDefault();label.dataset.drag='true';}});on(label,'dragleave',()=>delete label.dataset.drag);on(label,'drop',e=>{e.preventDefault();delete label.dataset.drag;if(file.matches(':disabled')||!e.dataTransfer?.files.length)return;if(!file.multiple&&e.dataTransfer.files.length>1){options.onError?.('사업자등록증은 한 파일만 선택해 주세요.');return;}file.files=e.dataTransfer.files;file.dispatchEvent(new win.Event('change',{bubbles:true}));});}
     function enhance(){for(const section of sections()){const canvas=section.querySelector('canvas');if(!canvas||canvas.dataset.researchPreview!==undefined)continue;canvas.dataset.researchPreview='';canvas.tabIndex=0;canvas.setAttribute('role','button');canvas.setAttribute('aria-haspopup','dialog');section.parentElement.classList.add('research-evidence-pages');const open=()=>show(sections().indexOf(section));on(canvas,'pointerdown',e=>{if(current?.canvas===canvas)return;e.preventDefault();e.stopImmediatePropagation();},{capture:true});on(canvas,'pointerup',e=>{if(current?.canvas===canvas)return;e.stopImmediatePropagation();},{capture:true});on(canvas,'click',()=>{if(current?.canvas!==canvas)open();});on(canvas,'keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open();}});section.append(button('크게 보기',open));container.dispatchEvent(new win.CustomEvent('research-evidence-loaded',{bubbles:true}));}if(current&&(!current.canvas.width||!current.section.isConnected))close(true);}
     const observer=new win.MutationObserver(enhance);observer.observe(container,{subtree:true,childList:true,attributes:true,attributeFilter:['width','height']});enhance();on(container,'click',e=>{if(e.target.closest('button')&&!viewer.contains(e.target))close(true);},{capture:true});
     life.add(()=>{if(disposed)return;disposed=true;observer.disconnect();win.clearTimeout(closing);close(true);viewer.remove();base?.();});return life.dispose;
