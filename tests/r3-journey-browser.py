@@ -204,7 +204,16 @@ def check_motion(page, origin):
     expect(action).to_have_css('border-top-color','rgba(0, 0, 0, 0)')
     assert action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')==fixed
     page.mouse.up();expect(view.locator('dialog[open]')).to_have_count(1)
-    frame_click(page,view.get_by_role('button',name='닫기'));expect(view.locator('dialog[open]')).to_have_count(0)
+    dialog=view.locator('dialog[open]')
+    expect(dialog).to_have_accessible_name('어떤 조건으로 다시 비교할까요?')
+    expect(dialog.locator('button')).to_have_count(2)
+    expect(dialog.get_by_role('button',name='새로운 견적',exact=True)).to_be_visible()
+    expect(dialog.get_by_role('button',name='동일한 조건',exact=True)).to_be_visible()
+    # QA e1219f2b explicitly leaves only the two choices. Cancel through the
+    # retained native dialog Escape behavior, without selecting either one.
+    dialog.get_by_role('button',name='새로운 견적',exact=True).press('Escape')
+    expect(view.locator('dialog[open]')).to_have_count(0)
+    expect(view).to_have_attribute('data-state','saving')
     x,y=frame_pointer_position(page,action,{'x':100,'y':28})
     touch=page.context.new_cdp_session(page)
     try:
