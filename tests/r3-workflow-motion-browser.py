@@ -286,8 +286,8 @@ def check(page, origin, reduced, workflow):
         step('opening canonical billing screen')
         REPORT['billing'] = check_billing(page, screens.screen('admin-billing', 'draft'), reduced)
     elif workflow == 'signature':
-        step('opening canonical signature screen')
-        REPORT['signature'] = check_signature_flow(page, screens.screen('signature', 'empty'), on_step=step)
+        step('opening signature review before current proof-to-signature submission')
+        REPORT['signature'] = check_signature_flow(page, screens.screen('signature', 'empty'), open_proof=lambda: screens.screen('proof', 'empty'), on_step=step)
     else:
         raise ValueError('Unknown workflow: '+workflow)
     step('complete')

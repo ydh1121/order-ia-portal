@@ -1,5 +1,6 @@
 """Exercise QA purchase input, review hand-off and each read-only result design in Chromium."""
 import json
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -55,8 +56,10 @@ def capture_reference_viewports(qa_page, folder):
                         if(e.target.closest('button[data-action=back]')) window.__quoteReturnTrusted=e.isTrusted;
                     }, true)""")
                     stage.get_by_role('button',name='이전 페이지로 돌아가기').click()
-                    expect(page).to_have_url(re.compile(r'screen=quote-review(?:&|$)'))
+                    expect(page).to_have_url(re.compile(r'screen=q2(?:&|$)'))
+                    expect(page).to_have_url(re.compile(r'state=filled(?:&|$)'))
                     expect(page.locator('#order-app-quote')).to_be_visible()
+                    expect(page.locator('#order-app-quote #input-review-open')).to_be_visible()
                     assert page.evaluate('window.__quoteReturnTrusted') is True
                 assert page.locator('iframe').count()==0
             except AssertionError as error:
@@ -114,6 +117,34 @@ def check_result(view, state):
                 const mark=getComputedStyle(s,'::after');
                 return mark.width==='22px' && mark.height==='104px' && mark.backgroundImage.includes('data:image/svg+xml');
             }""")
+
+
+def check_retired_result_archives(page, origin, width):
+    """Retired states leave the current queue, while their sealed source works."""
+    build = '9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092'
+    archived = page.context.new_page()
+    try:
+        for state in ('new-only-detail', 'no-current'):
+            target = 'quote-result/' + state + '/email'
+            current = page.request.get(origin + '/api/ia/r3-qa/artifact?' + urlencode(
+                {'id': target, 'width': width, 'version': 'current'}))
+            assert current.status == 404, (state, current.status)
+            identity = ['order-research-application/v1', build, target, width]
+            digest = hashlib.sha256(json.dumps(identity, separators=(',', ':')).encode()).hexdigest()
+            response = page.request.get(origin + '/api/ia/r3-qa/artifact?' + urlencode(
+                {'id': target, 'width': width, 'version': 'recorded', 'artifactHash': digest}))
+            assert response.ok, (state, response.status)
+            artifact = response.json()
+            assert artifact['hash'] == digest and artifact['version'] == 'recorded'
+            assert artifact['source']['build'] == build and artifact['source']['archived'] is True
+            archived.goto(origin + artifact['application']['url'])
+            expect(archived.locator('html')).to_have_attribute('data-product-build', build)
+            wrapper = archived.locator('[data-review-result]')
+            expect(wrapper).to_have_attribute('data-view', state)
+            check_result(wrapper.locator('[data-order-result]'), state)
+            assert archived.locator('iframe').count() == 0
+    finally:
+        archived.close()
 
 
 
@@ -238,7 +269,7 @@ def run(page, origin, width):
     frame_click(page,quote.locator('#input-review-open'))
     expect(review.locator('#input-review-rows')).to_contain_text('포장당 미입력')
     frame_click(page,review.locator('#input-review-back'))
-    for state in ['saving','new-detail','current-detail','new-only-detail','equal','current-lower','no-current','expired','recompare','no-result','locked']:
+    for state in ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result','locked']:
         frame = screens.screen('quote-result',state)
         wrapper=frame.locator('[data-review-result]')
         expect(wrapper).to_have_attribute('data-view',state)
@@ -261,6 +292,7 @@ def run(page, origin, width):
         if folder and width in (390,1440):
             path=Path(folder);path.mkdir(parents=True,exist_ok=True)
             view.screenshot(path=str(path / ('result-'+state+'-'+str(width)+'.png')))
+    check_retired_result_archives(page, origin, width)
     # The former independent Q2 contract remains explicitly reproducible. Its
     # unknown-price checkbox is not substituted for the regular app's model.
     legacy=PreservedReviewScreens(page,origin,width).screen('q2','empty')
@@ -271,7 +303,7 @@ def run(page, origin, width):
     expect(legacy.locator('[name=price]')).to_be_disabled()
     frame_click(page,legacy.locator('.journey-check'))
     expect(legacy.locator('[name=price]')).to_be_enabled()
-    print('PASS browser: current regular Q2 → input review → edit, 11 current shared result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
+    print('PASS browser: current regular Q2 → input review → edit, 9 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
 if __name__=='__main__':
     host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:

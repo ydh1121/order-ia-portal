@@ -624,10 +624,25 @@ def main():
         frame_click(page, account_trigger)
         ready_review_route(page, frame, 'profile', 'menu')
         expect(frame.locator('.obm-panel')).to_be_visible()
-        assert frame.locator('.obm-panel').evaluate('''panel =>
-            panel.getBoundingClientRect().top >=
-            document.querySelector('#order-app-header').getBoundingClientRect().bottom
-        '''), 'The native account popover must leave the retained header controls reachable'
+        appearance['accountAnchor']=frame.locator('.obm-panel').evaluate('''panel => {
+            const p=panel.getBoundingClientRect(),header=document.querySelector('#order-app-header').getBoundingClientRect();
+            const trigger=document.querySelector('[data-order-account-trigger]');
+            const paths=[...trigger.querySelectorAll('svg g > path')].map(path=>path.getBoundingClientRect());
+            const ink={top:Math.min(...paths.map(r=>r.top)),right:Math.max(...paths.map(r=>r.right)),
+                left:Math.min(...paths.map(r=>r.left)),bottom:Math.max(...paths.map(r=>r.bottom))};
+            const number=name=>parseFloat(panel.style.getPropertyValue(name));
+            const order=document.querySelector('.research-order-trigger'),r=order.getBoundingClientRect();
+            const hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);
+            return {pathCount:paths.length,panelTop:p.top,headerBottom:header.bottom,ink,
+                morphTop:p.top+number('--obm-start-y'),morphRight:p.left+number('--obm-open-w')+number('--obm-start-x'),
+                closedWidth:number('--obm-closed-w'),closedHeight:number('--obm-closed-h'),orderHit:hit?.closest('.research-order-trigger')===order};
+        }''')
+        anchor=appearance['accountAnchor']
+        assert anchor['pathCount']==3 and anchor['panelTop']>=anchor['headerBottom']+7.5, anchor
+        assert abs(anchor['morphTop']-anchor['ink']['top'])<=0.5 and abs(anchor['morphRight']-anchor['ink']['right'])<=0.5, anchor
+        assert abs(anchor['closedWidth']-(anchor['ink']['right']-anchor['ink']['left']))<=0.5, anchor
+        assert abs(anchor['closedHeight']-(anchor['ink']['bottom']-anchor['ink']['top']))<=0.5, anchor
+        assert anchor['orderHit'], 'The expanded account popover must leave the unchanged Order trigger physically reachable'
         appearance['accountSurface']=frame.locator('.obm-panel').evaluate('''panel => {
             const surface=panel.querySelector('.obm-surface'),menu=panel.querySelector('.obm-menu');
             const s=getComputedStyle(surface),m=getComputedStyle(menu),p=getComputedStyle(panel);

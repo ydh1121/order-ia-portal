@@ -20,14 +20,18 @@ def check_wait_layout(context, origin):
             rect = art.evaluate("""element => {
                const avatar = element.getBoundingClientRect();
                const stack = element.parentElement.querySelector('.mf-banner-stack').getBoundingClientRect();
-               return {gap: avatar.top - stack.bottom, width: avatar.width,
+               return {gap: avatar.top - stack.bottom, width: avatar.width, height: avatar.height,
                  screenWidth: innerWidth, clipped: document.documentElement.scrollWidth > innerWidth};
             }""")
-            assert rect["gap"] >= 15 and 105 <= rect["width"] <= 161, rect
+            # archive=1 selects the QA inspection surface, not a pinned old
+            # research build. The enlarged Nov 25 avatar applies here too.
+            expected_avatar = min(184, rect["screenWidth"] * .56)
+            assert rect["gap"] >= 28 and abs(rect["width"] - expected_avatar) <= 1, rect
+            assert abs(rect["height"] - expected_avatar) <= 1, rect
             assert not rect["clipped"], rect
             print("BLOUB R4", width, rect)
         # The current review shell loads the canonical research app. Capture
-        # its layout separately from the preserved version above.
+        # its layout separately from the inspection entry above.
         current = []
         for width in (320, 390, 1440):
             page.set_viewport_size({"width": width, "height": 900})
@@ -39,11 +43,13 @@ def check_wait_layout(context, origin):
             rect = visual.evaluate("""el => {
                 const avatar = el.querySelector('.mf-wait-avatar').getBoundingClientRect();
                 const banner = el.querySelector('.mf-banner-stack').getBoundingClientRect();
-                return {width: innerWidth, avatar: avatar.width, gap: avatar.top - banner.bottom,
+                return {width: innerWidth, avatar: avatar.width, avatarHeight: avatar.height, gap: avatar.top - banner.bottom,
                     banner: banner.width, clipped: document.documentElement.scrollWidth > innerWidth};
             }""")
             assert rect["width"] == width and not rect["clipped"], rect
-            assert rect["gap"] >= 28 and 105 <= rect["avatar"] <= 129, rect
+            expected_avatar = min(184, width * .56)
+            assert rect["gap"] >= 28 and abs(rect["avatar"] - expected_avatar) <= 1, rect
+            assert abs(rect["avatarHeight"] - expected_avatar) <= 1, rect
             if width == 390:
                 cards = visual.locator('.mf-banner')
                 expect(cards).to_have_count(3)
