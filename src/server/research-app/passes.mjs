@@ -30,9 +30,12 @@ export function installResearchPasses(win=window){
   function mount(root,state,api,renderer){
     const document=root.ownerDocument,controller=new win.AbortController(),signal=controller.signal,adapter=api.adapter,pending=new Map();let disposeRuntime,disposed=false,generation=0;
     const dispose=()=>{if(disposed)return;disposed=true;generation++;controller.abort();api.signal?.removeEventListener('abort',dispose);disposeRuntime?.();active.delete(dispose);};active.add(dispose);api.signal?.addEventListener('abort',dispose,{once:true});
+    // Authored scene styles can live inside its original nested <main>. Keep
+    // those same nodes across data paints, including loading and retry states.
+    const sourceStyles=[...root.querySelectorAll('style')];
     const live=()=>!disposed&&!signal.aborted;
     const paint=(state,rows)=>{
-      disposeRuntime?.();renderer.setRows(rows);const styles=[...root.querySelectorAll(':scope > style')];root.innerHTML=renderer.render(state);root.prepend(...styles);
+      disposeRuntime?.();renderer.setRows(rows);root.innerHTML=renderer.render(state);root.prepend(...sourceStyles);
       // This application/panel has one retained header. Repainting data cannot
       // introduce a second brand or a static sample label.
       for(const element of root.querySelectorAll('.page-head,.brand,.nav-sample'))element.remove();
@@ -68,7 +71,7 @@ export function installResearchPasses(win=window){
       }catch(error){
         if(!live()||own!==generation)return;loading?.destroy();disposeRuntime?.();disposeRuntime=null;root.dataset.passDataState='error';
         const notice=document.createElement('p');notice.setAttribute('role','alert');notice.textContent=adapter.message?.(error)||'오더 패스를 불러오지 못했어요.';
-        const retry=document.createElement('button');retry.type='button';retry.className='btn secondary';retry.textContent='다시 불러오기';retry.addEventListener('click',load,{signal});const styles=[...root.querySelectorAll(':scope > style')];root.replaceChildren(...styles,notice,retry);
+        const retry=document.createElement('button');retry.type='button';retry.className='btn secondary';retry.textContent='다시 불러오기';retry.addEventListener('click',load,{signal});root.replaceChildren(...sourceStyles,notice,retry);
       }finally{loading?.destroy();}
     }
     if(api.signal?.aborted){dispose();return dispose;}const ready=load();dispose.ready=ready;return dispose;

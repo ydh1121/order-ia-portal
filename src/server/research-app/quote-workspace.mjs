@@ -45,6 +45,19 @@ export function createResearchQuoteEnvironment(root,{mode,services={},onNavigate
   const controller=new window.AbortController(),cleanups=[],listeners=[],timers=new Set(),frames=new Set(),observers=new Set(),globals=new Map(),pagehide=new Set();
   const navigationEvents=new window.EventTarget(),historyEntries=[{state:null,hash:'#/form'}];
   let disposed=false,hash='#/form',historyState=null,quoteSync=null;
+  // A retained review iframe may be displayed before the user enters it.
+  // Only move focus while this document already owns it or during an actual
+  // user activation; neither condition changes the embedder's focus policy.
+  const canFocus=()=>!disposed&&(document.hasFocus()||window.navigator.userActivation?.isActive===true);
+  const showModal=dialog=>{
+    if(canFocus())return dialog.showModal();
+    // showModal() otherwise attempts its own initial focus. Keep the native
+    // top layer, but make that synchronous focus step ineligible and restore
+    // the exact inert attribute before any user interaction or next paint.
+    const inert=dialog.getAttribute('inert');dialog.setAttribute('inert','');
+    try{return dialog.showModal();}
+    finally{if(inert===null)dialog.removeAttribute('inert');else dialog.setAttribute('inert',inert);}
+  };
   const alive=fn=>(...args)=>{if(!disposed)return fn(...args);};
   const add=(target,type,listener,options)=>{
     if(!listener||disposed)return;
@@ -115,7 +128,7 @@ export function createResearchQuoteEnvironment(root,{mode,services={},onNavigate
   const local=services.repository?.storageOptions.localStorage||scopedStorage(services.storage?.localStorage||window.localStorage,'order.app.'+namespace+':');
   const session=services.repository?.storageOptions.sessionStorage||scopedStorage(services.storage?.sessionStorage||window.sessionStorage,'order.app.'+namespace+':');
   const environment={document:scopedDocument,window:scopedWindow,location,history,localStorage:local,sessionStorage:session,fetch:fetcher,
-    externalHeader,fixtureScope,addressService:services.addressService||services.regular?.addressService||services.address,
+    externalHeader,fixtureScope,canFocus,showModal,addressService:services.addressService||services.regular?.addressService||services.address,
     storageOptions:{...services.storage,localStorage:local,sessionStorage:session,locks:services.storage?.locks||window.navigator.locks,crypto:services.storage?.crypto||window.crypto,now:services.now||Date.now,...services.repository?.storageOptions,partition,keyPrefix:'order_application_quote_v1_'},
     setTimeout(fn,ms,...args){let id;id=window.setTimeout(()=>{timers.delete(id);if(!disposed)fn(...args);},ms);timers.add(id);return id;},
     clearTimeout(id){timers.delete(id);window.clearTimeout(id);},

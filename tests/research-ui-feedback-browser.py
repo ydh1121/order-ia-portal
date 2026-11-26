@@ -613,7 +613,8 @@ def evidence_presentation_probe(page):
         page.evaluate('document.fonts.ready')
         expect(panel.locator('.research-evidence-settings')).to_be_visible()
         if screen == 'proof':
-            expect(panel.locator('input[type=file]')).to_be_visible()
+            expect(panel.locator('.research-file-drop')).to_be_visible()
+            expect(panel.locator('input[type=file]')).to_be_enabled()
             expect(panel.locator('.proof-purpose')).to_be_visible()
         else:
             expect(panel.locator('input[type=file]')).to_be_hidden()

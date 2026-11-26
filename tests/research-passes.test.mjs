@@ -65,10 +65,12 @@ test('closing a pending pass load aborts the adapter request and cannot paint la
   const v=await setup(t);v.adapter.fixture.configure({requests:{'product GET /purchases':{scenario:'loading'}}});const dispose=v.mount();await until(()=>v.adapter.fixture.inspect().pending===1);dispose();await until(()=>v.adapter.fixture.inspect().pending===0);v.adapter.fixture.releasePending({requests:{}});await tick();assert.notEqual(v.root.dataset.passDataState,'ready');
 });
 test('loading retains three pass silhouettes with the shared gray brand dots and measures each card geometry',async t=>{
-  const v=await setup(t),measured=[],destroyed=[];
+  const v=await setup(t),measured=[],destroyed=[],authored=v.root.querySelector('#r3-navigation'),authoredCss=authored.textContent;
+  assert.ok(authored.parentElement!==v.root,'the original stylesheet starts inside the authored nested scene');
   v.w.ORDER_COMMON_MOTION={skeleton(card){measured.push(card);card.dataset.r3Skeleton='pending';return {destroy(){destroyed.push(card);delete card.dataset.r3Skeleton;}};}};
   v.adapter.fixture.configure({requests:{'product GET /purchases':{scenario:'loading'}}});const dispose=v.mount();await until(()=>v.adapter.fixture.inspect().pending===1);
   const stage=v.root.querySelector('.pass-stage.pass-loading'),cards=[...stage.querySelectorAll('.order-pass.nav-ticket')];assert.equal(cards.length,3);assert.deepEqual(measured,cards);assert.equal(stage.querySelectorAll('.loading-ticket-brand .pass-dots i').length,9);
+  assert.equal(v.root.querySelector('#r3-navigation'),authored);assert.equal(authored.textContent,authoredCss);
   for(const card of cards){const brand=card.querySelector('.loading-ticket-brand');assert.equal(brand.getAttribute('aria-hidden'),'true');assert.equal(v.w.getComputedStyle(brand).opacity,'1');assert.equal(v.w.getComputedStyle(brand.querySelector('i')).backgroundColor,'rgb(211, 217, 225)');}
   dispose();await until(()=>v.adapter.fixture.inspect().pending===0);assert.deepEqual(destroyed,cards);assert.equal(v.writes.length,0);
 });

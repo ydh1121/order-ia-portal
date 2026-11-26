@@ -253,6 +253,84 @@ test('a delayed stage focus cannot leave a visible application control for a hid
   }finally{f.close();}
 });
 
+test('inactive preview initialization and Q1 scenario keep the native modal without requesting focus, while user entry retains editor focus',async()=>{
+  const f=setup();let focused=false,activated=false;const attempts=[],nativeOpens=[];
+  try{
+    Object.defineProperty(f.win.document,'hasFocus',{value:()=>focused});
+    Object.defineProperty(f.win.navigator,'userActivation',{value:{get isActive(){return activated;}}});
+    const focus=f.win.HTMLElement.prototype.focus;
+    f.win.HTMLElement.prototype.focus=function(options){
+      attempts.push({id:this.id,allowed:focused||activated});
+      assert.ok(focused||activated,'an inactive preview must not attempt programmatic focus');
+      return focus.call(this,options);
+    };
+    // Model the native dialog focus eligibility separately from the explicit
+    // application focus calls. Chromium skips this step for an inert dialog.
+    f.win.HTMLDialogElement.prototype.showModal=function(){
+      nativeOpens.push({id:this.id,inert:this.hasAttribute('inert')});this.open=true;
+      if(!this.hasAttribute('inert'))(this.querySelector('button,input')||this).focus();
+    };
+    for(const mode of ['simple','detailed']){
+      focused=false;activated=false;const beforeAttempts=attempts.length;
+      const workspace=await f.mount(mode,{fixtureScope:true});
+      assert.equal(workspace.navigate({step:'q2'}),true);
+      assert.equal((await workspace.applyScenario({screen:'q1',state:'edit'})).ok,true);
+      await new Promise(resolve=>setTimeout(resolve,90));
+      const dialog=f.root.querySelector('#sku-dialog');
+      assert.equal(dialog.open,true);assert.equal(dialog.hasAttribute('inert'),false);
+      assert.deepEqual(nativeOpens.at(-1),{id:'sku-dialog',inert:true});
+      assert.equal(attempts.length,beforeAttempts,'initial stages and scenario editor preserve the parent focus');
+      const before=JSON.stringify(workspace.snapshot());
+      activated=true;f.root.querySelector('#cancel-sku').click();await until(()=>!dialog.open);
+      assert.equal(JSON.stringify(workspace.snapshot()),before,'cancel retains saved Q1/Q2 values');
+      const opener=f.root.querySelector('[data-edit]');opener.focus();focused=true;activated=false;opener.click();
+      await until(()=>dialog.contains(f.win.document.activeElement));
+      await new Promise(resolve=>setTimeout(resolve,40));
+      assert.deepEqual(nativeOpens.at(-1),{id:'sku-dialog',inert:false});
+      assert.equal(f.win.document.activeElement,f.root.querySelector('#picks-housing button[aria-pressed="true"]'));
+      f.root.querySelector('#cancel-sku').click();await until(()=>!dialog.open);
+      await until(()=>f.win.document.activeElement===f.root.querySelector('[data-edit]'));
+      assert.equal(JSON.stringify(workspace.snapshot()),before);
+      workspace.navigate({step:'q2'});await until(()=>f.win.document.activeElement===f.root.querySelector('#section-q2>.accordion-trigger'));
+      assert.equal(f.root.querySelector('[data-line-qty]').value,'100');
+      assert.equal(f.root.querySelector('[data-line-price]').value.replaceAll(',',''),'5000');
+      workspace.dispose();
+    }
+    assert.ok(attempts.length>0);assert.ok(attempts.every(row=>row.allowed));assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('inactive stage navigation preserves scroll without focus, rechecks document ownership and restores inert attributes on errors',async()=>{
+  const f=setup();let focused=false;const attempts=[],scrolls=[];
+  try{
+    Object.defineProperty(f.win.document,'hasFocus',{value:()=>focused});
+    Object.defineProperty(f.win.navigator,'userActivation',{value:{isActive:false}});
+    const focus=f.win.HTMLElement.prototype.focus;
+    f.win.HTMLElement.prototype.focus=function(options){attempts.push(this);return focus.call(this,options);};
+    f.win.HTMLElement.prototype.scrollIntoView=function(options){scrolls.push({target:this,options});};
+    const workspace=await f.mount('detailed');
+    await until(()=>scrolls.at(-1)?.target===f.root.querySelector('#section-q1>.accordion-trigger'));
+    assert.equal(attempts.length,0,'inactive initial mount scrolls to Q1 without taking parent focus');
+    assert.equal(workspace.navigate({step:'q2'}),true);
+    await until(()=>scrolls.at(-1)?.target===f.root.querySelector('#section-q2>.accordion-trigger'));
+    assert.deepEqual({...scrolls.at(-1).options},{block:'nearest',behavior:'instant'});
+    assert.equal(attempts.length,0,'an inactive stage change retains its original scroll and skips only focus');
+    focused=true;assert.equal(workspace.navigate({step:'q1'}),true);focused=false;
+    await until(()=>scrolls.at(-1)?.target===f.root.querySelector('#section-q1>.accordion-trigger'));
+    assert.equal(attempts.length,0,'a later loss of document focus skips focus while preserving stage scroll');
+    const environment=f.win.QuoteWorkspaceTest.createResearchQuoteEnvironment(f.root,{mode:'detailed',partition:'a'.repeat(64),services:f.services});
+    const dialog=f.win.document.createElement('dialog');dialog.setAttribute('inert','preserved');f.root.append(dialog);
+    dialog.showModal=()=>{assert.equal(dialog.hasAttribute('inert'),true);throw Error('native-open-failed');};
+    assert.throws(()=>environment.showModal(dialog),/native-open-failed/);assert.equal(dialog.getAttribute('inert'),'preserved');
+    dialog.removeAttribute('inert');assert.throws(()=>environment.showModal(dialog),/native-open-failed/);assert.equal(dialog.hasAttribute('inert'),false);
+    environment.dispose();workspace.dispose();
+    focused=true;const entered=await f.mount('detailed',{step:'q2'});
+    await until(()=>f.win.document.activeElement===f.root.querySelector('#section-q2>.accordion-trigger'));
+    assert.ok(attempts.length>0,'first entry from the focused application retains the regular accordion focus');
+    entered.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
 test('quote import and disposal preserve the already installed application contact owner',async()=>{
   const f=setup();let regular,release;try{
     regular=await f.win.QuoteWorkspaceTest.createParentServices({document:f.win.document,origin:f.win.location.origin,crypto:webcrypto,fetcher:f.win.fetch});
