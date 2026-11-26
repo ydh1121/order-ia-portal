@@ -121,7 +121,7 @@ export async function mountResearchApplication(config, environment) {
   const headerStyle=doc.createElement('style');headerStyle.dataset.researchBrandCss='';
   headerStyle.textContent=doc.querySelector('[data-order-brand-header-css]').textContent.replaceAll('.order-product-brand','#order-app-header .order-product-brand');doc.head.append(headerStyle);
   const back=header.querySelector('[data-app-back]');back.onclick=()=>{if(workspace&&route.kind==='quote'&&workspace.back())return;return route.kind==='quote'&&/^q[2-4]$/.test(route.screen)?navigate({screen:'q'+(Number(route.screen.slice(1))-1),mode:route.mode}):navigate(route.parent||{screen:'onboarding',state:authenticated()?'member-4':'guest-4'});};
-  authSheet=win.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>pageRoute?.screen==='onboarding'?pageRoute.state:authenticated()?'member-4':'guest-4'});
+  authSheet=win.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>pageRoute?.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(pageRoute.state)?pageRoute.state:authenticated()?'member-4':'guest-4'});
   function navigatePanelDestination(destination){
     if(typeof destination==='object')return navigate(destination);
     const scene=panelRoute(destination);if(scene?.screen==='passes'&&scene.panel)return navigate(scene);

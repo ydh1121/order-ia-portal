@@ -175,12 +175,23 @@ test('actual introduction and auth controls retain email focus through regular m
  }finally{await f.close();}
 });
 
-test('company sheet locks the retained header, removes its redundant title and restores the same controls when dismissed',async()=>{
+test('company sheet restores its retained header and lets signup open over the same parent when dismissed',async()=>{
  const f=await setup({screen:'onboarding',state:'company'});try{
   const header=f.doc.getElementById('order-app-header'),scene=f.doc.querySelector('.ob'),shade=scene.querySelector('.ob-shade');
   assert.equal(header.inert,true);assert.equal(shade.hidden,false);assert.equal(scene.querySelector('.ob-drawer h2'),null);
   shade.click();await settle();assert.equal(header.inert,false);assert.equal(shade.hidden,true);assert.equal(f.doc.querySelector('.ob'),scene);
   assert.equal(header.querySelector('[data-app-auth]').hidden,false);assert.deepEqual(f.failures,[]);
+  const opener=header.querySelector('[data-app-auth]');opener.focus();opener.click();
+  await waitFor(()=>f.doc.querySelector('.product-auth-sheet input[name=email]'));
+  f.doc.querySelector('.product-auth-sheet input[name=email]').dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  await waitFor(()=>!f.doc.querySelector('.product-auth-sheet'));
+  assert.equal(header.inert,false);assert.equal(f.doc.activeElement,opener);assert.equal(f.doc.querySelector('#order-app-page .ob'),scene);
+  assert.equal(header.querySelector('[data-app-auth]').hidden,false);
+  await f.app.inspectRoute({screen:'signup',state:'empty'});await settle();
+  assert.ok(f.doc.querySelector('.product-auth-sheet .auth-sheet'));assert.equal(f.app.snapshot().route.screen,'signup');
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.doc.querySelector('#order-app-page .ob'),scene);
+  assert.equal(f.win.ORDER_QA_AUTH_RETURN.guestState,'guest-4');assert.equal(f.win.ORDER_QA_AUTH_RETURN.memberState,'member-4');
+  assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
 

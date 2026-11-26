@@ -43,6 +43,11 @@ RELATED += [(screen, state, 'simple', 390) for screen, state in (
 
 def write_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.name.endswith('.chrome-layout.json') and isinstance(value, dict) and 'uaShadowLayout' in value:
+        sidecar_path = path.with_name(path.name.replace('.chrome-layout.json', '.ua-shadow-layout.json'))
+        write_json(sidecar_path, value['uaShadowLayout'])
+        value = {key: item for key, item in value.items() if key != 'uaShadowLayout'}
+        value['uaShadowLayoutArtifact'] = file_identity(sidecar_path)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2, allow_nan=False) + '\n')
 
 
@@ -125,6 +130,106 @@ class ProductSurface:
                 overflowY:getComputedStyle(node).overflowY,borderRadius:getComputedStyle(node).borderRadius,transform:getComputedStyle(node).transform}))})''')
 
 
+
+def chrome_ua_shadow_layout(cdp, page, root_backend):
+    """Read the same product root's native control shadow text using this CDP client.
+
+    No DOM/style/focus/input mutation. A deprecated-method failure is reported
+    as unavailable evidence; it does not alter any pre-existing native gate.
+    """
+    before = datetime.now(timezone.utc).isoformat()
+    identity = page.evaluate('''() => {
+        const root=document.getElementById('order-single'),app=window.ORDER_RESEARCH_APP?.snapshot();
+        return {rootPresent:!!root,build:document.documentElement.dataset.productBuild,
+          appBuild:app?.build,route:app?.route,url:location.href,
+          viewport:{width:innerWidth,height:innerHeight,scrollX,scrollY,devicePixelRatio}};
+    }''')
+    result = {'format':'order-chrome-native-control-shadow/v1',
+        'observedBeforeSnapshotAt':before,'sourceIdentity':identity,
+        'rootBackendNodeId':root_backend,'includeUserAgentShadowTree':True,
+        'coordinates':'Native document CSS pixels; Range viewport rects include observed document scroll conversion',
+        'captureSnapshotRetained':True,'domMutations':0,'focusWrites':0,
+        'reader':file_identity(Path(__file__)),'nativeGateUnchanged':True,
+        'layout':[],'unresolvedCharacterBounds':[]}
+    keys = STYLE_KEYS + ['font-variant-numeric','font-feature-settings','text-align',
+        'padding-top','padding-right','padding-bottom','padding-left','direction']
+    try:
+        raw = cdp.send('DOMSnapshot.getSnapshot', {'computedStyleWhitelist':keys,
+            'includeUserAgentShadowTree':True,'includePaintOrder':True,
+            'includeEventListeners':False})
+        nodes, layouts, styles = raw['domNodes'], raw['layoutTreeNodes'], raw['computedStyles']
+        roots = [i for i,n in enumerate(nodes) if n.get('backendNodeId')==root_backend]
+        assert len(roots)==1, 'UA sidecar must retain the exact captureSnapshot product root'
+        attrs = lambda n:{a['name']:a['value'] for a in n.get('attributes',[])}
+        selected, parents, owners, stack = set(), {}, {}, [(roots[0],None,None)]
+        while stack:
+            index,parent,owner=stack.pop()
+            if index in selected:continue
+            selected.add(index);parents[index]=parent
+            node=nodes[index]
+            if node['nodeName'] in ('INPUT','TEXTAREA','SELECT'):
+                owner=index
+            owners[index]=owner
+            children=node.get('childNodeIndexes',[])+node.get('pseudoElementIndexes',[])
+            if 'contentDocumentIndex' in node:children.append(node['contentDocumentIndex'])
+            stack.extend((child,index,owner) for child in reversed(children))
+        for index,layout in enumerate(layouts):
+            at=layout['domNodeIndex'];owner=owners.get(at)
+            if at not in selected or owner is None:continue
+            node,control=nodes[at],nodes[owner]
+            control_attrs=attrs(control)
+            if control_attrs.get('type','').lower()=='password':continue
+            style_index=layout.get('styleIndex')
+            record={'nativeLayoutIndex':index,'nodeIndex':at,'parentNodeIndex':parents.get(at),
+                'backendNodeId':node['backendNodeId'],'tag':node['nodeName'],
+                'domId':attrs(node).get('id'),'shadowRootType':node.get('shadowRootType'),
+                'controlNodeIndex':owner,'controlBackendNodeId':control['backendNodeId'],
+                'controlId':control_attrs.get('id'),'controlTag':control['nodeName'],
+                'controlType':control_attrs.get('type'),'bounds':layout['boundingBox'],
+                'text':layout.get('layoutText',''),'textBoxes':layout.get('inlineTextNodes',[]),
+                'style':{p['name']:p['value'] for p in styles[style_index]['properties']} if style_index is not None else {},
+                'paintOrder':layout.get('paintOrder')}
+            if node['nodeType']==3 and record['text']:
+                try:
+                    obj=cdp.send('DOM.resolveNode',{'backendNodeId':node['backendNodeId'],
+                        'objectGroup':'order-native-ua-text'})['object']
+                    observed=cdp.send('Runtime.callFunctionOn',{'objectId':obj['objectId'],
+                        'functionDeclaration':'''function(){
+                          const doc=this.ownerDocument,win=doc.defaultView,text=this.nodeValue||'',ranges=[];
+                          let offset=0;
+                          for(const character of text){
+                            const range=doc.createRange();range.setStart(this,offset);range.setEnd(this,offset+character.length);
+                            const rects=[...range.getClientRects()].map(r=>({x:r.x+win.scrollX,y:r.y+win.scrollY,width:r.width,height:r.height}));
+                            ranges.push({text:character,startUtf16:offset,lengthUtf16:character.length,rects});offset+=character.length;
+                          }
+                          const p=this.parentElement,css=p?win.getComputedStyle(p):null;
+                          return {text,ranges,scroll:{x:win.scrollX,y:win.scrollY},
+                            typography:css?{fontFamily:css.fontFamily,fontSize:css.fontSize,fontWeight:css.fontWeight,
+                              lineHeight:css.lineHeight,letterSpacing:css.letterSpacing,color:css.color,
+                              fontVariantNumeric:css.fontVariantNumeric,fontFeatureSettings:css.fontFeatureSettings,
+                              opacity:css.opacity,visibility:css.visibility}:null,
+                            method:'native-Range-on-actual-UA-shadow-text',domMutations:0};
+                        }''','returnByValue':True})
+                    if observed.get('exceptionDetails'):
+                        raise RuntimeError(observed['exceptionDetails'].get('text','UA Range read unavailable'))
+                    record['characterBounds']=observed['result']['value']
+                    assert record['characterBounds']['text']==record['text'], 'Native control text changed during UA read'
+                except Exception as error:
+                    result['unresolvedCharacterBounds'].append({'backendNodeId':node['backendNodeId'],
+                        'controlId':control_attrs.get('id'),'error':str(error).splitlines()[0]})
+            result['layout'].append(record)
+        result['status']='OBSERVED'
+        result['nativeControlCount']=len({r['controlBackendNodeId'] for r in result['layout']})
+        result['observedCharacterTextNodes']=sum('characterBounds' in r for r in result['layout'])
+    except Exception as error:
+        result.update(status='UNAVAILABLE',error=str(error).splitlines()[0])
+    finally:
+        try:cdp.send('Runtime.releaseObjectGroup',{'objectGroup':'order-native-ua-text'})
+        except Exception:pass
+    result['observedAfterSnapshotAt']=datetime.now(timezone.utc).isoformat()
+    return result
+
+
 def chrome_layout(page):
     """Retain Chrome's own layout/text boxes, including native-control text.
 
@@ -190,11 +295,13 @@ def chrome_layout(page):
             used.append({'backendNodeId': backend, 'fonts': fonts})
         except Exception as error:
             unresolved.append({'backendNodeId': backend, 'error': str(error).split('\n')[0]})
+    ua_shadow = chrome_ua_shadow_layout(cdp, page, nodes['backendNodeId'][root])
     cdp.detach()
     actual_fonts = sorted({(f['familyName'], f.get('postScriptName', ''), f['isCustomFont']) for row in used for f in row['fonts'] if f['glyphCount'] > 0})
     assert actual_fonts, 'Chrome must report fonts that actually painted glyphs'
     return {'format': 'order-chrome-quote-layout/v1', 'observedBeforeSnapshotAt': observed_before,
             'observedAfterSnapshotAt': page.evaluate('new Date().toISOString()'), 'coordinates': 'document CSS pixels; native DOMSnapshot bounds',
+            'uaShadowLayout': ua_shadow,
             'layout': records, 'platformFonts': used, 'unresolvedPlatformFonts': unresolved,
             'actualFontFamilies': [{'family': family, 'postScriptName': ps, 'isCustomFont': custom} for family, ps, custom in actual_fonts]}
 
