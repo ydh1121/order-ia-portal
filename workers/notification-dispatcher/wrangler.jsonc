@@ -16,7 +16,7 @@
   },
   "observability": {
     "enabled": true,
-    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": false },
     // Automatic fetch spans record endpoint URLs, which are push capabilities.
     // Keep the aggregate delivery counts in logs; do not trace provider URLs.
     "traces": { "enabled": false }

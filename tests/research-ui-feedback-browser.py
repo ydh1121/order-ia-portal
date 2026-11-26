@@ -12,6 +12,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
+from browser_predicate_support import wait_for_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-ui-feedback'
@@ -21,11 +22,11 @@ def select(page, screen, state):
     target = {'screen': screen, 'state': state}
     accepted = page.evaluate('async next => await ORDER_RESEARCH_APP.inspectRoute(next)', target)
     assert accepted is not False, {'routeRejected': target}
-    page.wait_for_function('''expected=>{
+    wait_for_expression(page, '(() => {const expected=' + json.dumps(target) + ''';
       const app=window.ORDER_RESEARCH_APP,state=app?.snapshot(),html=document.documentElement;
       return state?.route.screen===expected.screen&&state.route.state===expected.state&&
         html.dataset.productScreen===expected.screen&&html.dataset.productState===expected.state;
-    }''', arg=target)
+    })()''')
 
 
 def platform_fonts(cdp, selector):
@@ -101,7 +102,7 @@ def input_probe(page):
     input_fonts = platform_fonts(cdp, '.product-auth-sheet [name=password]')
     if any(font['glyphCount'] > 0 for font in input_fonts):
         assert_pretendard(input_fonts)
-    page.wait_for_function('!document.querySelector(".r3-input-mirror")')
+    wait_for_expression(page, '!document.querySelector(".r3-input-mirror")')
     field.press('Home')
     for _ in range(3):
         field.press('Shift+ArrowRight')
@@ -115,7 +116,7 @@ def input_probe(page):
     cdp.send('Input.imeSetComposition', {'text': '한', 'selectionStart': 1, 'selectionEnd': 1})
     cdp.send('Input.insertText', {'text': '한'})
     expect(field).to_have_value('QTARToffee한')
-    page.wait_for_function('!document.querySelector(".r3-input-mirror")')
+    wait_for_expression(page, '!document.querySelector(".r3-input-mirror")')
     page.locator('.product-auth-sheet [data-action=password-visibility]').first.click()
     field.click()
     field.press('End')
@@ -124,7 +125,7 @@ def input_probe(page):
     assert masked and set(masked) == {'•'}, masked
     expect(field).to_have_value('QTARToffee한9')
     page.emulate_media(reduced_motion='reduce')
-    page.wait_for_function('!document.querySelector(".r3-input-mirror")')
+    wait_for_expression(page, '!document.querySelector(".r3-input-mirror")')
     page.keyboard.type('R')
     expect(field).to_have_value('QTARToffee한9R')
     assert page.locator('.r3-input-mirror').count() == 0
@@ -170,7 +171,7 @@ def morph_probe(page):
       }requestAnimationFrame(sample);
     }''')
     page.locator('[data-mf-intro="4"]').click()
-    page.wait_for_function('__modeGeometry.done===true')
+    wait_for_expression(page, '__modeGeometry.done===true')
     trace = page.evaluate('__modeGeometry')
     moving = [row for row in trace['frames'] if row['layer']]
     settled = [row for row in trace['frames'] if not row['layer']]
@@ -230,7 +231,7 @@ def consultation_pass_probe(page):
     detail_button.click()
     dialog = page.get_by_role('dialog', name='오더 패스 상세', exact=True)
     expect(dialog).to_be_visible()
-    page.wait_for_function('document.querySelector(".consult-pass-dialog").dataset.motion==="open"')
+    wait_for_expression(page, 'document.querySelector(".consult-pass-dialog").dataset.motion==="open"')
     assert dialog.evaluate('node=>node.matches(":modal")')
     expect(dialog.locator('.ticket-item')).to_have_count(2)
     expect(dialog).to_contain_text('5상자')
@@ -239,7 +240,7 @@ def consultation_pass_probe(page):
     dialog.locator('.consult-pass-close').click()
     expect(dialog).to_be_hidden()
     expect(detail_button).to_be_focused()
-    page.wait_for_function('__consultPassGeometry.done')
+    wait_for_expression(page, '__consultPassGeometry.done')
     trace = page.evaluate('__consultPassGeometry')
     opening = [row for row in trace['frames'] if row['phase'] == 'opening']
     closing = [row for row in trace['frames'] if row['phase'] == 'closing']
@@ -277,7 +278,7 @@ def pass_loading_probe(page):
     select(page, 'passes', 'loading')
     cards = page.locator('.pass-loading .order-pass')
     expect(cards).to_have_count(3)
-    page.wait_for_function('document.querySelectorAll(".pass-loading .order-pass[data-r3-skeleton=pending]").length===3')
+    wait_for_expression(page, 'document.querySelectorAll(".pass-loading .order-pass[data-r3-skeleton=pending]").length===3')
     rows = cards.evaluate_all('''cards=>cards.map(card=>{const r=card.getBoundingClientRect(),brand=card.querySelector('.loading-ticket-brand'),marks=[...brand.querySelectorAll('.pass-dots i')],style=getComputedStyle(card);return {width:r.width,height:r.height,opacity:style.opacity,mask:style.maskImage,brandOpacity:getComputedStyle(brand).opacity,bars:card.querySelector('.r3-geometry-skeleton').dataset.textRects,marks:marks.map(mark=>{const r=mark.getBoundingClientRect();return {color:getComputedStyle(mark).backgroundColor,width:r.width,height:r.height};})};})''')
     assert all(row['width'] > 100 and row['height'] > 100 and row['opacity'] == row['brandOpacity'] == '1' and int(row['bars']) > 0 for row in rows), rows
     assert all('radial-gradient' in row['mask'] and len(row['marks']) == 3 for row in rows), rows
@@ -330,7 +331,7 @@ def pass_tear_probe(page):
     cut.click()
     page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.configure({requests:{"product POST /purchases":{scenario:"loading"}}})')
     confirm.locator('[data-action=confirm-tear]').click()
-    page.wait_for_function('ORDER_RESEARCH_APP.adapter.fixture.inspect().pending===1')
+    wait_for_expression(page, 'ORDER_RESEARCH_APP.adapter.fixture.inspect().pending===1')
     assert page.locator('.pass-tear-preview').get_attribute('data-phase') == 'preview'
     assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().data.purchases.find(row=>row.id==="qa-order-shipped").status') == 'DISPATCHED'
     page.evaluate('''() => {
@@ -341,7 +342,7 @@ def pass_tear_probe(page):
       }requestAnimationFrame(sample);
     }''')
     page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.releasePending({requests:{}})')
-    page.wait_for_function('__tearNativeGeometry.done')
+    wait_for_expression(page, '__tearNativeGeometry.done')
     trace = page.evaluate('__tearNativeGeometry')
     acknowledged = [row for row in trace['frames'] if row['phase'] == 'acknowledged']
     assert len(acknowledged) >= 6 and all(row['status'] == 'RECEIVED' and not row['receivedVisible'] for row in acknowledged), trace
@@ -449,7 +450,7 @@ def main():
             page.locator('#submit').click()
             # The app exposes its controller before its first async scene has
             # mounted; wait for the emitted initial route as well.
-            page.wait_for_function('Boolean(window.ORDER_RESEARCH_APP)&&document.documentElement.dataset.productScreen==="onboarding"&&document.documentElement.dataset.productState==="guest-2"')
+            wait_for_expression(page, 'Boolean(window.ORDER_RESEARCH_APP)&&document.documentElement.dataset.productScreen==="onboarding"&&document.documentElement.dataset.productState==="guest-2"')
             expect(page.locator('#order-app-page .ob')).to_be_visible()
             assert page.locator('iframe').count() == 0
             receipt['input'] = input_probe(page)

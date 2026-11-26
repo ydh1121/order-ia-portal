@@ -1,4 +1,5 @@
 import {readFile,writeFile} from 'node:fs/promises';
+import {replaceRuntimeStrings} from './runtime-serialization.mjs';
 
 // Current generated product data has one owner. Historical modules retain
 // their existing locations and are deliberately outside this routing table.
@@ -20,6 +21,10 @@ export async function updateGeneratedModule(file,changes){
   let source;
   try{source=await readFile(new URL(target),'utf8');}
   catch(error){if(error.code==='ENOENT')throw Error('Run scripts/r3/migrate-product-ui.mjs before regenerating current UI modules.');throw error;}
+  if(new URL(target).pathname.endsWith('/product-ui/runtime.gen.mjs')&&Object.hasOwn(values,'runtimes')){
+   if(Object.keys(values).length!==1)throw Error('Canonical runtime module only exports runtimes');
+   await writeFile(new URL(target),replaceRuntimeStrings(source,values.runtimes));continue;
+  }
   const seen=new Set();
   const result=source.split('\n').map(line=>{
    const key=/^export const (\w+)=/.exec(line)?.[1];

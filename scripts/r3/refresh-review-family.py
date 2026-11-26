@@ -31,7 +31,11 @@ def load_module(path):
     for line in path.read_text().splitlines():
         if line.startswith("export const "):
             name, encoded = line[len("export const "):].split("=", 1)
-            values[name] = json.loads(encoded.rstrip(";"))
+            if name == "runtimes" and not encoded.startswith("{"):
+                decoded = subprocess.check_output(["node", str(HERE / "runtime-serialization.mjs"), "decode", str(path)], text=True)
+                values[name] = json.loads(decoded)
+            else:
+                values[name] = json.loads(encoded.rstrip(";"))
     if path.name == "runtime.gen.mjs" and "runtimes" in values and "frameCode" not in values:
         values.update(load_module(REVIEW_UI / "review-engine.gen.mjs"))
     return values
@@ -45,6 +49,11 @@ def write_module(path, values):
         values = {"runtimes": values["runtimes"]}
     banner = [line for line in path.read_text().splitlines() if line.startswith("//")]
     for key, value in values.items():
+        if key == "runtimes" and path.resolve() == (UI / "runtime.gen.mjs").resolve():
+            encoded = subprocess.run(["node", str(HERE / "runtime-serialization.mjs"), "encode"],
+                input=json.dumps(value, ensure_ascii=False), text=True, capture_output=True, check=True).stdout
+            banner.extend(encoded.rstrip("\n").splitlines())
+            continue
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
         banner.append(f"export const {key}={encoded};")
     path.write_text("\n".join(banner) + "\n")

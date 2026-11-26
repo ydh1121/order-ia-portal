@@ -3,6 +3,7 @@
 import {mountResearchNotifications} from '../../src/server/research-app/notifications.mjs';
 import {researchNotificationsCss} from '../../src/server/research-app/notifications-style.mjs';
 import {productFontCss} from '../../src/server/product-fonts.mjs';
+import {createCommonMotion} from '../../src/server/r3-common-motion.mjs';
 
 const style = document.createElement('style');
 style.textContent = productFontCss + researchNotificationsCss + `
@@ -12,6 +13,9 @@ style.textContent = productFontCss + researchNotificationsCss + `
   button,select,input{font:inherit}@media(max-width:480px){main{padding:20px 16px}}
 `;
 document.head.append(style);
+// Product pages install this shared owner before mounting their controls.
+// Include its real track/thumb paint in the isolated renderer as well.
+createCommonMotion(window);
 const mode = new URL(location.href).searchParams.get('mode') === 'qa-fixture' ? 'qa-fixture' : 'product';
 const trace = window.notificationFixture = {mode, calls: [], clicks: [], permission: 0, register: 0, subscribe: 0, unsubscribe: 0, deviceReads: 0, storage: 0, ready: false};
 const copy = value => JSON.parse(JSON.stringify(value));

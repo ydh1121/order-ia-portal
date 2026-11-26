@@ -19,6 +19,7 @@ import subprocess
 from playwright.sync_api import sync_playwright, expect
 from r3_feedback_browser_support import prepare_review_ready, wait_review_session
 from research_export_browser_support import research_snapshot_identity
+from browser_predicate_support import wait_for_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-quote-feedback'
@@ -94,8 +95,17 @@ class ProductSurface:
     def evaluate(self, *args, **kwargs):
         return self.frame.evaluate(*args, **kwargs)
 
-    def wait_for_function(self, *args, **kwargs):
-        return self.frame.wait_for_function(*args, **kwargs)
+    def wait_for_expression(self, expression, *, timeout=30000):
+        # The CDP helper targets the real Page. Bind the read-only predicate's
+        # three used globals to its actual same-origin product frame; do not
+        # pass this wrapper to new_cdp_session or enable unsafe page eval.
+        predicate = '''(() => {
+            const frame=document.getElementById('frame'),doc=frame?.contentDocument;
+            if(!doc)return false;
+            return ((window,document,ORDER_RESEARCH_APP) => (''' + expression + '''))(
+                frame.contentWindow,doc,frame.contentWindow.ORDER_RESEARCH_APP);
+        })()'''
+        return wait_for_expression(self.native_page, predicate, timeout=timeout)
 
     def close(self):
         # The next actual QA navigation disposes this app through its owner.
@@ -227,7 +237,7 @@ def core_checks(open_source, receipt):
             assert page.locator('#picks-' + group + ' [data-pick][aria-invalid=true]').count() > 0
         page.locator('[data-pick=size][data-value="대란"]').click()
         page.locator('[data-pick=pack][data-value="30"]').click()
-        page.wait_for_function('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
+        page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
         expect(page.locator('#err-q1')).to_be_hidden()
         line = page_quote(page)['lines'][0]
         assert all(line[key] == value for key, value in [('housing', '1'), ('size', '대란'), ('pack', '30'), ('qty', '')])
@@ -240,7 +250,7 @@ def core_checks(open_source, receipt):
         for selector, value in (('[data-line-qty]', '100'), ('[data-line-price]', '5000')):
             page.locator(selector).first.fill(value)
             page.locator(selector).first.press('Tab')
-        page.wait_for_function("(()=>{const l=ORDER_RESEARCH_APP.snapshot().quote.lines[0];return l.qty==='100'&&l.price==='5000';})()")
+        page.wait_for_expression("(()=>{const l=ORDER_RESEARCH_APP.snapshot().quote.lines[0];return l.qty==='100'&&l.price==='5000';})()")
         page.locator('.accordion-trigger[data-open=q1]').first.click()
         row = page.locator('#added-lines [data-saved-row]').first
         expect(row.locator('.saved-quantity-tags > span').nth(0)).to_have_text('월 100판')
@@ -293,7 +303,7 @@ def mode_motion_checks(open_source, receipt):
             page.locator('#research-order-mode-' + other).click()
             expect(page.locator('#quote-mode-dialog')).to_be_visible()
             expect(page.locator('#quote-mode-dialog [data-mode-option]')).not_to_be_checked()
-            page.wait_for_function('window.__quoteModeNative?.done===true')
+            page.wait_for_expression('window.__quoteModeNative?.done===true')
             trace = page.evaluate('window.__quoteModeNative')
             assert any(sample['x'] > 1.001 and sample['y'] < .999 for sample in trace['samples']), trace
             assert any(sample['y'] > 1.001 and sample['x'] < .999 for sample in trace['samples']), trace
@@ -319,7 +329,7 @@ def mode_motion_checks(open_source, receipt):
             }''')
             page.locator('#quote-mode-dialog [data-mode-cancel]').click()
             expect(page.locator('#quote-mode-dialog')).to_be_hidden()
-            page.wait_for_function('window.__quoteModeCloseNative?.done===true')
+            page.wait_for_expression('window.__quoteModeCloseNative?.done===true')
             close_trace = page.evaluate('window.__quoteModeCloseNative')
             assert any(sample['dialogOpen'] and sample['y'] < .65 for sample in close_trace['samples']), close_trace
             expect(page.locator('#research-order-trigger')).to_be_focused()
@@ -446,13 +456,14 @@ def main():
             response = matching[-1]
             assert response.ok
             source_html = response.body()
-            page.wait_for_function('''expected=>{
+            source_predicate = '''expected=>{
                 const root=document.getElementById('order-single'),app=window.ORDER_RESEARCH_APP;
                 const inspected=root?.__orderResearchInspector?.inspect(),state=app?.snapshot();
                 return inspected?.active&&!inspected.pendingRoute&&state?.build===expected.build&&
                     inspected.session.artifact===expected.artifactHash&&state.route.screen===expected.route.screen&&
                     state.route.state===expected.route.state&&state.route.mode===expected.route.mode;
-            }''', arg=source, timeout=30000)
+            }'''
+            page.wait_for_expression('(' + source_predicate + ')(' + json.dumps(source) + ')', timeout=30000)
             settle(page)
             page.evaluate('scrollTo(0,0)')
             resource_hashes()

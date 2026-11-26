@@ -513,31 +513,21 @@ def main():
         same_app(page)
         receipt['checks'].append('Q1→Q2→Q3→Q2 retains one regular quote model and the original line identity')
 
-        quote.locator('#quote-mode-switch').click()
-        modal = quote.locator('#quote-mode-dialog[open]')
-        expect(modal).to_be_visible()
-        expect(modal.locator('[data-mode-option]')).not_to_be_checked()
-        modal.locator('label').click()
-        expect(modal.locator('[data-mode-option]')).to_be_checked()
-        modal.locator('[data-mode-confirm]').click()
-        wait_for_expression(page, 'ORDER_RESEARCH_APP.snapshot().route.mode==="detailed"')
-        wait_for_expression(page, '''(()=>{const line=ORDER_RESEARCH_APP.snapshot().quote?.lines?.[0];
-            return line?.qty==='10' && line?.price==='5000';})()''')
-        same_app(page)
-        quote.locator('.accordion-trigger[data-open="q3"]').click()
-        quote.locator('#add-site').click()
-        expect(quote.locator('#site-editor-dialog')).to_be_visible()
-        assert page.evaluate('''(()=>{const phone=document.querySelector('#site-contact-phone'),
-            email=document.querySelector('#site-email');return Boolean(phone && email &&
-            window.OrderPhone?.instance(phone) && window.OrderEmailUI?.instance(email));})()''')
-        quote.locator('#cancel-site').click()
-        expect(quote.locator('#site-editor-dialog')).not_to_be_visible()
-        receipt['checks'].append('explicit mode copy retains regular quote values and Q3 mounts the existing contact controllers')
+        # This standalone app is still a guest. The member-only Order menu is
+        # intentionally absent and no connected auth provider can promote it.
+        # Preserve its ordinary simple draft here; test mode copying below in
+        # the explicit member QA fixture through the visible header controls.
+        assert page.evaluate('ORDER_RESEARCH_APP.snapshot().route.mode') == 'simple'
+        expect(page.locator('#order-app-header [data-app-auth]')).to_be_visible()
+        expect(page.locator('#research-order-trigger')).to_be_hidden()
         page.screenshot(path=str(OUT / 'quote-390.png'), full_page=True)
         page.reload()
         wait_for_expression(page, '''window.ORDER_RESEARCH_APP && (()=>{const value=ORDER_RESEARCH_APP.snapshot();
-            return value.route.mode==='detailed' && value.quote?.lines?.[0]?.qty==='10' && value.quote.lines[0].price==='5000';})()''', timeout=30000)
-        receipt['checks'].append('the regular draft survives an actual research-app reload')
+            return value.route.mode==='simple' && value.quote?.lines?.[0]?.qty==='10' && value.quote.lines[0].price==='5000';})()''', timeout=30000)
+        assert page.evaluate('ORDER_RESEARCH_APP.snapshot().quote.lines[0].id') == line['id']
+        expect(page.locator('#order-app-header [data-app-auth]')).to_be_visible()
+        expect(page.locator('#research-order-trigger')).to_be_hidden()
+        receipt['checks'].append('the guest ordinary simple draft preserves 10/5000 and its original line identity through an actual research-app reload')
 
         # Server-only immutable assets must not become a public HTTP endpoint.
         build = page.evaluate('ORDER_RESEARCH_APP.build')
@@ -796,12 +786,18 @@ def main():
         before_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
         price_preference = preferences.locator('[data-notification-preference="price"]')
         frame_click(page, price_preference)
-        expect(preferences.locator('[role="status"]')).to_have_text('수신 설정을 저장했어요.')
+        expect(preferences.locator(':scope > [role="status"]')).to_have_text('수신 설정을 저장했어요.')
         after_preferences = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.adapter.request("/notification-preferences")')
         assert after_preferences['revision'] == before_preferences['revision'] + 1
         assert after_preferences['preferences'] == {**before_preferences['preferences'], 'price': not before_preferences['preferences']['price']}
         assert after_preferences['updatedAt']
-        expect(preferences).to_contain_text('웹 푸시 발송은 아직 연결되지 않았어요.')
+        expect(preferences).to_contain_text('선택한 항목의 알림만 받아요. 기기 알림은 아래에서 별도로 허용할 수 있어요.')
+        device_push = preferences.locator('[data-notification-push]')
+        expect(device_push).to_have_attribute('data-push-state', 'review')
+        expect(device_push.locator('[data-notification-push-toggle]')).to_be_disabled()
+        expect(device_push.locator('[data-notification-push-toggle]')).to_have_attribute('aria-pressed', 'false')
+        expect(device_push).to_contain_text('검토 화면에서는 실제 기기 알림을 등록하지 않아요.')
+        expect(preferences.locator('input[role="switch"]')).to_have_count(3)
         same_review_application(page, frame)
         assert_no_hidden_modal(frame)
         page.screenshot(path=str(OUT / 'notification-preferences-1440.png'), full_page=True)
@@ -1135,7 +1131,9 @@ def main():
         # including another quote stage and an authentication overlay.
         phase = 'qa-quote-confirm-boundary'
         choose_review_route(page, frame, 'q2', 'filled')
-        frame_click(page, frame.locator('#order-app-quote #quote-mode-switch'))
+        current_mode = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().route.mode')
+        frame_click(page, frame.locator('#research-order-trigger'))
+        frame_click(page, frame.locator('#research-order-mode-' + ('detailed' if current_mode == 'simple' else 'simple')))
         confirm = frame.locator('#order-app-quote #quote-mode-dialog')
         expect(confirm).to_be_visible()
         assert confirm.evaluate("dialog => dialog.matches(':modal')")
@@ -1178,7 +1176,8 @@ def main():
         }'''
         stored_simple_before = frame.locator('#order-single').evaluate(read_simple_draft)
         assert stored_simple_before['ok'] and stored_simple_before['hasInput'], 'The earlier ordinary simple draft must still exist'
-        frame_click(page, frame.locator('#order-app-quote #quote-mode-switch'))
+        frame_click(page, frame.locator('#research-order-trigger'))
+        frame_click(page, frame.locator('#research-order-mode-detailed'))
         confirm = frame.locator('#order-app-quote #quote-mode-dialog')
         expect(confirm).to_be_visible()
         expect(confirm.locator('[data-mode-option]')).not_to_be_checked()
@@ -1205,6 +1204,89 @@ def main():
                                                                 'ordinarySimpleDraftUnchanged': True},
                                         'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'quote-modal-boundary-1440.png'), full_page=True)
+
+        # Select the existing member scenario using the real QA navigation.
+        # The visible Order menu returns to simple mode; selecting the Q2 row
+        # then establishes its separate fixture workspace before any editing.
+        # Never write authentication, a quote model or a storage record here.
+        phase = 'qa-quote-mode-copy-success'
+        choose_review_route(page, frame, 'onboarding', 'member-1')
+        expect(frame.locator('#order-app-header [data-app-auth]')).to_be_hidden()
+        expect(frame.locator('#research-order-trigger')).to_be_visible()
+        frame_click(page, frame.locator('#research-order-trigger'))
+        frame_click(page, frame.locator('#research-order-mode-simple'))
+        ready_review_route(page, frame, 'q1', 'before')
+        choose_review_route(page, frame, 'q2', 'filled')
+        assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().route.mode') == 'simple'
+        quote = frame.locator('#order-app-quote')
+        expect(quote.locator('[data-research-quote]')).to_have_attribute('data-research-quote', 'simple')
+        ordinary_before_copy = frame.locator('#order-single').evaluate(read_simple_draft)
+        assert ordinary_before_copy == stored_simple_before, 'Returning through the member menu must preserve the ordinary simple draft'
+        read_detailed_draft = '''async () => {
+            const {ok,status,data,revision,versionToken,hasInput}=await ORDER_RESEARCH_APP.repository.read('detailed');
+            return {ok,status,data,revision,versionToken,hasInput};
+        }'''
+        ordinary_detailed_before_copy = frame.locator('#order-single').evaluate(read_detailed_draft)
+        expect(quote.locator('[data-line-qty]')).to_have_count(1)
+        expect(quote.locator('[data-line-qty]')).to_be_visible()
+        quote.locator('[data-line-qty]').fill('10')
+        quote.locator('[data-line-qty]').press('Tab')
+        quote.locator('[data-line-price]').fill('5000')
+        quote.locator('[data-line-price]').press('Tab')
+        wait_for_expression(page, '''(() => {
+            const state=document.getElementById('frame').contentWindow.ORDER_RESEARCH_APP.snapshot();
+            const line=state.quote?.lines?.[0];
+            return state.route.mode==='simple'&&line?.qty==='10'&&line.price==='5000';
+        })()''')
+        copied_line = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().quote.lines[0]')
+        assert copied_line['id']
+        assert copied_line['id'] not in [item['id'] for item in ordinary_before_copy['data']['lines']], 'The selected Q2 fixture must own its line independently of the ordinary draft'
+        assert frame.locator('#order-single').evaluate(read_simple_draft) == ordinary_before_copy, 'Editing a QA fixture must not write the ordinary simple repository'
+        frame_click(page, frame.locator('#research-order-trigger'))
+        frame_click(page, frame.locator('#research-order-mode-detailed'))
+        confirm = quote.locator('#quote-mode-dialog')
+        expect(confirm).to_be_visible()
+        expect(confirm.locator('[data-mode-option]')).not_to_be_checked()
+        assert confirm.evaluate("dialog => dialog.open && dialog.matches(':modal')")
+        copy_confirmation = confirm.element_handle()
+        frame_click(page, confirm.locator('label'))
+        expect(confirm.locator('[data-mode-option]')).to_be_checked()
+        frame_click(page, confirm.locator('[data-mode-confirm]'))
+        expect(quote.locator('[data-research-quote]')).to_have_attribute('data-research-quote', 'detailed', timeout=30000)
+        ready_review_route(page, frame, 'q1', 'before')
+        wait_for_expression(page, '''(() => {
+            const state=document.getElementById('frame').contentWindow.ORDER_RESEARCH_APP.snapshot();
+            const line=state.quote?.lines?.[0];
+            return state.route.mode==='detailed'&&line?.qty==='10'&&line.price==='5000';
+        })()''')
+        assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().quote.lines[0].id') == copied_line['id']
+        assert copy_confirmation.evaluate("dialog => !dialog.open && !dialog.matches(':modal')")
+        expect(frame.locator('dialog:modal')).to_have_count(0)
+        frame_click(page, quote.locator('.accordion-trigger[data-open="q2"]'))
+        expect(quote.locator('[data-line-qty]')).to_have_value('10')
+        expect(quote.locator('[data-line-price]')).to_have_value(re.compile(r'5,?000'))
+        frame_click(page, quote.locator('.accordion-trigger[data-open="q3"]'))
+        frame_click(page, quote.locator('#add-site'))
+        expect(quote.locator('#site-editor-dialog')).to_be_visible()
+        assert frame.locator('#order-single').evaluate('''() => {
+            const phone=document.querySelector('#site-contact-phone'),email=document.querySelector('#site-email');
+            return Boolean(phone&&email&&window.OrderPhone?.instance(phone)&&window.OrderEmailUI?.instance(email));
+        }''')
+        frame_click(page, quote.locator('#cancel-site'))
+        expect(quote.locator('#site-editor-dialog')).not_to_be_visible()
+        assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().quote.lines[0].id') == copied_line['id']
+        assert frame.locator('#order-single').evaluate(read_simple_draft) == ordinary_before_copy == stored_simple_before
+        assert frame.locator('#order-single').evaluate(read_detailed_draft) == ordinary_detailed_before_copy, 'Fixture mode copying must not target the ordinary detailed repository'
+        same_review_application(page, frame)
+        assert_no_hidden_modal(frame)
+        receipt['quoteModeCopy'] = {'memberScenarioSelectedThroughQaUi': True,
+                                  'from': 'simple', 'to': 'detailed', 'copy': True,
+                                  'quantity': '10', 'price': '5000', 'retainedLineId': copied_line['id'],
+                                  'originalDialogClosed': True, 'q3PhoneEmailControllers': True,
+                                  'ordinarySimpleDraftUnchanged': True, 'ordinaryDetailedDraftUnchanged': True,
+                                  'fixtureLineDistinctFromOrdinary': True, 'commercialAcceptance': False}
+        receipt['checks'].append('member QA header mode copy retains 10/5000 and the fixture line identity, mounts detailed Q3 contact controllers, and preserves ordinary simple/detailed records exactly')
+        page.screenshot(path=str(OUT / 'quote-mode-copy-1440.png'), full_page=True)
 
         # A visible native modal also makes body-owned QA controls inert. The
         # location picker must operate within that modal without closing it or

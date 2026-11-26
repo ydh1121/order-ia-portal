@@ -21,7 +21,15 @@ def snapshot(page):
       text:document.querySelector('main').innerText,
       horizontalOverflow:document.documentElement.scrollWidth>innerWidth,
       font:getComputedStyle(document.querySelector('main')).fontFamily,
-      fontLoaded:document.fonts.check('16px Pretendard')})''')
+      fontLoaded:document.fonts.check('16px Pretendard'),
+      switches:[...document.querySelectorAll('[data-notification-preference]')].map(input=>{
+        const track=input.nextElementSibling,thumb=track?.querySelector('.r3-switch-thumb');
+        const r=track?.getBoundingClientRect(),t=thumb?.getBoundingClientRect();
+        return {name:input.name,checked:input.checked,width:r?.width,height:r?.height,
+          thumbWidth:t?.width,thumbOffset:t&&r?t.x-r.x:null,
+          background:track&&getComputedStyle(track).backgroundColor,
+          visible:!!(r?.width&&r?.height&&t?.width&&t?.height&&getComputedStyle(track).visibility==='visible')};
+      })})''')
 
 
 def main():
@@ -58,6 +66,10 @@ def main():
                 before = snapshot(page)
                 assert before['permission'] == 0 and before['subscribe'] == 0
                 assert before['fontLoaded'] and not before['horizontalOverflow'], before
+                assert len(before['switches']) == 3 and all(
+                    s['visible'] and s['width'] >= 32 and s['height'] >= 18 and s['thumbWidth'] >= 12
+                    and s['background'] not in ['transparent', 'rgba(0, 0, 0, 0)']
+                    for s in before['switches']), before['switches']
                 page.screenshot(path=str(OUT / (mode + '-initial.png')), full_page=True)
                 if mode == 'product':
                     expect(toggle).to_be_enabled()
@@ -67,11 +79,19 @@ def main():
                     assert snapshot(page)['permission'] == 0
                     toggle.click()
                     page.wait_for_function("document.querySelector('[data-notification-push]').dataset.pushState==='registered'")
+                    page.locator('[data-notification-preference=price]').evaluate('''async input => {
+                        await Promise.all(input.closest('label').getAnimations({subtree:true})
+                            .map(animation=>animation.finished.catch(()=>{})));
+                    }''')
                     connected = snapshot(page)
                     assert connected['permission'] == 1 and connected['subscribe'] == 1 and connected['register'] == 1
                     assert any(row['trusted'] and row['device'] for row in connected['clicks'])
                     assert any(row['trusted'] and row['preference'] == 'price' for row in connected['clicks'])
                     assert connected['horizontalOverflow'] is False
+                    initial_price = next(s for s in before['switches'] if s['name'] == 'price')
+                    connected_price = next(s for s in connected['switches'] if s['name'] == 'price')
+                    assert connected_price['checked'] and connected_price['thumbOffset'] > initial_price['thumbOffset'] + 8
+                    assert connected_price['background'] != initial_price['background']
                     page.screenshot(path=str(OUT / 'product-connected.png'), full_page=True)
                     toggle.click()
                     page.wait_for_function("document.querySelector('[data-notification-push]').dataset.pushState==='off'")
