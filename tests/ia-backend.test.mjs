@@ -12,6 +12,7 @@ import {researchReleases} from '../src/server/research-app/releases.gen.mjs';
 import {gunzipSync} from 'node:zlib';
 import {deliveryBuild,deliveryManifest} from '../src/server/research-delivery-identity.gen.mjs';
 import {qaCatalogIdentity} from '../src/server/r3-qa-catalog-identity.gen.mjs';
+import {qaFixtureForRow} from '../src/server/r3-qa-review-runtime.mjs';
 import {reviewedDelivery} from '../src/server/reviewed-delivery-index.gen.mjs';
 import {r1Recorded} from '../src/server/r1-recorded-index.gen.mjs';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
@@ -64,13 +65,14 @@ test('public entry remains nonconfidential and private releases are confined to 
  assert.ok(deliveryBuilds.includes(deliveryBuild),'the current indexed delivery is required');
  assert.ok(deliveryBuilds.includes(baselineBuild),'the previously published baseline delivery URLs must be retained');
  assert.deepEqual(releaseEntries.map(entry=>entry.name).sort(),[...packs,...deliveryBuilds,'qa-catalog','r1-recorded','reviewed-recorded'].sort());
- const sha=bytes=>createHash('sha256').update(bytes).digest('hex'),sealedRowsByBuild=new Map();
+ const sha=bytes=>createHash('sha256').update(bytes).digest('hex'),sealedRowsByBuild=new Map(),sealedBootstrapByBuild=new Map();
  for(const build of deliveryBuilds){
   const sealed=researchReleases[build],packBytes=readFileSync(join(releasesRoot,build+'.json.gz'));
   assert.equal(packBytes.length,sealed.bytes);assert.equal(sha(packBytes),sealed.packSha256);
   const pack=JSON.parse(gunzipSync(packBytes));
   assert.equal(pack.build.digest,build);assert.equal(sha(JSON.stringify(pack.build.sources)),build);
   sealedRowsByBuild.set(build,new Set(pack.rows.map(row=>row.id)));
+  sealedBootstrapByBuild.set(build,pack.build.sources['src/server/product-ui/bootstrap.gen.mjs']);
   const deliveryRoot=join(releasesRoot,build),indexBytes=readFileSync(join(deliveryRoot,'index.bin'));
   if(build===deliveryBuild)assert.equal(sha(indexBytes),deliveryManifest[2]);
   if(build===baselineBuild)assert.equal(sha(indexBytes),'559e0d5887646dbe58c5bfc13f4173c927f62cfabd1d0d82f12ed1c877876219','the published baseline index bytes must remain intact');
@@ -120,6 +122,17 @@ test('public entry remains nonconfidential and private releases are confined to 
   assert.equal(bytes.length,identity.bytes);assert.equal(sha(bytes),identity.sha256);currentCatalogs[mode]=JSON.parse(bytes);
  }
  const reviewHash=(build,id,width,mode)=>sha(JSON.stringify(['order-research-application/v1',build,id,Number(width),...(mode==='detailed'?['detailed']:[])]));
+ // Baseline 69779 retains twelve catalog files from this exact bootstrap epoch.
+ // The common paint refactor changes current pricing content and QA wrapper
+ // fingerprints. Verify the old epoch before normalizing comparison objects.
+ const priorSourceBuilds=new Set([
+  '2ac2efb1ca970fe1ecb868251fda0bc2cd96d5c8324e38af699f470f1f8e74a4',
+  '30b2b4a5f5ba187cc34f3db400901a85f2395c8a40f315f960c553cdb525d03d',
+  '66cd084a9ab54c49a7921310b32a73c7d53a3d3d4ce3bb94d5fc656c97cabc30',
+  '97b6bc594b9993b1438050d78bf20f43c736698eed1787d03b42006aca16ed0c',
+  '9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092',
+  'c3e50d9358887774cd87f39829c496443f589d3b404cc99db6fe618298df0eb2'
+ ]);
  const catalogBuildModes=new Set();
  for(const entry of catalogEntries){
   assert.ok(entry.isFile());
@@ -129,6 +142,13 @@ test('public entry remains nonconfidential and private releases are confined to 
   const width=Object.keys(first.hashes)[0],builds=deliveryBuilds.filter(build=>reviewHash(build,first.id,width,mode)===first.hashes[width]);
   assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
+  const priorSourceEpoch=build!==deliveryBuild&&priorSourceBuilds.has(build);
+  if(priorSourceEpoch){
+   assert.equal(sealedBootstrapByBuild.get(build),'d757da165e7a2a60e21720c1bd4dd8c262e587cdbfc990e2c5a23ba482a00b8b');
+   const prices=catalog.items.filter(item=>item.screen==='price-workspace').map(item=>[item.id,item.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
+   assert.equal(prices.length,9);
+   assert.equal(sha(JSON.stringify(prices)),'1a1b61b037780a7ce4e877c1e6c7d700efa97e59aaf84411ee2f2665fe592e1b','historical pricing content hashes must remain exact');
+  }
   // A historical catalogue retains its own approved inventory. Nov 25 removes
   // eight current targets and adds a review hold without rewriting old files.
   const retired=item=>item.screen==='quote-review'||item.screen==='quote-result'&&['new-only-detail','no-current'].includes(item.state);
@@ -137,13 +157,21 @@ test('public entry remains nonconfidential and private releases are confined to 
   for(const item of catalog.items){
    const original=byId.get(item.id);
    if(!original){assert.ok(retired(item));assert.notEqual(build,deliveryBuild);}
-   if(!item.application)continue;
+   if(!item.application){
+    if(priorSourceEpoch){
+     assert.ok(original);assert.deepEqual(item.contentHashes,original.contentHashes);
+     const hashes=Object.fromEntries(Object.entries(item.contentHashes).map(([width,contentHash])=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',contentHash,'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40',qaFixtureForRow(item)]))]));
+     assert.deepEqual(item.hashes,hashes,'historical QA wrapper hashes must retain their original runtime identity');
+     item.hashes=original.hashes;
+    }
+    continue;
+   }
    assert.ok(sealedRowsByBuild.get(build).has(item.id));
    const hashes=Object.fromEntries(Object.keys(item.hashes).map(width=>[width,reviewHash(build,item.id,width,mode)]));
    assert.deepEqual(item.hashes,hashes);
    if(!original)continue;
    const native=JSON.stringify(original.contentHashes)===JSON.stringify(original.hashes);
-   assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
+   if(!(priorSourceEpoch&&item.screen==='price-workspace'))assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
    item.hashes=original.hashes;item.contentHashes=original.contentHashes;
    if(original.reviewHold)item.reviewHold=original.reviewHold;
    assert.deepEqual(item,original);
