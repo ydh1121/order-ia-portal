@@ -1,13 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {gunzipSync} from 'node:zlib';
 import {createCommonControlPaint} from '../src/server/r3-common-motion.mjs';
 import {getProductUiBootstrap} from '../src/server/product-ui/bootstrap.gen.mjs';
+import {researchAssets} from '../src/server/research-app/assets.gen.mjs';
 import {mountNotificationPreferences} from '../src/server/research-app/notification-preferences-ui.mjs';
 import {mountResearchArrowMotion} from '../src/server/research-app/interaction-polish.mjs';
 import {mountResearchNotifications} from '../src/server/research-app/notifications.mjs';
 
 const {JSDOM} = createRequire(new URL('./build-tools/package.json', import.meta.url))('jsdom');
+const paintModule = gunzipSync(Buffer.from(researchAssets['r3-common-motion.mjs'], 'base64'));
+const {createCommonControlPaint:createServedControlPaint} = await import('data:text/javascript;base64,' + paintModule.toString('base64'));
 
 function fixture(t, html) {
   const dom = new JSDOM(html, {url:'https://research.invalid', runScripts:'outside-only', pretendToBeVisual:true});
@@ -23,6 +27,7 @@ test('one paint change reaches persisted button and native preference switches a
   f.bootstrap();
   const paint = createCommonControlPaint(f.document), original = paint.switchTrack;
   assert.equal(paint, f.window.ORDER_COMMON_CONTROL_PAINT);
+  assert.equal(createServedControlPaint(f.document), paint, 'the actual research asset shares the frozen bootstrap owner');
   // Change only the canonical factory. A consumer-local renderer would miss it.
   paint.switchTrack = () => {const track = original(); track.dataset.sharedPaintProof = 'switch'; return track;};
   const button = f.document.querySelector('#persisted');
@@ -43,7 +48,8 @@ test('one paint change reaches persisted button and native preference switches a
 
 test('one chevron change reaches every live consumer while each caller keeps its original SVG variant', async t => {
   const f = fixture(t, '<main id="order-single"><button data-app-back>이전</button></main><section id="admin"><nav data-pm-nav><a href="#home">현황</a></nav><button data-pm-learn>자세히</button></section><section id="notifications"></section>');
-  const paint = createCommonControlPaint(f.document), original = paint.chevron;
+  const paint = createServedControlPaint(f.document), original = paint.chevron;
+  assert.equal(createCommonControlPaint(f.document), paint, 'the served export runs without a surrounding motion initializer');
   paint.chevron = options => {const svg = original(options); svg.dataset.sharedPaintProof = 'chevron'; return svg;};
   f.bootstrap();
   assert.equal(f.window.ORDER_COMMON_CONTROL_PAINT, paint, 'the frozen bootstrap reuses the ESM paint owner');
