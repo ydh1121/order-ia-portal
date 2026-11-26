@@ -4,6 +4,7 @@ import {requireActor,permit} from './auth.mjs';
 import {fetchTab,fetchDashboardTabs} from './google.mjs';
 import {project,privateAssetsContract} from './projection.mjs';
 import {buildIaReference} from './ia-reference.mjs';
+import {scheduleNotificationWork} from './notification-push.mjs';
 const privateHeaders={'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store, max-age=0','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer','Vary':'Cookie, Cf-Access-Jwt-Assertion','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'"};
 function json(body,status=200) {return new Response(JSON.stringify(body),{status,headers:privateHeaders})}
 export async function handleIaRequest(request,env,dependencies={}) {
@@ -30,7 +31,10 @@ export async function handleIaRequest(request,env,dependencies={}) {
     const ctx={request,env,actor:{...actor,csrf:session.csrf,expiresAt:session.expiresAt},path:productRoute[2]||'/',csrf:session.csrf};
     if(productRoute[1]==='lab'){const {handleProductLab}=await import('./product-lab.mjs');return handleProductLab(ctx);}
     if(ctx.path==='/session'&&request.method==='GET')return json({csrf:session.csrf,expiresAt:session.expiresAt});
-    const {handleProductOperations}=await import('./product-operations.mjs');return handleProductOperations(ctx);
+    const {handleProductOperations}=await import('./product-operations.mjs');
+    const response=await handleProductOperations(ctx);
+    if(response.ok&&ctx.path!=='/notification-push/drain')scheduleNotificationWork(env,dependencies.waitUntil);
+    return response;
   }
   const r3=url.pathname.match(/^\/api\/ia\/r3-(qa|price|role)(\/.*)?$/);
   if(r3) {
@@ -83,7 +87,10 @@ export async function handleIaRequest(request,env,dependencies={}) {
       if(r3[1]==='role'){
         const {handleR3Role}=await import('./r3-role.mjs');return await handleR3Role(ctx);
       }
-      const {handleR3Price}=await import('./r3-price.mjs');return await handleR3Price(ctx);
+      const {handleR3Price}=await import('./r3-price.mjs');
+      const response=await handleR3Price(ctx);
+      if(response.ok&&!ctx.path.startsWith('/practice/'))scheduleNotificationWork(env,dependencies.waitUntil);
+      return response;
     }catch{return json({error:'SERVICE_UNAVAILABLE'},503);}
   }
   const resource=url.pathname.match(/^\/api\/ia\/(screens|decisions|roadmap|guide|notes|assets|dashboard)$/)?.[1];

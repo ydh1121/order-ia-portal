@@ -1,0 +1,12 @@
+import {createRequire} from 'node:module';
+import {readFile,mkdir} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {resolve,join} from 'node:path';
+const root=resolve(import.meta.dirname,'..');
+const require=createRequire(join(resolve(root,process.env.R3_BUILD_TEST_TOOLS||'tests/build-tools'),'package.json'));
+const {build}=require('esbuild');
+const outfile=resolve(root,'artifacts/notification-dispatcher/worker.mjs');
+await mkdir(resolve(root,'artifacts/notification-dispatcher'),{recursive:true});
+await build({entryPoints:[resolve(root,'workers/notification-dispatcher/worker.mjs')],outfile,bundle:true,format:'esm',platform:'browser',target:'es2022',minify:true});
+const bytes=await readFile(outfile);
+console.log(JSON.stringify({outfile,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}));

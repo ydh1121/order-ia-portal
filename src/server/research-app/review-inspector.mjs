@@ -104,14 +104,27 @@ export function installResearchInspector(initialSession,options={}) {
   addEventListener('message',gate,true);
   function hash(value){let h=2166136261;for(const c of value)h=Math.imul(h^c.charCodeAt(0),16777619);return(h>>>0).toString(36);}
   function index(){
-    anchors.clear();elementIds=new WeakMap();const paths=new WeakMap(),buckets=new Map();
+    anchors.clear();elementIds=new WeakMap();const paths=new WeakMap(),focusPaths=new WeakMap(),buckets=new Map(),primary=new Map();
     for(const el of root.querySelectorAll('*')){
       if(annotation(el)||el.parentElement?.closest('svg')||['STYLE','SCRIPT','META'].includes(el.tagName))continue;
-      const path=(paths.get(el.parentElement)||'screen')+'/'+[el.localName,...fields.map(name=>el.getAttribute(name)||'')].join('|');paths.set(el,path);
-      const id='a-'+hash(path);if(!buckets.has(id))buckets.set(id,[]);buckets.get(id).push(el);
+      const values=[el.localName,...fields.map(name=>el.getAttribute(name)||'')],fingerprints=new Set([values.join('|')]);
+      // Auth inputs may finish mounting before or after native autofocus. The
+      // product's known field focus class must not invalidate an already saved
+      // pin on reload. Retain its original id and add exact-path aliases for
+      // those two presentation states; never edit the anchor or product DOM.
+      if(el.matches('.t-input-wrap')&&el.querySelector('input,select,textarea')){
+        const classes=[...el.classList].filter(name=>name!=='is-focused').join(' ');
+        for(const value of [classes,classes+' is-focused'])fingerprints.add([...values.slice(0,-1),value].join('|'));
+      }
+      const path=(paths.get(el.parentElement)||'screen')+'/'+values.join('|');paths.set(el,path);primary.set(el,'a-'+hash(path));
+      const parents=focusPaths.get(el.parentElement)||[paths.get(el.parentElement)||'screen'];
+      let variants=[...new Set(parents.flatMap(parent=>[...fingerprints].map(value=>parent+'/'+value)))];
+      if(variants.length>8)variants=[path];focusPaths.set(el,variants);
+      for(const value of variants){const id='a-'+hash(value);if(!buckets.has(id))buckets.set(id,new Set());buckets.get(id).add(el);}
     }
     anchors.set('screen',root);elementIds.set(root,'screen');
-    for(const [id,nodes] of buckets)if(nodes.length===1){anchors.set(id,nodes[0]);elementIds.set(nodes[0],id);}
+    for(const [id,nodes] of buckets)if(nodes.size===1)anchors.set(id,[...nodes][0]);
+    for(const [el,id] of primary)if(anchors.get(id)===el)elementIds.set(el,id);
     dirty=false;
   }
   function identity(el){while(el&&root.contains(el)){const id=elementIds.get(el);if(id&&anchors.get(id)===el)return id;el=el.parentElement;}return 'screen';}

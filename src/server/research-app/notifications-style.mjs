@@ -16,7 +16,7 @@ export const researchNotificationsCss = `
 .research-notification-item[data-read="true"] :is(.research-notification-title,.research-notification-summary){color:var(--obm-muted,#697078)}
 .research-notification-time{display:block;flex:0 0 auto;font-size:11px;line-height:1.5;color:var(--obm-muted,#697078);font-variant-numeric:tabular-nums;white-space:nowrap}
 .research-notification-summary{display:block;min-width:0;margin:0;font-size:13px;line-height:1.5;color:var(--obm-muted,#697078);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.research-notifications .research-notifications-more,.research-notifications .research-notifications-retry{display:block;width:100%;margin:10px 0 0;padding:12px 8px;min-height:44px;border:0;border-radius:10px;box-shadow:none;background:var(--obm-hover,#f3f4f2);color:inherit;font:inherit;font-size:13px;line-height:20px;text-align:center;cursor:pointer}
+.research-notifications .research-notifications-more,.research-notifications .research-notifications-retry,.research-notification-preferences .research-notifications-more,.research-notification-preferences .research-notifications-retry{display:block;width:100%;margin:10px 0 0;padding:12px 8px;min-height:44px;border:0;border-radius:10px;box-shadow:none;background:var(--obm-hover,#f3f4f2);color:inherit;font:inherit;font-size:13px;line-height:20px;text-align:center;cursor:pointer}
 .research-notifications-empty,.research-notifications-status{margin:12px 0;font-size:13px;line-height:1.6;color:var(--obm-muted,#697078)}
 .research-notifications-status:empty{display:none}
 .research-notification-toolbar{display:flex;align-items:center;gap:6px;min-height:36px;margin:0 0 16px}
@@ -48,6 +48,9 @@ export const researchNotificationsCss = `
 .research-notification-switch .r3-switch-thumb{transition:translate var(--toggle-track,140ms) ease-out}
 .research-notification-preferences-note{margin:12px 0 0;font-size:12px;line-height:1.6;color:var(--obm-muted,#697078)}
 .research-notification-preference-actions{display:flex;gap:8px}
+.research-notification-push{margin-top:18px;padding-top:16px;border-top:1px solid var(--obm-separator,#e9e9e5)}
+.research-notification-push h3{margin:0;font-size:14px;font-weight:600;line-height:24px}
+.research-notification-push .research-notifications-more:disabled{opacity:.55;cursor:default}
 /* Keep one back affordance between the retained brand and the page title. */
 #order-app-header[data-app-route="notifications"]{display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:78px 44px;height:auto;min-height:122px;gap:0 12px}
 #order-app-header[data-app-route="notifications"] [data-app-brand]{grid-column:1;grid-row:1}

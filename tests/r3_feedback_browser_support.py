@@ -8,6 +8,7 @@ import subprocess
 from urllib.parse import parse_qs, urlencode, urlparse
 from uuid import uuid4
 from playwright.sync_api import expect
+from browser_predicate_support import wait_for_expression
 
 
 def prepare_frame_pointer(page):
@@ -106,9 +107,12 @@ def wait_review_frame(page, artifact):
 
 def wait_review_session(page, screen=None, state=None):
     """Wait until the actual app route and host inspection identity agree."""
-    page.wait_for_function("""expected=>{
-        const frame=document.getElementById('frame'),win=frame?.contentWindow;
-        const root=frame?.contentDocument?.getElementById('order-single');
+    predicate = """expected=>{
+        const frame=document.getElementById('frame'),doc=frame?.contentDocument;
+        // The review host briefly has an opaque initial/archived frame. Access
+        // the application Window only after a same-origin Document exists.
+        if(!doc)return false;
+        const win=frame.contentWindow,root=doc.getElementById('order-single');
         const inspected=root?.__orderResearchInspector?.inspect(),route=win?.ORDER_RESEARCH_APP?.snapshot().route;
         return inspected?.active&&route&&(!expected.screen||route.screen===expected.screen)&&
             (!expected.state||route.state===expected.state)&&inspected.session.screen===route.screen&&
@@ -116,7 +120,8 @@ def wait_review_session(page, screen=None, state=None):
             (inspected.session.mode||'simple')===(route.mode||'simple')&&
             frame.dataset.testReadyHash===inspected.session.artifact&&
             document.getElementById('focus-unit')?.dataset.module===route.screen;
-    }""", arg={"screen":screen,"state":state})
+    }"""
+    wait_for_expression(page, '(' + predicate + ')(' + json.dumps({"screen":screen,"state":state}) + ')')
     return page.locator("#frame").evaluate("f=>f.contentDocument.getElementById('order-single').__orderResearchInspector.inspect().session")
 
 

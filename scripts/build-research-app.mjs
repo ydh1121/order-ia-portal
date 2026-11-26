@@ -29,6 +29,7 @@ const hash=value=>createHash('sha256').update(value).digest('hex'),identities={}
 for(const name of (await readdir(directory)).filter(name=>serverOnly.has(name)&&!['assets.gen.mjs','releases.gen.mjs'].includes(name)))sources.push('src/server/research-app/'+name);
 sources.push('src/server/product-ui/business-directory.mjs',...['page','client','model','xlsx','import','tree','defaults','qa'].map(name=>'src/server/r3-price-workspace-'+name+'.mjs'));
 sources.push('public/vendor/research/nts-industry-2025-edfa839b2a2d90fc.json');
+sources.push('src/server/product-fonts.mjs','public/vendor/fonts/pretendard-variable-9599f12fd42f.woff2','public/vendor/fonts/Pretendard-LICENSE.txt');
 for(const file of [...new Set(sources)].sort())identities[file]=hash(await readFile(path.join(root,file)));
 const researchBuild={format:'order-research-build/v1',digest:hash(JSON.stringify(identities)),sources:identities};
 const researchAssets={};for(const [name,file]of files){const source=name==='r3-common-motion.mjs'?commonControlPaintSource:await readFile(path.join(root,file));researchAssets[name]=gzipSync(source,{level:9,mtime:0}).toString('base64');}

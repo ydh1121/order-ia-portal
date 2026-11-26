@@ -86,7 +86,16 @@ export const researchInteractionCss = String.raw`
 #order-single .obm-panel .obm-row .t-badge{position:static;inset:auto;display:flex;align-items:center;justify-content:center;flex:none;margin:0}
 #order-single .obm-panel .obm-row .t-badge-dot{display:flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:20px;height:20px;padding:0 5px;line-height:1;border-radius:999px}
 #order-single .obm-panel .research-account-panel>.ops-panel{background:#f3f4f6;border:0;box-shadow:none}
-/* Preserve the original mark, giving the word and period their own ink space. */
-#order-single #order-app-header .order-product-brand.obm-brand>.brand-word{width:auto}
-#order-single #order-app-header .order-product-brand.obm-brand[data-authenticated=false]>.brand-word>.brand-dot{position:static;display:inline-block;width:auto;margin-inline-start:3px}
+/* Restore the protected Figma Guest/Member frames only in this research header.
+   Both words are [26,23.015625,71,25]; the independent Guest period reserves
+   its original 9px in the 80px group. Member and account hit frames start at
+   y=13. Keep canonical SVG sizing, paths and controllers; measure ink separately. */
+#order-single #order-app-header .order-product-brand.obm-brand{padding-inline-end:0;--obm-mark-offset-y:-4px}
+#order-single #order-app-header .order-product-brand.obm-brand .brand-word{top:-3.484375px;width:71px;height:25px;line-height:25px;letter-spacing:0;text-align:left}
+#order-single #order-app-header .order-product-brand.obm-brand[data-authenticated=false]{gap:0}
+#order-single #order-app-header .order-product-brand.obm-brand[data-authenticated=false]>.brand-word{margin-inline-end:9px}
+#order-single #order-app-header .order-product-brand.obm-brand[data-authenticated=false]>.brand-word>.brand-dot{position:absolute;left:71px;top:-.015625px;display:block;box-sizing:border-box;width:9px;height:24px;margin:0;line-height:25px;letter-spacing:0;text-align:left}
+#order-single #order-app-header .order-product-brand.obm-brand .research-order-menu{top:-4px}
+#order-single #order-app-header .order-product-brand.obm-brand .research-order-trigger>.brand-word{top:.515625px}
+#order-single #order-app-header .order-product-brand.obm-brand .research-order-arrow{top:1px}
 `;

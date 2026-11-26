@@ -22,7 +22,7 @@ def current_wordmark_typography(frame):
     word = frame.locator("#order-app-header .order-product-brand .brand-word")
     expect(word).to_be_visible()
     typography = word.evaluate("e=>{const s=getComputedStyle(e);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing};}")
-    assert typography["fontFamily"].split(",")[0].strip().strip("\"'") == "Arial Black", typography
+    assert typography["fontFamily"].split(",")[0].strip().strip("\"'") in ("Pretendard", "Pretendard Variable"), typography
     assert typography["fontSize"] == "25px" and typography["fontWeight"] == "900" and typography["lineHeight"] == "25px", typography
     assert typography["letterSpacing"] in ("0px", "normal"), typography
     return typography

@@ -255,3 +255,34 @@ test('confirmed mode switches close their own dialog after success, while pendin
     assert.equal(dialog.open,true);assert.deepEqual(f.failures,[]);
   }finally{held?.release();await f.close();}
 });
+
+test('a member QA mode copy retains its fixture repository and copied lines without resetting or touching ordinary drafts',async()=>{
+  const f=await setup();try{
+    const ordinary=await seedQuote(f,'simple');
+    assert.equal((await ordinary.workspace.save()).ok,true);
+    const ordinaryBefore={simple:plain(await f.app.repository.read('simple')),detailed:plain(await f.app.repository.read('detailed'))};
+    assert.equal(await f.app.inspectRoute({screen:'q2',state:'filled',mode:'simple'}),true);
+    const root=f.doc.getElementById('order-app-quote');
+    const fixture=await f.win.QuoteModalTest.mountResearchQuote(root,{mode:'simple',step:'q2',fixtureScope:true});
+    assert.equal(fixture.fixtureScope,true);
+    for(const [selector,value]of [['[data-line-qty]','10'],['[data-line-price]','5000']]){
+      const field=root.querySelector(selector);assert.ok(field,selector);field.value=value;
+      field.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));
+      await waitFor(()=>fixture.inspect().pending===0);
+    }
+    const copied=plain(fixture.snapshot().lines);assert.equal(copied[0].qty,'10');assert.equal(copied[0].price,'5000');
+    const trigger=f.doc.getElementById('research-order-trigger');
+    await waitFor(()=>!trigger.hidden&&!trigger.disabled);trigger.click();await settle();
+    f.doc.getElementById('research-order-mode-detailed').click();await settle();
+    const dialog=root.querySelector('#quote-mode-dialog'),option=dialog.querySelector('[data-mode-option]');
+    assert.equal(dialog.open,true);assert.equal(option.checked,false);option.click();assert.equal(option.checked,true);
+    dialog.querySelector('[data-mode-confirm]').click();
+    await waitFor(()=>f.app.snapshot().route.mode==='detailed'&&fixture.inspect().lifecycle.disposed);
+    const detailed=await f.win.QuoteModalTest.mountResearchQuote(root,{mode:'detailed',step:'q1',fixtureScope:true});
+    assert.equal(detailed.fixtureScope,true,'confirmed inspection navigation must not open the ordinary repository');
+    assert.deepEqual(plain(detailed.snapshot().lines),copied,'entering the destination must not apply the empty QA scenario over the copied draft');
+    assert.deepEqual(plain((await detailed.repository.read('detailed')).data.lines),copied);
+    assert.deepEqual({simple:plain(await f.app.repository.read('simple')),detailed:plain(await f.app.repository.read('detailed'))},ordinaryBefore);
+    assert.equal(dialog.open,false);assert.equal(f.nativeModals.size,0);assert.deepEqual(f.failures,[]);
+  }finally{await f.close();}
+});

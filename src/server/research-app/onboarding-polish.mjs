@@ -7,8 +7,21 @@ const section=(source,start,end,replacement)=>{
   return source.slice(0,from)+replacement+source.slice(to);
 };
 
-/** A single continuous geometry transition. Labels travel without scaling;
- * icons appear separately, so a long button never stretches its contents. */
+/** Capture the actual source paint before the old main is replaced. */
+export function captureIntroductionMode(button){
+  const window=button.ownerDocument.defaultView,rect=button.getBoundingClientRect(),style=window.getComputedStyle(button);
+  const label=[...button.querySelectorAll('span')].find(node=>node.textContent.trim()===button.textContent.trim()&&!node.querySelector('span,svg'));
+  const labelRect=label?.getBoundingClientRect(),labelStyle=window.getComputedStyle(label||button);
+  return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,radius:style.borderRadius,label:button.textContent.trim(),
+    background:style.backgroundColor,color:style.color,borderColor:style.borderColor,
+    borders:['Top','Right','Bottom','Left'].map(edge=>parseFloat(style['border'+edge+'Width'])||0),
+    corners:['TopLeft','TopRight','BottomRight','BottomLeft'].map(corner=>style['border'+corner+'Radius']),
+    labelRect:labelRect?.width?{x:labelRect.x,y:labelRect.y,width:labelRect.width,height:labelRect.height}:null,
+    labelStyle:{fontSize:labelStyle.fontSize,lineHeight:labelStyle.lineHeight,letterSpacing:labelStyle.letterSpacing,color:labelStyle.color}};
+}
+
+/** Labels keep their own paint and travel without inheriting surface scale.
+ * All flights use the same timeline instant, including their final handoff. */
 export function morphIntroductionModes({shell,from,cards,signal,onFinish}) {
   const document=shell.ownerDocument, window=document.defaultView, moving=[], restores=[];
   let ended=false;
@@ -16,41 +29,53 @@ export function morphIntroductionModes({shell,from,cards,signal,onFinish}) {
   // Coordinates come from viewport rectangles, so the overlay must not inherit
   // a scene's transform/containment. Labels never scale with the button surface.
   Object.assign(layer.style,{position:'fixed',inset:'0',pointerEvents:'none',zIndex:'80'});document.body.append(layer);
-  const timing={duration:380,easing:'cubic-bezier(0.22, 1, 0.36, 1)',fill:'both'};
+  const timing={duration:480,easing:'cubic-bezier(0.32, 0, 0.22, 1)',fill:'both'},clock=document.timeline?.currentTime;
+  const animate=(node,frames)=>{const flight=node.animate(frames,timing);if(Number.isFinite(clock))flight.startTime=clock;moving.push(flight);};
   function finish(notify=false){
     if(ended)return;ended=true;signal?.removeEventListener('abort',cancel);
+    window.removeEventListener('resize',layoutChanged);document.removeEventListener('scroll',layoutChanged,true);
     for(const restore of restores)restore();for(const animation of moving)animation.cancel();layer.remove();
     if(notify)onFinish?.();
   }
   function cancel(){finish(false);}
+  function layoutChanged(){finish(true);}
   for(const [index,button]of [...cards].entries()){
     const start=from[index],end=button.getBoundingClientRect();
     if(!start?.width||!start.height||!end.width||!end.height)continue;
     const style=window.getComputedStyle(button),visibility=button.style.visibility;
     button.style.visibility='hidden';restores.push(()=>{button.style.visibility=visibility;});
-    const surface=document.createElement('div');
+    const surface=document.createElement('div');surface.dataset.modePart='surface';surface.dataset.modeIndex=String(index);
     Object.assign(surface.style,{position:'absolute',left:end.x+'px',top:end.y+'px',width:end.width+'px',height:end.height+'px',boxSizing:'border-box',background:style.backgroundColor,border:style.border,overflow:'hidden',transformOrigin:'0 0',willChange:'transform'});
     layer.append(surface);
-    moving.push(surface.animate([
-      {transform:'translate('+(start.x-end.x)+'px,'+(start.y-end.y)+'px) scale('+(start.width/end.width)+','+(start.height/end.height)+')',borderRadius:start.radius||'12px'},
+    const scaleX=start.width/end.width,scaleY=start.height/end.height;
+    // A scaled 12px radius or border otherwise becomes a flattened corner and
+    // hairline on the first frame, visibly jumping from the original button.
+    const corners=(start.corners||Array(4).fill(start.radius||'12px')).map(value=>String(value||'0').split(/\s+/));
+    const radius=(axis,scale)=>corners.map(values=>((parseFloat(values[axis]||values[0])||0)/scale)+'px').join(' ');
+    const first={transform:'translate('+(start.x-end.x)+'px,'+(start.y-end.y)+'px) scale('+scaleX+','+scaleY+')',borderRadius:radius(0,scaleX)+' / '+radius(1,scaleY),backgroundColor:start.background||style.backgroundColor,borderColor:start.borderColor||style.borderColor};
+    if(start.borders)for(const [edge,i,scale]of [['Top',0,scaleY],['Right',1,scaleX],['Bottom',2,scaleY],['Left',3,scaleX]])first['border'+edge+'Width']=start.borders[i]/scale+'px';
+    animate(surface,[
+      first,
       {transform:'translate(0,0) scale(1,1)',borderRadius:style.borderRadius}
-    ],timing));
+    ]);
     const originalLabel=[...button.querySelectorAll('span')].find(el=>el.textContent.trim()===start.label&&!el.querySelector('span,svg'));
-    const target=originalLabel?.getBoundingClientRect(),label=document.createElement('span');label.textContent=start.label;
+    const target=originalLabel?.getBoundingClientRect(),label=document.createElement('span');label.textContent=start.label;label.dataset.modePart='label';label.dataset.modeIndex=String(index);
     const labelStyle=window.getComputedStyle(originalLabel||button),targetX=target?target.x+target.width/2:end.x+end.width/2,targetY=target?target.y+target.height/2:end.y+end.height/2;
-    Object.assign(label.style,{position:'absolute',left:'0',top:'0',font:labelStyle.font,color:labelStyle.color,lineHeight:labelStyle.lineHeight,whiteSpace:'nowrap',translate:'-50% -50%'});layer.append(label);
-    moving.push(label.animate([
-      {transform:'translate('+(start.x+start.width/2)+'px,'+(start.y+start.height/2)+'px)'},
-      {transform:'translate('+targetX+'px,'+targetY+'px)'}
-    ],timing));
+    Object.assign(label.style,{position:'absolute',left:'0',top:'0',font:labelStyle.font,color:labelStyle.color,lineHeight:labelStyle.lineHeight,letterSpacing:labelStyle.letterSpacing,whiteSpace:'nowrap',translate:'-50% -50%'});layer.append(label);
+    const origin=start.labelRect||start;
+    animate(label,[
+      {...start.labelStyle,transform:'translate('+(origin.x+origin.width/2)+'px,'+(origin.y+origin.height/2)+'px)'},
+      {transform:'translate('+targetX+'px,'+targetY+'px)',fontSize:labelStyle.fontSize,lineHeight:labelStyle.lineHeight,letterSpacing:labelStyle.letterSpacing,color:labelStyle.color}
+    ]);
     const originalIcon=button.querySelector('svg');
     if(originalIcon){
       const rect=originalIcon.getBoundingClientRect(),icon=originalIcon.cloneNode(true);
       Object.assign(icon.style,{position:'absolute',left:rect.x+'px',top:rect.y+'px',width:rect.width+'px',height:rect.height+'px',color:style.color});layer.append(icon);
-      moving.push(icon.animate([{opacity:0,transform:'translateY(8px)',offset:0},{opacity:0,transform:'translateY(8px)',offset:.25},{opacity:1,transform:'translateY(0)',offset:1}],timing));
+      animate(icon,[{opacity:0,transform:'translateY(8px)',offset:0},{opacity:0,transform:'translateY(8px)',offset:.25},{opacity:1,transform:'translateY(0)',offset:1}]);
     }
   }
   signal?.addEventListener('abort',cancel,{once:true});
+  window.addEventListener('resize',layoutChanged,{once:true});document.addEventListener('scroll',layoutChanged,{once:true,capture:true});
   if(signal?.aborted)cancel();
   else Promise.allSettled(moving.map(animation=>animation.finished)).then(()=>finish(true));
   return {cancel};
@@ -62,6 +87,7 @@ export function researchOnboardingSource(source){
   source=once(source,"'<h2>사업자 정보</h2><dl>'","'<dl>'");
   source=once(source,"    const prefix=shell.classList.contains('member')?'member':'guest';",`    const prefix=shell.classList.contains('member')?'member':'guest';
     const researchMorphModes=${browserFunction(morphIntroductionModes)};
+    const researchCaptureMode=${browserFunction(captureIntroductionMode)};
     let companyHeaderInert=null,companyMotion=null,companyEpoch=0;
     const restoreCompanyHeader=()=>{const header=api.applicationHeader?.element;if(header&&companyHeaderInert!==null){header.inert=companyHeaderInert;companyHeaderInert=null;}};`);
   source=once(source,"      if(prefix==='guest'&&step===4)return null;","      if(step===4)return null;");
@@ -72,9 +98,7 @@ export function researchOnboardingSource(source){
       const request=++stepRequest;
       if(prefix==='member'&&step===3&&n===4&&!api.reduced?.()){
         exiting=true;
-        fromTray=[...stage.querySelectorAll('.ob-tasks .ob-mode')].map(button=>{
-          const rect=button.getBoundingClientRect();return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,radius:getComputedStyle(button).borderRadius,label:button.textContent.trim()};
-        });
+        fromTray=[...stage.querySelectorAll('.ob-tasks .ob-mode')].map(researchCaptureMode);
       }
       // Keep the old buttons visible while the next module is being obtained.
       // There is no exit animation followed by a second, delayed entrance.

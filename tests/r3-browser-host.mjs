@@ -28,12 +28,15 @@ const sha='e27b3a1ea210fbdad4e1a7a8cf7537619820bad5db7e6ccac7cd1d5aaa09d144';
 // Isolated synthetic empty set; live source import has its own raw-byte verification.
 db.prepare('INSERT INTO qa_legacy_sources(sha256,original_bytes,chunk_count,record_count,normalization_version,complete) VALUES (?,0,0,0,1,1)').run(sha);
 const pass=randomBytes(32).toString('base64url'),email='test-owner@example.invalid';
-const mime={'.js':'application/javascript','.css':'text/css','.html':'text/html','.json':'application/json; charset=utf-8'};
+const mime={'.woff2':'font/woff2','.js':'application/javascript','.css':'text/css','.html':'text/html','.json':'application/json; charset=utf-8'};
 const privateResearchAssets=createPrivateResearchAssets();
 const assets=async(req)=>{
   const file=new URL(req.url).pathname;
   if(file.startsWith('/ia/research-releases/'))return privateResearchAssets.fetch(req);
-  if(!['/login.html','/login.js','/login.css','/vendor/research/nts-industry-2025-edfa839b2a2d90fc.json'].includes(file))return new Response(null,{status:404});
+  // Chrome requests this optional browser metadata outside the application.
+  // This integration fixture has no icon; app assets still use the strict allowlist.
+  if(file==='/favicon.ico')return new Response(null,{status:204});
+  if(!['/login.html','/login.js','/login.css','/vendor/fonts/pretendard-variable-9599f12fd42f.woff2','/vendor/research/nts-industry-2025-edfa839b2a2d90fc.json'].includes(file))return new Response(null,{status:404});
   return new Response(readFileSync(resolve(dir,'public',file.slice(1))),{headers:{'Content-Type':mime[file.slice(file.lastIndexOf('.'))]}});
 };
 const env={IA_OWNER_LOGIN_ENABLED:'true',IA_OWNER_EMAIL:email,IA_OWNER_PASSWORD_VERIFIER:await deriveVerifier(pass),IA_OWNER_SESSION_KEY:randomBytes(32).toString('base64url'),ORDER_QA_DB:store,ASSETS:{fetch:assets}};

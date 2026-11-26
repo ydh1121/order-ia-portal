@@ -175,12 +175,23 @@ test('actual introduction and auth controls retain email focus through regular m
  }finally{await f.close();}
 });
 
-test('company sheet locks the retained header, removes its redundant title and restores the same controls when dismissed',async()=>{
+test('company sheet restores its retained header and lets signup open over the same parent when dismissed',async()=>{
  const f=await setup({screen:'onboarding',state:'company'});try{
   const header=f.doc.getElementById('order-app-header'),scene=f.doc.querySelector('.ob'),shade=scene.querySelector('.ob-shade');
   assert.equal(header.inert,true);assert.equal(shade.hidden,false);assert.equal(scene.querySelector('.ob-drawer h2'),null);
   shade.click();await settle();assert.equal(header.inert,false);assert.equal(shade.hidden,true);assert.equal(f.doc.querySelector('.ob'),scene);
   assert.equal(header.querySelector('[data-app-auth]').hidden,false);assert.deepEqual(f.failures,[]);
+  const opener=header.querySelector('[data-app-auth]');opener.focus();opener.click();
+  await waitFor(()=>f.doc.querySelector('.product-auth-sheet input[name=email]'));
+  f.doc.querySelector('.product-auth-sheet input[name=email]').dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+  await waitFor(()=>!f.doc.querySelector('.product-auth-sheet'));
+  assert.equal(header.inert,false);assert.equal(f.doc.activeElement,opener);assert.equal(f.doc.querySelector('#order-app-page .ob'),scene);
+  assert.equal(header.querySelector('[data-app-auth]').hidden,false);
+  await f.app.inspectRoute({screen:'signup',state:'empty'});await settle();
+  assert.ok(f.doc.querySelector('.product-auth-sheet .auth-sheet'));assert.equal(f.app.snapshot().route.screen,'signup');
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.doc.querySelector('#order-app-page .ob'),scene);
+  assert.equal(f.win.ORDER_QA_AUTH_RETURN.guestState,'guest-4');assert.equal(f.win.ORDER_QA_AUTH_RETURN.memberState,'member-4');
+  assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
 
@@ -199,6 +210,27 @@ test('member account has one opener and notification preview opens a full reader
   const item=full.querySelector('[data-notification-id]');item.click();await waitFor(()=>full.querySelector('[data-notification-detail]'));
   assert.equal(full.querySelector('[data-notification-detail]').textContent.includes(messages.items.find(value=>value.id===item.dataset.notificationId).body),true);
   assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('direct profile notification routes open the existing notification panel and keep its route when inspected again',async()=>{
+ const f=await setup({screen:'profile',state:'notification'});try{
+  assert.equal(f.app.snapshot().route.panel,'notifications');
+  await waitFor(()=>f.doc.querySelector('[data-obm-page="notifications"] [data-action="research-all-notifications"]'));
+  const header=f.doc.getElementById('order-app-header'),parent=f.doc.querySelector('#order-app-page .ob');
+  const assertNotifications=()=>{
+   const panel=f.doc.querySelector('[data-obm-page="notifications"]');assert.ok(panel);
+   assert.equal(panel.querySelector('.research-notifications').dataset.notificationsMode,'preview');
+   assert.equal(panel.querySelectorAll('[data-notification-preferences]').length,1);
+   assert.equal(panel.querySelectorAll('[data-notification-preference]').length,3);
+   assert.equal(f.doc.querySelector('[data-research-account-panel="profile.personal"]'),null);
+   assert.equal(f.app.snapshot().route.screen,'profile');assert.equal(f.app.snapshot().route.state,'notification');assert.equal(f.app.snapshot().route.panel,'notifications');
+  };
+  assertNotifications();
+  await f.app.inspectRoute({screen:'profile',state:'default'});await settle();
+  assert.ok(f.doc.querySelector('[data-research-account-panel="profile.personal"]'));
+  await f.app.inspectRoute({screen:'profile',state:'notification'});await settle();assertNotifications();
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
 

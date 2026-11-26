@@ -4,6 +4,7 @@
  * This module owns only the host boundary, lifetime and application navigation.
  */
 import {createResearchQuoteRepository} from './quote-repository.mjs';
+import {mountResearchQuoteModePresentation} from './quote-mode-presentation.mjs';
 const ASSET_BASE='/ia/research-assets/';
 const ownedRoots=new WeakMap();
 const pendingRoots=new WeakMap();
@@ -44,6 +45,19 @@ export function createResearchQuoteEnvironment(root,{mode,services={},onNavigate
   const controller=new window.AbortController(),cleanups=[],listeners=[],timers=new Set(),frames=new Set(),observers=new Set(),globals=new Map(),pagehide=new Set();
   const navigationEvents=new window.EventTarget(),historyEntries=[{state:null,hash:'#/form'}];
   let disposed=false,hash='#/form',historyState=null,quoteSync=null;
+  // A retained review iframe may be displayed before the user enters it.
+  // Only move focus while this document already owns it or during an actual
+  // user activation; neither condition changes the embedder's focus policy.
+  const canFocus=()=>!disposed&&(document.hasFocus()||window.navigator.userActivation?.isActive===true);
+  const showModal=dialog=>{
+    if(canFocus())return dialog.showModal();
+    // showModal() otherwise attempts its own initial focus. Keep the native
+    // top layer, but make that synchronous focus step ineligible and restore
+    // the exact inert attribute before any user interaction or next paint.
+    const inert=dialog.getAttribute('inert');dialog.setAttribute('inert','');
+    try{return dialog.showModal();}
+    finally{if(inert===null)dialog.removeAttribute('inert');else dialog.setAttribute('inert',inert);}
+  };
   const alive=fn=>(...args)=>{if(!disposed)return fn(...args);};
   const add=(target,type,listener,options)=>{
     if(!listener||disposed)return;
@@ -114,7 +128,7 @@ export function createResearchQuoteEnvironment(root,{mode,services={},onNavigate
   const local=services.repository?.storageOptions.localStorage||scopedStorage(services.storage?.localStorage||window.localStorage,'order.app.'+namespace+':');
   const session=services.repository?.storageOptions.sessionStorage||scopedStorage(services.storage?.sessionStorage||window.sessionStorage,'order.app.'+namespace+':');
   const environment={document:scopedDocument,window:scopedWindow,location,history,localStorage:local,sessionStorage:session,fetch:fetcher,
-    externalHeader,fixtureScope,addressService:services.addressService||services.regular?.addressService||services.address,
+    externalHeader,fixtureScope,canFocus,showModal,addressService:services.addressService||services.regular?.addressService||services.address,
     storageOptions:{...services.storage,localStorage:local,sessionStorage:session,locks:services.storage?.locks||window.navigator.locks,crypto:services.storage?.crypto||window.crypto,now:services.now||Date.now,...services.repository?.storageOptions,partition,keyPrefix:'order_application_quote_v1_'},
     setTimeout(fn,ms,...args){let id;id=window.setTimeout(()=>{timers.delete(id);if(!disposed)fn(...args);},ms);timers.add(id);return id;},
     clearTimeout(id){timers.delete(id);window.clearTimeout(id);},
@@ -167,7 +181,7 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
   if(styles)for(const name of ['styles.css','date-field.css','spinning-counter.css']){
     const link=doc.createElement('link');link.rel='stylesheet';link.href=ASSET_BASE+'web/'+name;link.dataset.researchQuoteStyle=name;doc.head.append(link);links.push(link);
   }
-  let environment,app,releaseGlobals,controller,regular,repository,ownsRepository=false;
+  let environment,app,releaseGlobals,releaseModePresentation,controller,regular,repository,ownsRepository=false;
   try{
     const modules=await loadModules();if(signal?.aborted)throw new win.DOMException('Aborted','AbortError');
     repository=!fixtureScope&&services.repository;
@@ -181,6 +195,7 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
     app=modules.createOrderApp({quoteMode:mode,quoteProvider:services.quoteProvider||null,onAuthRequest:services.onAuthRequest||null,researchEnvironment:environment});
     const review=modules.createQ4Review({bridge:app.regularBridge,researchEnvironment:environment});app.connectQ4(review);
     await app.boot();if(signal?.aborted)throw new win.DOMException('Aborted','AbortError');
+    releaseModePresentation=mountResearchQuoteModePresentation(content,environment);
     modules.mountSavedBusinessPicker?.(app,environment);
     const sync=fixtureScope?null:modules.mountQuoteDraftSync?.(app,environment);
     let disposed=false;
@@ -194,11 +209,11 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
       async applyScenario(value){const result=await app.researchBridge.applyScenario(value);notify();return result;},
       back(){if(!environment.inspect().modalHistory)return false;environment.history.back();return true;},
       async flush(){const saved=await app.researchBridge.save();return saved.ok&&sync?sync.flush():saved;},
-      dispose(){if(disposed)return;disposed=true;signal?.removeEventListener('abort',abort);content.removeEventListener('order-quote-committed',notify);content.removeEventListener('change',notify);app.researchBridge.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository.dispose();for(const link of links)link.remove();content.remove();ownedRoots.delete(root);},
+      dispose(){if(disposed)return;disposed=true;signal?.removeEventListener('abort',abort);content.removeEventListener('order-quote-committed',notify);content.removeEventListener('change',notify);releaseModePresentation?.();app.researchBridge.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository.dispose();for(const link of links)link.remove();content.remove();ownedRoots.delete(root);},
     };
     ownedRoots.set(root,controller);content.addEventListener('order-quote-committed',notify);content.addEventListener('change',notify);signal?.addEventListener('abort',abort,{once:true});
     navigate({step,page:'form'});return controller;
-  }catch(error){app?.researchBridge?.dispose();environment?.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository?.dispose();for(const link of links)link.remove();content.remove();throw error;}
+  }catch(error){releaseModePresentation?.();app?.researchBridge?.dispose();environment?.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository?.dispose();for(const link of links)link.remove();content.remove();throw error;}
 }
 
 export {researchQuoteCss} from './quote-style.mjs';

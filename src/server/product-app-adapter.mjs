@@ -79,7 +79,8 @@ export function installProductAdapter(context,options={}){
    if(id==='notifications'){
     const {items}=await adapter.request('/notifications',null,signal);if(signal?.aborted)return;container.replaceChildren();
     if(!items.length)container.append(node('p','새 알림이 없어요.','muted'));unread=items.filter(i=>!i.readAt).length;setUnread?.(unread);
-    for(const item of items){const card=node('article',undefined,'ops-panel');card.append(node('strong',item.title),node('p',item.body),node('small',item.createdAt));if(!item.readAt)card.append(button('읽음',async()=>{try{await adapter.request('/notifications',{id:item.id,action:'read',expectedRevision:item.revision,requestKey:crypto.randomUUID()});card.dataset.read='true';card.querySelector('button').remove();setUnread?.(--unread);}catch(error){status.textContent=adapter.message(error);container.append(status);}}));container.append(card);}return;
+    for(const item of items){const card=node('article',undefined,'ops-panel');card.append(node('strong',item.title),node('p',item.body),node('small',item.createdAt));if(!item.readAt)card.append(button('읽음',async()=>{try{await adapter.request('/notifications',{id:item.id,action:'read',expectedRevision:item.revision,requestKey:crypto.randomUUID()});card.dataset.read='true';card.querySelector('button').remove();setUnread?.(--unread);}catch(error){status.textContent=adapter.message(error);container.append(status);}}));container.append(card);}
+    window.ORDER_NOTIFICATION_SETTINGS?.mount({container,adapter,signal});return;
    }
    if(id.startsWith('profile')){
     const current=await adapter.request('/account',null,signal);if(signal?.aborted)return;permissions=current.capabilities;container.replaceChildren();

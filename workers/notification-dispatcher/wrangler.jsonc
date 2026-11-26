@@ -1,0 +1,24 @@
+{
+  "name": "order-notification-dispatcher",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-11-26",
+  "workers_dev": false,
+  "preview_urls": false,
+  "triggers": { "crons": ["* * * * *"] },
+  "d1_databases": [{
+    "binding": "ORDER_QA_DB",
+    "database_name": "order-ia-qa",
+    "database_id": "6a8d92d8-800a-40e4-bcbe-7cc30520cf57"
+  }],
+  "vars": {
+    "ORDER_WEB_PUSH_ENABLED": "false",
+    "ORDER_WEB_PUSH_SUBJECT": "https://order-ia-portal.pages.dev"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1, "invocation_logs": false },
+    // Automatic fetch spans record endpoint URLs, which are push capabilities.
+    // Keep the aggregate delivery counts in logs; do not trace provider URLs.
+    "traces": { "enabled": false }
+  }
+}

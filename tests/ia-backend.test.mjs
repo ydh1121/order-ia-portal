@@ -54,7 +54,10 @@ test('service account OAuth + fixed Google batchGet uses readonly scope',async()
 test('public entry remains nonconfidential and private releases are confined to indexed pack paths',()=>{
  const publicRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../public');
  // Inspect the packaged public/index.html relative to this test file.
- const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','owner.css','owner.js','price-template.xlsx','vendor']);
+ const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','order-notifications-sw.js','owner.css','owner.js','price-template.xlsx','vendor']);
+ const pushWorker=readFileSync(join(publicRoot,'order-notifications-sw.js'),'utf8');
+ assert.match(pushWorker,/self\.addEventListener\('push'/);
+ assert.doesNotMatch(pushWorker,/ORDER_WEB_PUSH_|PRIVATE KEY|privateJwk|Cf-Access-Jwt-Assertion|self\.addEventListener\(['"]fetch['"]/,'the public notification worker must not carry server credentials or intercept app requests');
  assert.deepEqual(readdirSync(join(publicRoot,'ia')),['research-releases']);
  const releasesRoot=join(publicRoot,'ia','research-releases');
  const packs=Object.keys(researchReleases).map(build=>build+'.json.gz');
@@ -143,6 +146,17 @@ test('public entry remains nonconfidential and private releases are confined to 
   assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
   const priorSourceEpoch=build!==deliveryBuild&&priorSourceBuilds.has(build);
+  // Retain the separately sealed main3391 module-cleanup epoch. Its static
+  // component contents are unchanged, but the QA wrapper has its own runtime.
+  const moduleCleanupPacks={
+   '36a69ac57845f926e0bb9665300eef7f247e6b410b7ffa97caa70a431dff51e9':'415eace592e8f8f7d5a067a1044349a340ac1d0be8b4201e25501b5c8bef929a',
+   '42f484c16e8a3a1882ed93e5f137f0c688bbe80b92bc7ff5bf2e123a0f51571e':'f2190e0ff02e7f79645b2481ea0a4d784ed0b44f0e230407bd3b76435768bda2'
+  };
+  const moduleCleanupEpoch=Object.hasOwn(moduleCleanupPacks,build);
+  if(moduleCleanupEpoch){
+   assert.equal(sealedBootstrapByBuild.get(build),'807ee8843806f8ed7e4a49b4b6d7487ce1784e8cd844d1cf82af6cfae5036887');
+   assert.equal(researchReleases[build].packSha256,moduleCleanupPacks[build]);
+  }
   if(priorSourceEpoch){
    assert.equal(sealedBootstrapByBuild.get(build),'d757da165e7a2a60e21720c1bd4dd8c262e587cdbfc990e2c5a23ba482a00b8b');
    const prices=catalog.items.filter(item=>item.screen==='price-workspace').map(item=>[item.id,item.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
@@ -158,9 +172,10 @@ test('public entry remains nonconfidential and private releases are confined to 
    const original=byId.get(item.id);
    if(!original){assert.ok(retired(item));assert.notEqual(build,deliveryBuild);}
    if(!item.application){
-    if(priorSourceEpoch){
+    if(priorSourceEpoch||moduleCleanupEpoch){
      assert.ok(original);assert.deepEqual(item.contentHashes,original.contentHashes);
-     const hashes=Object.fromEntries(Object.entries(item.contentHashes).map(([width,contentHash])=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',contentHash,'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40',qaFixtureForRow(item)]))]));
+     const runtime=moduleCleanupEpoch?'e2571d4d977451fe43e6361148803a43fb15cf6c3fe0e3f6c8ebc38518dabfb5':'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40';
+     const hashes=Object.fromEntries(Object.entries(item.contentHashes).map(([width,contentHash])=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',contentHash,runtime,qaFixtureForRow(item)]))]));
      assert.deepEqual(item.hashes,hashes,'historical QA wrapper hashes must retain their original runtime identity');
      item.hashes=original.hashes;
     }
@@ -189,7 +204,10 @@ test('public entry remains nonconfidential and private releases are confined to 
  for(const name of reviewed)assert.equal(sha(readFileSync(join(releasesRoot,'reviewed-recorded',name))),name.slice(0,-8),'reviewed parts remain content addressed');
  // The HTTP-denial and exact internal binding bytes are independently exercised
  // in research-browser-assets.test.mjs; no public index links to these packs.
- assert.deepEqual(readdirSync(join(publicRoot,'vendor')).sort(),['r3-pdf','research']);
+ assert.deepEqual(readdirSync(join(publicRoot,'vendor')).sort(),['fonts','r3-pdf','research']);
+ const fontRoot=join(publicRoot,'vendor','fonts');
+ assert.deepEqual(readdirSync(fontRoot).sort(),['Pretendard-LICENSE.txt','README.md','pretendard-variable-9599f12fd42f.woff2']);
+ assert.equal(sha(readFileSync(join(fontRoot,'pretendard-variable-9599f12fd42f.woff2'))),'9599f12fd42fc0bce1cd50b47a0c022e108d7aa64dd0d1bb0ed44f3282d900b4','the public font must remain the exact official Pretendard bytes');
  assert.deepEqual(readdirSync(join(publicRoot,'vendor','r3-pdf')).sort(),['LICENSE.txt','SOURCE.txt','pdf.min.mjs','pdf.worker.min.mjs']);
  const industry='nts-industry-2025-edfa839b2a2d90fc.json';
  assert.deepEqual(readdirSync(join(publicRoot,'vendor','research')),[industry]);

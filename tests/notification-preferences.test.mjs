@@ -2,9 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
+import {createRequire} from 'node:module';
 import {handleProductOperations} from '../src/server/product-operations.mjs';
+import {mountResearchAccountPanel} from '../src/server/research-app/account-panels.mjs';
 import {signedWorkspace} from './r3-business-identities.fixture.mjs';
 
+const {JSDOM} = createRequire(new URL('./build-tools/package.json', import.meta.url))('jsdom');
 const now = '2026-11-23T05:00:00.000Z';
 const off = () => ({price: false, news: false, benefits: false});
 const command = (preferences = off(), expectedRevision = 0) => ({action: 'update', expectedRevision, requestKey: crypto.randomUUID(), preferences});
@@ -28,6 +31,44 @@ test('notification consent GET defaults to off without creating rows or commerci
   assert.equal(w.sqlite.prepare('SELECT count(*) n FROM order_notification_preference').get().n, 0);
   assert.equal(w.sqlite.prepare('SELECT count(*) n FROM order_operation_event').get().n, 0);
   assert.equal(w.sqlite.prepare('SELECT count(*) n FROM order_account').get().n, 0);
+});
+
+test('the account notification panel keeps three previews and saves its embedded settings through the real preference handler', async t => {
+  const backing = workspace(t), dom = new JSDOM('<main></main>', {url: 'https://product.test', pretendToBeVisual: true});
+  const container = dom.window.document.querySelector('main'), calls = [], navigations = [];
+  const items = Array.from({length: 4}, (_, index) => ({id: 'panel-notice-' + index, revision: 1,
+    title: '알림 ' + index, body: '내용 ' + index, createdAt: now, readAt: null}));
+  dom.window.Notification = {permission: 'default', requestPermission() {throw Error('Panel rendering must not request device permission');}};
+  const adapter = {context: {mode: 'qa-fixture'}, async request(path, body, signal) {
+    assert.equal(signal?.aborted, false); calls.push({path, body});
+    if (path === '/notifications') {assert.equal(body, null); return {items};}
+    assert.equal(path, '/notification-preferences', 'the panel must not create a device subscription');
+    const response = await backing.request('alice', body); assert.equal(response.status, 200); return response.body;
+  }};
+  const open = () => mountResearchAccountPanel({id: 'notifications', container, adapter, services: {}, onNavigate: route => navigations.push(route)});
+  let dispose = open(); t.after(() => {dispose(); dom.window.close();});
+  const until = async predicate => {const deadline = performance.now() + 3000; while (!predicate() && performance.now() < deadline) await new Promise(resolve => setImmediate(resolve)); assert.ok(predicate());};
+  await dispose.ready;
+  await until(() => container.querySelector('[data-notification-preferences] fieldset')?.hidden === false);
+  assert.equal(container.querySelectorAll('[data-notification-id]').length, 3);
+  assert.equal(container.querySelectorAll('[data-notification-preferences]').length, 1);
+  assert.equal(container.querySelectorAll('input[role="switch"]').length, 3);
+  assert.equal(calls.filter(call => call.body).length, 0, 'opening the panel must not opt the person in');
+  assert.equal(backing.sqlite.prepare('SELECT count(*) n FROM order_notification_preference').get().n, 0);
+  const price = container.querySelector('[data-notification-preference="price"]');
+  price.checked = true; price.dispatchEvent(new dom.window.Event('change', {bubbles: true}));
+  await until(() => container.textContent.includes('수신 설정을 저장했어요.'));
+  assert.deepEqual((await backing.request('alice')).body.preferences, {price: true, news: false, benefits: false});
+  assert.deepEqual((await backing.request('bob')).body.preferences, off());
+  assert.equal(backing.sqlite.prepare('SELECT count(*) n FROM order_operation_event WHERE actor_id=?').get('alice').n, 1);
+  assert.equal(calls.filter(call => call.body).length, 1);
+  assert.deepEqual(navigations, [], 'changing consent stays inside the account panel');
+  container.querySelector('[data-action="research-all-notifications"]').click();
+  assert.deepEqual(navigations, [{screen: 'notifications', state: 'list'}]);
+  dispose(); dispose = open(); await dispose.ready;
+  await until(() => container.querySelector('[data-notification-preference="price"]')?.checked === true);
+  assert.equal(container.querySelectorAll('[data-notification-preferences]').length, 1);
+  assert.equal(calls.filter(call => call.body).length, 1, 'returning to the panel reads the confirmed setting without saving again');
 });
 
 test('explicit consent updates are atomic, revision checked, idempotent and private to the actor', async t => {

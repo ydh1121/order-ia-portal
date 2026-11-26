@@ -10,9 +10,10 @@ const {JSDOM} = createRequire(new URL('./build-tools/package.json', import.meta.
 const original = await readFile(new URL('../src/server/order-engine/browser/brand-account-menu.mjs', import.meta.url), 'utf8');
 const research = await import('data:text/javascript;base64,' + Buffer.from(researchBrandSource(original)).toString('base64'));
 const tick = () => new Promise(resolve => setImmediate(resolve));
-async function fixture(t, beforeLeave) {
+async function fixture(t, beforeLeave, beforeMount=()=>{}) {
   const dom = new JSDOM('<main id="order-single"><header></header><input id="parent-draft" value="parent"><button id="outside">Outside</button></main>', {pretendToBeVisual: true}), w = dom.window, doc = w.document;
   w.matchMedia = () => ({matches: true, addEventListener() {}, removeEventListener() {}});
+  beforeMount(w,doc);
   const brand = createOrderBrand(doc); doc.querySelector('header').append(brand);
   const entries = [], api = research.mountBrandAccountMenu(brand, {authenticated: true, reducedMotion: true, jelly: {}, renderPanel({id, container, signal}) {
     const input = doc.createElement('input'); input.value = 'dirty-' + id; container.append(input);
@@ -28,6 +29,52 @@ test('the research guard preserves canonical CSS and rejects a changed source se
   assert.equal(research.brandAccountMenuCss, brandAccountMenuCss);
   assert.throws(() => researchBrandSource(original.replace('function pop(settings={})', 'function changedPop(settings={})')), /RESEARCH_BRAND_SOURCE_CHANGED/);
   assert.equal(original.includes('requestClose'), false, 'the canonical source is not edited');
+});
+
+test('inactive research account navigation settles its real pages without attempting focus', async t => {
+  const state={focused:false,active:false}, attempts=[];
+  const f=await fixture(t,()=>true,(w,doc)=>{
+    doc.hasFocus=()=>state.focused;
+    Object.defineProperty(w.navigator,'userActivation',{value:{get isActive(){return state.active;}}});
+    const focus=w.HTMLElement.prototype.focus;
+    w.HTMLElement.prototype.focus=function(options){attempts.push(this);return focus.call(this,options);};
+  });
+  assert.equal(f.api.inspect().page,'manage.business');assert.equal(f.entries[0].input.value,'dirty-manage.business');
+  assert.equal(await f.api.requestClose({immediate:true}),true);assert.equal(f.api.inspect().phase,'closed');
+  f.api.open();await tick();assert.equal(f.api.inspect().phase,'open');
+  f.api.panel.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'End',bubbles:true}));
+  f.api.show('notifications');await tick();assert.equal(f.api.inspect().page,'notifications');
+  assert.equal(await f.api.requestBack(),true);assert.equal(f.api.inspect().page,'root');
+  assert.equal(attempts.length,0,'inactive scenario entry, keyboard replay, stack return and close never call focus');
+  assert.equal(f.doc.getElementById('parent-draft').value,'parent');
+
+  for(const activation of [false,true]){
+    state.focused=!activation;state.active=activation;
+    const profile=f.api.panel.querySelector('[data-obm-item=profile]'),notification=f.api.panel.querySelector('[data-obm-item=notifications]');
+    f.api.panel.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Home',bubbles:true}));assert.equal(f.doc.activeElement,profile);
+    f.api.show('notifications',notification);await tick();assert.equal(f.doc.activeElement,f.api.panel.querySelector('[data-obm-page=notifications] h2'));
+    await f.api.requestBack();assert.equal(f.doc.activeElement,notification,'the canonical stack opener is restored');
+    await f.api.requestClose({immediate:true});assert.equal(f.doc.activeElement,f.api.trigger);
+    f.api.open();await tick();assert.equal(f.doc.activeElement,f.api.panel.querySelector('[data-obm-item=profile]'));
+  }
+});
+
+test('account motion checks focus ownership at completion without cancelling its layout or page notifications', async t => {
+  const state={focused:true,active:false,matches:true},attempts=[];
+  const f=await fixture(t,()=>true,(w,doc)=>{
+    doc.hasFocus=()=>state.focused;w.matchMedia=()=>({get matches(){return state.matches;},addEventListener(){},removeEventListener(){}});
+    Object.defineProperty(w.navigator,'userActivation',{value:{get isActive(){return state.active;}}});
+    const focus=w.HTMLElement.prototype.focus;w.HTMLElement.prototype.focus=function(options){attempts.push(this);return focus.call(this,options);};
+  });
+  attempts.length=0;const callbacks=new Map();let timer=0;f.w.setTimeout=callback=>{callbacks.set(++timer,callback);return timer;};f.w.clearTimeout=id=>callbacks.delete(id);
+  const finish=()=>{for(const [id,callback]of [...callbacks]){callbacks.delete(id);callback();}};
+  const notices=[];state.matches=false;f.api.update({reducedMotion:false,onStateChange:value=>notices.push(value.page)});
+  f.api.show('notifications');assert.equal(f.api.panel.dataset.stackMoving,'true');
+  state.focused=false;finish();
+  assert.equal(f.api.inspect().page,'notifications');assert.equal(f.api.panel.dataset.stackMoving,undefined);
+  assert.ok(notices.includes('notifications'));assert.equal(attempts.length,0,'losing focus before the stack finishes skips only focus');
+  await tick();assert.equal(await f.api.requestClose(),true);finish();await tick();assert.equal(f.api.inspect().phase,'closed');assert.equal(f.api.panel.hidden,true);
+  f.api.open();finish();await tick();assert.equal(f.api.inspect().phase,'open');assert.equal(f.api.panel.hidden,false);assert.equal(attempts.length,0);
 });
 
 test('the research menu starts at the logo ink and expands below the unchanged application header', async t => {

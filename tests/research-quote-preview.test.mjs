@@ -15,12 +15,17 @@ function decode(preview){
   return rows;
 }
 
-test('protected price preview contains server-calculated pixels without source amounts or digit count',async()=>{
+test('locked price pixels reveal no source amounts, digit count, price ordering or proportions',async()=>{
   const a=await createProtectedQuotePreview({current:'12540000',proposed:'11940000'});
-  const b=await createProtectedQuotePreview({current:'1254',proposed:'1194'});
-  assert.equal(a.image,b.image,'equal proportions disclose no absolute amount or digit count');
-  const rows=decode(a),higher=decode(await createProtectedQuotePreview({current:'12540000',proposed:'10040000'}));
-  assert.notDeepEqual(higher,rows,'preview geometry derives from the server model');
+  const rows=decode(a);
+  for(const model of [
+    {current:'1254',proposed:'1194'},
+    {current:'12540000',proposed:'10040000'},
+    {current:'1',proposed:'999999999999999999999999999999999999999999'},
+    {current:'100',proposed:'100'},
+    {current:'0',proposed:'0'},
+    {current:'999.000000000001',proposed:'0.000000000001'}
+  ])assert.equal((await createProtectedQuotePreview(model)).image,a.image,'locked output must be independent of every price-derived signal');
   assert.ok(!JSON.stringify(a).includes('12540000')&&!JSON.stringify(a).includes('11940000'));
   const blurred=[...rows].filter(value=>value>170&&value<254);assert.ok(blurred.length>100,'blur is baked into the transmitted pixels');
 });

@@ -29,6 +29,7 @@ test('composed quote route pages exclude catalog blur while preserving original 
   const correction=document.createElement('style');correction.textContent=researchQuoteCss;document.head.append(correction);
   const after=inspect();
   assert.ok(after.every(values=>values.every(value=>value.filter==='none')));
+  assert.equal(dom.window.getComputedStyle(document.getElementById('quote-mode-switch')).display,'none','C622 removes the duplicate form switch while retaining its regular command binding');
   const withoutFilter=values=>values.map(states=>states.map(({filter,...value})=>value));
   assert.deepEqual(withoutFilter(after),withoutFilter(before),'active/inactive/entering/leaving geometry and transition ownership stay with the regular stylesheet');
   assert.equal(dom.window.getComputedStyle(other).filter,otherBefore,'catalog motion outside the quote retains its original filter');
@@ -43,13 +44,26 @@ test('research quote cards, add regions and egg choices override the current reg
  const dom=new JSDOM('<!doctype html><style>'+relevant+'\n'+researchQuoteCss+'</style><section id="order-app-quote"><div data-research-quote><section id="page-form"><div class="stack"><section class="t-acc" data-status="active"><button class="accordion-trigger">품목</button></section></div><button id="add-line" class="subaction">계란 추가</button><button id="add-site" class="subaction">+ 사업장 추가</button>'+egg+'<button id="q3-next" hidden>완료</button><button id="q4-next" hidden>완료</button></section></div></section><section id="unrelated">'+egg+'</section>');
  try{
   const w=dom.window,d=w.document,scope=d.querySelector('[data-research-quote]');
-  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).backgroundColor,'rgb(243, 245, 247)');
+  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).backgroundColor,'rgb(255, 255, 255)');
   assert.equal(w.getComputedStyle(scope.querySelector('.t-acc')).borderWidth,'0px');
+  assert.notEqual(w.getComputedStyle(scope.querySelector('.t-acc')).boxShadow,'none','white accordions retain depth on the white page');
+  assert.match(w.getComputedStyle(scope.querySelector('.t-acc')).boxShadow,/12px/);
   for(const id of ['add-line','add-site']){const css=w.getComputedStyle(d.getElementById(id));assert.equal(css.width,'100%');assert.equal(css.minHeight,'60px');assert.equal(css.borderStyle,'dashed');}
   assert.equal(w.getComputedStyle(scope.querySelector('[aria-pressed=false] .q1-egg')).fill,'#bfc7d1');
   assert.equal(w.getComputedStyle(scope.querySelector('[aria-pressed=true] .q1-egg')).fill,'white');
   for(const element of scope.querySelectorAll('.q1-egg'))assert.equal(w.getComputedStyle(element).stroke,'none');
   assert.equal(w.getComputedStyle(d.querySelector('#unrelated .q1-egg')).stroke,'#aeb4be');
   for(const id of ['q3-next','q4-next'])assert.equal(w.getComputedStyle(d.getElementById(id)).display,'none');
+ }finally{dom.window.close();}
+});
+
+test('Q1 errors highlight individual choices while saved purchase tags stay one row and use the original action surface',()=>{
+ const dom=new JSDOM('<!doctype html><style>'+researchQuoteCss+'</style><section id="order-app-quote"><div data-research-quote><section id="page-form"><div class="stack"><section id="section-q1" class="t-acc" data-order-error-stage="true"><button class="accordion-trigger"><span class="stage-check"></span><span class="qcopy"><strong>계란 규격</strong></span><span class="t-acc-chevron"></span></button><div class="sku-editor"><div class="picks" aria-invalid="true"><button class="pick" aria-invalid="true">1번</button><button class="pick" aria-invalid="true">2번</button></div></div><div id="added-lines"><div class="sku-entry" data-saved-row><div class="sku-entry-copy"><div class="sku-name">1번 · 대란 · 30구</div><div class="saved-quantity-tags"><span>월 100판</span><span>월 구매액 500,000원</span></div></div><div class="saved-row-actions"><button class="code1-text-action">수정</button><button class="code1-text-action">삭제</button></div></div></div></section></div></section></div></section>');
+ try{
+  const w=dom.window,d=w.document,group=d.querySelector('.picks'),choice=group.querySelector('.pick'),tags=d.querySelector('.saved-quantity-tags');
+  assert.equal(w.getComputedStyle(group).borderWidth,'0px');assert.equal(w.getComputedStyle(group).boxShadow,'none');
+  assert.equal(w.getComputedStyle(choice).borderWidth,'1px');assert.equal(w.getComputedStyle(choice).borderStyle,'solid');
+  assert.equal(w.getComputedStyle(tags).flexWrap,'nowrap');assert.equal(w.getComputedStyle(d.querySelector('.sku-entry-copy')).alignContent,'center');
+  assert.equal(d.querySelectorAll('.saved-quantity-tags button').length,0,'quantity tags never acquire dismiss controls');
  }finally{dom.window.close();}
 });

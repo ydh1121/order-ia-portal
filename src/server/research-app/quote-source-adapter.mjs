@@ -145,12 +145,19 @@ export function researchQuoteResultSource(source){
   source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    if(protectedPreview)protectedPreview.hidden=m.state!=='unverified';");
   source=once(source,"[['new','새로운 견적'],['same','동일한 조건'],['close','닫기']]","[['new','새로운 견적'],['same','동일한 조건']]");
   source=source.replaceAll('동일한 조건으로 다시 비교하겠어요?','어떤 조건으로 다시 비교할까요?');
+  // Preserve the native modal top layer while an inactive review frame skips
+  // only showModal's synchronous focus step; restore interaction before paint.
   source=once(source,'    own.showModal();',`    own.addEventListener('click',event=>{
       if(event.target!==own)return;
       const rect=own.getBoundingClientRect();
       if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)own.close();
     });
-    own.showModal();`);
+    if(doc.hasFocus()||doc.defaultView.navigator.userActivation?.isActive===true)own.showModal();
+    else{
+      const inert=own.getAttribute('inert');own.setAttribute('inert','');
+      try{own.showModal();}
+      finally{if(inert===null)own.removeAttribute('inert');else own.setAttribute('inert',inert);}
+    }`);
   // This branch exists only in the review fixture wrapper. The regular quote
   // controller keeps its verified recompare/persistence implementation.
   if(source.includes("same:['quote-review','normal']")){
@@ -165,6 +172,10 @@ export function getResearchQuoteSource(path,source){
   if(typeof source!=='string')throw TypeError('RESEARCH_QUOTE_SOURCE_REQUIRED');
   if(path==='web/quote-result-screen.mjs')return researchQuoteResultSource(source);
   if(path==='web/app.mjs'){
+    // The regular simple verdict uses different copy for the same missing
+    // specification fields. Keep its field ownership and clearing behavior.
+    source=once(source,"if(id==='err-q1'&&message.includes('난각번호'))","if(id==='err-q1'&&(message.includes('난각번호')||message==='계란 규격을 선택해 주세요.'))");
+    source=once(source,"!note.hidden&&note.textContent.includes('난각번호')","!note.hidden&&(note.textContent.includes('난각번호')||note.textContent==='계란 규격을 선택해 주세요.')");
     source=once(source,
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null}={}){",
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null,researchEnvironment=null}={}){"+environmentBindings);
@@ -180,7 +191,14 @@ export function getResearchQuoteSource(path,source){
     source=once(source,'const addressEditor=createAddressEditor({','const addressEditor=createAddressEditor({\n document,service:researchEnvironment?.addressService,');
     source=once(source,'const resultScreen=mountQuoteResult($(\'receipt\'),{','const resultScreen=mountQuoteResult($(\'receipt\'),{\n brand:!researchEnvironment?.externalHeader,');
     source=once(source,'simpleUI=createSimpleQuoteUI({onAuthRequest,bridge:', 'simpleUI=createSimpleQuoteUI({researchEnvironment,onAuthRequest,bridge:');
-    source=once(source,"if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;const target=","if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;if(researchEnvironment){for(let boundary=document.body;boundary;boundary=boundary.parentElement)if(boundary.hidden||boundary.inert)return;if(current!=='form')return;}const target=");
+    // A keyboard focus change or a mode dialog opened after this request owns
+    // focus. Its close must not be overwritten by an older accordion RAF.
+    source=once(source,'function cancelRegularStageNavigation(){regularStageEpoch++;}',"function cancelRegularStageNavigation(){regularStageEpoch++;}if(researchEnvironment)window.addEventListener('focusin',cancelRegularStageNavigation,{capture:true});");
+    source=once(source,'function navigateRegularStage(q){const seq=++regularStageEpoch;',"function navigateRegularStage(q){const seq=++regularStageEpoch,focusAtRequest=researchEnvironment?document.body.ownerDocument.activeElement:null;");
+    source=once(source,"if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;const target=","if(seq!==regularStageEpoch||$('q4-regular-dialog').open)return;if(researchEnvironment){for(let boundary=document.body;boundary;boundary=boundary.parentElement)if(boundary.hidden||boundary.inert)return;if(current!=='form'||document.querySelector('dialog[open]')||document.body.ownerDocument.activeElement!==focusAtRequest)return;}const target=");
+    source=once(source,"target.scrollIntoView({block:'nearest',behavior:'instant'});target.focus({preventScroll:true});","target.scrollIntoView({block:'nearest',behavior:'instant'});if(!researchEnvironment||researchEnvironment.canFocus())target.focus({preventScroll:true});");
+    source=once(source," requestAnimationFrame(()=>{const target=simpleMode&&editing.specUnknown?$('simple-known-edit'):$('picks-housing').querySelector('button[aria-pressed=\"true\"]')||$('picks-housing').querySelector('button');target?.focus({preventScroll:true});});",
+      " if(!researchEnvironment||researchEnvironment.canFocus())requestAnimationFrame(()=>{if(researchEnvironment&&!researchEnvironment.canFocus())return;const target=simpleMode&&editing.specUnknown?$('simple-known-edit'):$('picks-housing').querySelector('button[aria-pressed=\"true\"]')||$('picks-housing').querySelector('button');target?.focus({preventScroll:true});});");
     // Presentation follows the regular saved model. These seams neither create
     // rows nor mark incomplete data valid; the original actions own all writes.
     source=once(source,"$('add-line').innerHTML='<span class=\"ui-text-plus\" aria-hidden=\"true\">+</span><span>계란 추가</span>';","$('add-line').textContent='계란 추가';");
@@ -201,11 +219,18 @@ export function getResearchQuoteSource(path,source){
     source=once(source,'const CODE1_UI =','CODE1_UI =');
     source=once(source,'const CODE1_ORDER_VALIDATION=','CODE1_ORDER_VALIDATION=');
     source=once(source,'const CODE1_ORDER_ERRORS=','CODE1_ORDER_ERRORS=');
+    source=once(source,'if(!dialog.open)dialog.showModal();','if(!dialog.open){if(researchEnvironment)researchEnvironment.showModal(dialog);else dialog.showModal();}');
+    source=once(source,'if(initialFocus){const t=','if(initialFocus&&(!researchEnvironment||researchEnvironment.canFocus())){const t=');
+    source=once(source,"if(target?.isConnected&&(!parent||parent.contains(target)))target.focus({preventScroll:true});","if(target?.isConnected&&(!parent||parent.contains(target))&&(!researchEnvironment||researchEnvironment.canFocus()))target.focus({preventScroll:true});");
     source=once(source,'return {open,close,bind,requestClose,resize,sync:paintLock,','return {destroy(){version++;for(const dialog of [...entries.keys()].reverse())close(dialog,{immediate:true});cancelAnimationFrame(resizeFrame);},open,close,bind,requestClose,resize,sync:paintLock,');
     return once(source,'export {CODE1_UI,CODE1_ORDER_VALIDATION,CODE1_ORDER_ERRORS};','}\n');
   }
   if(path==='web/quote-mode-switch.mjs'){
     source=once(source,'export function bindQuoteModeSwitch({simple,dialog,trigger,shell,source,guard,saveCurrent,detailedStore,navigate,preference}){','export function bindQuoteModeSwitch({simple,dialog,trigger,shell,source,guard,saveCurrent,detailedStore,navigate,preference,researchEnvironment}){'+environmentBindings);
+    // The redundant body trigger is hidden; the header owns visible mode
+    // navigation. Both cancellation and a failed save return focus there.
+    if(source.split('returnFocus:trigger').length!==3)throw Error('RESEARCH_QUOTE_MODE_FOCUS_SOURCE_MISMATCH');
+    source=source.replaceAll('returnFocus:trigger',"returnFocus:(researchEnvironment?.externalHeader?document.body.ownerDocument.getElementById('research-order-trigger'):null)||trigger");
     // The regular module navigates to another document after a confirmed save.
     // In the retained app, finish that successful confirmation before routing.
     source=once(source,'if(active())navigate(!simple);','if(active()){if(researchEnvironment&&dialog.open)shell.close(dialog,{immediate:true});navigate(!simple);}');

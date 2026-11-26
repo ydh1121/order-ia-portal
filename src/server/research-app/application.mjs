@@ -121,7 +121,7 @@ export async function mountResearchApplication(config, environment) {
   const headerStyle=doc.createElement('style');headerStyle.dataset.researchBrandCss='';
   headerStyle.textContent=doc.querySelector('[data-order-brand-header-css]').textContent.replaceAll('.order-product-brand','#order-app-header .order-product-brand');doc.head.append(headerStyle);
   const back=header.querySelector('[data-app-back]');back.onclick=()=>{if(workspace&&route.kind==='quote'&&workspace.back())return;return route.kind==='quote'&&/^q[2-4]$/.test(route.screen)?navigate({screen:'q'+(Number(route.screen.slice(1))-1),mode:route.mode}):navigate(route.parent||{screen:'onboarding',state:authenticated()?'member-4':'guest-4'});};
-  authSheet=win.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>pageRoute?.screen==='onboarding'?pageRoute.state:authenticated()?'member-4':'guest-4'});
+  authSheet=win.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>pageRoute?.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(pageRoute.state)?pageRoute.state:authenticated()?'member-4':'guest-4'});
   function navigatePanelDestination(destination){
     if(typeof destination==='object')return navigate(destination);
     const scene=panelRoute(destination);if(scene?.screen==='passes'&&scene.panel)return navigate(scene);
@@ -149,7 +149,7 @@ export async function mountResearchApplication(config, environment) {
     try{await created.ready;if(disposed)throw Error('RESEARCH_APPLICATION_DISPOSED');priceWorkspace=created;return created;}
     catch(error){created.dispose();throw error;}
   }
-  async function mountPage(next,sequence,{restartQuote=false,introScene=null,priceSelected=false}={}){
+  async function mountPage(next,sequence,{restartQuote=false,introScene=null,priceSelected=false,quoteFixtureScope=false}={}){
     if(next.screen==='notifications'){
       clearPage();page.hidden=false;quote.hidden=true;pricing.hidden=true;
       pageDispose=mountResearchNotifications({container:page,adapter,signal,mode:'full',setUnread:count=>brandMenu?.setUnread(count)});
@@ -164,14 +164,17 @@ export async function mountResearchApplication(config, environment) {
     pricing.hidden=true;
     if(QUOTE_ROUTES.has(next.screen)){
       clearPage();page.hidden=true;quote.hidden=false;
-      const fixtureScope=!restartQuote&&(reviewSelecting||Boolean(config.inspect&&!pageRoute));
+      const scenarioFixtureScope=!restartQuote&&(reviewSelecting||Boolean(config.inspect&&!pageRoute));
+      // A confirmed mode copy keeps its existing repository. Only an explicit
+      // review selection applies fixture values over a freshly mounted draft.
+      const fixtureScope=scenarioFixtureScope||(!restartQuote&&quoteFixtureScope===true);
       if(workspace&&(workspace.mode!==next.mode||reviewSelecting||restartQuote||fixtureScope&&!workspace.fixtureScope)){workspace.dispose();workspace=null;quote.replaceChildren();}
       if(!workspace)workspace=await mountResearchQuote(quote,{mode:next.mode,step:next.screen==='quote-review'?'review':next.screen,namespace:environment.namespace||'research',fixtureScope,
         services:{regular:services,adapter,context,repository,fetcher:environment.quoteFetch||environment.fetcher||win.fetch.bind(win),addressService:services.addressService,quoteProvider:environment.quoteProvider},
-        onNavigate:change=>{if(change.type==='back')return back.click();if(change.type==='mode')return navigate({screen:'q1',mode:change.mode});if(change.type==='application')return navigate(change);if(change.type==='quote'&&change.page==='home')return navigate({screen:'onboarding',state:authenticated()?'member-4':'guest-4'});if(change.type==='quote'&&change.page==='result'){route={...researchRoute({screen:'quote-result',state:'saving',mode:route.mode},route),kind:'quote'};pageRoute=route;updateLocation(true);emit();}},
+        onNavigate:change=>{if(change.type==='back')return back.click();if(change.type==='mode')return navigate({screen:'q1',mode:change.mode},{quoteFixtureScope:fixtureScope});if(change.type==='application')return navigate(change);if(change.type==='quote'&&change.page==='home')return navigate({screen:'onboarding',state:authenticated()?'member-4':'guest-4'});if(change.type==='quote'&&change.page==='result'){route={...researchRoute({screen:'quote-result',state:'saving',mode:route.mode},route),kind:'quote'};pageRoute=route;updateLocation(true);emit();}},
         onState:state=>{if(!navigating&&QUOTE_ROUTES.has(route.screen)&&state.step&&state.step!==route.screen){route=researchRoute({screen:state.step,mode:route.mode},route);updateLocation(true);emit();}},signal});
       else await workspace.navigate({step:next.screen==='quote-review'?'review':next.screen});
-      if(fixtureScope&&workspace.applyScenario)await workspace.applyScenario({screen:next.screen,state:next.state});
+      if(scenarioFixtureScope&&workspace.applyScenario)await workspace.applyScenario({screen:next.screen,state:next.state});
       pageRoute=next;return;
     }
     quote.hidden=true;page.hidden=false;
@@ -196,7 +199,7 @@ export async function mountResearchApplication(config, environment) {
     pageRoute=next;
     if(!module)notify('이 화면의 동작은 아직 서비스에 연결되지 않았어요.');
   }
-  async function navigate(input,{replace=false,history=true,scenario=false,restartQuote=false}={}){
+  async function navigate(input,{replace=false,history=true,scenario=false,restartQuote=false,quoteFixtureScope=false}={}){
     const requested=typeof input==='string'?{screen:input}:input;
     // Returning to an existing workspace resumes its own menu and draft. A
     // review scenario remains an explicit, guarded request for another state.
@@ -288,7 +291,7 @@ export async function mountResearchApplication(config, environment) {
       authSheet?.close?.({immediate:true});brandMenu?.close?.({immediate:true});
       const retained=!scenario&&!restartQuote&&pageRoute&&['screen','state','variant','mode'].every(key=>next[key]===pageRoute[key]);
       const previousRoute=route;route=next;
-      if(!retained&&await mountPage(next,sequence,{restartQuote,introScene,priceSelected})===false){route=previousRoute;if(!history)updateLocation(true);return false;}
+      if(!retained&&await mountPage(next,sequence,{restartQuote,introScene,priceSelected,quoteFixtureScope})===false){route=previousRoute;if(!history)updateLocation(true);return false;}
     }
     if(sequence!==epoch||disposed)return false;
     if(route.kind!=='auth')authReturn=null;

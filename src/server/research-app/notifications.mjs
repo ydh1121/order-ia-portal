@@ -44,7 +44,7 @@ function notificationItems(response) {
 /** The account preview and the full notification page share the same reader.
  * Opening a list never marks anything read; opening one message uses the
  * adapter's revision/idempotency contract before updating unread counts. */
-export function mountResearchNotifications({container, adapter, signal, mode = 'preview', onOpenAll, setUnread, now = () => Date.now(), timeZone = 'Asia/Seoul'} = {}) {
+export function mountResearchNotifications({container, adapter, signal, mode = 'preview', showPreferences = mode === 'full', onOpenAll, setUnread, now = () => Date.now(), timeZone = 'Asia/Seoul'} = {}) {
   if (!container?.ownerDocument || typeof adapter?.request !== 'function' || !['preview', 'full'].includes(mode)) throw TypeError('RESEARCH_NOTIFICATIONS_CONTEXT');
   const document = container.ownerDocument, window = document.defaultView, controller = new AbortController();
   const operations = new Map(), listeners = [], timestamps = new Map();
@@ -56,7 +56,7 @@ export function mountResearchNotifications({container, adapter, signal, mode = '
   const heading = node('header', undefined, 'research-notifications-heading'), title = node('h1', '알림', 'research-notifications-title');
   heading.append(title); if (mode === 'full') root.append(navigation, heading);
   root.append(content); container.replaceChildren(root);
-  const preferences = mode === 'full' ? mountNotificationPreferences({container: root, adapter, signal: controller.signal}) : null;
+  const preferences = showPreferences ? mountNotificationPreferences({container: root, adapter, signal: controller.signal}) : null;
   const alive = () => !disposed && !controller.signal.aborted && root.parentNode === container;
   const listen = (element, type, callback) => {element.addEventListener(type, callback); listeners.push(() => element.removeEventListener(type, callback));};
   const status = node('p', '', 'research-notifications-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');

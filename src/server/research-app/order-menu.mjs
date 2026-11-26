@@ -25,6 +25,7 @@ export function mountResearchOrderMenu({brand,adapter,signal,getRoute,onChoose,b
   let brandState={arrival:'rest',arrivalCount:0};
   const reduced=()=>win.matchMedia?.('(prefers-reduced-motion: reduce)').matches===true;
   const available=()=>!disposed&&published&&getAuthenticated()===true;
+  const canFocus=()=>doc.hasFocus()||win.navigator.userActivation?.isActive===true;
   function stopArrow(){arrowAnimation?.cancel();arrowAnimation=null;}
   function sync(){
     const enabled=available();
@@ -42,17 +43,17 @@ export function mountResearchOrderMenu({brand,adapter,signal,getRoute,onChoose,b
   }
   function update(state={}){if(disposed)return;brandState={...brandState,...state};sync();}
   // A no-op close must not replace the wordmark or cause annotation reindexing.
-  function close(focus=false){++openEpoch;panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(focus&&available()&&!host.hidden)trigger.focus();}
+  function close(focus=false){++openEpoch;panel.hidden=true;trigger.setAttribute('aria-expanded','false');if(focus&&available()&&!host.hidden&&canFocus())trigger.focus();}
   async function open(last=false){
     const epoch=++openEpoch;if(!available()||await beforeOpen()===false||epoch!==openEpoch||!available())return;
-    panel.hidden=false;trigger.setAttribute('aria-expanded','true');modes[last?modes.length-1:0].focus();
+    panel.hidden=false;trigger.setAttribute('aria-expanded','true');if(canFocus())modes[last?modes.length-1:0].focus();
   }
   listen(trigger,'click',()=>panel.hidden?open():close(true));
   listen(trigger,'keydown',event=>{if(['ArrowDown','ArrowUp'].includes(event.key)){event.preventDefault();void open(event.key==='ArrowUp');}});
   listen(panel,'keydown',event=>{
     if(event.key==='Escape'){event.preventDefault();close(true);return;}
     const index=modes.indexOf(doc.activeElement),next={ArrowDown:(index+1)%modes.length,ArrowUp:(index+modes.length-1)%modes.length,Home:0,End:modes.length-1}[event.key];
-    if(next!==undefined){event.preventDefault();modes[next].focus();}
+    if(next!==undefined){event.preventDefault();if(canFocus())modes[next].focus();}
   });
   listen(doc,'pointerdown',event=>{if(!host.contains(event.target))close();});listen(host,'focusout',event=>{if(!host.contains(event.relatedTarget))close();});
   async function refresh(){const epoch=++refreshEpoch;let flag=false;try{await adapter.ready;const result=await adapter.request('/features',null,ctl.signal);flag=result?.orderMenu===true;}catch{}if(disposed||epoch!==refreshEpoch)return;published=flag;sync();}

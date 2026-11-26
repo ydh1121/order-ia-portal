@@ -23,12 +23,16 @@ jobs:
         run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
       - name: Verify canonical product source manifest
         run: node scripts/build-product-manifest.mjs --check
+      - name: Build the isolated notification dispatcher
+        run: node scripts/build-notification-dispatcher.mjs
       - name: Verify R1 QA and product runtime sources agree
         run: node scripts/r3/build-qa-review-runtime.mjs --check
       - name: Verify research application sources and immutable release packs
         run: |
           node scripts/build-research-app.mjs --check
           node scripts/seal-research-release.mjs --check
+          node scripts/build-research-delivery.mjs --check
+          node scripts/build-qa-research-catalog.mjs --check
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |
@@ -219,7 +223,7 @@ jobs:
   research:
     name: Standalone research app and R1 integration
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -244,15 +248,36 @@ jobs:
       - name: Install DOM and bundler test dependencies
         run: npm install --prefix tests/build-tools --no-package-lock --no-audit --no-fund
       - run: python -m pip install playwright==1.56.0
+        id: research-browser-deps
       - name: Check the standalone research app and the same app in the R1 shell
+        if: ${{ !cancelled() && steps.research-browser-deps.outcome == 'success' }}
         env:
           R3_BROWSER_BINARY: /usr/bin/google-chrome
         run: python tests/research-application-browser.py
+      - name: Check retained intro morph and native input typography
+        if: ${{ !cancelled() && steps.research-browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/research-ui-feedback-browser.py
+      - name: Check quote feedback and capture measured high fidelity states
+        if: ${{ !cancelled() && steps.research-browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/research-quote-feedback-browser.py
+      - name: Check notification settings with isolated browser capabilities
+        if: ${{ !cancelled() && steps.research-browser-deps.outcome == 'success' }}
+        env:
+          R3_BROWSER_BINARY: /usr/bin/google-chrome
+        run: python tests/notification-push-browser.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: research-application-browser-receipts
-          path: artifacts/research-application/
+          path: |
+            artifacts/research-application/
+            artifacts/research-ui-feedback/
+            artifacts/research-quote-feedback/
+            artifacts/notification-push/
           if-no-files-found: warn
           retention-days: 7
   r1:
