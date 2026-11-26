@@ -500,7 +500,7 @@ def main():
                     assert page.locator('header.header').count() == 0
                 if screen == 'profile' and state == 'notification':
                     assert captured['source']['route']['panel'] == 'notifications', 'Direct notification entry must retain its actual panel'
-                    expect(page.locator('.research-notifications-title')).to_have_text('알림')
+                    expect(page.locator('[data-obm-page="notifications"] .obm-heading')).to_have_text('알림')
                     expect(page.locator('[data-notification-preferences]')).to_be_visible()
                 assert page.locator('#order-app-header').count() == 1
                 assert captured['viewport']['devicePixelRatio'] == 1

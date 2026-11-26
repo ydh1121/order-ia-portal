@@ -11,6 +11,7 @@ import shutil
 import subprocess
 from urllib.parse import urlencode, urlsplit
 from playwright.sync_api import expect, sync_playwright
+from r3_feedback_browser_support import prepare_review_ready, wait_review_frame
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "artifacts/r1-workspace"
@@ -315,8 +316,11 @@ def main():
                 "view": "qa-lab", "screen": "price-workspace/consumer-products/email", "width": 1280,
                 "version": "recorded", "artifactHash": RECORDED_PRICE_HASH,
             })
+            # The immutable document is restored asynchronously. Observe its
+            # actual ready receipt before inspecting the archived opaque frame.
+            prepare_review_ready(page)
             page.goto(recorded_url)
-            recorded = page.frame_locator("#frame")
+            recorded = wait_review_frame(page, {"hash": RECORDED_PRICE_HASH})
             expect(recorded.locator("title")).to_have_js_property("textContent", "단가표 · " + STATES["consumer-products"])
             recorded.locator("#r3-veil").wait_for(state="attached")
             expect(recorded.locator("#price-workspace-app")).to_have_attribute("data-workspace-storage", "qa-memory")

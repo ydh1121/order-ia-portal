@@ -31,6 +31,8 @@ jobs:
         run: |
           node scripts/build-research-app.mjs --check
           node scripts/seal-research-release.mjs --check
+          node scripts/build-research-delivery.mjs --check
+          node scripts/build-qa-research-catalog.mjs --check
       - run: npm run test:ia
       - name: Check serialized clients after Worker bundling
         run: |

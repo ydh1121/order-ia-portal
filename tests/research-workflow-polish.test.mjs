@@ -2,13 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {webcrypto} from 'node:crypto';
-import {installProductWorkflowMotion} from '../src/server/product-workflow-motion.mjs';
+import {installProductWorkflowMotion,productWorkflowMotionCss} from '../src/server/product-workflow-motion.mjs';
 import {createEvidenceEditor} from '../src/server/r3-evidence-client.mjs';
 import {installResearchWorkflowPolish} from '../src/server/research-app/workflow-polish.mjs';
 import {installQaFixtureAdapter} from '../src/server/r3-ui/qa-fixture-adapter.mjs';
 import {installProductAdapter} from '../src/server/product-app-adapter.mjs';
 import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
 import {readFileSync} from 'node:fs';
+import {gunzipSync} from 'node:zlib';
+import {cssGzip} from '../src/server/product-ui/catalog.gen.mjs';
 import {researchScene} from '../src/server/research-app/page.mjs';
 import {mountResearchDrawer,mountConsultationPassDetail} from '../src/server/research-app/drawer.mjs';
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
@@ -108,6 +110,31 @@ test('one existing evidence case opens its real editor in document-preview-signa
   const v=await setup(t),before=JSON.stringify(v.adapter.fixture.inspect().data.cases),c=v.workflow.mountEvidence(v.root,{api:{screen:'proof',adapter:v.adapter,motion:v.motion},kind:'reprice'});v.owned.push(c.destroy);await until(()=>v.root.querySelector('.research-evidence-settings'));
   const panel=v.root.querySelector('.research-evidence-page.proof-page'),settings=panel.querySelector('.research-evidence-settings'),children=[...settings.children],upload=settings.querySelector('.research-file-drop'),pages=settings.querySelector('.research-evidence-pages'),signature=settings.querySelector('.wf-signature'),consent=settings.querySelector(':scope > label>input[type=checkbox]').parentElement,save=button(settings,'가림 처리본 제출');
   assert.ok(children.indexOf(upload)<children.indexOf(pages));assert.ok(children.indexOf(pages)<children.indexOf(signature));assert.ok(children.indexOf(signature)<children.indexOf(consent));assert.ok(children.indexOf(consent)<children.indexOf(save));assert.equal(panel.querySelector('select').closest('.wf-field').hidden,true);assert.equal(button(panel,'자료와 서명 준비').hidden,true);assert.equal(JSON.stringify(v.adapter.fixture.inspect().data.cases),before);assert.equal(v.adapter.fixture.inspect().calls.filter(call=>call.path==='/evidence').length,0);
+});
+test('live evidence controls reuse shared button paint while memo count, preview and signature reset keep their original actions',async t=>{
+  const v=await setup(t);v.root.classList.add('ds');
+  const core=v.w.document.createElement('style');core.textContent=gunzipSync(Buffer.from(cssGzip,'base64')).toString()+productWorkflowMotionCss;v.w.document.head.prepend(core);
+  const source=await researchScene('proof','selected','email');v.w.ORDER_DESIGN_MODULES=[];v.w.eval(source.mount);
+  const module=v.w.ORDER_DESIGN_MODULES.find(row=>row.id==='proof');v.root.innerHTML=source.html;
+  v.owned.push(module.mount(v.root,'selected',{screen:'proof',reviewScenario:true,adapter:v.adapter,motion:v.motion,reduced:()=>true,toast(){},select(){}}));
+  await until(()=>v.root.querySelector('.research-evidence-page')?.dataset.reviewReady==='true');
+  const memo=v.root.querySelector('[name=document-memo]'),meter=v.root.querySelector('.memo-meter'),progress=meter.querySelector('progress');
+  const meterStyle=v.w.getComputedStyle(meter),progressStyle=v.w.getComputedStyle(progress);
+  assert.equal(meterStyle.display,'flex');assert.equal(meterStyle.justifyContent,'flex-end');assert.equal(meterStyle.gap,'12px');
+  assert.equal(progressStyle.width,'80px');assert.equal(progressStyle.height,'6px');
+  memo.value='계란 🥚';memo.dispatchEvent(new v.w.Event('input',{bubbles:true}));
+  assert.equal(progress.value,3);assert.equal(meter.querySelector('output').textContent,'497자 남음');
+  const preview=button(v.root,'크게 보기'),pad=v.root.querySelector('.wf-signature'),clear=button(pad,'다시 하기'),typed=pad.querySelector('input'),canvas=pad.querySelector('canvas');
+  for(const control of [preview,clear]){
+    const paint=v.w.getComputedStyle(control);assert.equal(paint.minHeight,'44px');assert.equal(paint.borderTopWidth,'0px');assert.equal(paint.display,'inline-flex');
+  }
+  assert.equal(v.w.getComputedStyle(typed.closest('.wf-field')).marginTop,'12px');assert.equal(v.w.getComputedStyle(clear).marginTop,'12px');
+  preview.click();assert.equal(v.root.querySelector('.research-evidence-viewer').open,true);
+  button(v.root.querySelector('.research-evidence-viewer'),'닫기').click();assert.equal(v.root.querySelector('.research-evidence-viewer').open,false);
+  typed.value='검토';typed.dispatchEvent(new v.w.Event('input',{bubbles:true}));assert.equal(pad.dataset.ink,'true');clear.click();
+  assert.equal(typed.value,'');assert.equal(pad.dataset.ink,'false');assert.equal(pad.querySelector('canvas'),canvas);
+  assert.equal(v.root.querySelector('[name=document-memo]'),memo);assert.equal(memo.value,'계란 🥚');assert.equal(progress.value,3);
+  assert.equal(v.adapter.fixture.inspect().calls.filter(call=>call.method==='POST').length,0);
 });
 for(const [screen,states]of [['proof',['empty','selected','oversize','format','checking','blocked','error','ready']],['signature',['empty','drawn','missing','processing','done']]])for(const state of states)test('explicit '+screen+'/'+state+' review uses the real editor without a submission or changed case',async t=>{
   const v=await setup(t),before=JSON.stringify(v.adapter.fixture.inspect().data.cases),source=await researchScene(screen,state,'email');v.w.ORDER_DESIGN_MODULES=[];v.w.eval(source.mount);const module=v.w.ORDER_DESIGN_MODULES.find(row=>row.id===screen);v.root.innerHTML=source.html;v.owned.push(module.mount(v.root,state,{screen,reviewScenario:true,adapter:v.adapter,motion:v.motion,reduced:()=>true,toast(){},select(){}}));
