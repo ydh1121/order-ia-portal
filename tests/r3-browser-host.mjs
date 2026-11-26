@@ -33,6 +33,9 @@ const privateResearchAssets=createPrivateResearchAssets();
 const assets=async(req)=>{
   const file=new URL(req.url).pathname;
   if(file.startsWith('/ia/research-releases/'))return privateResearchAssets.fetch(req);
+  // Chrome requests this optional browser metadata outside the application.
+  // This integration fixture has no icon; app assets still use the strict allowlist.
+  if(file==='/favicon.ico')return new Response(null,{status:204});
   if(!['/login.html','/login.js','/login.css','/vendor/fonts/pretendard-variable-9599f12fd42f.woff2','/vendor/research/nts-industry-2025-edfa839b2a2d90fc.json'].includes(file))return new Response(null,{status:404});
   return new Response(readFileSync(resolve(dir,'public',file.slice(1))),{headers:{'Content-Type':mime[file.slice(file.lastIndexOf('.'))]}});
 };

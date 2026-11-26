@@ -202,6 +202,27 @@ test('member account has one opener and notification preview opens a full reader
  }finally{await f.close();}
 });
 
+test('direct profile notification routes open the existing notification panel and keep its route when inspected again',async()=>{
+ const f=await setup({screen:'profile',state:'notification'});try{
+  assert.equal(f.app.snapshot().route.panel,'notifications');
+  await waitFor(()=>f.doc.querySelector('[data-obm-page="notifications"] [data-action="research-all-notifications"]'));
+  const header=f.doc.getElementById('order-app-header'),parent=f.doc.querySelector('#order-app-page .ob');
+  const assertNotifications=()=>{
+   const panel=f.doc.querySelector('[data-obm-page="notifications"]');assert.ok(panel);
+   assert.equal(panel.querySelector('.research-notifications').dataset.notificationsMode,'preview');
+   assert.equal(panel.querySelectorAll('[data-notification-preferences]').length,1);
+   assert.equal(panel.querySelectorAll('[data-notification-preference]').length,3);
+   assert.equal(f.doc.querySelector('[data-research-account-panel="profile.personal"]'),null);
+   assert.equal(f.app.snapshot().route.screen,'profile');assert.equal(f.app.snapshot().route.state,'notification');assert.equal(f.app.snapshot().route.panel,'notifications');
+  };
+  assertNotifications();
+  await f.app.inspectRoute({screen:'profile',state:'default'});await settle();
+  assert.ok(f.doc.querySelector('[data-research-account-panel="profile.personal"]'));
+  await f.app.inspectRoute({screen:'profile',state:'notification'});await settle();assertNotifications();
+  assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.doc.querySelector('#order-app-page .ob'),parent);assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
 test('global Order menu preserves the actual quote mode confirmation and quote draft on cancellation',async()=>{
  const f=await setup({screen:'onboarding',state:'member-1'});try{
   await f.app.navigate({screen:'q1',mode:'simple'});await settle();const quote=f.doc.querySelector('[data-research-quote]'),before=f.app.snapshot().quote;

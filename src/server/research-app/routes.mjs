@@ -31,7 +31,7 @@ export function researchRoute(input={}, previous={}) {
   const scenePanel=screen==='passes'&&input.panel==='manage.research.passes.'+state?input.panel:null;
   const kind=AUTH_ROUTES.has(screen)?'auth':QUOTE_ROUTES.has(screen)?'quote':screen==='price-workspace'?'pricing':ACCOUNT_PANELS[screen]||scenePanel?'account':screen==='drawer'?'sheet':'page';
   const parent=kind==='auth'||kind==='account'||kind==='sheet'?(input.parent||previous.parent||(!['auth','account','sheet'].includes(previous.kind)&&previous.screen?{screen:previous.screen,state:previous.state,variant:previous.variant,mode:previous.mode}:kind==='sheet'?{screen:'passes',state:'grid',variant:'email',mode}:{screen:'onboarding',state:kind==='account'?'member-4':'guest-4',variant:'email',mode})):null;
-  return {screen,state,variant,mode,kind,parent,panel:scenePanel||ACCOUNT_PANELS[screen]||null};
+  return {screen,state,variant,mode,kind,parent,panel:scenePanel||(screen==='profile'&&state==='notification'?'notifications':ACCOUNT_PANELS[screen])||null};
 }
 export function researchRouteUrl(route, base, {replace=false}={}) {
   const url=new URL(base);url.searchParams.set('view','research-r3');

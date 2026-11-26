@@ -361,7 +361,7 @@ def main():
                'limits': ['Captures cover their listed fixtures and viewports.', 'User review of Q1/Q2 remains on HOLD.',
                           'No deployment, production integration or Figma acceptance is implied.']}
     cfg, host, browser, driver, log = {}, None, None, None, None
-    phase, errors, responses, documents, resources, forbidden_writes = 'prepare', [], [], [], {}, []
+    phase, errors, responses, documents, resources, forbidden_writes, http_errors = 'prepare', [], [], [], {}, [], []
 
     def safe(value):
         text = str(value)
@@ -379,8 +379,12 @@ def main():
 
     def observe(page):
         page.on('pageerror', lambda error: errors.append({'phase': phase, 'error': safe(error)}))
-        page.on('console', lambda message: errors.append({'phase': phase, 'consoleError': safe(message.text)}) if message.type == 'error' else None)
+        page.on('console', lambda message: errors.append({'phase': phase, 'consoleError': safe(message.text),
+            'location': {key: safe(value) if isinstance(value, str) else value for key, value in message.location.items()}})
+            if message.type == 'error' else None)
         page.on('request', request_sent)
+        page.on('response', lambda response: http_errors.append({'phase': phase, 'url': safe(response.url),
+            'status': response.status, 'type': response.request.resource_type}) if response.status >= 400 else None)
         page.on('response', lambda response: responses.append(response) if response.request.resource_type in ('font', 'stylesheet', 'script') else None)
         page.on('response', lambda response: documents.append(response) if response.request.resource_type == 'document' else None)
 
@@ -494,6 +498,10 @@ def main():
                     assert captured['anchors']['duplicateModeSwitchVisible'] is False, 'C622 duplicate switch must be absent from paint'
                     assert captured['anchors']['form']['background'] == 'rgb(255, 255, 255)', 'C623/C625 white calculator surface'
                     assert page.locator('header.header').count() == 0
+                if screen == 'profile' and state == 'notification':
+                    assert captured['source']['route']['panel'] == 'notifications', 'Direct notification entry must retain its actual panel'
+                    expect(page.locator('.research-notifications-title')).to_have_text('알림')
+                    expect(page.locator('[data-notification-preferences]')).to_be_visible()
                 assert page.locator('#order-app-header').count() == 1
                 assert captured['viewport']['devicePixelRatio'] == 1
                 assert captured['viewport']['documentWidth'] <= width + 1, 'Form must not overflow the native viewport'
@@ -575,7 +583,7 @@ def main():
         receipt.update(status='FAIL', failure={'phase': phase, 'message': safe(error), 'type': type(error).__name__})
         raise RuntimeError(receipt['failure']['message']) from None
     finally:
-        receipt.update(errors=errors, forbiddenWrites=forbidden_writes)
+        receipt.update(errors=errors, forbiddenWrites=forbidden_writes, httpErrors=http_errors)
         resource_hashes()
         write_json(OUT / 'resources.json', list(resources.values()))
         write_json(OUT / 'receipt.json', receipt)

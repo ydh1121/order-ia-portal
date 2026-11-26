@@ -407,16 +407,46 @@ def consultation_pass_probe(page):
     expect(panel).to_be_hidden()
     page.evaluate('''() => {
       const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
-      const card=document.querySelector('.consult-ticket'),trace=window.__consultPassGeometry={source:rect(card),frames:[],done:false,trusted:false};
-      document.querySelector('[data-action=consult-ticket-detail]').addEventListener('click',event=>{trace.trusted=event.isTrusted;},{once:true,capture:true});
-      let seen=false,closed=0;const start=performance.now();
-      function sample(now){
-        const dialog=document.querySelector('.consult-pass-dialog'),ticket=dialog.querySelector('.ticket-detail');
+      const opener=document.querySelector('[data-action=consult-ticket-detail]'),card=opener.closest('.consult-ticket'),dialog=document.querySelector('.consult-pass-dialog');
+      const trace=window.__consultPassGeometry={source:null,click:null,initialOpening:null,frames:[],done:false,trusted:false};
+      let seen=false,closed=0,raf=0;
+      function observe(kind,rafTimestamp=null){
+        const ticket=dialog.querySelector('.ticket-detail'),now=performance.now();
         if(dialog.open)seen=true;
-        if(seen)trace.frames.push({at:now-start,phase:dialog.open?dialog.dataset.motion:'closed',ticket:ticket?rect(ticket):null,source:rect(card),sourceVisibility:getComputedStyle(card).visibility});
+        if(!seen)return null;
+        const row={at:now-trace.click.observedAt,observedAt:now,kind,rafTimestamp,phase:dialog.open?dialog.dataset.motion:'closed',
+          ticket:ticket?rect(ticket):null,source:rect(card),sourceVisibility:getComputedStyle(card).visibility,
+          animations:ticket?ticket.getAnimations().map(animation=>({currentTime:animation.currentTime,startTime:animation.startTime,
+            pending:animation.pending,playState:animation.playState,duration:animation.effect?.getTiming().duration})):[]};
+        trace.frames.push(row);return row;
+      }
+      function finish(){trace.done=true;observer.disconnect();cancelAnimationFrame(raf);window.removeEventListener('click',onClick,true);}
+      function sample(timestamp){
+        if(trace.done)return;observe('animation-frame',timestamp);
         if(seen&&!dialog.open)closed++;
-        if(closed>=3||now-start>12000){trace.done=true;return;}requestAnimationFrame(sample);
-      }requestAnimationFrame(sample);
+        if(closed>=3||performance.now()-trace.click.observedAt>12000){finish();return;}
+        raf=requestAnimationFrame(sample);
+      }
+      // Read the actual post-open layout before the next rAF. A pre-armed rAF
+      // can first see an already-progressed animation. These are measured DOM
+      // bounds and native animation times, never injected geometry or time 0.
+      const observer=new MutationObserver(()=>{
+        if(trace.click&&!trace.initialOpening&&dialog.open&&dialog.dataset.motion==='opening')
+          trace.initialOpening=observe('dialog-mutation');
+      });
+      observer.observe(dialog,{attributes:true,attributeFilter:['open','data-motion']});
+      function onClick(event){
+        const path=event.composedPath(),target=event.target;
+        if(trace.click||!path.includes(opener)||!(target instanceof Element)||!(target===opener||opener.contains(target)))return;
+        trace.click={observedAt:performance.now(),eventTimeStamp:event.timeStamp,isTrusted:event.isTrusted,
+          targetTag:target.localName,targetWithinOpener:true,composedPathContainsOpener:true};
+        trace.source=rect(card);trace.trusted=event.isTrusted;
+        window.removeEventListener('click',onClick,true);
+        raf=requestAnimationFrame(sample);
+      }
+      // The product deliberately stops propagation in its root capture
+      // handler. Observe above that root without changing the real event.
+      window.addEventListener('click',onClick,{capture:true,passive:true});
     }''')
     detail_button.click()
     dialog = page.get_by_role('dialog', name='오더 패스 상세', exact=True)
@@ -450,13 +480,18 @@ def consultation_pass_probe(page):
     wait_for_expression(page, '__consultPassGeometry.done')
     trace = page.evaluate('__consultPassGeometry')
     trace['captureContinuity'] = capture_continuity
+    CAPTURE_TOOLS.write_json(OUT / 'consultation-pass-native-trace.json', trace)
     opening = [row for row in trace['frames'] if row['phase'] == 'opening']
     closing = [row for row in trace['frames'] if row['phase'] == 'closing']
     settled = [row for row in trace['frames'] if row['phase'] == 'open']
-    assert trace['trusted'] and len(opening) >= 6 and len(closing) >= 6 and settled, trace
+    opening_raf = [row for row in opening if row['kind'] == 'animation-frame']
+    assert trace['trusted'] and trace['click']['composedPathContainsOpener'] and trace['click']['targetWithinOpener'], trace
+    assert len(opening_raf) >= 6 and len(closing) >= 6 and settled, trace
+    initial = trace['initialOpening']
+    assert initial and initial['kind'] == 'dialog-mutation' and initial['phase'] == 'opening', trace
     assert all(row['sourceVisibility'] == 'hidden' for row in opening + closing + settled), trace
     assert settled[0]['ticket']['width'] >= trace['source']['width'] + 24, trace
-    assert max(abs(opening[0]['ticket'][key] - trace['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 12, trace
+    assert max(abs(initial['ticket'][key] - trace['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 12, trace
     assert max(abs(closing[-1]['ticket'][key] - closing[-1]['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 2, trace
     assert page.evaluate('''() => document.querySelector('[name=consult-pass]')===__consultRetained.choice&&__consultRetained.choice.checked&&document.querySelector('.consult-memo textarea')===__consultRetained.memo&&document.querySelector('#order-app-header')===__consultRetained.header''')
     page.locator('[data-action=open-drawer]').click()
@@ -478,7 +513,9 @@ def consultation_pass_probe(page):
     assert trace['postCountUnchanged']
     page.emulate_media(reduced_motion='no-preference')
     page.evaluate('ORDER_RESEARCH_APP.adapter.roleRequest=__consultOriginalRead;delete window.__consultOriginalRead')
-    trace['limits'] = {'firstPaintPx': 12, 'closeHandoffPx': 2, 'minExpansionPx': 24, 'fullVisualAcceptance': False}
+    trace['limits'] = {'initialObservedLayoutPx': 12, 'closeHandoffPx': 2, 'minExpansionPx': 24,
+                       'initialEvidence': 'Native post-open DOM layout with observed animation time; no first-pixel paint claim',
+                       'fullVisualAcceptance': False}
     return trace
 
 
