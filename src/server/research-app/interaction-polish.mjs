@@ -1,7 +1,9 @@
+import {createCommonControlPaint} from '../r3-common-motion.mjs';
+
 /** Shared directional affordance for product controls, including panels mounted
  * after navigation. It does not own clicks, navigation, values or review UI. */
 export function mountResearchArrowMotion(document, {signal} = {}) {
-  const window = document.defaultView, NS = 'http://www.w3.org/2000/svg';
+  const window = document.defaultView, controlPaint = createCommonControlPaint(document);
   const arrowPaths = new Map([['M15 5l-7 7 7 7', 'left'], ['M9 5l7 7-7 7', 'right']]);
   const selector = '.obm-chevron,.obm-back,[data-app-back],svg,button,a';
   let disposed = false;
@@ -10,12 +12,7 @@ export function mountResearchArrowMotion(document, {signal} = {}) {
     directionNode.className = 'order-arrow-direction'; directionNode.dataset.direction = direction;
     directionNode.setAttribute('aria-hidden', 'true');
     const motion = document.createElement('span'); motion.className = 't-learn-chevron';
-    const svg = document.createElementNS(NS, 'svg');
-    for (const [name, value] of Object.entries({viewBox:'0 0 16 16',width:'20',height:'20',fill:'none',stroke:'currentColor','stroke-width':'1.7','stroke-linecap':'round','stroke-linejoin':'round',focusable:'false'})) svg.setAttribute(name, value);
-    for (const [part, d] of [['top', 'M6 4L10 8'], ['bot', 'M10 8L6 12']]) {
-      const path = document.createElementNS(NS, 'path'); path.setAttribute('d', d);
-      path.setAttribute('class', 't-learn-arm t-learn-arm-' + part); svg.append(path);
-    }
+    const svg = controlPaint.chevron({size:20,strokeWidth:1.7,linecap:'round',linejoin:'round',focusable:'false'});
     motion.append(svg); directionNode.append(motion); return directionNode;
   }
   function enhance(element) {

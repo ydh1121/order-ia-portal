@@ -6,12 +6,13 @@ import {join} from 'node:path';
 import {gunzipSync,gzipSync} from 'node:zlib';
 import {researchReleases} from '../src/server/research-release-runtime-index.gen.mjs';
 import {researchBuild} from '../src/server/research-app/assets.gen.mjs';
+import {deliveryManifests as publishedDeliveryManifests} from '../src/server/research-delivery-identity.gen.mjs';
 
 const root=fileURLToPath(new URL('../',import.meta.url));
 const build=researchBuild.digest;
-// PR26 source pins remain active after this release. Keep their existing
-// projection available without changing any published bytes or URLs.
-const archivedBuild='9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092';
+// Retain every already-published projection when current advances. Recorded
+// review sources keep their exact shard URLs; historical bytes are verified.
+const retainedBuilds=Object.keys(publishedDeliveryManifests);
 const check=process.argv.includes('--check');
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 async function projection(build){
@@ -54,7 +55,7 @@ return {files,manifest,assets,rows,parts,shell};
 }
 const current=await projection(build),{files,manifest,assets,rows,parts,shell}=current;
 const manifests={};
-for(const candidate of [...new Set([build,archivedBuild])].sort()){
+for(const candidate of [...new Set([build,...retainedBuilds])].sort()){
   const result=candidate===build?current:await projection(candidate);
   const directory=join(root,'public/ia/research-releases',candidate);
   // Reconstruct and compare the previous projection against its sealed pack;

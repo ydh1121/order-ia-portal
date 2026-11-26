@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {readFile} from 'node:fs/promises';
 import {installProductAdminMotion,productAdminMotionCss} from '../src/server/product-admin-motion.mjs';
+import {createCommonControlPaint} from '../src/server/r3-common-motion.mjs';
 import {mountReviewControls} from '../scripts/r3/authored/admin-common.mjs';
 import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 
@@ -22,7 +23,7 @@ function setup(t,{reduced=true,html='<main id="app"></main>'}={}){
   w.ResizeObserver=class{constructor(fn){this.fn=fn;observers.add(this);}observe(){}disconnect(){observers.delete(this);}};
   w.HTMLElement.prototype.setPointerCapture=function(id){this.__capture=id;};
   w.HTMLElement.prototype.releasePointerCapture=function(){delete this.__capture;};
-  w.eval('('+installProductAdminMotion.toString()+')(window)');
+  w.eval('('+installProductAdminMotion.toString()+')(window,('+createCommonControlPaint.toString()+')(document))');
   const api=w.ORDER_ADMIN_MOTION,root=w.document.querySelector('#app'),controls=[];
   const mount=options=>{const c=api.mount(root,options);controls.push(c);return c;};
   const advance=ms=>{for(let t=0;t<ms;t+=1000/60){now+=1000/60;const ready=[...frames.values()];frames.clear();for(const fn of ready)fn(now);}};

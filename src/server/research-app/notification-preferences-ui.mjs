@@ -1,10 +1,12 @@
 import {validNotificationPreferences} from './notification-preferences-contract.mjs';
+import {createCommonControlPaint} from '../r3-common-motion.mjs';
 
 /** Optional notification consent is fetched with the settings and written only in
  * response to an explicit control change or retry. Browser push is separate. */
 export function mountNotificationPreferences({container, adapter, signal} = {}) {
   if (!container?.ownerDocument || typeof adapter?.request !== 'function') throw TypeError('NOTIFICATION_PREFERENCES_CONTEXT');
   const document = container.ownerDocument, window = document.defaultView, controller = new AbortController(), cleanups = [], inputs = new Map();
+  const controlPaint = createCommonControlPaint(document);
   let disposed = false, loaded = false, pending = false, revision = 0, confirmed = null, retry = null, retryMode = 'load';
   const node = (tag, text, className) => {const result = document.createElement(tag); if (text !== undefined) result.textContent = text; if (className) result.className = className; return result;};
   const root = node('section', undefined, 'research-notification-preferences'); root.dataset.notificationPreferences = '';
@@ -12,7 +14,7 @@ export function mountNotificationPreferences({container, adapter, signal} = {}) 
   const fieldset = node('fieldset'), legend = node('legend', '받을 알림'); fieldset.append(legend); fieldset.hidden = true;
   for (const [key, label] of [['price', '시세 변동'], ['news', '소식'], ['benefits', '혜택']]) {
     const row = node('label', undefined, 'research-notification-preference'), input = node('input'); input.type = 'checkbox'; input.name = key; input.setAttribute('role', 'switch');
-    const control = node('span', undefined, 'research-notification-switch'), track = node('span', undefined, 'r3-switch-track'); track.setAttribute('aria-hidden', 'true'); track.append(node('span', undefined, 'r3-switch-thumb'));
+    const control = node('span', undefined, 'research-notification-switch'), track = controlPaint.switchTrack();
     input.dataset.notificationPreference = key; inputs.set(key, input); control.append(input, track); row.append(node('span', label), control); fieldset.append(row);
   }
   const note = node('p', '선택한 수신 동의를 저장합니다. 웹 푸시 발송은 아직 연결되지 않았어요.', 'research-notification-preferences-note');
