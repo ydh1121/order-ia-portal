@@ -2,7 +2,31 @@
 // Recipes: https://transitions.dev (01,05,07,14,27), https://designbookmark.com/motion
 // Springy Input / Tag Input, and kokonut-labs/kokonutui wheel-picker.tsx (MIT).
 // The native field retains its value, selection, composition and form submission.
-export function createCommonMotion(win=window){
+// Paint-only primitives are shared by button, checkbox and navigation owners.
+// Their callers retain state, events, accessibility and variant dimensions.
+export function createCommonControlPaint(doc){
+ const win=doc.defaultView;
+ if(win?.ORDER_COMMON_CONTROL_PAINT)return win.ORDER_COMMON_CONTROL_PAINT;
+ const api={
+  switchTrack(){
+   const track=doc.createElement('span');track.className='r3-switch-track';track.setAttribute('aria-hidden','true');
+   const thumb=doc.createElement('span');thumb.className='r3-switch-thumb';track.append(thumb);return track;
+  },
+  chevron({size=16,strokeWidth=1.5,linecap,linejoin,focusable}={}){
+   const ns='http://www.w3.org/2000/svg',svg=doc.createElementNS(ns,'svg');
+   const attrs={width:size,height:size,viewBox:'0 0 16 16',fill:'none',stroke:'currentColor','stroke-width':strokeWidth,'stroke-linecap':linecap,'stroke-linejoin':linejoin,focusable};
+   for(const [name,value]of Object.entries(attrs))if(value!==undefined)svg.setAttribute(name,String(value));
+   for(const [part,d]of [['top','M6 4L10 8'],['bot','M10 8L6 12']]){
+    const path=doc.createElementNS(ns,'path');path.setAttribute('class','t-learn-arm t-learn-arm-'+part);path.setAttribute('d',d);svg.append(path);
+   }
+   return svg;
+  }
+ };
+ if(win)win.ORDER_COMMON_CONTROL_PAINT=api;
+ return api;
+}
+
+export function createCommonMotion(win=window,controlPaint=createCommonControlPaint(win.document)){
  if(win.ORDER_COMMON_MOTION?.version==='motion21')return win.ORDER_COMMON_MOTION;
  const doc=win.document,media=win.matchMedia?.('(prefers-reduced-motion: reduce)'),lifetime=new win.AbortController();
  const reduced=()=>media?.matches===true||doc.hidden;
@@ -127,7 +151,7 @@ export function createCommonMotion(win=window){
  function persistedSwitch(button,{value=false,save,onError,onSaved,signal}={}){
   let committed=Boolean(value),pending=false,revision=0,controller=null,thumbAnimation;
   button.type='button';button.classList.add('r3-persisted-switch');button.setAttribute('role','switch');
-  let track=button.querySelector('.r3-switch-track');if(!track){track=doc.createElement('span');track.className='r3-switch-track';track.setAttribute('aria-hidden','true');const thumb=doc.createElement('span');thumb.className='r3-switch-thumb';track.append(thumb);button.prepend(track);}
+  let track=button.querySelector('.r3-switch-track');if(!track){track=controlPaint.switchTrack();button.prepend(track);}
   const thumb=track.firstElementChild;
   function paint(next,move){const before=win.getComputedStyle(thumb).translate;thumbAnimation?.cancel();button.dataset.on=String(next);button.setAttribute('aria-checked',String(next));if(move)thumbAnimation=animation(thumb,[{translate:before==='none'?(next?'0px':'14px'):before},{translate:(next?15:-1)+'px',offset:.55},{translate:(next?13.5:.5)+'px',offset:.8},{translate:(next?14:0)+'px'}],{duration:time(button,'--toggle-dur',350),easing:ease(button,'--toggle-ease','cubic-bezier(.34,1.35,.64,1)')});}
   async function commit(next){

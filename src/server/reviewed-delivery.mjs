@@ -14,12 +14,20 @@ async function part(binding, origin, hash) {
   if (recent.size > 5) recent.delete(recent.keys().next().value);
   return value;
 }
-export async function serveDeliveredReviewedArtifact(id, width, hash, env, origin) {
+async function record(id, width, hash, env, origin) {
   if (!env?.ASSETS || !/^[a-f0-9]{64}$/.test(hash)) return null;
   const bucket = await part(env.ASSETS, origin, reviewedDelivery.records[Number.parseInt(hash.slice(0, 2), 16) >>> 2]);
   const key = [id, width, hash].join('|');
   if (!Object.hasOwn(bucket, key)) return null;
-  const [epoch, metadata, fields, order] = bucket[key];
+  return bucket[key];
+}
+export async function isDeliveredReviewedTarget(id, width, hash, env, origin) {
+  return Boolean(await record(id, width, hash, env, origin));
+}
+export async function serveDeliveredReviewedArtifact(id, width, hash, env, origin) {
+  const saved = await record(id, width, hash, env, origin);
+  if (!saved) return null;
+  const [epoch, metadata, fields, order] = saved;
   const source = reviewedDelivery.sources[epoch];
   const needed = new Set();
   for (const recipe of Object.values(fields)) {

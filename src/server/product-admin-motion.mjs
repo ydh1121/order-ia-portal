@@ -1,8 +1,9 @@
 /* Product and QA use this same DOM implementation. Data and writes are supplied
  * by their adapters; this module never invents a business total or makes a request.
  * Source mechanics and licenses are recorded in product-admin-motion.NOTICE.md. */
+import {createCommonControlPaint} from './r3-common-motion.mjs';
 
-export function installProductAdminMotion(win = window) {
+export function installProductAdminMotion(win = window, controlPaint = createCommonControlPaint(win.document)) {
   if (win.ORDER_ADMIN_MOTION?.version === '20261121.1') return win.ORDER_ADMIN_MOTION;
   const doc = win.document, NS = 'http://www.w3.org/2000/svg';
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -167,7 +168,7 @@ export function installProductAdminMotion(win = window) {
     const left=spring(0,620,36),right=spring(0,620,36),top=spring(0,380,28),height=spring(0,380,28),alpha=spring(0,420,24);
     let active=null,hiddenTimer=0,started=false;const learned=[];
     const items=()=>[...nav.querySelectorAll('a,button')].filter(el=>!el.disabled&&!el.closest('[hidden],[inert]')&&!el.matches('[data-action=collapse],[data-qa-action=collapse-sidebar]'));
-    const decorate=()=>{for(const el of items()){if(el.matches('[aria-expanded]')||el.querySelector('.t-learn-chevron'))continue;const original=el.classList.contains('t-learn'),tail=element('span','t-learn-chevron pm-nav-tail');tail.setAttribute('aria-hidden','true');tail.innerHTML='<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path class="t-learn-arm t-learn-arm-top" d="M6 4L10 8"/><path class="t-learn-arm t-learn-arm-bot" d="M10 8L6 12"/></svg>';el.classList.add('t-learn');el.append(tail);learned.push({el,tail,original});}};
+    const decorate=()=>{for(const el of items()){if(el.matches('[aria-expanded]')||el.querySelector('.t-learn-chevron'))continue;const original=el.classList.contains('t-learn'),tail=element('span','t-learn-chevron pm-nav-tail');tail.setAttribute('aria-hidden','true');tail.append(controlPaint.chevron({size:16,strokeWidth:1.5}));el.classList.add('t-learn');el.append(tail);learned.push({el,tail,original});}};
     const kick=loop(ctx,()=>[left,right,top,height,alpha],()=>{indicator.style.transform='translate3d('+left.x.toFixed(2)+'px,'+top.x.toFixed(2)+'px,0)';indicator.style.width=Math.max(0,right.x-left.x).toFixed(2)+'px';indicator.style.height=Math.max(0,height.x).toFixed(2)+'px';indicator.style.opacity=clamp(alpha.x,0,1).toFixed(3);tip.style.left=((left.x+right.x)/2)+'px';tip.style.top=(top.x+height.x+8)+'px';tip.style.opacity=nav.dataset.pmCompact==='true'?clamp(alpha.x,0,1):'0';});
     function point(el, snap=false){if(!el||!nav.contains(el))return;ctx.clear(hiddenTimer);active=el;const box=nav.getBoundingClientRect(),r=el.getBoundingClientRect(),x=r.left-box.left+nav.scrollLeft,y=r.top-box.top+nav.scrollTop,dir=x-left.t>=0;left.k=dir?190:620;left.c=dir?19:36;right.k=dir?620:190;right.c=dir?36:19;left.t=x;right.t=x+r.width;top.t=y;height.t=r.height;alpha.t=1;tip.textContent=el.getAttribute('aria-label')||el.textContent.trim();if(snap||!started){for(const s of [left,right,top,height]){s.x=s.t;s.v=0;}started=true;}kick();}
     const current=()=>items().find(el=>el.getAttribute('aria-current')==='page'||el.getAttribute('aria-selected')==='true'||el.classList.contains('active')||el.classList.contains('is-active')||el.classList.contains('is-current')||el.classList.contains('on'));
@@ -209,7 +210,7 @@ export function installProductAdminMotion(win = window) {
     }
     function toggle(trigger){const row=records.find(r=>r.trigger===trigger);if(!row)return false;const open=trigger.getAttribute('aria-expanded')!=='true';trigger.setAttribute('aria-expanded',String(open));row.group.dataset.open=String(open);row.sub.inert=!open;row.sub.setAttribute('aria-hidden',String(!open));row.sub.classList.toggle('is-open',open);const icon=trigger.querySelector('.pm-depth-chevron');if(icon)icon.style.transform=open?'scaleY(-1)':'scaleY(1)';return true;}
     for(const el of root.querySelectorAll('[data-pm-learn],.ops-learn-more,.qa-learn-more')){
-      if(el.querySelector('.t-learn-chevron'))continue;el.classList.add('t-learn');const span=element('span','t-learn-chevron');span.setAttribute('aria-hidden','true');span.innerHTML='<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path class="t-learn-arm t-learn-arm-top" d="M6 4L10 8"/><path class="t-learn-arm t-learn-arm-bot" d="M10 8L6 12"/></svg>';el.append(span);ctx.cleanup(()=>{span.remove();el.classList.remove('t-learn');});
+      if(el.querySelector('.t-learn-chevron'))continue;el.classList.add('t-learn');const span=element('span','t-learn-chevron');span.setAttribute('aria-hidden','true');span.append(controlPaint.chevron({size:16,strokeWidth:1.5}));el.append(span);ctx.cleanup(()=>{span.remove();el.classList.remove('t-learn');});
     }
     ctx.cleanup(()=>{for(const row of records){row.group.before(row.sub);row.group.remove();row.sub.hidden=row.old.hidden;row.sub.inert=row.old.inert;const icon=row.trigger.querySelector('.pm-depth-chevron');icon?.classList.remove('pm-depth-chevron');icon?.style.removeProperty('transform');}});
     return {toggle,destroy:ctx.destroy};

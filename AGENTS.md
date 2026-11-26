@@ -1,5 +1,12 @@
 # ORDER 작업 재개 및 사용자 지시 검증
 
+## 실제 공통 모듈 중복 정리·Figma 분류 가독성 — 2026-11-26
+
+- 최신 사용자 원문: https://drive.google.com/file/d/1TxHNEqjcO4mYAexJl6_brnoBuPm0c9Eb/view . UTF-8 303바이트 / 3줄 / 끝 개행 없음 / SHA256 `33dfe264eabc6cc26d262b4e478167d0e3a964fda81c105e7d4769d03e4d06c5`. Drive 재조회 전문 바이트 일치 확인.
+- 시각적으로 동일하지만 새로 중복 생성된 공통 모듈은 기존 공통 소유 경로로 통합하고 실제 소비자·생성기·Figma에 반영한다. Figma 공통 모듈의 이름과 배치를 알아보기 쉽게 정리한다. 호환 재수출과 과거 발행본은 중복 구현으로 취급하지 않는다.
+- 기존 화면·상태·치수·텍스트·동작·사용자 헤더·Pretendard와 검토 판정을 보존한다. 시각적 유사성만으로 다른 상태나 변형을 합치지 않고, Q1~Q2 검토 보류를 통과로 바꾸지 않는다. 기존 캡처와 발행 이력은 보존하고 새 코드와의 호환 근거를 별도로 기록한다.
+- 같은 `WO-ORDER-20261101-ASTRA-ENGINE-001` / `MSG0585`의 후속 작업이며 IA main `69779df034a3ed544c8962926def1c8f104178a9`에서 이어간다. 필수 CI 7개 통과 후 후속 PR과 연구 배포로 반영한다. 정규 `order` main은 변경하지 않는다.
+
 ## 해결 의견 아카이브·현재 검토 화면 Figma 이관 — 2026-11-25
 
 - 최신 사용자 원문: https://drive.google.com/file/d/1CSbgKPBmOVmhLxnJd7ToM7fXwW6LPcF5/view . UTF-8 1,536바이트 / SHA256 `95b57931f8cbb74bb5b6328ccaab2f593aff31048c6dda4364a2e0da26919aa1`. Drive 재조회 전문 바이트 일치 확인.

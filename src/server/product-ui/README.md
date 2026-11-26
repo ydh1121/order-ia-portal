@@ -43,6 +43,24 @@ remain owned by onboarding and the shared account menu. The registry, admin
 modules and embedded account/auth panels do not add generic floating actions.
 Source wiring does not establish test, deployment or user acceptance status.
 
+## Shared control paint
+
+`../r3-common-motion.mjs` owns `createCommonControlPaint(document)`. The frozen
+bootstrap and research ESM consumers reuse its document-scoped paint factory;
+creating the factory installs no listeners, styles or application state. The
+bootstrap and role-page serializers pass this dependency explicitly.
+
+| Primitive | Consumers and preserved variants |
+| --- | --- |
+| `switchTrack()` | Persisted button switches and native notification preference checkboxes share the 36 × 22 track and 16 × 16 thumb. Existing CSS owns the 14 px travel. |
+| `chevron(options)` | Research directional controls keep 20 px / 1.7 with round caps and joins; notification detail back keeps 20 px / 1.8 with round caps; admin navigation and learn-more controls keep 16 px / 1.5. Optional SVG attributes remain distinct. |
+
+Consumers retain their wrappers, accessible names, native control types,
+callbacks, pending/error state and cleanup. A shared paint primitive does not
+make a checkbox a persisted button or give a glyph a navigation action. Current
+assets are regenerated from this owner; compatibility exports and historical
+release packs are not additional implementations to consolidate.
+
 ## Generation for the 2026-11-21 changes
 
 First capture the exact release10 review epoch from its immutable checkout.

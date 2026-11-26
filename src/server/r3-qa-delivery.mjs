@@ -93,6 +93,10 @@ export async function isDeliveredReviewTarget(target,revision,env,origin){
       if(build&&hasDeliveryBuild(build)){
         return Boolean(await deliveryResearchRow(id,env,origin,build));
       }
+      if(!build&&mode==='simple'){
+        const {isDeliveredReviewedTarget}=await import('./reviewed-delivery.mjs');
+        if(await isDeliveredReviewedTarget(id,target.viewport,target.artifactHash,env,origin))return true;
+      }
     }
   }
   const {isR3ReviewTarget}=await import('./r3-qa-page.mjs');

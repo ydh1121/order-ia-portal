@@ -1,5 +1,5 @@
 import {browserFunction} from '../browser-source.mjs';
-import {createCommonMotion} from '../r3-common-motion.mjs';
+import {createCommonMotion,createCommonControlPaint} from '../r3-common-motion.mjs';
 import {installProductAdminMotion,productAdminMotionCss} from '../product-admin-motion.mjs';
 import {installProductWorkflowMotion,productWorkflowMotionCss} from '../product-workflow-motion.mjs';
 import {mountAsyncMotion,asyncMotionCss} from '../r3-async-motion.mjs';
@@ -10,7 +10,7 @@ import {createEvidenceEditor} from '../r3-evidence-client.mjs';
 let bootstrap;
 export function getProductUiBootstrap(){
  if(bootstrap)return bootstrap;
- const factories={common:createCommonMotion,admin:installProductAdminMotion,workflow:installProductWorkflowMotion,async:mountAsyncMotion,evidence:createEvidenceEditor};
+ const factories={controlPaint:createCommonControlPaint,common:createCommonMotion,admin:installProductAdminMotion,workflow:installProductWorkflowMotion,async:mountAsyncMotion,evidence:createEvidenceEditor};
  const definitions=Object.entries(factories).map(([key,fn])=>key+':'+browserFunction(fn)).join(',');
  return bootstrap={script:'('+browserFunction(installProductUiRegistry)+')(window,{'+definitions+'});',css:asyncMotionCss+productAdminMotionCss+productWorkflowMotionCss};
 }
@@ -19,8 +19,9 @@ export function installProductUiRegistry(win=window,factories={}){
  if(win.ORDER_PRODUCT_UI)return win.ORDER_PRODUCT_UI;
  // Installers are synchronous: authored modules can use all features during
  // their first mount, including inline account panels and authentication.
- win.ORDER_COMMON_MOTION=factories.common?.(win)||win.ORDER_COMMON_MOTION;
- factories.admin?.(win);
+ const controlPaint=factories.controlPaint?.(win.document);
+ win.ORDER_COMMON_MOTION=factories.common?.(win,controlPaint)||win.ORDER_COMMON_MOTION;
+ factories.admin?.(win,controlPaint);
  win.ORDER_ASYNC_MOTION={mount:factories.async};
  win.ORDER_EVIDENCE_EDITOR=factories.evidence;
  factories.workflow?.(win);

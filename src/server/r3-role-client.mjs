@@ -1,6 +1,6 @@
-export function runRolePage(labels,createEvidenceEditor,createCustomerControls,mountAsyncMotion,createCommonMotion){
+export function runRolePage(labels,createEvidenceEditor,createCustomerControls,mountAsyncMotion,createCommonMotion,createCommonControlPaint){
   let asyncMotion;
-  const common=window.ORDER_COMMON_MOTION||createCommonMotion?.(window);
+  const common=window.ORDER_COMMON_MOTION||createCommonMotion?.(window,createCommonControlPaint?.(document));
   const controls=createCustomerControls(),signedView={mode:'grid',selected:null,gesture:null,tags:[],tagController:null,newTag:null};
   let formController=null,publicationController=null;
   const $=id=>document.getElementById(id), name=x=>labels[x]||x;

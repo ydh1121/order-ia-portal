@@ -2,19 +2,22 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {gunzipSync} from 'node:zlib';
 import {readFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {reviewedDelivery} from '../src/server/reviewed-delivery-index.gen.mjs';
 import {serveDeliveredReviewedArtifact} from '../src/server/reviewed-delivery.mjs';
-import {serveDeliveredQaArtifact} from '../src/server/r3-qa-delivery.mjs';
-import {readReviewedEpochArtifact} from '../src/server/r3-qa-epoch-history.mjs';
+import {serveDeliveredQaArtifact,isDeliveredReviewTarget} from '../src/server/r3-qa-delivery.mjs';
+import {readReviewedEpochArtifact,createReviewedEpochReader} from '../src/server/r3-qa-epoch-history.mjs';
+import * as twentySeven from '../src/server/r3-ui/r3-69779df0-history.gen.mjs';
 import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const directory = new URL('../public/ia/research-releases/reviewed-recorded/', import.meta.url);
 const origin = 'https://order.example';
 const env = {ASSETS: createPrivateResearchAssets()};
 const unpack = async file => JSON.parse(gunzipSync(await readFile(file)));
+const release27 = createReviewedEpochReader(twentySeven);
 
-test('all four frozen successor epochs retain earliest-match precedence and original response bytes', async () => {
-  const epochs = ['r1-reviewed-e8e12588', 'reviewed-af5ece3e', 'reviewed-e5f97029', 'reviewed-a36b41e2', 'reviewed-7da1ad50'];
+test('all frozen successor epochs retain earliest-match precedence and original response bytes', async () => {
+  const epochs = ['r1-reviewed-e8e12588', 'reviewed-af5ece3e', 'reviewed-e5f97029', 'reviewed-a36b41e2', 'reviewed-7da1ad50', 'reviewed-69779df0'];
   const expected = new Map();
   for (const name of epochs) {
     const capture = await unpack(new URL('./fixtures/' + name + '.capture.json.gz', import.meta.url));
@@ -32,13 +35,59 @@ test('all four frozen successor epochs retain earliest-match precedence and orig
       observed.add(key);
       if (examples.has(row[0])) continue;
       examples.add(row[0]);
-      const old = await readReviewedEpochArtifact(id, Number(width), hash);
+      const old = source.archivedSource.epoch === twentySeven.epochMetadata.epoch
+        ? await release27.artifact(id, Number(width), hash)
+        : await readReviewedEpochArtifact(id, Number(width), hash);
       const projected = await serveDeliveredReviewedArtifact(id, Number(width), hash, env, origin);
       assert.equal(JSON.stringify(projected), JSON.stringify({...old.artifact, replayFrame: old.replayFrame, archivedSource: old.archivedSource}));
     }
   }
-  assert.equal(examples.size, 4);
+  assert.equal(examples.size, 5);
   assert.deepEqual(observed, new Set([...expected].filter(([, epoch]) => epoch !== 'r1-e8e12588-20261120').map(([key]) => key)));
+});
+
+test('all 1220 pre-refactor wrapper and price identities retain exact base response bytes and remain known targets', async () => {
+  const capture = await unpack(new URL('./fixtures/reviewed-69779df0.capture.json.gz', import.meta.url));
+  assert.equal(capture.commit, '69779df034a3ed544c8962926def1c8f104178a9');
+  assert.equal(capture.tree, '04313c6f1b94228589f79a340ee45c9b0b26a902');
+  assert.equal(capture.scope, 'explicit-review-targets');
+  assert.equal(capture.targetChecks.length, 1220);
+  assert.equal(capture.targetChecks.filter(row => row.kind === 'prior-price-content').length, 90);
+  assert.equal(capture.targetChecks.filter(row => row.kind === 'prior-qa-wrapper').length, 1130);
+  const digest = value => createHash('sha256').update(value).digest('hex');
+  let fixedPrice;
+  async function verify(item, version = 'recorded') {
+    const {target} = item, id = [target.screen, target.state, target.variant].join('/');
+    const key = [id, target.viewport, target.artifactHash].join('|');
+    assert.equal(item.sourceResponseSha256, capture.captures[key]);
+    const url = new URL('/api/ia/r3-qa/artifact', origin);
+    url.search = new URLSearchParams({id, width: target.viewport, version, artifactHash: target.artifactHash});
+    const response = await serveDeliveredQaArtifact(new Request(url), env);
+    assert.equal(response.status, 200, key);
+    const projected = await response.json();
+    const record = await release27.rawRecordKey(key);
+    // The delivery envelope adds provenance/replay metadata. Every property of
+    // the captured response retains its original order and exact byte digest.
+    const original = Object.fromEntries(record.propertyOrder.map(name => [name, projected[name]]));
+    assert.equal(digest(JSON.stringify(original)), item.sourceResponseSha256, key);
+    assert.equal(projected.archivedSource.commit, capture.commit);
+    assert.equal(projected.archivedSource.tree, capture.tree);
+    assert.equal(await isDeliveredReviewTarget(target, item.release, env, origin), true, key);
+    if (target.artifactHash === 'a88c8035b29c0cf1f9991b667b5be273a33a2e072b0600b12d36f81380b1711a') {
+      assert.match(original.html, /<title>단가표 · 소비자 판매가<\/title>/);
+      assert.equal(original.application, undefined);
+      fixedPrice = item;
+    }
+  }
+  for (const item of capture.targetChecks) await verify(item);
+  assert.ok(fixedPrice);
+  await verify(fixedPrice, 'current');
+  await verify(capture.targetChecks[0], 'current');
+  for (const target of [
+    {...fixedPrice.target, viewport: 319},
+    {...fixedPrice.target, artifactHash: '0'.repeat(64)},
+    {...fixedPrice.target, mode: 'detailed'},
+  ]) assert.equal(await isDeliveredReviewTarget(target, 'MSG0585-R3', env, origin), false);
 });
 
 test('unresolved compact login pin opens through the private delivery path with exact response bytes', async () => {

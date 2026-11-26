@@ -1,4 +1,5 @@
 import {mountNotificationPreferences} from './notification-preferences-ui.mjs';
+import {createCommonControlPaint} from '../r3-common-motion.mjs';
 
 const MINUTE = 60_000, HOUR = 60 * MINUTE, DAY = 24 * HOUR;
 const PREVIEW_LIMIT = 3, PAGE_SIZE = 20;
@@ -125,7 +126,10 @@ export function mountResearchNotifications({container, adapter, signal, mode = '
     const toolbar = node('div', undefined, 'research-notification-toolbar');
     const back = button(undefined, 'research-notification-back', 'research-notification-back t-learn', () => renderList(focusId));
     back.setAttribute('aria-label', '알림 목록으로 돌아가기');
-    back.innerHTML = '<span class="research-notification-back-direction" aria-hidden="true"><span class="t-learn-chevron"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path class="t-learn-arm t-learn-arm-top" d="M6 4L10 8"/><path class="t-learn-arm t-learn-arm-bot" d="M10 8L6 12"/></svg></span></span>';
+    const direction = node('span', undefined, 'research-notification-back-direction'), motion = node('span', undefined, 't-learn-chevron');
+    direction.setAttribute('aria-hidden', 'true');
+    motion.append(createCommonControlPaint(document).chevron({size:20,strokeWidth:1.8,linecap:'round'}));
+    direction.append(motion); back.append(direction);
     toolbar.append(back); if (mode === 'full') {navigation.hidden = false; navigation.append(toolbar);} else {toolbar.append(node('span', label, 'research-notification-detail-label')); content.append(toolbar);}
   }
   function renderDetail(item) {

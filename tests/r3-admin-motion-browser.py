@@ -16,7 +16,8 @@ from playwright.sync_api import expect, sync_playwright
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'artifacts/motion21/admin'
 OUT.mkdir(parents=True,exist_ok=True)
-ADMIN=(ROOT/'src/server/product-admin-motion.mjs').read_text().replace('export function ','function ').replace('export const ','const ')
+COMMON=(ROOT/'src/server/r3-common-motion.mjs').read_text().replace('export function ','function ')
+ADMIN=(ROOT/'src/server/product-admin-motion.mjs').read_text().replace("import {createCommonControlPaint} from './r3-common-motion.mjs';",'').replace('export function ','function ').replace('export const ','const ')
 WORKFLOW=(ROOT/'src/server/product-workflow-motion.mjs').read_text().replace('export function ','function ').replace('export const ','const ')
 HTML='''<style>
 *{box-sizing:border-box}body{margin:20px;font:14px/1.5 system-ui;color:#192438;background:#f6f8fb}button,a,select{font:inherit}button{min-height:36px}
@@ -151,10 +152,10 @@ def run(browser,width,reduced):
     errors=[]
     page.on('pageerror',lambda error:errors.append(str(error)))
     name=f'{width}-'+('reduced' if reduced else 'motion')
-    evidence={'width':width,'reducedMotion':reduced,'source':{'kind':'dummy','commercial':False,'persistent':False},'sourceHashes':{name:hashlib.sha256((ROOT/'src/server'/name).read_bytes()).hexdigest() for name in ['product-admin-motion.mjs','product-workflow-motion.mjs']},'samples':{}}
+    evidence={'width':width,'reducedMotion':reduced,'source':{'kind':'dummy','commercial':False,'persistent':False},'sourceHashes':{name:hashlib.sha256((ROOT/'src/server'/name).read_bytes()).hexdigest() for name in ['r3-common-motion.mjs','product-admin-motion.mjs','product-workflow-motion.mjs']},'samples':{}}
     try:
         page.set_content(HTML)
-        page.add_script_tag(content=ADMIN+'\n'+WORKFLOW+'\n'+HARNESS)
+        page.add_script_tag(content=COMMON+'\n'+ADMIN+'\n'+WORKFLOW+'\n'+HARNESS)
         idle(page)
         if os.environ.get('R3_GOOEY_ONLY')=='1':
             check_gooey(page,reduced,name,evidence)
