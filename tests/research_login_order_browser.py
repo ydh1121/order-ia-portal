@@ -9,12 +9,14 @@ def wordmark_geometry(word):
         if(text?.nodeType!==Node.TEXT_NODE||text.textContent!=='Order')throw Error('The original Order text node is missing');
         const range=document.createRange();range.selectNodeContents(text);const letters=range.getBoundingClientRect();
         const dot=node.querySelector('.brand-dot'),d=getComputedStyle(dot),period=dot.getBoundingClientRect();
+        const periodRange=document.createRange();periodRange.selectNodeContents(dot);const periodLetters=periodRange.getBoundingClientRect();
         return {x:r.x,y:r.y,width:r.width,height:r.height,font:s.font,
-            fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing,
+            fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,letterSpacing:s.letterSpacing,textAlign:s.textAlign,
             authenticated:node.closest('.order-product-brand').dataset.authenticated==='true',
             wordText:{x:letters.x,y:letters.y,width:letters.width,height:letters.height},
-            period:{text:dot.textContent,position:d.position,display:d.display,width:period.width,
-                opacity:Number(d.opacity),marginInlineStart:d.marginInlineStart}};
+            periodText:{x:periodLetters.x,y:periodLetters.y,width:periodLetters.width,height:periodLetters.height},
+            period:{text:dot.textContent,position:d.position,display:d.display,x:period.x,y:period.y,width:period.width,height:period.height,
+                opacity:Number(d.opacity),marginInlineStart:d.marginInlineStart,textAlign:d.textAlign}};
     }""")
     period = geometry['period']
     assert period['text'] == '.', geometry
@@ -22,23 +24,27 @@ def wordmark_geometry(word):
         assert period['display'] == 'block', geometry
         assert period['position'] == 'absolute' and period['width'] == 0 and period['opacity'] == 0, geometry
     else:
-        assert period['display'] == 'inline-block', geometry
-        assert period['position'] == 'static' and period['width'] > 0 and period['opacity'] == 1, geometry
-        assert period['marginInlineStart'] == '3px', geometry
+        # Protected Guest main: its independent 9x24 period starts at x=97,
+        # y=23 beside the retained word frame [26,23.015625,71,25].
+        assert period['display'] == 'block', geometry
+        assert period['position'] == 'absolute' and period['opacity'] == 1, geometry
+        assert period['width'] == 9 and period['height'] == 24 and period['marginInlineStart'] == '0px', geometry
+        assert period['textAlign'] == 'left', geometry
+        assert abs(period['x'] - geometry['x'] - 71) <= 1 / 64, geometry
+        assert abs(period['y'] - geometry['y'] + .015625) <= 1 / 64, geometry
+    assert geometry['width'] == 71 and geometry['height'] == 25, geometry
+    assert geometry['textAlign'] == 'left', geometry
     return geometry
 
 
 def same_wordmark_geometry(before, after):
-    # The existing guest period occupies inline space, while the original
-    # member animation hides it at width zero. Compare the actual Order text
-    # range in both states instead of requiring those two containers to match.
-    for key in ('x', 'y', 'height'):
+    # Both protected originals use the same fixed word frame. Authentication
+    # hides the separate period and retains the same text node and glyph range.
+    for key in ('x', 'y', 'width', 'height'):
         assert abs(before[key]-after[key]) < .5, {"before": before, "after": after}
     for key in ('x', 'y', 'width', 'height'):
         assert abs(before['wordText'][key]-after['wordText'][key]) < .5, {"before": before, "after": after}
-    if before['authenticated'] == after['authenticated']:
-        assert abs(before['width']-after['width']) < .5, {"before": before, "after": after}
-    for key in ('font', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing'):
+    for key in ('font', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textAlign'):
         assert before[key] == after[key], {"before": before, "after": after}
 
 

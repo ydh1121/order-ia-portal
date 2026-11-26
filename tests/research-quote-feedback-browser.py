@@ -486,6 +486,10 @@ def main():
                 label = f'{screen}-{state}-{mode}-{width}'
                 captured = page.evaluate(CAPTURE, {'expected': source, 'label': label})
                 native = chrome_layout(page)
+                # Preserve native observations even if validation rejects this
+                # capture; failed receipts never authorize Figma synchronization.
+                write_json(OUT / (label + '.chrome-layout.json'), native)
+                write_json(OUT / (label + '.dom-paint.json'), captured)
                 if screen in ('q1', 'q2', 'q3', 'q4'):
                     assert captured['anchors']['duplicateModeSwitchVisible'] is False, 'C622 duplicate switch must be absent from paint'
                     assert captured['anchors']['form']['background'] == 'rgb(255, 255, 255)', 'C623/C625 white calculator surface'
@@ -498,6 +502,11 @@ def main():
                 captured['fonts']['files'] = [system_font_identity(font) for font in fonts]
                 captured['fonts']['pretendardActuallyUsed'] = any('pretendard' in font['family'].lower() and font['isCustomFont'] for font in fonts)
                 assert captured['fonts']['pretendardActuallyUsed'], 'Native glyphs did not use the retained Pretendard font'
+                if screen in ('q1', 'q2', 'q3', 'q4'):
+                    visible_text = [item for item in captured['texts'] if item.get('text', '').strip()]
+                    legacy_families = sorted({item.get('css', {}).get('fontFamily', '') for item in visible_text
+                        if item.get('css', {}).get('fontFamily') and 'pretendard' not in item['css']['fontFamily'].lower()})
+                    assert not legacy_families, {'legacyTextFamilies': legacy_families}
                 font_resources = [entry for entry in resources.values() if entry.get('type') == 'font' and entry.get('sha256')]
                 captured['fonts']['loadedResources'] = font_resources
                 assert any(entry['sha256'] == identity['font']['sha256'] and urlsplit(entry['url']).path == identity['font']['url'] for entry in font_resources), 'Actual official Pretendard response bytes must match the retained hash'

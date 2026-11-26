@@ -17,6 +17,7 @@ from types import SimpleNamespace
 from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
+from research_login_order_browser import wordmark_geometry
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-ui-feedback'
@@ -98,6 +99,82 @@ def assert_pretendard(fonts):
     used = [font for font in fonts if font['glyphCount'] > 0]
     assert used, {'actualPlatformFonts': fonts}
     assert all(font['isCustomFont'] and 'Pretendard' in font['familyName'] for font in used), {'fallbackFontRendered': used}
+
+
+def header_geometry_probe(page, membership, source):
+    """Compare native element frames with the protected originals, not glyph ink."""
+    header = page.locator('#order-app-header')
+    brand = header.locator('.order-product-brand')
+    member = membership == 'member'
+    expect(brand).to_have_attribute('data-authenticated', 'true' if member else 'false')
+    if member:
+        expect(header.locator('.research-order-trigger')).to_be_visible()
+    else:
+        expect(header.locator('.research-order-trigger')).to_be_hidden()
+        expect(header.locator('.research-order-arrow')).to_be_hidden()
+    header.scroll_into_view_if_needed()
+    CAPTURE_TOOLS.settle(page)
+    observed = header.evaluate('''header => {
+      const h=header.getBoundingClientRect(),brand=header.querySelector('.order-product-brand');
+      const rect=node=>{if(!node)return null;const r=node.getBoundingClientRect();return {x:r.x-h.x,y:r.y-h.y,width:r.width,height:r.height};};
+      const account=brand.querySelector('[data-order-account-trigger]'),svg=account.querySelector('svg.brand-mark');
+      return {header:{x:h.x,y:h.y,width:h.width,height:h.height},brand:rect(brand),word:rect(brand.querySelector('.brand-word')),
+        period:rect(brand.querySelector('.brand-dot')),arrow:rect(brand.querySelector('.research-order-arrow')),
+        orderTrigger:rect(brand.querySelector('.research-order-trigger')),accountTrigger:rect(account),
+        signup:rect(header.querySelector('[data-app-auth]')),svgFrame:rect(svg),
+        svgPaths:[...svg.querySelectorAll('g>path')].map(rect),markMotionState:svg.dataset.motionState||null,
+        viewport:{width:innerWidth,height:innerHeight,devicePixelRatio,scrollX,scrollY},source:ORDER_RESEARCH_APP.snapshot()};
+    }''')
+    # Preserve the element observations even if a later typography assertion
+    # rejects this run. Range bounds remain distinct from these Figma frames.
+    label = 'header-' + membership + '-390'
+    observed['source'] = {'build': observed['source']['build'], 'route': observed['source']['route'], 'gitHead': source['gitHead']}
+    observed['reference'] = {'figmaFile': 'OGc2SUKEvckzYhhowzX7tD', 'headerMain': '1376:7614' if member else '1336:7644',
+        'coordinateSpace': 'header-relative CSS pixels', 'headerSize': {'width': 390, 'height': 78},
+        'word': {'x': 26, 'y': 23.015625, 'width': 71, 'height': 25},
+        'accessory': {'x': 101, 'y': 29, 'width': 14, 'height': 14} if member else {'x': 97, 'y': 23, 'width': 9, 'height': 24},
+        'brand': {'x': 26, 'y': 0, 'width': 338 if member else 277.59381103515625, 'height': 78},
+        'accountTrigger': {'x': 312.140625 if member else 106, 'y': 13, 'width': 51.85940170288086, 'height': 44},
+        **({'orderTrigger': {'x': 26, 'y': 13, 'width': 89, 'height': 44},
+            'svgFrame': {'x': 308.40625, 'y': 20.46875, 'width': 59.32809829711914, 'height': 29.031299591064453}} if member else
+           {'signup': {'x': 315.59375, 'y': 17, 'width': 48.40629959106445, 'height': 44},
+            'svgFrame': {'x': 102.265625, 'y': 20.46875, 'width': 59.32809829711914, 'height': 29.031299591064453}})}
+    observed['limits'] = {'frameTolerancePx': 1 / 64, 'glyphInkMatchVerified': False, 'userAcceptance': False,
+                          'glyphEvidence': 'DOM Range text boxes and actual Chrome font use; PNG retains rendered ink'}
+    path = OUT / (label + '.geometry.json')
+    CAPTURE_TOOLS.write_json(path, observed)
+    observed['wordmark'] = wordmark_geometry(header.locator('.brand-word'))
+    cdp = page.context.new_cdp_session(page)
+    try:
+        cdp.send('DOM.enable')
+        cdp.send('CSS.enable')
+        observed['actualWordFonts'] = platform_fonts(cdp, '#order-app-header .brand-word')
+    finally:
+        cdp.detach()
+    header.screenshot(path=str(OUT / (label + '.png')), animations='allow')
+    observed['screenshot'] = CAPTURE_TOOLS.screenshot_identity(OUT / (label + '.png'))
+    CAPTURE_TOOLS.write_json(path, observed)
+    assert observed['source']['build'] == source['build']['digest'], observed
+    assert observed['viewport']['width'] == 390 and observed['viewport']['devicePixelRatio'] == 1, observed
+    assert {key: observed['header'][key] for key in ('width', 'height')} == observed['reference']['headerSize'], observed
+    assert observed['screenshot']['pngDimensions'] == observed['reference']['headerSize'], observed
+    for key, expected in observed['reference']['word'].items():
+        assert abs(observed['word'][key] - expected) <= 1 / 64, observed
+    accessory = observed['arrow' if member else 'period']
+    for key, expected in observed['reference']['accessory'].items():
+        assert abs(accessory[key] - expected) <= 1 / 64, observed
+    for element in ('brand', 'accountTrigger', 'orderTrigger', 'svgFrame') if member else ('brand', 'accountTrigger', 'signup', 'svgFrame'):
+        for key, expected in observed['reference'][element].items():
+            assert abs(observed[element][key] - expected) <= 1 / 64, observed
+    assert len(observed['svgPaths']) == 3, observed
+    typography = observed['wordmark']
+    assert typography['fontSize'] == typography['lineHeight'] == '25px' and typography['fontWeight'] == '900', observed
+    assert typography['letterSpacing'] == '0px', observed
+    assert typography['textAlign'] == 'left', observed
+    assert_pretendard(observed['actualWordFonts'])
+    observed['elementFramesMatched'] = True
+    CAPTURE_TOOLS.write_json(path, observed)
+    return observed
 
 
 def commit_ime_text(cdp):
@@ -346,12 +423,30 @@ def consultation_pass_probe(page):
     expect(dialog.locator('.ticket-item')).to_have_count(2)
     expect(dialog).to_contain_text('5상자')
     expect(dialog.locator('.consult-pass-close')).to_be_focused()
-    page.screenshot(path=str(OUT / 'consultation-pass-expanded-390.png'), full_page=True)
+    # A full-page screenshot expands the viewport to the long retained parent.
+    # The real dialog correctly finishes on resize, so observe its actual
+    # viewport without triggering that separate product interaction.
+    before_capture = dialog.evaluate('''node => {
+      const check=window.__consultCapture={node,resizes:[],before:{width:innerWidth,height:innerHeight}};
+      check.onResize=()=>check.resizes.push({width:innerWidth,height:innerHeight});
+      addEventListener('resize',check.onResize);
+      return check.before;
+    }''')
+    page.screenshot(path=str(OUT / 'consultation-pass-expanded-390.png'), full_page=False)
+    capture_continuity = page.evaluate('''() => {
+      const check=__consultCapture;removeEventListener('resize',check.onResize);
+      const result={sameDialog:document.querySelector('.consult-pass-dialog')===check.node,
+        open:check.node.open,modal:check.node.matches(':modal'),resizes:check.resizes,
+        after:{width:innerWidth,height:innerHeight}};delete window.__consultCapture;return result;
+    }''')
+    assert capture_continuity['sameDialog'] and capture_continuity['open'] and capture_continuity['modal'], capture_continuity
+    assert capture_continuity['after'] == before_capture and capture_continuity['resizes'] == [], capture_continuity
     dialog.locator('.consult-pass-close').click()
     expect(dialog).to_be_hidden()
     expect(detail_button).to_be_focused()
     wait_for_expression(page, '__consultPassGeometry.done')
     trace = page.evaluate('__consultPassGeometry')
+    trace['captureContinuity'] = capture_continuity
     opening = [row for row in trace['frames'] if row['phase'] == 'opening']
     closing = [row for row in trace['frames'] if row['phase'] == 'closing']
     settled = [row for row in trace['frames'] if row['phase'] == 'open']
@@ -572,10 +667,13 @@ def main():
             wait_for_expression(page, 'Boolean(window.ORDER_RESEARCH_APP)&&document.documentElement.dataset.productScreen==="onboarding"&&document.documentElement.dataset.productState==="guest-2"')
             expect(page.locator('#order-app-page .ob')).to_be_visible()
             assert page.locator('iframe').count() == 0
+            receipt['headerGeometry'] = {'guest': header_geometry_probe(page, 'guest', receipt['source'])}
             receipt['input'] = input_probe(page)
             receipt['checks'].append('C638 native Pretendard glyph geometry, rapid typing, middle selection, trusted IME, password masking and reduced motion')
             receipt['morph'] = morph_probe(page)
             receipt['checks'].append('C533 native first/last frame surface and label handoff')
+            receipt['headerGeometry']['member'] = header_geometry_probe(page, 'member', receipt['source'])
+            receipt['checks'].append('Protected original Guest/Member 390px header element frames; separate native glyph, font and PNG evidence without ink-match acceptance')
             receipt['consultationPass'] = consultation_pass_probe(page)
             receipt['checks'].append('a778707d canonical compound pass expansion/shrink, top layer, focus, retained draft and reduced motion')
             receipt['passLoading'] = pass_loading_probe(page)
