@@ -434,7 +434,12 @@ def main():
             query = urlencode({'view': 'qa-lab', 'screen': f'{screen}/{state}/email', 'width': width, 'mode': mode})
             parent.goto(cfg['url'] + '/ia?' + query)
             wait_review_session(parent, screen, state)
-            parent.locator('#scale-fit').uncheck()
+            parent.locator('#points').click()
+            parent.locator('[data-drawer-tab=settings]').click()
+            parent.locator('#scale-fit').set_checked(False)
+            parent.locator('#close-drawer').click()
+            assert parent.locator('#focus-unit .preview-canvas').evaluate(
+                'el=>new DOMMatrixReadOnly(getComputedStyle(el).transform).a') == 1
             frame = parent.frame_locator('#frame')
             source = research_snapshot_identity(frame)
             assert source['build'] == identity['build']['digest'] and source['version'] == 'current'

@@ -2,20 +2,24 @@
  * Range.getClientRects values in CSS pixels. Pseudo-element placement and native
  * input glyph boxes are deliberately not invented; the companion Chrome
  * DOMSnapshot textBoxes and PNG retain their actual layout/paint evidence. */
-async ({expected, label}) => {
+async ({expected, label, captureMode = 'existing-QA-iframe-at-observed-scale-one'}) => {
   await document.fonts.ready;
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   const root = document.getElementById('order-single');
   const app = window.ORDER_RESEARCH_APP;
   const snapshot = app?.snapshot();
   const inspector = root?.__orderResearchInspector?.inspect();
-  if (!root || !snapshot || !inspector?.active || inspector.pendingRoute) throw Error('QUOTE_CAPTURE_NOT_READY');
+  const standalone = captureMode === 'existing-standalone-research-route';
+  if (!standalone && captureMode !== 'existing-QA-iframe-at-observed-scale-one') throw Error('QUOTE_CAPTURE_MODE_UNKNOWN');
+  if (!root || !snapshot || (!standalone && (!inspector?.active || inspector.pendingRoute))) throw Error('QUOTE_CAPTURE_NOT_READY');
+  if (standalone && (window !== window.top || inspector)) throw Error('QUOTE_CAPTURE_EXPECTED_STANDALONE');
   for (const key of ['screen', 'state', 'variant', 'mode']) {
-    const actual = key === 'mode' ? inspector.session.mode || 'simple' : inspector.session[key];
+    const actual = standalone ? snapshot.route[key] : key === 'mode' ? inspector.session.mode || 'simple' : inspector.session[key];
     if (snapshot.route[key] !== expected.route[key] || actual !== expected.route[key]) throw Error('QUOTE_CAPTURE_ROUTE_MISMATCH:' + key);
   }
-  if (snapshot.build !== expected.build || document.documentElement.dataset.productBuild !== expected.build || inspector.session.artifact !== expected.artifactHash) throw Error('QUOTE_CAPTURE_SOURCE_MISMATCH');
-  if (innerWidth !== expected.viewport.width || inspector.session.viewport !== innerWidth) throw Error('QUOTE_CAPTURE_VIEWPORT_MISMATCH');
+  if (snapshot.build !== expected.build || document.documentElement.dataset.productBuild !== expected.build || (!standalone && inspector.session.artifact !== expected.artifactHash)) throw Error('QUOTE_CAPTURE_SOURCE_MISMATCH');
+  if (innerWidth !== expected.viewport.width || (!standalone && inspector.session.viewport !== innerWidth) || (standalone && innerHeight !== expected.viewport.height)) throw Error('QUOTE_CAPTURE_VIEWPORT_MISMATCH');
+  if (standalone && (document.documentElement.dataset.productScreen !== expected.route.screen || document.documentElement.dataset.productState !== expected.route.state)) throw Error('QUOTE_CAPTURE_STANDALONE_DOM_MISMATCH');
   const round = number => Math.round(number * 10000) / 10000;
   const finiteJson = value => JSON.parse(JSON.stringify(value,(_key,item)=>typeof item==='number'&&!Number.isFinite(item)?String(item):item));
   const rect = value => ({x: round(value.x), y: round(value.y), width: round(value.width), height: round(value.height)});
@@ -103,8 +107,8 @@ async ({expected, label}) => {
   const fieldState=[...root.querySelectorAll('[data-pick],[data-line-qty],[data-line-price]')].filter(painted).map(element=>({
     selector:locator(element),field:element.dataset.pick||(element.hasAttribute('data-line-qty')?'qty':'price'),
     value:element.dataset.value||element.value||'',pressed:element.getAttribute('aria-pressed'),invalid:element.getAttribute('aria-invalid'),rect:rect(element.getBoundingClientRect())}));
-  return {format:'order-research-quote-dom-paint/v1',label,observedAt:new Date().toISOString(),captureMode:'existing-QA-iframe-at-observed-scale-one',
-    source:{build:snapshot.build,artifactHash:inspector.session.artifact,version:inspector.session.version,session:inspector.session,config:JSON.parse(document.getElementById('order-app-config').textContent),route:snapshot.route,environment:snapshot.environment},
+  return {format:'order-research-quote-dom-paint/v1',label,observedAt:new Date().toISOString(),captureMode,
+    source:{build:snapshot.build,artifactHash:standalone?null:inspector.session.artifact,version:standalone?null:inspector.session.version,session:standalone?null:inspector.session,config:JSON.parse(document.getElementById('order-app-config').textContent),route:snapshot.route,environment:snapshot.environment},
     viewport:{width:innerWidth,height:innerHeight,devicePixelRatio,scrollX,scrollY,documentWidth:document.documentElement.scrollWidth,documentHeight:document.documentElement.scrollHeight,
       visual:visualViewport&&{width:visualViewport.width,height:visualViewport.height,offsetLeft:visualViewport.offsetLeft,offsetTop:visualViewport.offsetTop,scale:visualViewport.scale}},
     fonts:{status:document.fonts.status,declaredFamily:getComputedStyle(root).fontFamily,faces:[...document.fonts].map(face=>({family:face.family,status:face.status,weight:face.weight,style:face.style})),fontFaceRules,unreadableStylesheets},

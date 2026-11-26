@@ -8,7 +8,7 @@ let panelSequence = 0;
 export function mountResearchAccountPanel({id, container, signal, push, adapter, services, onNavigate, setUnread, beforeSwitch} = {}) {
   if (!researchAccountPanelIds.includes(id)) throw TypeError('RESEARCH_ACCOUNT_PANEL_UNSUPPORTED');
   if (!container?.ownerDocument || typeof adapter?.request !== 'function' || !services) throw TypeError('RESEARCH_ACCOUNT_PANEL_CONTEXT');
-  if (id === 'notifications') return mountResearchNotifications({container, adapter, signal, setUnread,
+  if (id === 'notifications') return mountResearchNotifications({container, adapter, signal, setUnread, showPreferences: true,
     onOpenAll: typeof onNavigate === 'function' ? () => onNavigate({screen: 'notifications', state: 'list'}) : undefined});
   const document = container.ownerDocument, window = document.defaultView, U = window.QAUI;
   if (!U?.field || !U?.button) throw Error('COMMON_UI_UNAVAILABLE');

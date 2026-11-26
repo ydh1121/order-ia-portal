@@ -5,17 +5,75 @@ external business operations. Geometry receipts bound these assertions; they
 are not a user's acceptance of every visual detail.
 """
 import json
+import importlib.util
 import os
 import re
 import select as select_io
 import shutil
 import subprocess
 from pathlib import Path
+from hashlib import sha256
+from types import SimpleNamespace
+from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright, expect
 from browser_predicate_support import wait_for_expression
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/research-ui-feedback'
+_capture_spec = importlib.util.spec_from_file_location('research_quote_capture_tools', ROOT / 'tests/research-quote-feedback-browser.py')
+CAPTURE_TOOLS = importlib.util.module_from_spec(_capture_spec)
+_capture_spec.loader.exec_module(CAPTURE_TOOLS)
+
+
+def measured_state_capture(page, label, interaction, source, font_responses, receipt):
+    """Read the already exercised standalone state; do not create a QA session."""
+    CAPTURE_TOOLS.settle(page)
+    expected = page.evaluate('''() => {const snapshot=ORDER_RESEARCH_APP.snapshot();return {
+      build:snapshot.build,route:snapshot.route,viewport:{width:innerWidth,height:innerHeight}};}''')
+    assert expected['build'] == source['build']['digest']
+    captured = page.evaluate(CAPTURE_TOOLS.CAPTURE, {'expected': expected, 'label': label,
+                                                   'captureMode': 'existing-standalone-research-route'})
+    native = CAPTURE_TOOLS.chrome_layout(SimpleNamespace(context=page.context, native_page=page, evaluate=page.evaluate))
+    resources = []
+    for response in font_responses:
+        if not response.ok:
+            continue
+        raw = response.body()
+        digest = sha256(raw).hexdigest()
+        suffix = Path(urlsplit(response.url).path).suffix
+        suffix = suffix if suffix in ('.woff2', '.woff', '.ttf', '.otf') else '.font'
+        path = OUT / 'fonts' / (digest + suffix)
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(raw)
+        resources.append({'url': response.url, 'status': response.status, 'type': 'font',
+                          'bytes': len(raw), 'sha256': digest, 'artifactFile': str(path.relative_to(OUT))})
+    fonts = native['actualFontFamilies']
+    assert any(font['isCustomFont'] and 'pretendard' in font['family'].lower() for font in fonts), fonts
+    assert any(row['sha256'] == source['font']['sha256'] and urlsplit(row['url']).path == source['font']['url'] for row in resources), resources
+    captured['fonts'].update(platform=fonts, files=[CAPTURE_TOOLS.system_font_identity(font) for font in fonts],
+                             pretendardActuallyUsed=True, loadedResources=resources)
+    captured['provenance'] = {'sameStandalonePageRetained': True, 'sameQaIframeRetained': False,
+                              'sourceMutatedForCapture': False, 'sourceUrl': page.url,
+                              'gitHead': source['gitHead'], 'compiledSourceHashesMatched': True,
+                              'route': expected['route'], 'viewport': expected['viewport'],
+                              'interaction': interaction, 'qaArtifactSessionObserved': False}
+    captured['nativeLayoutFile'] = label + '.chrome-layout.json'
+    captured['motionPreference'] = 'existing probe preference; finite animations settled without state mutation'
+    path = OUT / (label + '.viewport.png')
+    page.screenshot(path=str(path), full_page=False, animations='allow')
+    screenshot = CAPTURE_TOOLS.screenshot_identity(path)
+    assert screenshot['pngDimensions'] == expected['viewport'], screenshot
+    captured['screenshots'] = [{**screenshot, 'kind': 'viewport', 'nativeScreenshot': True, 'viewportUnchanged': True,
+                               'scroll': {'x': captured['viewport']['scrollX'], 'y': captured['viewport']['scrollY']}}]
+    CAPTURE_TOOLS.write_json(OUT / (label + '.dom-paint.json'), captured)
+    CAPTURE_TOOLS.write_json(OUT / (label + '.chrome-layout.json'), native)
+    entry = {'label': label, 'route': expected['route'], 'viewport': expected['viewport'], 'build': expected['build'],
+             'artifactHash': None, 'captureMode': captured['captureMode'], 'interaction': interaction,
+             'domPaint': label + '.dom-paint.json', 'nativeLayout': label + '.chrome-layout.json',
+             'screenshots': captured['screenshots'], 'elementCount': len(captured['elements']),
+             'rangeTextCount': len(captured['texts']), 'platformFonts': fonts, 'userAcceptance': False}
+    receipt['supplementalCaptures'].append(entry)
+    return entry
 
 
 def select(page, screen, state):
@@ -42,7 +100,48 @@ def assert_pretendard(fonts):
     assert all(font['isCustomFont'] and 'Pretendard' in font['familyName'] for font in used), {'fallbackFontRendered': used}
 
 
+def commit_ime_text(cdp):
+    cdp.send('Input.imeSetComposition', {'text': 'ㅎ', 'selectionStart': 1, 'selectionEnd': 1})
+    cdp.send('Input.imeSetComposition', {'text': '한', 'selectionStart': 1, 'selectionEnd': 1})
+    cdp.send('Input.insertText', {'text': '한'})
+
+
+def native_ime_control(context):
+    # Measure this Chrome/CDP version on an ordinary native input with no
+    # application listeners. CDP's insertText completion can dispatch an
+    # untrusted compositionend even when its composition/input events are
+    # trusted; this control records that protocol provenance, without claiming
+    # that CDP is an operating-system Korean keyboard.
+    control = context.new_page()
+    cdp = context.new_cdp_session(control)
+    try:
+        control.set_content('<!doctype html><meta charset="utf-8"><input id="native-ime" type="text">')
+        field = control.locator('#native-ime')
+        field.fill('QTARToffee')
+        field.press('End')
+        field.evaluate('''input => {
+          window.__nativeImeControl={events:[],original:input};
+          for(const type of ['beforeinput','input','compositionstart','compositionend'])input.addEventListener(type,event=>{
+            __nativeImeControl.events.push({type,trusted:event.isTrusted,inputType:event.inputType,isComposing:event.isComposing});
+          });
+        }''')
+        commit_ime_text(cdp)
+        expect(field).to_have_value('QTARToffee한')
+        wait_for_expression(control, '__nativeImeControl.events.some(event=>event.type==="compositionend")')
+        result = field.evaluate('''input=>({events:__nativeImeControl.events,value:input.value,
+          sameInput:input===__nativeImeControl.original,applicationLoaded:Boolean(window.ORDER_RESEARCH_APP)})''')
+        assert result['sameInput'] and not result['applicationLoaded'], result
+        assert any(event['type'] == 'compositionstart' and event['trusted'] for event in result['events']), result
+        assert any(event['type'] == 'input' and event['isComposing'] and event['trusted'] for event in result['events']), result
+        return result
+    finally:
+        cdp.detach()
+        control.close()
+
+
 def input_probe(page):
+    ime_control = native_ime_control(page.context)
+    page.bring_to_front()
     select(page, 'signup', 'empty')
     field = page.locator('.product-auth-sheet [name=password]')
     expect(field).to_be_visible()
@@ -111,11 +210,14 @@ def input_probe(page):
     page.keyboard.type('Q')
     expect(field).to_have_value('QTARToffee')
     field.press('End')
+    page.evaluate('__inputGeometry.imeStart=__inputGeometry.events.length')
     cdp.send('Input.imeSetComposition', {'text': 'ㅎ', 'selectionStart': 1, 'selectionEnd': 1})
     assert page.locator('.r3-input-mirror').count() == 0
     cdp.send('Input.imeSetComposition', {'text': '한', 'selectionStart': 1, 'selectionEnd': 1})
     cdp.send('Input.insertText', {'text': '한'})
     expect(field).to_have_value('QTARToffee한')
+    wait_for_expression(page, '__inputGeometry.events.slice(__inputGeometry.imeStart).some(event=>event.type==="compositionend")')
+    page.evaluate('__inputGeometry.imeEnd=__inputGeometry.events.length')
     wait_for_expression(page, '!document.querySelector(".r3-input-mirror")')
     page.locator('.product-auth-sheet [data-action=password-visibility]').first.click()
     field.click()
@@ -133,6 +235,9 @@ def input_probe(page):
     trace = page.evaluate('() => {__inputGeometry.stop();return __inputGeometry;}')
     trace['platformFonts'] = {'liveMirrorGlyph': mirror_fonts, 'nativeControl': input_fonts,
                               'nativeControlExposedGlyphs': any(font['glyphCount'] > 0 for font in input_fonts)}
+    trace['nativeImeControl'] = ime_control
+    trace['imeInputMethod'] = 'Chrome DevTools Protocol: imeSetComposition and insertText; no physical keyboard claim'
+    (OUT / 'input-native-trace.json').write_text(json.dumps(trace, ensure_ascii=False, indent=2) + '\n')
     cdp.detach()
     assert trace['errors'] == [], trace['errors']
     assert len(trace['frames']) >= 5, trace
@@ -142,9 +247,14 @@ def input_probe(page):
     assert max(abs(item['dx']) for item in stable) <= .75, {'reason': 'stable glyph horizontal jump', 'trace': trace}
     assert max(abs(item['dy']) for item in stable) <= .75, {'reason': 'mirror/native baseline mismatch', 'trace': trace}
     assert all(row['glyphText'] == row['nativeText'] for row in trace['frames']), trace
-    assert any(event['type'] == 'compositionstart' and event['trusted'] for event in trace['events']), trace
-    assert any(event['type'] == 'compositionend' and event['trusted'] for event in trace['events']), trace
-    assert all(event['trusted'] for event in trace['events']), trace
+    ime_events = trace['events'][trace['imeStart']:trace['imeEnd']]
+    assert ime_events == ime_control['events'], {'reason': 'application IME event provenance differs from the native control',
+                                                'application': ime_events, 'nativeControl': ime_control}
+    assert any(event['type'] == 'compositionstart' and event['trusted'] for event in ime_events), ime_events
+    assert any(event['type'] == 'input' and event['isComposing'] and event['trusted'] for event in ime_events), ime_events
+    assert any(event['type'] == 'compositionend' for event in ime_events), ime_events
+    non_ime_events = trace['events'][:trace['imeStart']] + trace['events'][trace['imeEnd']:]
+    assert all(event['trusted'] for event in non_ime_events), non_ime_events
     trace['limits'] = {'stableGlyphDeltaPx': .75, 'fullVisualAcceptance': False}
     page.emulate_media(reduced_motion='no-preference')
     return trace
@@ -288,7 +398,7 @@ def pass_loading_probe(page):
     return {'cards': rows, 'geometryOwner': 'each actual pass card', 'fullVisualAcceptance': False}
 
 
-def pass_tear_probe(page):
+def pass_tear_probe(page, capture):
     select(page, 'passes', 'grid')
     page.locator('[data-pass-id=qa-order-shipped]').click()
     cut = page.locator('.expanded-pass>.ticket-detail [data-action=tear-ticket]')
@@ -352,6 +462,7 @@ def pass_tear_probe(page):
     assert page.locator('.pass-stage').evaluate('node=>node.lastElementChild.dataset.passId') == 'qa-order-shipped'
     assert page.locator('.pass-tear-preview').count() == 0
     page.screenshot(path=str(OUT / 'pass-receipt-after-tear-390.png'), full_page=True)
+    capture('pass-receipt-after-tear-390', 'Existing trusted tear confirmation and isolated fixture receipt ACK; receipt assertions passed')
     trace.update({'partialGesture': partial, 'shortDragCancelled': True, 'confirmCancelRestored': True, 'failedReceiptRestored': True,
                   'reducedMotionPreviewAbsent': True, 'commercialAcceptance': False, 'fullVisualAcceptance': False})
     return trace
@@ -390,7 +501,7 @@ def evidence_presentation_probe(page):
     return result
 
 
-def existing_presentation_probe(page):
+def existing_presentation_probe(page, capture):
     select(page, 'business', 'empty')
     date = page.locator('.opening-date>button')
     expect(date).to_be_visible()
@@ -398,6 +509,7 @@ def existing_presentation_probe(page):
     assert business['labelColor'] == business['dateColor'] and business['labelFont'] == business['dateFont'], business
     assert business['requiredStars'] == 0, business
     page.screenshot(path=str(OUT / 'business-placeholder-date-390.png'), full_page=True)
+    capture('business-placeholder-date-390', 'Existing business/empty inspect route; date label/output font and color assertions passed')
     select(page, 'onboarding', 'company')
     shade = page.locator('.ob-shade')
     expect(shade).to_be_visible()
@@ -430,20 +542,27 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     log = (OUT / 'host.stderr.log').open('w')
     host = subprocess.Popen(['node', 'tests/r3-browser-host.mjs'], cwd=ROOT, stdout=subprocess.PIPE, stderr=log, text=True)
-    receipt = {'status': 'RUNNING', 'commercialAcceptance': False, 'userAcceptance': False, 'checks': []}
+    receipt = {'status': 'RUNNING', 'nativeExecution': False, 'commercialAcceptance': False, 'userAcceptance': False,
+               'reviewHoldUnchanged': True, 'figmaWrite': False, 'checks': [], 'supplementalCaptures': []}
     cfg = {}
     try:
+        receipt['source'] = CAPTURE_TOOLS.build_identity()
+        receipt['source']['runner'] = CAPTURE_TOOLS.file_identity(Path(__file__))
         ready, _, _ = select_io.select([host.stdout], [], [], 30)
         assert ready, 'Loopback host did not publish its ready URL within 30 seconds'
         cfg = json.loads(host.stdout.readline())
         assert re.fullmatch(r'http://127\.0\.0\.1:\d+', cfg['url']), 'Only the isolated loopback host is allowed'
         with sync_playwright() as driver:
             browser = driver.chromium.launch(executable_path=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium') or shutil.which('google-chrome'), args=['--no-sandbox'])
+            receipt.update(nativeExecution=True, browserVersion=browser.version,
+                           executionEnvironment='CI' if os.environ.get('CI') else 'explicit-native-run')
             context = browser.new_context(viewport={'width': 390, 'height': 844}, reduced_motion='no-preference')
             page = context.new_page()
-            page_errors, forbidden_writes = [], []
+            page_errors, forbidden_writes, font_responses = [], [], []
             page.on('pageerror', lambda error: page_errors.append(str(error)))
             page.on('request', lambda request: forbidden_writes.append({'method': request.method, 'url': request.url}) if request.method not in ('GET', 'HEAD', 'OPTIONS') and '/api/ia/auth/' not in request.url and '/login' not in request.url else None)
+            page.on('response', lambda response: font_responses.append(response) if response.request.resource_type == 'font' else None)
+            capture = lambda label, interaction: measured_state_capture(page, label, interaction, receipt['source'], font_responses, receipt)
             page.goto(cfg['url'] + '/ia?view=research-r3&screen=onboarding&state=guest-2')
             page.locator('input[name=email]').fill(cfg['email'])
             page.locator('input[name=password]').fill(cfg['pass'])
@@ -461,11 +580,11 @@ def main():
             receipt['checks'].append('a778707d canonical compound pass expansion/shrink, top layer, focus, retained draft and reduced motion')
             receipt['passLoading'] = pass_loading_probe(page)
             receipt['checks'].append('e3b7703c pass silhouettes, measured skeleton geometry and three gray brand dots')
-            receipt['passTear'] = pass_tear_probe(page)
+            receipt['passTear'] = pass_tear_probe(page, capture)
             receipt['checks'].append('a5dc1435 native partial tear, 48px confirmation, failure/cancel restore and ACK-gated visual separation in memory fixture')
             receipt['evidencePresentation'] = evidence_presentation_probe(page)
             receipt['checks'].append('C542/C543 current proof/signature layout, visible controls, single header and no submission while viewing')
-            receipt['presentation'] = existing_presentation_probe(page)
+            receipt['presentation'] = existing_presentation_probe(page, capture)
             receipt['checks'].append('C713 date placeholder paint; C534 header-covering top-layer blur; C683/C684/C686/C687/C688/C691 terms contexts')
             receipt['pageErrors'], receipt['forbiddenWrites'] = page_errors, forbidden_writes
             assert page_errors == [] and forbidden_writes == [], {'pageErrors': page_errors, 'forbiddenWrites': forbidden_writes}
