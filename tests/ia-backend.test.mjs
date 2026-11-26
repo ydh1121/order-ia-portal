@@ -13,7 +13,7 @@ import {gunzipSync} from 'node:zlib';
 import {deliveryBuild,deliveryManifest} from '../src/server/research-delivery-identity.gen.mjs';
 import {qaCatalogIdentity} from '../src/server/r3-qa-catalog-identity.gen.mjs';
 import {qaFixtureForRow} from '../src/server/r3-qa-review-runtime.mjs';
-import {reviewedDelivery} from '../src/server/reviewed-delivery-index.gen.mjs';
+import {reviewedDelivery,retainedReviewedParts} from '../src/server/reviewed-delivery-index.gen.mjs';
 import {r1Recorded} from '../src/server/r1-recorded-index.gen.mjs';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
 const domain='https://ia-testing.cloudflareaccess.com',audience='R0PLACEHOLDER_1234567890';
@@ -184,8 +184,9 @@ test('public entry remains nonconfidential and private releases are confined to 
  const recorded=[r1Recorded.shared,...r1Recorded.buckets].map(hash=>hash+'.json.gz');
  assert.equal(recorded.length,17);
  assert.deepEqual(readdirSync(join(releasesRoot,'r1-recorded')).sort(),recorded.sort());
- const reviewed=[...reviewedDelivery.records,...reviewedDelivery.fragments].map(hash=>hash+'.json.gz');
+ const reviewed=[...new Set([...reviewedDelivery.records,...reviewedDelivery.fragments,...retainedReviewedParts])].map(hash=>hash+'.json.gz');
  assert.deepEqual(readdirSync(join(releasesRoot,'reviewed-recorded')).sort(),reviewed.sort());
+ for(const name of reviewed)assert.equal(sha(readFileSync(join(releasesRoot,'reviewed-recorded',name))),name.slice(0,-8),'reviewed parts remain content addressed');
  // The HTTP-denial and exact internal binding bytes are independently exercised
  // in research-browser-assets.test.mjs; no public index links to these packs.
  assert.deepEqual(readdirSync(join(publicRoot,'vendor')).sort(),['r3-pdf','research']);
