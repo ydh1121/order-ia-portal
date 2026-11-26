@@ -169,7 +169,10 @@ def header_geometry_probe(page, membership, source):
     assert len(observed['svgPaths']) == 3, observed
     typography = observed['wordmark']
     assert typography['fontSize'] == typography['lineHeight'] == '25px' and typography['fontWeight'] == '900', observed
-    assert typography['letterSpacing'] == '0px', observed
+    # Blink serializes a computed zero letter spacing as "normal". Preserve
+    # the original zero tracking requirement without imposing one CSSOM spelling.
+    spacing = 0 if typography['letterSpacing'] == 'normal' else float(typography['letterSpacing'].removesuffix('px'))
+    assert spacing == 0, observed
     assert typography['textAlign'] == 'left', observed
     assert_pretendard(observed['actualWordFonts'])
     observed['elementFramesMatched'] = True
