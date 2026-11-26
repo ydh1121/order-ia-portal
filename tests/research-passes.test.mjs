@@ -10,13 +10,13 @@ import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 async function until(check,label='response'){const end=Date.now()+3000;while(!check()&&Date.now()<end)await tick();assert.ok(check(),label);}
-async function setup(t,screen='passes',state='grid'){
+async function setup(t,screen='passes',state='grid',reduced=true){
   const errors=[],vc=new VirtualConsole();vc.on('jsdomError',error=>{if(error.type!=='css parsing')errors.push(error.message);});const dom=new JSDOM('<main id="app"></main>',{url:'https://research.test/ia',runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:vc}),w=dom.window,root=w.document.querySelector('main');
   Object.defineProperty(w,'crypto',{value:webcrypto});w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});w.ResizeObserver=class{observe(){}disconnect(){}};w.IntersectionObserver=class{observe(){}disconnect(){}};w.HTMLElement.prototype.scrollTo=()=>{};w.HTMLElement.prototype.scrollIntoView=()=>{};w.HTMLElement.prototype.animate=()=>({finished:Promise.resolve(),cancel(){}});w.fetch=()=>assert.fail('no network');
   w.eval('window.__adapter=('+installQaFixtureAdapter.toString()+')({screen:'+JSON.stringify(screen)+',state:'+JSON.stringify(state)+',fixture:{persona:"buyer"}},'+installProductAdapter.toString()+')');const adapter=w.__adapter;await adapter.ready;const installed=installResearchPasses(w),source=await researchScene(screen,state,'email');w.ORDER_DESIGN_MODULES=[];w.eval(source.mount);const module=w.ORDER_DESIGN_MODULES.find(row=>row.id===screen);root.innerHTML=source.html;
   const writes=[],request=adapter.request;adapter.request=(path,body,signal)=>{if(body)writes.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
   w.__root=root;w.eval('window.__motion=('+mountAsyncMotion.toString()+')(__root)');const motion=w.__motion,controller=new w.AbortController(),notices=[],disposers=[];
-  const mount=()=>{const dispose=module.mount(root,state,{mode:'product',screen,adapter,motion,signal:controller.signal,reduced:()=>true,select(){},toast:message=>notices.push(message)});disposers.push(dispose);return dispose;};
+  const mount=()=>{const dispose=module.mount(root,state,{mode:'product',screen,adapter,motion,signal:controller.signal,reduced:()=>reduced,select(){},toast:message=>notices.push(message)});disposers.push(dispose);return dispose;};
   t.after(()=>{controller.abort();for(const dispose of disposers)dispose?.();installed.destroy();motion.destroy();adapter.fixture.dispose();w.dispatchEvent(new w.Event('pagehide'));w.close();assert.deepEqual(errors,[]);});
   return {w,root,adapter,motion,mount,notices,controller,writes};
 }
@@ -63,4 +63,30 @@ test('actual search uses only retrieved tag values, escapes data, and displays a
 });
 test('closing a pending pass load aborts the adapter request and cannot paint late rows',async t=>{
   const v=await setup(t);v.adapter.fixture.configure({requests:{'product GET /purchases':{scenario:'loading'}}});const dispose=v.mount();await until(()=>v.adapter.fixture.inspect().pending===1);dispose();await until(()=>v.adapter.fixture.inspect().pending===0);v.adapter.fixture.releasePending({requests:{}});await tick();assert.notEqual(v.root.dataset.passDataState,'ready');
+});
+test('loading retains three pass silhouettes with the shared gray brand dots and measures each card geometry',async t=>{
+  const v=await setup(t),measured=[],destroyed=[];
+  v.w.ORDER_COMMON_MOTION={skeleton(card){measured.push(card);card.dataset.r3Skeleton='pending';return {destroy(){destroyed.push(card);delete card.dataset.r3Skeleton;}};}};
+  v.adapter.fixture.configure({requests:{'product GET /purchases':{scenario:'loading'}}});const dispose=v.mount();await until(()=>v.adapter.fixture.inspect().pending===1);
+  const stage=v.root.querySelector('.pass-stage.pass-loading'),cards=[...stage.querySelectorAll('.order-pass.nav-ticket')];assert.equal(cards.length,3);assert.deepEqual(measured,cards);assert.equal(stage.querySelectorAll('.loading-ticket-brand .pass-dots i').length,9);
+  for(const card of cards){const brand=card.querySelector('.loading-ticket-brand');assert.equal(brand.getAttribute('aria-hidden'),'true');assert.equal(v.w.getComputedStyle(brand).opacity,'1');assert.equal(v.w.getComputedStyle(brand.querySelector('i')).backgroundColor,'rgb(211, 217, 225)');}
+  dispose();await until(()=>v.adapter.fixture.inspect().pending===0);assert.deepEqual(destroyed,cards);assert.equal(v.writes.length,0);
+});
+test('tear gesture previews physical separation but only a validated receipt acknowledgement can complete it',async t=>{
+  const v=await setup(t,'passes','grid',false);v.w.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});await v.mount().ready;
+  v.root.querySelector('[data-pass-id="qa-order-shipped"]').click();
+  const area=v.root.querySelector('.expanded-pass'),ticket=area.querySelector('.ticket-detail'),line=ticket.querySelector('.pass-perforation'),cut=area.querySelector('[data-action=tear-ticket]'),confirm=area.querySelector('.tear-confirm');
+  assert.equal(cut.parentNode,line,'scissors action belongs to the actual perforation');
+  area.getBoundingClientRect=()=>({left:16,top:100,width:358,height:600});ticket.getBoundingClientRect=()=>({left:16,top:100,width:358,height:420});line.getBoundingClientRect=()=>({left:16,top:260,width:358,height:48});
+  const flights=[],animate=v.w.HTMLElement.prototype.animate;v.w.HTMLElement.prototype.animate=function(frames,timing){if(this.dataset.passTearPart!=='lower')return animate.call(this,frames,timing);let resolve;const flight={frames,timing,cancelled:false,finished:new Promise(done=>{resolve=done;}),cancel(){flight.cancelled=true;},finish(){resolve();}};flights.push(flight);return flight;};
+  const pointer=(type,x,y=280)=>{const event=new v.w.MouseEvent(type,{bubbles:true,cancelable:true,clientX:x,clientY:y,button:0});Object.defineProperties(event,{pointerId:{value:1},isPrimary:{value:true}});cut.dispatchEvent(event);};
+  pointer('pointerdown',100);pointer('pointermove',124);let preview=area.querySelector('.pass-tear-preview');assert.equal(preview.dataset.phase,'preview');assert.equal(preview.dataset.progress,'0.5');assert.match(preview.querySelector('[data-pass-tear-part=lower]').style.transform,/rotate\(2deg\)/);assert.equal(ticket.style.opacity,'0');assert.equal(v.writes.length,0);
+  pointer('pointerup',124);cut.click();assert.equal(area.querySelector('.pass-tear-preview'),null);assert.equal(confirm.hidden,true,'a short drag and its follow-up click cannot confirm');assert.equal(ticket.style.opacity,'');
+  pointer('pointerdown',100);pointer('pointermove',155);pointer('pointerup',155);cut.click();assert.equal(confirm.hidden,false);assert.equal(area.querySelector('.pass-tear-preview').dataset.phase,'preview');assert.equal(v.writes.length,0);
+  area.querySelector('[data-action=cancel-tear]').click();assert.equal(confirm.hidden,true);assert.equal(area.querySelector('.pass-tear-preview'),null);assert.equal(ticket.style.opacity,'');
+  pointer('pointerdown',100);pointer('pointermove',130);pointer('pointercancel',130);assert.equal(area.querySelector('.pass-tear-preview'),null);cut.click();cut.click();
+  v.adapter.fixture.configure({requests:{'product POST /purchases':{scenario:'error',status:503}}});area.querySelector('[data-action=confirm-tear]').click();await until(()=>/다시|실패|UNAVAILABLE/.test(area.querySelector('[data-receipt-message]').textContent));assert.equal(area.querySelector('.pass-tear-preview'),null);assert.equal(v.root.querySelector('.ticket-received'),null);assert.equal(flights.length,0);
+  v.adapter.fixture.configure({requests:{'product POST /purchases':{scenario:'loading'}}});area.querySelector('[data-action=confirm-tear]').click();await until(()=>v.adapter.fixture.inspect().pending===1);assert.equal(area.querySelector('[data-phase=acknowledged]'),null);assert.equal(flights.length,0);
+  v.adapter.fixture.releasePending({requests:{}});await until(()=>flights.length===1);assert.equal(area.querySelector('.pass-tear-preview').dataset.phase,'acknowledged');assert.equal(v.adapter.fixture.inspect().data.purchases.find(row=>row.id==='qa-order-shipped').status,'RECEIVED');assert.equal(v.root.querySelector('.ticket-received'),null,'the acknowledged visual handoff finishes before the deck moves');
+  flights[0].finish();await until(()=>v.root.querySelector('.ticket-received'));assert.equal(area.querySelector('.pass-tear-preview'),null);assert.equal(v.root.querySelector('.pass-stage').lastElementChild.dataset.passId,'qa-order-shipped');assert.equal(v.writes.filter(call=>call.path==='/purchases').length,2);
 });

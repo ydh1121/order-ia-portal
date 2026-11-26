@@ -113,7 +113,7 @@ test('settings stay expanded and load their existing values without opting the p
   f.change('price', true); await until(() => f.status() === '수신 설정을 저장했어요.', 'explicit preference is confirmed');
   assert.equal(f.calls.length, 2); assert.deepEqual(f.calls[1].body.preferences, {price: true, news: false, benefits: false});
   assert.equal(f.calls[1].body.expectedRevision, 0); assert.match(f.calls[1].body.requestKey, /^[\w-]+$/);
-  assert.match(f.container.textContent, /웹 푸시 발송은 아직 연결되지/);
+  assert.match(f.container.textContent, /기기 알림은 아래에서 별도로 허용/);
 });
 
 test('failed or invalid save acknowledgements keep the draft and reuse the exact idempotency key for retry', async t => {

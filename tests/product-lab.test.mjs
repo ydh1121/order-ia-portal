@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {handleProductLab,namespaceDb,namespaceSql} from '../src/server/product-lab.mjs';
+import {handleProductLab,labContext,namespaceDb,namespaceSql} from '../src/server/product-lab.mjs';
 import {labSchema} from '../src/server/product-lab-schema.gen.mjs';
 
 export function sqliteD1(sqlite){
@@ -25,8 +25,27 @@ test('fresh lab applies canonical schema, actual price approval and 152 defaults
  const db=namespaceDb(w.env.ORDER_LAB_DB,run),policy=JSON.parse((await db.prepare('SELECT policy_json FROM r3_price_version').first()).policy_json);
  assert.equal(policy.matrix.rows.length,19);assert.equal(policy.matrix.rows.flatMap(r=>r.cells).length,152);
  assert.equal((await db.prepare('SELECT count(*) n FROM r3_price_event').first()).n,3);
- assert.equal(w.productionTouches(),0);assert.equal(labSchema.tables.length,28);
+ assert.equal(w.productionTouches(),0);assert.equal(labSchema.tables.length,31);
+ for(const name of ['order_push_subscription','order_push_delivery','order_notification_price_event'])assert.ok(labSchema.tables.some(table=>table.name===name),name+' belongs to the canonical lab schema');
+ for(const name of ['order_push_subscription','order_push_delivery'])assert.equal((await db.prepare('SELECT count(*) n FROM '+name).first()).n,0,'a fresh lab must not seed device capabilities or provider deliveries');
+ // The lab intentionally exercises the real approval path. Its one new price
+ // event stays in this run's namespace; it is not a seeded external delivery.
+ const priceEvents=(await db.prepare('SELECT version_id,state FROM order_notification_price_event').all()).results;
+ assert.deepEqual(priceEvents.map(row=>({...row})),[{version_id:'lab-default-price',state:'pending'}]);
  assert.equal(namespaceSql("SELECT 'r3_membership',x FROM r3_membership -- r3_membership",run),`SELECT 'r3_membership',x FROM lab_${run}_r3_membership -- r3_membership`);
+});
+test('lab product context strips production push credentials and cannot register a real device',async()=>{
+ const w=labWorkspace();
+ Object.assign(w.env,{ORDER_WEB_PUSH_ENABLED:'true',ORDER_WEB_PUSH_PUBLIC_KEY:'not-inherited-public-key',ORDER_WEB_PUSH_PRIVATE_JWK:'not-inherited-private-key',ORDER_WEB_PUSH_SUBJECT:'https://lab.test'});
+ const run=await w.create(),context=await labContext(w.env,w.owner,run,'buyer','csrf');
+ assert.deepEqual(Object.keys(context.env).filter(name=>name.startsWith('ORDER_WEB_PUSH_')),[]);
+ assert.notEqual(context.env.ORDER_QA_DB,w.env.ORDER_QA_DB);assert.equal(context.env.ORDER_PRODUCT_DB,context.env.ORDER_QA_DB);
+ const state=await w.product(run,'buyer','/notification-push');assert.equal(state.status,200);assert.equal(state.body.available,false);assert.equal(state.body.publicKey,null);assert.deepEqual(state.body.registrations,[]);
+ const subscribe=await w.product(run,'buyer','/notification-push',w.command('subscribe',{consent:'granted',applicationServerKey:'not-inherited-public-key',subscription:{}}));
+ assert.equal(subscribe.status,503);assert.equal(subscribe.body.error,'PUSH_NOT_CONFIGURED');
+ const db=namespaceDb(w.env.ORDER_LAB_DB,run);
+ for(const name of ['order_push_subscription','order_push_delivery'])assert.equal((await db.prepare('SELECT count(*) n FROM '+name).first()).n,0);
+ assert.equal(w.productionTouches(),0);
 });
 test('canonical persisted purchase: server quote, separate manual confirmer, real dispatch, receipt, reload and atomic revision',async()=>{
  const w=labWorkspace(),run=await w.create(),offers=(await w.product(run,'buyer','/purchases')).body.offers;

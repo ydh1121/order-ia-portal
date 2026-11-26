@@ -197,12 +197,12 @@ test('password strength bridges changed capsules on entry and removal and honors
 test('floating input motion meets the native asymmetric baseline without changing the submitted value',async t=>{
   const f=await setup(t,{reduced:false});await f.open('signup','empty');
   const input=f.sheet().querySelector('[name=password]');
-  Object.assign(input.style,{paddingTop:'25px',paddingBottom:'8px',borderTopWidth:'0px',borderBottomWidth:'0px',lineHeight:'24px',fontSize:'15px'});
+  Object.assign(input.style,{height:'62.25px',boxSizing:'border-box',paddingTop:'25px',paddingBottom:'8px',borderTopWidth:'0px',borderBottomWidth:'0px',lineHeight:'24px',fontSize:'15px'});
   Object.defineProperty(input,'offsetHeight',{get:()=>62});
-  input.getBoundingClientRect=()=>({left:25,top:418,width:340,height:62,right:365,bottom:480});
+  input.getBoundingClientRect=()=>({left:25,top:418,width:340,height:62.25,right:365,bottom:480.25});
   f.type('[name=password]','abc');await flush();
   const mirror=f.w.document.querySelector('.r3-input-mirror');assert.ok(mirror);
-  assert.equal(mirror.style.paddingTop,'27.5px');assert.equal(input.value,'abc');assert.equal(mirror.textContent,'•••');
+  assert.equal(mirror.style.paddingTop,'27.625px');assert.equal(input.value,'abc');assert.equal(mirror.textContent,'•••');
   input.dispatchEvent(new f.w.FocusEvent('blur',{bubbles:true}));await flush();
   assert.equal(f.w.document.querySelector('.r3-input-mirror'),null);assert.equal(input.value,'abc');
 });

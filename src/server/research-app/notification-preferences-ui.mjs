@@ -1,5 +1,6 @@
 import {validNotificationPreferences} from './notification-preferences-contract.mjs';
 import {createCommonControlPaint} from '../r3-common-motion.mjs';
+import {mountNotificationPush} from './notification-push-ui.mjs';
 
 /** Optional notification consent is fetched with the settings and written only in
  * response to an explicit control change or retry. Browser push is separate. */
@@ -17,12 +18,13 @@ export function mountNotificationPreferences({container, adapter, signal} = {}) 
     const control = node('span', undefined, 'research-notification-switch'), track = controlPaint.switchTrack();
     input.dataset.notificationPreference = key; inputs.set(key, input); control.append(input, track); row.append(node('span', label), control); fieldset.append(row);
   }
-  const note = node('p', '선택한 수신 동의를 저장합니다. 웹 푸시 발송은 아직 연결되지 않았어요.', 'research-notification-preferences-note');
+  const note = node('p', '선택한 항목의 알림만 받아요. 기기 알림은 아래에서 별도로 허용할 수 있어요.', 'research-notification-preferences-note');
   const status = node('p', '', 'research-notifications-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const actions = node('div', undefined, 'research-notification-preference-actions');
   const retryButton = node('button', '다시 시도', 'research-notifications-retry'); retryButton.type = 'button'; retryButton.dataset.notificationPreferencesRetry = ''; retryButton.hidden = true;
   const reloadButton = node('button', '최신 설정 확인', 'research-notifications-retry'); reloadButton.type = 'button'; reloadButton.dataset.notificationPreferencesReload = ''; reloadButton.hidden = true;
   actions.append(retryButton, reloadButton); root.append(fieldset, note, status, actions); container.append(root);
+  const pushControls = mountNotificationPush({container: root, adapter, signal: controller.signal});
   const alive = () => !disposed && !controller.signal.aborted && root.parentNode === container;
   const listen = (target, type, callback) => {target.addEventListener(type, callback); cleanups.push(() => target.removeEventListener(type, callback));};
   const values = () => Object.fromEntries([...inputs].map(([key, input]) => [key, input.checked]));
@@ -74,7 +76,7 @@ export function mountNotificationPreferences({container, adapter, signal} = {}) 
   listen(retryButton, 'click', () => {if (retryMode === 'load') dispose.ready = load(loaded); else void persist();});
   listen(reloadButton, 'click', () => {dispose.ready = load(true);});
   function dispose() {
-    if (disposed) return; disposed = true; controller.abort(); signal?.removeEventListener('abort', dispose);
+    if (disposed) return; disposed = true; controller.abort(); pushControls(); signal?.removeEventListener('abort', dispose);
     for (const cleanup of cleanups) cleanup(); if (root.parentNode === container) root.remove();
   }
   if (signal?.aborted) dispose(); else signal?.addEventListener('abort', dispose, {once: true});

@@ -1,5 +1,14 @@
 # ORDER 작업 재개 및 사용자 지시 검증
 
+## QA 피드백 수정·Figma 동기화 — 2026-11-26
+
+- 회귀 점검 추가 원문: https://drive.google.com/file/d/186QjaNHcBQi_fgNN-PdH5lpDz426Y_an/view . UTF-8 165바이트 / 2줄 / 끝 개행 없음 / SHA256 `78616995816c807c7726c3dd95a95a946090c27057a67e082c04e9a1dff8e49c`. “망가졌다”로 표시된 화면은 이전 버전에서 정상이었다는 사용자 기억을 반영해 원댓글 연결 버전·이전 보존본·현재 화면을 대조한다. 정확한 정상 버전을 임의로 확정하거나 이후 요구를 통째로 되돌리지 않는다.
+- 최신 사용자 원문: https://drive.google.com/file/d/10Gkyh7foHbPxNDb9Hzpddc_bK6DG7_2n/view . “수정하고 피그마에도 반영해라” UTF-8 41바이트 / 1줄 / 끝 개행 없음 / SHA256 `b8add1b21d14328cdc22ed78ff670b44f905260dca6bcdd6f6920e98e6414c48`. Drive 재조회 전문 일치 확인.
+- 직전 QA 감사의 현재 제품 의견 137건과 최신 재작업을 기준으로 실제 미반영 사항을 수정하고 기존 Figma 파일 `OGc2SUKEvckzYhhowzX7tD`의 `order` 페이지에 반영한다. 감사 근거가 부족한 97건을 모두 코드 결함으로 간주하지 않는다.
+- Q1~Q2 간편·상세 하이파이를 구현하되 사용자 검토 보류 9건을 승인이나 해결로 바꾸지 않는다. 원댓글·핀·수정 이력·삭제 및 해결 상태를 보존한다.
+- 기존 공통 모듈, 사용자 헤더, Pretendard, 정규 검증·저장·계산 로직을 재사용한다. 코드·자동검사·실제 화면·배포·Figma·사용자 판정을 분리해 기록한다.
+- 같은 `WO-ORDER-20261101-ASTRA-ENGINE-001` / `MSG0585` 후속 작업이며 IA main `3391b75b88a3a0d38157f6075196773191317522`에서 시작한다. 필수 CI 7개 통과 후 IA main과 연구 배포에 반영한다. 정규 `order` main은 변경하지 않는다.
+
 ## 실제 공통 모듈 중복 정리·Figma 분류 가독성 — 2026-11-26
 
 - 최신 사용자 원문: https://drive.google.com/file/d/1TxHNEqjcO4mYAexJl6_brnoBuPm0c9Eb/view . UTF-8 303바이트 / 3줄 / 끝 개행 없음 / SHA256 `33dfe264eabc6cc26d262b4e478167d0e3a964fda81c105e7d4769d03e4d06c5`. Drive 재조회 전문 바이트 일치 확인.

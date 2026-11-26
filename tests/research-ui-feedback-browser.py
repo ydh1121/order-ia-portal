@@ -1,0 +1,490 @@
+"""Native renderer checks for the latest input, motion and retained UI feedback.
+
+Uses the existing loopback host and fixture transport. No QA status writes or
+external business operations. Geometry receipts bound these assertions; they
+are not a user's acceptance of every visual detail.
+"""
+import json
+import os
+import re
+import select as select_io
+import shutil
+import subprocess
+from pathlib import Path
+from playwright.sync_api import sync_playwright, expect
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / 'artifacts/research-ui-feedback'
+
+
+def select(page, screen, state):
+    target = {'screen': screen, 'state': state}
+    accepted = page.evaluate('async next => await ORDER_RESEARCH_APP.inspectRoute(next)', target)
+    assert accepted is not False, {'routeRejected': target}
+    page.wait_for_function('''expected=>{
+      const app=window.ORDER_RESEARCH_APP,state=app?.snapshot(),html=document.documentElement;
+      return state?.route.screen===expected.screen&&state.route.state===expected.state&&
+        html.dataset.productScreen===expected.screen&&html.dataset.productState===expected.state;
+    }''', arg=target)
+
+
+def platform_fonts(cdp, selector):
+    root = cdp.send('DOM.getDocument')['root']['nodeId']
+    node = cdp.send('DOM.querySelector', {'nodeId': root, 'selector': selector})['nodeId']
+    assert node, {'fontNodeMissing': selector}
+    return cdp.send('CSS.getPlatformFontsForNode', {'nodeId': node})['fonts']
+
+
+def assert_pretendard(fonts):
+    used = [font for font in fonts if font['glyphCount'] > 0]
+    assert used, {'actualPlatformFonts': fonts}
+    assert all(font['isCustomFont'] and 'Pretendard' in font['familyName'] for font in used), {'fallbackFontRendered': used}
+
+
+def input_probe(page):
+    select(page, 'signup', 'empty')
+    field = page.locator('.product-auth-sheet [name=password]')
+    expect(field).to_be_visible()
+    page.evaluate('document.fonts.ready')
+    page.locator('.product-auth-sheet [data-action=password-visibility]').first.click()
+    field.click()
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('DOM.enable')
+    cdp.send('CSS.enable')
+    field.evaluate(r'''input => {
+      const trace=window.__inputGeometry={frames:[],events:[],done:false,errors:[]};
+      const controller=new AbortController(),measure=document.createElement('span');
+      measure.setAttribute('aria-hidden','true');measure.inert=true;
+      Object.assign(measure.style,{position:'fixed',visibility:'hidden',pointerEvents:'none',whiteSpace:'pre',width:'max-content'});
+      document.body.append(measure);
+      for(const type of ['beforeinput','input','compositionstart','compositionend'])input.addEventListener(type,event=>{
+        trace.events.push({type,trusted:event.isTrusted,inputType:event.inputType,isComposing:event.isComposing});
+      },{signal:controller.signal});
+      const range=document.createRange(),rect=el=>el.getBoundingClientRect(),number=value=>parseFloat(value)||0;
+      function sample(){
+        if(trace.done){measure.remove();controller.abort();return;}
+        try{
+          const mirror=document.querySelector('.r3-input-mirror'),cs=getComputedStyle(input),box=rect(input);
+          if(mirror){
+            const line=mirror.querySelector('.r3-input-glyphs'),glyphs=[...line.children].filter(n=>n.tagName==='SPAN'&&!n.hasAttribute('data-input-exit'));
+            const chars=[...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(input.value)].map(v=>v.segment);
+            const visible=chars.map(ch=>input.type==='password'?'•':ch);
+            const borderTop=number(cs.borderTopWidth),borderBottom=number(cs.borderBottomWidth),top=number(cs.paddingTop),bottom=number(cs.paddingBottom),lineHeight=number(cs.lineHeight);
+            const y=box.top+borderTop+top+Math.max(0,(box.height-borderTop-borderBottom-top-bottom-lineHeight)/2)-input.scrollTop;
+            Object.assign(measure.style,{left:box.left+number(cs.borderLeftWidth)+number(cs.paddingLeft)-input.scrollLeft+'px',top:y+'px',font:cs.font,
+              lineHeight:cs.lineHeight,letterSpacing:cs.letterSpacing,wordSpacing:cs.wordSpacing,fontKerning:cs.fontKerning,fontFeatureSettings:cs.fontFeatureSettings,fontVariationSettings:cs.fontVariationSettings,fontVariantLigatures:cs.fontVariantLigatures});
+            const text=visible.join('');if(measure.textContent!==text)measure.textContent=text;
+            let offset=0;const stable=[];
+            for(let i=0;i<Math.min(glyphs.length,visible.length);i++){
+              const glyph=glyphs[i],start=offset;offset+=visible[i].length;
+              if(glyph.getAnimations().some(animation=>animation.playState==='running'))continue;
+              range.setStart(measure.firstChild,start);range.setEnd(measure.firstChild,offset);const expected=range.getBoundingClientRect();
+              const actualRange=document.createRange();actualRange.selectNodeContents(glyph);const actual=actualRange.getBoundingClientRect();
+              stable.push({index:i,dx:actual.left-expected.left,dy:actual.top-expected.top});
+            }
+            trace.frames.push({font:cs.fontFamily,mask:input.type==='password',sameInput:input.isConnected,
+              glyphText:glyphs.map(n=>n.textContent).join(''),nativeText:text,
+              widthDelta:glyphs.reduce((sum,n)=>sum+rect(n).width,0)-rect(measure).width,
+              stable,selection:[input.selectionStart,input.selectionEnd]});
+          }
+        }catch(error){trace.errors.push(String(error));}
+        requestAnimationFrame(sample);
+      }
+      trace.stop=()=>{trace.done=true;measure.remove();controller.abort();delete trace.stop;};requestAnimationFrame(sample);
+    }''')
+    page.keyboard.type('AVATARToffee', delay=70)
+    expect(field).to_have_value('AVATARToffee')
+    # Inspect the font that Chrome actually used for a live glyph. A CSS family
+    # declaration alone would still pass when a font file silently failed.
+    mirror_fonts = platform_fonts(cdp, '.r3-input-glyphs>span:not([data-input-exit])')
+    assert_pretendard(mirror_fonts)
+    input_fonts = platform_fonts(cdp, '.product-auth-sheet [name=password]')
+    if any(font['glyphCount'] > 0 for font in input_fonts):
+        assert_pretendard(input_fonts)
+    page.wait_for_function('!document.querySelector(".r3-input-mirror")')
+    field.press('Home')
+    for _ in range(3):
+        field.press('Shift+ArrowRight')
+    assert field.evaluate('el=>[el.selectionStart,el.selectionEnd]') == [0, 3]
+    assert page.locator('.r3-input-mirror').count() == 0
+    page.keyboard.type('Q')
+    expect(field).to_have_value('QTARToffee')
+    field.press('End')
+    cdp.send('Input.imeSetComposition', {'text': 'ㅎ', 'selectionStart': 1, 'selectionEnd': 1})
+    assert page.locator('.r3-input-mirror').count() == 0
+    cdp.send('Input.imeSetComposition', {'text': '한', 'selectionStart': 1, 'selectionEnd': 1})
+    cdp.send('Input.insertText', {'text': '한'})
+    expect(field).to_have_value('QTARToffee한')
+    page.wait_for_function('!document.querySelector(".r3-input-mirror")')
+    page.locator('.product-auth-sheet [data-action=password-visibility]').first.click()
+    field.click()
+    field.press('End')
+    page.keyboard.type('9', delay=50)
+    masked = page.locator('.r3-input-mirror .r3-input-glyphs').text_content()
+    assert masked and set(masked) == {'•'}, masked
+    expect(field).to_have_value('QTARToffee한9')
+    page.emulate_media(reduced_motion='reduce')
+    page.wait_for_function('!document.querySelector(".r3-input-mirror")')
+    page.keyboard.type('R')
+    expect(field).to_have_value('QTARToffee한9R')
+    assert page.locator('.r3-input-mirror').count() == 0
+    page.screenshot(path=str(OUT / 'input-native-rest-390.png'), full_page=True)
+    trace = page.evaluate('() => {__inputGeometry.stop();return __inputGeometry;}')
+    trace['platformFonts'] = {'liveMirrorGlyph': mirror_fonts, 'nativeControl': input_fonts,
+                              'nativeControlExposedGlyphs': any(font['glyphCount'] > 0 for font in input_fonts)}
+    cdp.detach()
+    assert trace['errors'] == [], trace['errors']
+    assert len(trace['frames']) >= 5, trace
+    assert all('Pretendard' in row['font'] and row['sameInput'] for row in trace['frames']), trace
+    stable = [item for row in trace['frames'] for item in row['stable']]
+    assert len(stable) >= 5, trace
+    assert max(abs(item['dx']) for item in stable) <= .75, {'reason': 'stable glyph horizontal jump', 'trace': trace}
+    assert max(abs(item['dy']) for item in stable) <= .75, {'reason': 'mirror/native baseline mismatch', 'trace': trace}
+    assert all(row['glyphText'] == row['nativeText'] for row in trace['frames']), trace
+    assert any(event['type'] == 'compositionstart' and event['trusted'] for event in trace['events']), trace
+    assert any(event['type'] == 'compositionend' and event['trusted'] for event in trace['events']), trace
+    assert all(event['trusted'] for event in trace['events']), trace
+    trace['limits'] = {'stableGlyphDeltaPx': .75, 'fullVisualAcceptance': False}
+    page.emulate_media(reduced_motion='no-preference')
+    return trace
+
+
+def morph_probe(page):
+    select(page, 'onboarding', 'member-3')
+    expect(page.locator('.ob-tasks .ob-mode')).to_have_count(2)
+    page.evaluate('document.fonts.ready')
+    page.evaluate('''() => {
+      const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+      const label=node=>[...node.querySelectorAll('span')].find(n=>n.textContent.trim()===node.textContent.trim()&&!n.querySelector('span,svg'))||node;
+      const before=[...document.querySelectorAll('.ob-tasks .ob-mode')].map(node=>({rect:rect(node),font:getComputedStyle(label(node)).fontSize,label:rect(label(node))}));
+      const trace=window.__modeGeometry={before,frames:[],done:false,trusted:false};
+      document.querySelector('[data-mf-intro="4"]').addEventListener('click',event=>{trace.trusted=event.isTrusted;},{once:true,capture:true});
+      let seen=false,after=0;const started=performance.now();
+      function sample(now){
+        const layer=document.querySelector('.research-mode-transition'),surfaces=[...document.querySelectorAll('[data-mode-part=surface]')],labels=[...document.querySelectorAll('[data-mode-part=label]')];
+        if(layer)seen=true;
+        const cards=[...document.querySelectorAll('.ob-mode.card')];
+        if(layer||seen)trace.frames.push({at:now-started,layer:Boolean(layer),surfaces:surfaces.map(rect),labels:labels.map(node=>({rect:rect(node),font:getComputedStyle(node).fontSize})),cards:cards.map(node=>({rect:rect(node),label:rect(label(node)),font:getComputedStyle(label(node)).fontSize,visibility:getComputedStyle(node).visibility}))});
+        if(seen&&!layer)after++;
+        if(after>=3||now-started>6000){trace.done=true;return;}requestAnimationFrame(sample);
+      }requestAnimationFrame(sample);
+    }''')
+    page.locator('[data-mf-intro="4"]').click()
+    page.wait_for_function('__modeGeometry.done===true')
+    trace = page.evaluate('__modeGeometry')
+    moving = [row for row in trace['frames'] if row['layer']]
+    settled = [row for row in trace['frames'] if not row['layer']]
+    assert trace['trusted'] and len(moving) >= 8 and len(settled) >= 2, trace
+    assert all(len(row['surfaces']) == len(row['labels']) == 2 for row in moving), trace
+    assert all(all(card['visibility'] == 'hidden' for card in row['cards']) for row in moving), trace
+    for index in range(2):
+        start, first, last, target = trace['before'][index], moving[0], moving[-1], settled[0]['cards'][index]
+        assert max(abs(first['surfaces'][index][key] - start['rect'][key]) for key in ('x', 'y', 'width', 'height')) <= 8, trace
+        assert abs(float(first['labels'][index]['font'].removesuffix('px'))-float(start['font'].removesuffix('px'))) <= .5, trace
+        assert max(abs(last['surfaces'][index][key] - target['rect'][key]) for key in ('x', 'y', 'width', 'height')) <= 2, trace
+        last_label, target_label = last['labels'][index]['rect'], target['label']
+        assert abs(last_label['x']+last_label['width']/2-target_label['x']-target_label['width']/2) <= 1, trace
+        assert abs(last_label['y']+last_label['height']/2-target_label['y']-target_label['height']/2) <= 1, trace
+    assert page.locator('.research-mode-transition').count() == 0
+    page.screenshot(path=str(OUT / 'intro-mode-handoff-390.png'), full_page=True)
+    trace['limits'] = {'firstPaintPx': 8, 'lastSurfacePx': 2, 'lastLabelCenterPx': 1, 'fullVisualAcceptance': False}
+    return trace
+
+
+def consultation_pass_probe(page):
+    page.evaluate('''() => {
+      const adapter=ORDER_RESEARCH_APP.adapter,send=adapter.roleRequest;
+      window.__consultOriginalRead=send;
+      adapter.roleRequest=async(...args)=>{const value=await send(...args);if(args[0]!=='/workspace')return value;
+        return {...value,quotes:(value.quotes||[]).map(quote=>({...quote,lines:[
+          {productName:'특란',quantity:20,unit:'tray',serviceDate:'2026-12-17'},
+          {productName:'대란',quantity:5,unit:'box',serviceDate:'2026-12-18'}]}))};};
+    }''')
+    select(page, 'drawer', 'closed')
+    choice = page.locator('[name=consult-pass]').first
+    detail_button = page.locator('[data-action=consult-ticket-detail]').first
+    expect(detail_button).to_be_visible()
+    choice.check()
+    page.locator('[data-action=open-drawer]').click()
+    panel = page.locator('.functional-drawer')
+    expect(panel).to_be_visible()
+    memo = page.locator('.consult-memo textarea')
+    memo.fill('패스 상세를 열어도 유지할 상담 메모')
+    page.locator('[name=topic]').first.check()
+    page.evaluate('''() => {window.__consultRetained={memo:document.querySelector('.consult-memo textarea'),choice:document.querySelector('[name=consult-pass]'),header:document.querySelector('#order-app-header'),writes:ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==='POST').length};}''')
+    memo.press('Escape')
+    expect(panel).to_be_hidden()
+    page.evaluate('''() => {
+      const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+      const card=document.querySelector('.consult-ticket'),trace=window.__consultPassGeometry={source:rect(card),frames:[],done:false,trusted:false};
+      document.querySelector('[data-action=consult-ticket-detail]').addEventListener('click',event=>{trace.trusted=event.isTrusted;},{once:true,capture:true});
+      let seen=false,closed=0;const start=performance.now();
+      function sample(now){
+        const dialog=document.querySelector('.consult-pass-dialog'),ticket=dialog.querySelector('.ticket-detail');
+        if(dialog.open)seen=true;
+        if(seen)trace.frames.push({at:now-start,phase:dialog.open?dialog.dataset.motion:'closed',ticket:ticket?rect(ticket):null,source:rect(card),sourceVisibility:getComputedStyle(card).visibility});
+        if(seen&&!dialog.open)closed++;
+        if(closed>=3||now-start>12000){trace.done=true;return;}requestAnimationFrame(sample);
+      }requestAnimationFrame(sample);
+    }''')
+    detail_button.click()
+    dialog = page.get_by_role('dialog', name='오더 패스 상세', exact=True)
+    expect(dialog).to_be_visible()
+    page.wait_for_function('document.querySelector(".consult-pass-dialog").dataset.motion==="open"')
+    assert dialog.evaluate('node=>node.matches(":modal")')
+    expect(dialog.locator('.ticket-item')).to_have_count(2)
+    expect(dialog).to_contain_text('5상자')
+    expect(dialog.locator('.consult-pass-close')).to_be_focused()
+    page.screenshot(path=str(OUT / 'consultation-pass-expanded-390.png'), full_page=True)
+    dialog.locator('.consult-pass-close').click()
+    expect(dialog).to_be_hidden()
+    expect(detail_button).to_be_focused()
+    page.wait_for_function('__consultPassGeometry.done')
+    trace = page.evaluate('__consultPassGeometry')
+    opening = [row for row in trace['frames'] if row['phase'] == 'opening']
+    closing = [row for row in trace['frames'] if row['phase'] == 'closing']
+    settled = [row for row in trace['frames'] if row['phase'] == 'open']
+    assert trace['trusted'] and len(opening) >= 6 and len(closing) >= 6 and settled, trace
+    assert all(row['sourceVisibility'] == 'hidden' for row in opening + closing + settled), trace
+    assert settled[0]['ticket']['width'] >= trace['source']['width'] + 24, trace
+    assert max(abs(opening[0]['ticket'][key] - trace['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 12, trace
+    assert max(abs(closing[-1]['ticket'][key] - closing[-1]['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 2, trace
+    assert page.evaluate('''() => document.querySelector('[name=consult-pass]')===__consultRetained.choice&&__consultRetained.choice.checked&&document.querySelector('.consult-memo textarea')===__consultRetained.memo&&document.querySelector('#order-app-header')===__consultRetained.header''')
+    page.locator('[data-action=open-drawer]').click()
+    expect(memo).to_have_value('패스 상세를 열어도 유지할 상담 메모')
+    expect(page.locator('[name=topic]').first).to_be_checked()
+    memo.press('Escape')
+    expect(panel).to_be_hidden()
+    page.emulate_media(reduced_motion='reduce')
+    detail_button.click()
+    expect(dialog).to_be_visible()
+    assert dialog.get_attribute('data-motion') == 'open'
+    assert dialog.locator('.ticket-detail').evaluate('node=>node.getAnimations().length') == 0
+    page.keyboard.press('Escape')
+    expect(dialog).to_be_hidden()
+    expect(detail_button).to_be_focused()
+    trace['retainedDraftAndSelection'] = True
+    trace['reducedMotionImmediate'] = True
+    trace['postCountUnchanged'] = page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length===__consultRetained.writes')
+    assert trace['postCountUnchanged']
+    page.emulate_media(reduced_motion='no-preference')
+    page.evaluate('ORDER_RESEARCH_APP.adapter.roleRequest=__consultOriginalRead;delete window.__consultOriginalRead')
+    trace['limits'] = {'firstPaintPx': 12, 'closeHandoffPx': 2, 'minExpansionPx': 24, 'fullVisualAcceptance': False}
+    return trace
+
+
+def pass_loading_probe(page):
+    select(page, 'passes', 'loading')
+    cards = page.locator('.pass-loading .order-pass')
+    expect(cards).to_have_count(3)
+    page.wait_for_function('document.querySelectorAll(".pass-loading .order-pass[data-r3-skeleton=pending]").length===3')
+    rows = cards.evaluate_all('''cards=>cards.map(card=>{const r=card.getBoundingClientRect(),brand=card.querySelector('.loading-ticket-brand'),marks=[...brand.querySelectorAll('.pass-dots i')],style=getComputedStyle(card);return {width:r.width,height:r.height,opacity:style.opacity,mask:style.maskImage,brandOpacity:getComputedStyle(brand).opacity,bars:card.querySelector('.r3-geometry-skeleton').dataset.textRects,marks:marks.map(mark=>{const r=mark.getBoundingClientRect();return {color:getComputedStyle(mark).backgroundColor,width:r.width,height:r.height};})};})''')
+    assert all(row['width'] > 100 and row['height'] > 100 and row['opacity'] == row['brandOpacity'] == '1' and int(row['bars']) > 0 for row in rows), rows
+    assert all('radial-gradient' in row['mask'] and len(row['marks']) == 3 for row in rows), rows
+    assert all(mark['color'] == 'rgb(211, 217, 225)' and mark['width'] == mark['height'] == 14 for row in rows for mark in row['marks']), rows
+    page.screenshot(path=str(OUT / 'passes-loading-brand-390.png'), full_page=True)
+    select(page, 'passes', 'grid')
+    return {'cards': rows, 'geometryOwner': 'each actual pass card', 'fullVisualAcceptance': False}
+
+
+def pass_tear_probe(page):
+    select(page, 'passes', 'grid')
+    page.locator('[data-pass-id=qa-order-shipped]').click()
+    cut = page.locator('.expanded-pass>.ticket-detail [data-action=tear-ticket]')
+    confirm = page.locator('.expanded-pass>.tear-confirm')
+    expect(cut).to_be_visible()
+    cut.scroll_into_view_if_needed()
+    box = cut.bounding_box()
+    x, y = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 22, y, steps=3)
+    partial = page.locator('.pass-tear-preview').evaluate('''node=>({phase:node.dataset.phase,progress:Number(node.dataset.progress),clip:getComputedStyle(node.querySelector('[data-pass-tear-part=lower]')).clipPath,transform:getComputedStyle(node.querySelector('[data-pass-tear-part=lower]')).transform,sourceOpacity:getComputedStyle(node.parentNode.querySelector(':scope>.ticket-detail')).opacity})''')
+    assert partial['phase'] == 'preview' and 0 < partial['progress'] < 1 and partial['sourceOpacity'] == '0', partial
+    assert 'polygon(' in partial['clip'] and partial['transform'] != 'none', partial
+    assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().data.purchases.find(row=>row.id==="qa-order-shipped").status') == 'DISPATCHED'
+    page.mouse.up()
+    expect(confirm).to_be_hidden()
+    assert page.locator('.pass-tear-preview').count() == 0
+    page.mouse.move(x, y)
+    page.mouse.down()
+    page.mouse.move(x + 65, y, steps=7)
+    page.mouse.up()
+    expect(confirm).to_be_visible()
+    assert page.locator('.pass-tear-preview').get_attribute('data-phase') == 'preview'
+    confirm.locator('[data-action=cancel-tear]').click()
+    expect(confirm).to_be_hidden()
+    assert page.locator('.pass-tear-preview').count() == 0
+    cut.click()
+    page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.configure({requests:{"product POST /purchases":{scenario:"error",status:503}}})')
+    confirm.locator('[data-action=confirm-tear]').click()
+    expect(confirm.locator('[data-receipt-message]')).not_to_have_text('')
+    assert page.locator('.pass-tear-preview,.ticket-received').count() == 0
+    confirm.locator('[data-action=cancel-tear]').click()
+    page.emulate_media(reduced_motion='reduce')
+    cut.click()
+    expect(confirm).to_be_visible()
+    assert page.locator('.pass-tear-preview').count() == 0
+    confirm.locator('[data-action=cancel-tear]').click()
+    page.emulate_media(reduced_motion='no-preference')
+    cut.click()
+    page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.configure({requests:{"product POST /purchases":{scenario:"loading"}}})')
+    confirm.locator('[data-action=confirm-tear]').click()
+    page.wait_for_function('ORDER_RESEARCH_APP.adapter.fixture.inspect().pending===1')
+    assert page.locator('.pass-tear-preview').get_attribute('data-phase') == 'preview'
+    assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().data.purchases.find(row=>row.id==="qa-order-shipped").status') == 'DISPATCHED'
+    page.evaluate('''() => {
+      const trace=window.__tearNativeGeometry={frames:[],done:false},start=performance.now();
+      function sample(now){const preview=document.querySelector('.pass-tear-preview'),lower=preview?.querySelector('[data-pass-tear-part=lower]'),r=lower?.getBoundingClientRect();
+        trace.frames.push({at:now-start,phase:preview?.dataset.phase||'none',opacity:lower?getComputedStyle(lower).opacity:null,rect:r?{x:r.x,y:r.y,width:r.width,height:r.height}:null,status:ORDER_RESEARCH_APP.adapter.fixture.inspect().data.purchases.find(row=>row.id==='qa-order-shipped').status,receivedVisible:Boolean(document.querySelector('.ticket-received'))});
+        if(document.querySelector('.ticket-received')||now-start>6000){trace.done=true;return;}requestAnimationFrame(sample);
+      }requestAnimationFrame(sample);
+    }''')
+    page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.releasePending({requests:{}})')
+    page.wait_for_function('__tearNativeGeometry.done')
+    trace = page.evaluate('__tearNativeGeometry')
+    acknowledged = [row for row in trace['frames'] if row['phase'] == 'acknowledged']
+    assert len(acknowledged) >= 6 and all(row['status'] == 'RECEIVED' and not row['receivedVisible'] for row in acknowledged), trace
+    assert float(acknowledged[-1]['opacity']) < float(acknowledged[0]['opacity']), trace
+    assert acknowledged[-1]['rect']['y'] > acknowledged[0]['rect']['y'] + 40, trace
+    expect(page.locator('.ticket-received')).to_have_count(1)
+    assert page.locator('.pass-stage').evaluate('node=>node.lastElementChild.dataset.passId') == 'qa-order-shipped'
+    assert page.locator('.pass-tear-preview').count() == 0
+    page.screenshot(path=str(OUT / 'pass-receipt-after-tear-390.png'), full_page=True)
+    trace.update({'partialGesture': partial, 'shortDragCancelled': True, 'confirmCancelRestored': True, 'failedReceiptRestored': True,
+                  'reducedMotionPreviewAbsent': True, 'commercialAcceptance': False, 'fullVisualAcceptance': False})
+    return trace
+
+
+def evidence_presentation_probe(page):
+    result = {'reportedBadBuild': '9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092', 'current': []}
+    for screen in ['proof', 'signature']:
+        before = page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length')
+        select(page, screen, 'empty')
+        panel = page.locator('.research-evidence-page[data-review-ready=true]')
+        expect(panel).to_be_visible()
+        page.evaluate('document.fonts.ready')
+        expect(panel.locator('.research-evidence-settings')).to_be_visible()
+        if screen == 'proof':
+            expect(panel.locator('input[type=file]')).to_be_visible()
+            expect(panel.locator('.proof-purpose')).to_be_visible()
+        else:
+            expect(panel.locator('input[type=file]')).to_be_hidden()
+            expect(panel.locator('.proof-purpose')).to_be_hidden()
+            expect(panel.locator('.research-evidence-pages canvas')).to_have_count(1)
+        expect(panel.locator('.wf-signature canvas')).to_be_visible()
+        measurement = panel.evaluate('''panel => {
+          const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+          const box=rect(panel),targets=[panel.querySelector('.research-evidence-settings'),...panel.querySelectorAll('canvas')].filter(node=>!node.closest('[hidden]'));
+          return {screen:panel.dataset.reviewScenario,box,padding:getComputedStyle(panel).padding,layout:getComputedStyle(panel.querySelector('.research-evidence-settings')).display,viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,headerCount:document.querySelectorAll('#order-app-header').length,targets:targets.map(rect),casePickerVisible:Boolean(panel.querySelector('select:not([hidden])')&&!panel.querySelector('select').closest('[hidden]')),prepareVisible:[...panel.querySelectorAll('button')].some(button=>button.textContent==='자료와 서명 준비'&&!button.hidden)};
+        }''')
+        assert measurement['padding'] == '24px' and measurement['layout'] == 'grid' and measurement['headerCount'] == 1, measurement
+        assert measurement['documentWidth'] <= measurement['viewport'] + 1, measurement
+        assert not measurement['casePickerVisible'] and not measurement['prepareVisible'], measurement
+        assert all(target['width'] > 0 and target['height'] > 0 and target['x'] >= measurement['box']['x'] - 1 and target['x'] + target['width'] <= measurement['box']['x'] + measurement['box']['width'] + 1 for target in measurement['targets']), measurement
+        assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length') == before
+        page.screenshot(path=str(OUT / (screen + '-current-layout-390.png')), full_page=True)
+        result['current'].append(measurement)
+    result['limits'] = 'Native current layout and retained controls; archived bad build was separately reproduced structurally. No claim that an unidentified older version is user accepted.'
+    return result
+
+
+def existing_presentation_probe(page):
+    select(page, 'business', 'empty')
+    date = page.locator('.opening-date>button')
+    expect(date).to_be_visible()
+    business = date.evaluate('''button => {const text=button.querySelector('output'),a=getComputedStyle(button),b=getComputedStyle(text);return {labelColor:a.color,dateColor:b.color,labelFont:a.font,dateFont:b.font,requiredStars:document.querySelectorAll('.required-star').length};}''')
+    assert business['labelColor'] == business['dateColor'] and business['labelFont'] == business['dateFont'], business
+    assert business['requiredStars'] == 0, business
+    page.screenshot(path=str(OUT / 'business-placeholder-date-390.png'), full_page=True)
+    select(page, 'onboarding', 'company')
+    shade = page.locator('.ob-shade')
+    expect(shade).to_be_visible()
+    company = shade.evaluate('''node => {const h=document.querySelector('#order-app-header'),r=h.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return {topLayer:node.matches(':popover-open'),headerInert:h.inert,headerCovered:hit!==h&&!h.contains(hit),blur:getComputedStyle(node).backdropFilter};}''')
+    assert company['topLayer'] and company['headerInert'] and company['headerCovered'], company
+    assert 'blur(' in company['blur'], company
+    page.locator('[data-company-close]').click()
+    expect(shade).to_be_hidden()
+    assert page.locator('#order-app-header').evaluate('el=>el.inert') is False
+    select(page, 'signup', 'empty')
+    page.locator('.product-auth-sheet [data-action=open-terms]').click()
+    terms = page.locator('.product-auth-sheet .terms-page')
+    expect(terms.locator('[name=terms-check]')).to_be_visible()
+    expect(terms.locator('[data-action=back]')).to_be_visible()
+    assert terms.locator('.page-title,.pm-policy-meta,[data-policy-meta],.page-head b').count() == 0
+    consent = terms.evaluate('node=>({back:node.querySelectorAll("[data-action=back]").length,checkbox:node.querySelectorAll("[name=terms-check]").length})')
+    page.keyboard.press('Escape')
+    # A fresh authored read route has no retained signup terms session.
+    page.goto(page.url.split('?')[0] + '?view=research-r3&screen=terms&state=required')
+    terms = page.locator('.product-auth-sheet .terms-page')
+    expect(terms).to_be_visible()
+    assert terms.locator('.page-title,.pm-policy-meta,[data-policy-meta],.page-head,.check-row,.bottom-actions').count() == 0
+    filters = terms.locator('.segmented>button').evaluate_all('nodes=>nodes.map(n=>({background:getComputedStyle(n).backgroundColor,color:getComputedStyle(n).color}))')
+    assert len(filters) == 3 and all(x['background'] == 'rgb(32, 39, 43)' and x['color'] == 'rgb(255, 255, 255)' for x in filters), filters
+    page.screenshot(path=str(OUT / 'terms-read-context-390.png'), full_page=True)
+    return {'business': business, 'company': company, 'signupTerms': consent, 'readTermsFilters': filters}
+
+
+def main():
+    OUT.mkdir(parents=True, exist_ok=True)
+    log = (OUT / 'host.stderr.log').open('w')
+    host = subprocess.Popen(['node', 'tests/r3-browser-host.mjs'], cwd=ROOT, stdout=subprocess.PIPE, stderr=log, text=True)
+    receipt = {'status': 'RUNNING', 'commercialAcceptance': False, 'userAcceptance': False, 'checks': []}
+    cfg = {}
+    try:
+        ready, _, _ = select_io.select([host.stdout], [], [], 30)
+        assert ready, 'Loopback host did not publish its ready URL within 30 seconds'
+        cfg = json.loads(host.stdout.readline())
+        assert re.fullmatch(r'http://127\.0\.0\.1:\d+', cfg['url']), 'Only the isolated loopback host is allowed'
+        with sync_playwright() as driver:
+            browser = driver.chromium.launch(executable_path=os.environ.get('R3_BROWSER_BINARY') or shutil.which('chromium') or shutil.which('google-chrome'), args=['--no-sandbox'])
+            context = browser.new_context(viewport={'width': 390, 'height': 844}, reduced_motion='no-preference')
+            page = context.new_page()
+            page_errors, forbidden_writes = [], []
+            page.on('pageerror', lambda error: page_errors.append(str(error)))
+            page.on('request', lambda request: forbidden_writes.append({'method': request.method, 'url': request.url}) if request.method not in ('GET', 'HEAD', 'OPTIONS') and '/api/ia/auth/' not in request.url and '/login' not in request.url else None)
+            page.goto(cfg['url'] + '/ia?view=research-r3&screen=onboarding&state=guest-2')
+            page.locator('input[name=email]').fill(cfg['email'])
+            page.locator('input[name=password]').fill(cfg['pass'])
+            page.locator('#submit').click()
+            # The app exposes its controller before its first async scene has
+            # mounted; wait for the emitted initial route as well.
+            page.wait_for_function('Boolean(window.ORDER_RESEARCH_APP)&&document.documentElement.dataset.productScreen==="onboarding"&&document.documentElement.dataset.productState==="guest-2"')
+            expect(page.locator('#order-app-page .ob')).to_be_visible()
+            assert page.locator('iframe').count() == 0
+            receipt['input'] = input_probe(page)
+            receipt['checks'].append('C638 native Pretendard glyph geometry, rapid typing, middle selection, trusted IME, password masking and reduced motion')
+            receipt['morph'] = morph_probe(page)
+            receipt['checks'].append('C533 native first/last frame surface and label handoff')
+            receipt['consultationPass'] = consultation_pass_probe(page)
+            receipt['checks'].append('a778707d canonical compound pass expansion/shrink, top layer, focus, retained draft and reduced motion')
+            receipt['passLoading'] = pass_loading_probe(page)
+            receipt['checks'].append('e3b7703c pass silhouettes, measured skeleton geometry and three gray brand dots')
+            receipt['passTear'] = pass_tear_probe(page)
+            receipt['checks'].append('a5dc1435 native partial tear, 48px confirmation, failure/cancel restore and ACK-gated visual separation in memory fixture')
+            receipt['evidencePresentation'] = evidence_presentation_probe(page)
+            receipt['checks'].append('C542/C543 current proof/signature layout, visible controls, single header and no submission while viewing')
+            receipt['presentation'] = existing_presentation_probe(page)
+            receipt['checks'].append('C713 date placeholder paint; C534 header-covering top-layer blur; C683/C684/C686/C687/C688/C691 terms contexts')
+            receipt['pageErrors'], receipt['forbiddenWrites'] = page_errors, forbidden_writes
+            assert page_errors == [] and forbidden_writes == [], {'pageErrors': page_errors, 'forbiddenWrites': forbidden_writes}
+            receipt['status'] = 'PASS'
+            browser.close()
+    except Exception as error:
+        receipt['status'] = 'FAIL'
+        text = str(error)
+        for key in ('email', 'pass'):
+            if cfg.get(key):
+                text = text.replace(cfg[key], '[throwaway-owner]')
+        receipt['failure'] = text
+        raise RuntimeError(text) from None
+    finally:
+        (OUT / 'receipt.json').write_text(json.dumps(receipt, ensure_ascii=False, indent=2) + '\n')
+        host.terminate()
+        host.wait(timeout=10)
+        log.close()
+    print('PASS research UI feedback: ' + str(len(receipt['checks'])) + ' native scopes')
+
+
+if __name__ == '__main__':
+    main()

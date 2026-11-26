@@ -9,15 +9,11 @@ const checksum=bytes=>{let crc=0xffffffff;for(const byte of bytes)crc=crcTable[(
 const be32=value=>Uint8Array.of(value>>>24,value>>>16,value>>>8,value);
 function concat(...chunks){const out=new Uint8Array(chunks.reduce((n,c)=>n+c.length,0));let offset=0;for(const chunk of chunks){out.set(chunk,offset);offset+=chunk.length;}return out;}
 function chunk(type,bytes){const content=concat(new TextEncoder().encode(type),bytes);return concat(be32(bytes.length),content,be32(checksum(content)));}
-function values(model){
-  const parse=value=>typeof value==='string'&&/^\d{1,100}(?:\.\d{1,12})?$/.test(value)?value.split('.'):null;
-  const current=parse(model?.current),proposed=parse(model?.proposed);if(!current||!proposed)return null;
-  const scale=Math.max(current[1]?.length||0,proposed[1]?.length||0);
-  const minor=parts=>BigInt(parts[0]+(parts[1]||'').padEnd(scale,'0'));
-  return {current:minor(current),proposed:minor(proposed)};
+function comparisonExists(model){
+  const valid=value=>typeof value==='string'&&/^\d{1,100}(?:\.\d{1,12})?$/.test(value);
+  return valid(model?.current)&&valid(model?.proposed);
 }
-function painted(model){
-  const money=values(model);if(!money)return null;
+function painted(){
   const pixels=new Uint8Array(width*height*3).fill(255);
   const set=(x,y,color)=>{if(x<0||y<0||x>=width||y>=height)return;const at=(y*width+x)*3;pixels.set(color,at);};
   const rect=(x,y,w,h,color,radius=0)=>{
@@ -26,15 +22,11 @@ function painted(model){
       if(!radius||dx*dx+dy*dy<=radius*radius)set(px,py,color);
     }
   };
-  const delta=money.current>money.proposed?money.current-money.proposed:money.proposed-money.current;
-  // The same emphasized visual spread as the disclosed renderer, rounded to
-  // output pixels on the server. No decimal ratio leaves this function.
-  const spread=money.current?Number(delta*100000n/money.current)/100000:1;
-  const short=Math.max(.12,Math.min(1,1-spread*5.38));
-  const currentHigh=money.current>=money.proposed;
-  for(const [index,high]of [[0,currentHigh],[1,!currentHigh||money.current===money.proposed]]){
-    const value=index?money.proposed:money.current;
-    const tall=value===0n?0:high?79:Math.round(79*short),left=index?63:34,top=107-tall;
+  // Locked pixels are deliberately independent of price, relative change,
+  // ordering and zero values. Blurring a real graph still leaks its geometry.
+  // The disclosed renderer continues to receive the authorized real model.
+  for(const [index,tall]of [[0,79],[1,60]]){
+    const left=index?63:34,top=107-tall;
     rect(left,top,18,tall,index?[105,126,169]:[218,218,218],3);
     // Fixed, non-numeric text silhouettes are intentionally independent of the
     // actual amount, digit count and currency precision. Blurring real digits
@@ -60,11 +52,12 @@ function painted(model){
   return output;
 }
 
-/** Only already-obscured pixels cross this presentation boundary. Bar shapes
- * still convey approximate relative prices; no visual preview can promise
- * that all inference from those shapes is impossible. */
+/** A valid, caller-authorized comparison may show a generic locked preview.
+ * Its PNG is identical for every price pair; neither digits nor real graph
+ * proportions cross this boundary. Actual proportions require disclosure. */
 export async function createProtectedQuotePreview(model){
-  const pixels=painted(model);if(!pixels)return null;
+  if(!comparisonExists(model))return null;
+  const pixels=painted();
   const rows=new Uint8Array((width*3+1)*height);
   for(let y=0;y<height;y++)rows.set(pixels.subarray(y*width*3,(y+1)*width*3),y*(width*3+1)+1);
   const compressed=new Uint8Array(await new Response(new Blob([rows]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
@@ -79,5 +72,5 @@ export async function researchQuoteResultMarkup(html){
   // without replacing its DOM. Ship the same safe preview with those scenes.
   fixturePreview??=createProtectedQuotePreview(reviewQuoteFixture('saving').model);
   const preview=await fixturePreview;
-  return preview?html+'<template data-research-result-preview><img src="'+preview.image+'" width="342" height="324" alt="현재 납품가와 검색된 가격의 잠금 미리보기. 금액은 공개되지 않았어요."></template>':html;
+  return preview?html+'<template data-research-result-preview><img src="'+preview.image+'" width="342" height="324" alt="비공개 견적 결과의 예시 미리보기. 실제 금액과 비율은 인증 후 확인할 수 있어요."></template>':html;
 }

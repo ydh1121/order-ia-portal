@@ -6,6 +6,7 @@ import {handleR3Price} from './r3-price.mjs';
 import {readRoleScope} from './r3-role.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
 import {notificationPreferences} from './notification-preferences.mjs';
+import {notificationPush,processNotificationWork} from './notification-push.mjs';
 
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'private, no-store','Vary':'Cookie','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>Response.json(data,{status,headers});
@@ -224,7 +225,13 @@ export async function handleProductOperations({request,env,actor,path='/',clock=
   }
   if(path==='/account')return json(await account(db,actor,b,now));
   if(path==='/notifications')return json(await notifications(db,actor,b,now));
-  if(path==='/notification-preferences')return json(await notificationPreferences({db,actor,body:b,now},{sql,replay,commit,fail}));
+  if(path==='/notification-preferences')return json(await notificationPreferences({db,env,actor,body:b,now},{sql,replay,commit,fail}));
+  if(path==='/notification-push')return json(await notificationPush({db,env,actor,body:b,now},{sql,replay,commit,fail}));
+  if(path==='/notification-push/drain'){
+   if(actor.role!=='OWNER')fail('ACCESS_DENIED',403);
+   if(!b||b.action!=='drain'||b.expectedRevision!==0||Object.keys(b).some(key=>!['action','expectedRevision','requestKey'].includes(key)))fail('INVALID_PUSH_COMMAND');
+   return json(await processNotificationWork(env,{now}));
+  }
   if(path.startsWith('/drafts/'))return json(await draft(db,actor,path.slice(8),b,now));
   const grants=await readRoleScope(db,actor.id);if(!grants.length&&!path.startsWith('/policies/'))fail('NO_BUSINESS_MEMBERSHIP',403);
   if(b){

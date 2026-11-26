@@ -74,6 +74,10 @@ def check_result(view, state):
         state_name={'new-detail':'saving','current-detail':'saving'}.get(state,state)
         expect(view).to_have_attribute('data-state',state_name)
         expect(view.locator('.oq-series:visible')).to_have_count(2)
+        # C558/C563: current result UI has no back action and keeps price labels regular.
+        expect(view.locator('button[data-action=back]:visible')).to_have_count(0)
+        for label in view.locator('.oq-name').all():
+            expect(label).to_have_css('font-weight', '400')
         current=view.locator('.oq-series[data-kind=current]')
         proposed=view.locator('.oq-series[data-kind=proposed]')
         expect(current).to_have_attribute('aria-label',re.compile('12,540,000원'))
@@ -83,6 +87,11 @@ def check_result(view, state):
             front=proposed if state=='new-detail' else current
             expect(front).to_have_attribute('data-front','true')
             expect(front.locator('.oq-card-copy')).to_be_visible()
+            # C559: center the remaining label in the uncovered part of its bar.
+            back=(current if state=='new-detail' else proposed).locator('.oq-back-label')
+            expect(back).to_have_css('font-weight', '400')
+            expect(back).to_have_css('justify-content', 'center')
+            expect(back).to_have_css('text-align', 'center')
             expect(front.locator('.oq-annual')).to_contain_text('7,200,000')
             if state=='new-detail':
                 expect(front.locator('.oq-rate')).to_contain_text('4.78%')
@@ -109,6 +118,11 @@ def check_result(view, state):
         expect(view).to_have_attribute('data-state',{'locked':'unverified','no-result':'no-offer','expired':'expired'}[state])
         expect(view.locator('.oq-series:visible')).to_have_count(0)
         assert not re.search(r'12,540,000|11,940,000|13,140,000',view.inner_text())
+        if state=='locked':
+            preview=view.locator('.research-quote-protected-preview')
+            expect(preview).to_be_visible()
+            expect(preview).to_have_attribute('alt',re.compile('실제 금액과 비율은 인증 후'))
+            assert view.locator('.oq-price-value,.oq-card-value').all_text_contents()==['','','','']
         if state=='no-result':
             expect(view.locator('.oq-title')).to_have_text('길을 잃으셨나요?')
             expect(view.locator('.oq-sub')).to_be_hidden()

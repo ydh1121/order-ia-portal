@@ -1,4 +1,5 @@
 import {catalog,frames,cssGzip} from './product-ui/catalog.gen.mjs';
+import {productFontCss} from './product-fonts.mjs';
 import {runtimes} from './product-ui/runtime.gen.mjs';
 import {getProductApplicationDocument} from './product-ui/documents.mjs';
 import {getProductUiBootstrap} from './product-ui/bootstrap.gen.mjs';
@@ -8,14 +9,15 @@ import {brandMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,co
 import {brandPanelUiCss} from './order-engine/browser/brand-panel-ui.gen.mjs';
 import {getProductPanelBootstrap} from './product-account-panels.mjs';
 import {getProductAuthSheetBootstrap} from './product-auth-sheet.mjs';
+import {notificationSettingsBootstrap,notificationSettingsCss} from './notification-settings-bootstrap.mjs';
 
 const js=value=>JSON.stringify(value).replaceAll('<','\\u003c');
 const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const inflate=async value=>new Response(new Blob([Uint8Array.from(atob(value),c=>c.charCodeAt(0))]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
 let styles;
-export function productBootstrap(nonce,context,panels,authSheet){return `<script nonce="${nonce}">${sharedCoreScript}\n${commonMotionScript}\n${getProductUiBootstrap().script}\n(${browserFunction(installProductAdapter)})(${js(context)});\n${panels?.script||''}\n${authSheet?.script||''}</script>`;}
+export function productBootstrap(nonce,context,panels,authSheet){return `<script nonce="${nonce}">${sharedCoreScript}\n${commonMotionScript}\n${getProductUiBootstrap().script}\n${notificationSettingsBootstrap()}\n(${browserFunction(installProductAdapter)})(${js(context)});\n${panels?.script||''}\n${authSheet?.script||''}</script>`;}
 export function injectProductContext(html,nonce,context,panels){
- return html.replace('</head>','<style>'+brandPanelUiCss+getProductUiBootstrap().css+(panels?.css||'')+'</style>'+productBootstrap(nonce,context,panels)+'</head>');
+ return html.replace('</head>','<style>'+productFontCss+brandPanelUiCss+getProductUiBootstrap().css+notificationSettingsCss+(panels?.css||'')+'</style>'+productBootstrap(nonce,context,panels)+'</head>');
 }
 function bootProductDocument(screen,state,introArtSource,reviewLibrary=false){
  const root=document.getElementById('order-single'),adapter=window.ORDER_APP_ADAPTER;
@@ -97,5 +99,5 @@ export async function renderProductUiDocument(nonce,context,document,{reviewLibr
  const {screen,state}=document.row;
  if(!/^[a-f0-9]{16,128}$/.test(nonce)||!/^[-\w]{1,100}$/.test(screen)||!/^[-\w]{1,100}$/.test(state))throw Error('INVALID_PRODUCT_ROUTE');
  styles??=inflate(cssGzip);const [css,panels,authSheet]=await Promise.all([styles,getProductPanelBootstrap(),screen==='onboarding'?getProductAuthSheetBootstrap():null]);
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+panels.css+(authSheet?.css||'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+productFontCss+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+notificationSettingsCss+panels.css+(authSheet?.css||'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+brandAccountScript+'\n'+document.mount+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
 }

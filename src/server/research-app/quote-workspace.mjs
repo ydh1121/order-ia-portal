@@ -4,6 +4,7 @@
  * This module owns only the host boundary, lifetime and application navigation.
  */
 import {createResearchQuoteRepository} from './quote-repository.mjs';
+import {mountResearchQuoteModePresentation} from './quote-mode-presentation.mjs';
 const ASSET_BASE='/ia/research-assets/';
 const ownedRoots=new WeakMap();
 const pendingRoots=new WeakMap();
@@ -167,7 +168,7 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
   if(styles)for(const name of ['styles.css','date-field.css','spinning-counter.css']){
     const link=doc.createElement('link');link.rel='stylesheet';link.href=ASSET_BASE+'web/'+name;link.dataset.researchQuoteStyle=name;doc.head.append(link);links.push(link);
   }
-  let environment,app,releaseGlobals,controller,regular,repository,ownsRepository=false;
+  let environment,app,releaseGlobals,releaseModePresentation,controller,regular,repository,ownsRepository=false;
   try{
     const modules=await loadModules();if(signal?.aborted)throw new win.DOMException('Aborted','AbortError');
     repository=!fixtureScope&&services.repository;
@@ -181,6 +182,7 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
     app=modules.createOrderApp({quoteMode:mode,quoteProvider:services.quoteProvider||null,onAuthRequest:services.onAuthRequest||null,researchEnvironment:environment});
     const review=modules.createQ4Review({bridge:app.regularBridge,researchEnvironment:environment});app.connectQ4(review);
     await app.boot();if(signal?.aborted)throw new win.DOMException('Aborted','AbortError');
+    releaseModePresentation=mountResearchQuoteModePresentation(content,environment);
     modules.mountSavedBusinessPicker?.(app,environment);
     const sync=fixtureScope?null:modules.mountQuoteDraftSync?.(app,environment);
     let disposed=false;
@@ -194,11 +196,11 @@ async function mountWorkspace(root,{mode='simple',step='q1',services={},onNaviga
       async applyScenario(value){const result=await app.researchBridge.applyScenario(value);notify();return result;},
       back(){if(!environment.inspect().modalHistory)return false;environment.history.back();return true;},
       async flush(){const saved=await app.researchBridge.save();return saved.ok&&sync?sync.flush():saved;},
-      dispose(){if(disposed)return;disposed=true;signal?.removeEventListener('abort',abort);content.removeEventListener('order-quote-committed',notify);content.removeEventListener('change',notify);app.researchBridge.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository.dispose();for(const link of links)link.remove();content.remove();ownedRoots.delete(root);},
+      dispose(){if(disposed)return;disposed=true;signal?.removeEventListener('abort',abort);content.removeEventListener('order-quote-committed',notify);content.removeEventListener('change',notify);releaseModePresentation?.();app.researchBridge.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository.dispose();for(const link of links)link.remove();content.remove();ownedRoots.delete(root);},
     };
     ownedRoots.set(root,controller);content.addEventListener('order-quote-committed',notify);content.addEventListener('change',notify);signal?.addEventListener('abort',abort,{once:true});
     navigate({step,page:'form'});return controller;
-  }catch(error){app?.researchBridge?.dispose();environment?.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository?.dispose();for(const link of links)link.remove();content.remove();throw error;}
+  }catch(error){releaseModePresentation?.();app?.researchBridge?.dispose();environment?.dispose();regular?.releaseWithin?.(content);releaseGlobals?.();if(ownsRepository)repository?.dispose();for(const link of links)link.remove();content.remove();throw error;}
 }
 
 export {researchQuoteCss} from './quote-style.mjs';

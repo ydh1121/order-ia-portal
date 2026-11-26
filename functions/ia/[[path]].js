@@ -106,6 +106,7 @@ export async function onRequest({request,env}){
    const {renderDeliveryApplication}=await import('../../src/server/research-release-delivery.mjs');
    try{html=await renderDeliveryApplication(nonce,url.searchParams,env,url.origin,productContext.mode==='lab'?productContext:null);}catch(error){return new Response('이 연구 빌드를 열 수 없습니다.',{status:error.status||503,headers:{...base,'Content-Type':'text/plain; charset=utf-8'}});}
  }else if(r3View==='product-r3'){
+   headers['Content-Security-Policy']+="; worker-src 'self'";
    const screen=url.searchParams.get('screen')||'store-purchase',state=url.searchParams.get('state')||'default',componentVariant=url.searchParams.get('componentVariant')||null;
    if(screen==='component-library'){
     const {renderProductLibraryApplication}=await import('../../src/server/r3-qa-product-page.mjs');

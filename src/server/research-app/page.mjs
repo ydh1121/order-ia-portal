@@ -1,4 +1,5 @@
 import {catalog,frames,cssGzip} from '../product-ui/catalog.gen.mjs';
+import {productFontCss} from '../product-fonts.mjs';
 import {runtimes} from '../product-ui/runtime.gen.mjs';
 import {getProductApplicationDocument,getProductDocuments} from '../product-ui/documents.mjs';
 import {getProductUiBootstrap} from '../product-ui/bootstrap.gen.mjs';
@@ -133,7 +134,7 @@ html,body{margin:0;min-height:100%;background:#fff}body{overflow-x:clip}#order-s
 let foundation;
 function researchFoundation(){return foundation??=(async()=>{
   styles??=inflate(cssGzip);const [css,panels,auth]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap()]);
-  return {css:css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
+  return {css:productFontCss+css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
     script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 

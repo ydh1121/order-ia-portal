@@ -10,7 +10,7 @@ import {installProductAdapter} from '../src/server/product-app-adapter.mjs';
 import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
 import {readFileSync} from 'node:fs';
 import {researchScene} from '../src/server/research-app/page.mjs';
-import {mountResearchDrawer} from '../src/server/research-app/drawer.mjs';
+import {mountResearchDrawer,mountConsultationPassDetail} from '../src/server/research-app/drawer.mjs';
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const tick=()=>new Promise(resolve=>setTimeout(resolve,0));
 async function until(check,label='response'){const end=Date.now()+3000;while(!check()&&Date.now()<end)await tick();assert.ok(check(),label);}
@@ -143,8 +143,28 @@ test('connected consultation keeps actual compound cards and shows the requested
   const v=await setup(t),send=v.adapter.roleRequest;
   v.adapter.roleRequest=async(...args)=>{const value=await send(...args);if(args[0]==='/workspace')return {...value,quotes:value.quotes.map(quote=>({...quote,lines:[{productName:'특란',quantity:20,unit:'tray',serviceDate:'2026-12-17'},{productName:'대란',quantity:5,unit:'box',serviceDate:'2026-12-18'}]}))};return value;};
   const source=await researchScene('drawer','closed','email');v.w.ORDER_DESIGN_MODULES=[];v.w.eval(source.mount);const module=v.w.ORDER_DESIGN_MODULES.find(module=>module.id==='drawer');const dispose=mountResearchDrawer({container:v.root,scene:{state:'closed',html:source.html,styles:[]},module,api:{mode:'product',adapter:v.adapter,motion:v.motion,reduced:()=>true,select(){}}});v.owned.push(dispose);
-  await until(()=>v.root.querySelector('.consult-ticket-detail dt'));assert.equal(v.root.querySelectorAll('.consult-ticket-detail dt').length,2);assert.match(v.root.querySelector('.consult-ticket-detail').textContent,/5상자/);v.root.querySelector('[data-action=consult-ticket-detail]').click();assert.equal(v.root.querySelector('.consult-ticket-detail').hidden,false);
+  await until(()=>v.root.querySelector('.consult-ticket-detail .ticket-item'));assert.equal(v.root.querySelectorAll('.consult-ticket-detail .ticket-item').length,2);assert.match(v.root.querySelector('.consult-ticket-detail').textContent,/5상자/);
+  const opener=v.root.querySelector('[data-action=consult-ticket-detail]'),card=opener.closest('.consult-ticket'),detail=card.querySelector('.consult-ticket-detail');opener.click();
+  const dialog=v.root.querySelector('.consult-pass-dialog');assert.equal(dialog.open,true);assert.equal(dialog.querySelector('.ticket-detail'),detail.querySelector('.ticket-detail'));assert.equal(detail.hidden,false);assert.equal(card.style.visibility,'hidden');assert.equal(dialog.dataset.motion,'open','reduced motion opens without a flight');
+  dialog.querySelector('.consult-pass-close').click();assert.equal(dialog.open,false);assert.equal(detail.parentNode,card);assert.equal(detail.hidden,true);assert.equal(v.w.document.activeElement,opener);
   v.root.querySelector('[name=consult-pass]').click();v.root.querySelector('[data-action=open-drawer]').click();const memo=v.root.querySelector('.consult-memo textarea');memo.value='실제 상담 요청';v.root.querySelector('[name=topic]').checked=true;
   const picker=v.root.querySelector('[data-action=choose-consult-date]');if(picker){picker.click();const day=[...v.root.querySelectorAll('[data-day]')].find(button=>!button.disabled);assert.ok(day);day.click();}else v.root.querySelector('[name=desiredDate]').value='2026-12-17';
   const submit=v.root.querySelector('[data-action=request-booking]');submit.click();await until(()=>v.root.querySelector('.consult-complete'));assert.equal(v.root.querySelector('.consult-complete h2').textContent,'상담을 예약했어요');assert.match(v.root.querySelector('.consult-complete').textContent,/예약시간 확정 후 담당자가 연락드릴 예정이에요/);assert.equal(submit.hidden,true);assert.equal(v.adapter.fixture.inspect().data.cases.find(row=>row.kind==='consult').state,'OPEN');
+});
+
+test('consultation pass expands from the selected card and shrinks back without replacing the retained selection or booking draft',async t=>{
+  const v=await setup(t);v.w.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){}});
+  v.root.innerHTML='<article class="consult-ticket"><label><input name="consult-pass" type="checkbox" checked><span>사업장</span></label><button data-action="consult-ticket-detail" aria-expanded="false">패스 상세</button><section class="consult-ticket-detail" hidden><article class="nav-ticket ticket-detail"><h2>사업장</h2><div class="ticket-item">특란 · 20판</div><div class="ticket-item">대란 · 5상자</div></article></section></article><label><input name="topic" type="checkbox" checked>수량</label><textarea>유지할 상담 메모</textarea><input name="desiredDate" value="2026-12-17">';
+  const card=v.root.querySelector('.consult-ticket'),opener=card.querySelector('button'),detail=card.querySelector('.consult-ticket-detail'),ticket=detail.querySelector('.ticket-detail'),memo=v.root.querySelector('textarea'),selection=card.querySelector('input'),topic=v.root.querySelector('[name=topic]');
+  card.getBoundingClientRect=()=>({left:24,top:460,width:290,height:128});ticket.getBoundingClientRect=()=>({left:16,top:200,width:358,height:320});
+  const flights=[];ticket.animate=(frames,timing)=>{let resolve;const job={frames,timing,cancelled:false,finished:new Promise(done=>{resolve=done;}),cancel(){job.cancelled=true;},finish(){resolve();}};flights.push(job);return job;};
+  const controller=new v.w.AbortController(),viewer=mountConsultationPassDetail(v.root,{signal:controller.signal});v.owned.push(viewer.destroy);
+  opener.click();const dialog=v.root.querySelector('dialog');assert.equal(dialog.open,true);assert.equal(dialog.dataset.motion,'opening');assert.equal(flights.length,1);
+  assert.equal(flights[0].frames[0].transform,'translate(8px,260px) scale('+290/358+','+128/320+')');assert.equal(flights[0].frames[1].transform,'none');
+  flights[0].finish();await tick();assert.equal(dialog.dataset.motion,'open');assert.equal(flights[0].cancelled,true);
+  dialog.querySelector('button').click();assert.equal(dialog.dataset.motion,'closing');assert.equal(dialog.open,true);assert.equal(flights.length,2);assert.equal(flights[1].frames[1].transform,flights[0].frames[0].transform);
+  flights[1].finish();await tick();assert.equal(dialog.open,false);assert.equal(card.style.visibility,'');assert.equal(detail.parentNode,card);assert.equal(detail.hidden,true);assert.equal(v.w.document.activeElement,opener);
+  assert.equal(v.root.querySelector('textarea'),memo);assert.equal(memo.value,'유지할 상담 메모');assert.equal(selection.checked,true);assert.equal(topic.checked,true);assert.equal(v.root.querySelector('[name=desiredDate]').value,'2026-12-17');
+  opener.click();const opening=flights.at(-1);dialog.dispatchEvent(new v.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));assert.equal(opening.cancelled,true);assert.equal(dialog.dataset.motion,'closing');flights.at(-1).finish();await tick();assert.equal(dialog.open,false);
+  opener.click();controller.abort();assert.equal(v.root.querySelector('dialog'),null);assert.equal(card.style.visibility,'');assert.equal(detail.parentNode,card);assert.equal(memo.value,'유지할 상담 메모');assert.equal(v.adapter.fixture.inspect().calls.some(call=>call.method==='POST'),false);
 });

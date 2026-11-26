@@ -91,9 +91,10 @@ test('regular Q1→Q2 input and atomic mode copy survive remount without regular
     field.value='10';field.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:'10'}));await idle(workspace);
     assert.equal(workspace.snapshot().lines[0].qty,'10');assert.equal((await workspace.save()).ok,true);
     f.root.querySelector('#quote-mode-switch').click();await settle();const dialog=f.root.querySelector('#quote-mode-dialog');assert.equal(dialog.open,true);
-    const copy=dialog.querySelector('[data-mode-option]');assert.equal(copy.closest('label').hidden,false);copy.checked=true;dialog.querySelector('[data-mode-confirm]').click();await until(()=>f.navigate.some(value=>value.type==='mode'));
+    const copy=dialog.querySelector('[data-mode-option]');assert.equal(copy.closest('label').hidden,false);assert.equal(copy.checked,false,'copying simple data is opt-in on every opening');assert.match(dialog.querySelector('#quote-mode-description').textContent,/모드별로 최근 작성한 내용 하나씩/);copy.checked=true;dialog.querySelector('[data-mode-confirm]').click();await until(()=>f.navigate.some(value=>value.type==='mode'));
     assert.equal(f.navigate.at(-1)?.type,'mode');assert.equal(f.navigate.at(-1)?.mode,'detailed');assert.equal(f.win.location.href,initialURL);
-    workspace.dispose();const detailed=await f.mount('detailed');assert.equal(detailed.snapshot().lines.length,1);assert.equal(detailed.snapshot().lines[0].qty,'10');detailed.dispose();
+    workspace.dispose();const detailed=await f.mount('detailed');assert.equal(detailed.snapshot().lines.length,1);assert.equal(detailed.snapshot().lines[0].qty,'10');
+    f.root.querySelector('#quote-mode-switch').click();await settle();const returnDialog=f.root.querySelector('#quote-mode-dialog');assert.equal(returnDialog.open,true);assert.equal(returnDialog.querySelector('[data-mode-option]').checked,false,'the save notice is shown by default');assert.equal(returnDialog.querySelector('[data-mode-option-label]').textContent,'다시 표시하지 않기');returnDialog.querySelector('[data-mode-cancel]').click();await until(()=>!returnDialog.open);detailed.dispose();
     const restored=await f.mount('simple');assert.equal(restored.snapshot().lines[0].qty,'10');restored.dispose();
     const keys=Object.keys(f.win.localStorage);assert.ok(keys.some(key=>key.endsWith('_simple')));assert.ok(keys.some(key=>key.endsWith('_detailed')));assert.ok(keys.every(key=>key.startsWith('order.app.test-account:')));
     assert.deepEqual(f.failures,[]);assert.equal(digest(JSON.stringify(quoteFiles)),sealedBefore);
@@ -106,6 +107,70 @@ test('concurrent mount is one owner and modal back stays inside the quote worksp
     f.root.querySelector('#quote-mode-switch').click();await settle();assert.equal(f.root.querySelector('#quote-mode-dialog').open,true,JSON.stringify({inspect:a.inspect(),errors:f.failures.map(e=>e.message),feedback:f.root.querySelector('#form-error').textContent}));
     assert.equal(a.back(),true);await settle();assert.equal(f.root.querySelector('#quote-mode-dialog').open,false);assert.equal(a.back(),false);assert.equal(f.navigate.length,0);
     a.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('simple Q1 actual completion attempt exposes only missing choices and clears each repaired group through the regular engine',async()=>{
+  const f=setup();try{
+    const workspace=await f.mount('simple');await settle();
+    const groups=()=>['housing','size','pack'].map(name=>f.root.querySelector('#picks-'+name));
+    f.root.querySelector('#to-result').click();await settle();
+    assert.equal(f.root.querySelector('#err-q1').textContent,'계란 규격을 선택해 주세요.');
+    for(const group of groups())assert.ok([...group.querySelectorAll('[data-pick]')].every(button=>button.getAttribute('aria-invalid')==='true'),group.id+' must use the existing missing-choice verdict');
+    f.root.querySelector('[data-pick="housing"][data-value="1"]').click();await settle();
+    assert.ok([...groups()[0].querySelectorAll('[data-pick]')].every(button=>!button.hasAttribute('aria-invalid')),'a selected field is no longer an error');
+    for(const group of groups().slice(1))assert.ok([...group.querySelectorAll('[data-pick]')].every(button=>button.getAttribute('aria-invalid')==='true'),group.id);
+    for(const [field,value]of [['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+    await idle(workspace);assert.equal(workspace.snapshot().lines.length,1);assert.equal(f.root.querySelector('#err-q1').hidden,true);
+    assert.ok(groups().every(group=>!group.querySelector('[aria-invalid=true]')));
+    assert.equal(workspace.snapshot().lines[0].qty,'','selection must not invent the later purchase data');
+    workspace.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('Q1 summary tags come from actual Q2 data, and stack edit plus swipe cancel retain the original quote transaction',async()=>{
+  const f=setup();try{
+    const workspace=await f.mount('detailed');
+    for(const [field,value]of [['housing','1'],['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+    await idle(workspace);workspace.navigate({step:'q1'});await settle();
+    let row=f.root.querySelector('#added-lines [data-saved-row]');assert.ok(row);assert.equal(row.querySelector('.saved-quantity-tags'),null,'title alone before Q2 input');
+    row.querySelector('[data-edit]').click();await settle();assert.equal(f.root.querySelector('#sku-dialog').open,true);
+    f.root.querySelector('#cancel-sku').click();await until(()=>!f.root.querySelector('#sku-dialog').open);
+    workspace.navigate({step:'q2'});await settle();
+    for(const [selector,value]of [['[data-line-qty]','100'],['[data-line-price]','5000']]){const input=f.root.querySelector(selector);input.value=value;input.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:value}));await idle(workspace);}
+    assert.equal((await workspace.save()).ok,true);workspace.navigate({step:'q1'});await settle();
+    row=f.root.querySelector('#added-lines [data-saved-row]');const tags=[...row.querySelectorAll('.saved-quantity-tags>span')].map(span=>span.textContent);
+    assert.deepEqual(tags,['월 100판','월 구매액 500,000원']);assert.equal(row.querySelector('.saved-quantity-tags button'),null);
+    const before=JSON.stringify(workspace.snapshot()),pointer=(type,x,y=10)=>{const event=new f.win.MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y});Object.defineProperties(event,{pointerId:{value:1},isPrimary:{value:true}});row.dispatchEvent(event);};
+    pointer('pointerdown',150);pointer('pointermove',70);pointer('pointerup',50);assert.equal(row.dataset.savedOpen,'true');assert.equal(JSON.stringify(workspace.snapshot()),before);
+    row.querySelector('[data-remove]').click();await settle();assert.equal(f.root.querySelector('#sku-delete-dialog').open,true);
+    f.root.querySelector('#sku-delete-cancel').click();await until(()=>!f.root.querySelector('#sku-delete-dialog').open);assert.equal(JSON.stringify(workspace.snapshot()),before);
+    workspace.dispose();assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
+test('mode popup content follows the real modal lifecycle, honors reduced motion and returns to the retained header after cancel or copy failure',async()=>{
+  const f=setup();try{
+    const header=f.win.document.createElement('button');header.id='research-order-trigger';header.textContent='Order';f.win.document.querySelector('#application-header').append(header);
+    const preference=Object.assign(new f.win.EventTarget(),{matches:false,media:'(prefers-reduced-motion: reduce)'}),motions=[],focusCalls=[];
+    const focus=f.win.HTMLElement.prototype.focus;f.win.HTMLElement.prototype.focus=function(...args){focusCalls.push({id:this.id,step:this.dataset.open,stack:new Error().stack.split('\n').slice(1,4)});return focus.apply(this,args);};
+    f.win.matchMedia=query=>query.includes('prefers-reduced-motion')?preference:Object.assign(new f.win.EventTarget(),{matches:false,media:query});
+    const animate=f.win.Element.prototype.animate;
+    f.win.Element.prototype.animate=function(frames,options){if(this.matches('#quote-mode-dialog>.q1-confirm'))motions.push({frames,options});return animate.call(this,frames,options);};
+    const workspace=await f.mount('simple');
+    for(const [field,value]of [['housing','1'],['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+    await idle(workspace);
+    const trigger=f.root.querySelector('#quote-mode-switch'),dialog=f.root.querySelector('#quote-mode-dialog');
+    header.focus();trigger.click();await settle();assert.equal(dialog.open,true);assert.equal(motions.length,1);assert.equal(motions[0].frames.length,5);assert.match(motions[0].frames[1].transform,/1\.04,\.96/);
+    dialog.querySelector('[data-mode-cancel]').click();await until(()=>!dialog.open);await until(()=>f.win.document.activeElement===header).catch(error=>{throw Error(JSON.stringify({active:f.win.document.activeElement?.outerHTML,focusCalls,shell:f.win.OrderModalShell.inspect()}),{cause:error});});assert.equal(motions.length,2);assert.equal(motions[1].frames.at(-1).transform,'scale(.82,.12)');
+    const setItem=f.win.Storage.prototype.setItem;
+    f.win.Storage.prototype.setItem=function(key,value){if(String(key).endsWith('_detailed'))throw new f.win.DOMException('Unavailable storage','QuotaExceededError');return setItem.call(this,key,value);};
+    header.focus();trigger.click();await settle();dialog.querySelector('[data-mode-option]').checked=true;dialog.querySelector('[data-mode-confirm]').click();
+    await until(()=>!dialog.querySelector('[data-mode-error]').hidden);assert.equal(dialog.open,true);assert.equal(f.navigate.length,0,'a failed atomic copy cannot navigate or simulate success');assert.equal(workspace.snapshot().lines.length,1);
+    dialog.querySelector('[data-mode-cancel]').click();await until(()=>!dialog.open);await until(()=>f.win.document.activeElement===header);
+    f.win.Storage.prototype.setItem=setItem;
+    preference.matches=true;preference.dispatchEvent(new f.win.Event('change'));const before=motions.length;trigger.click();await settle();assert.equal(dialog.open,true);assert.equal(motions.length,before,'reduced motion skips the added wobble while retaining the native dialog');
+    workspace.dispose();await settle();assert.equal(workspace.inspect().lifecycle.observers,0);assert.deepEqual(f.failures,[]);
   }finally{f.close();}
 });
 

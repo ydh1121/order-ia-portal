@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {createRequire} from 'node:module';
 import {mountResearchArrowMotion} from '../src/server/research-app/interaction-polish.mjs';
-import {morphIntroductionModes,researchOnboardingSource,researchOnboardingMarkup} from '../src/server/research-app/onboarding-polish.mjs';
+import {captureIntroductionMode,morphIntroductionModes,researchOnboardingSource,researchOnboardingMarkup} from '../src/server/research-app/onboarding-polish.mjs';
 import {runtimes} from '../src/server/product-ui/runtime.gen.mjs';
 const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
@@ -26,11 +26,11 @@ test('directional motion reaches dynamic product controls while preserving liste
 
 test('intro card morph uses one clock, unscaled labels and restores real controls on completion or interruption',async()=>{
   for(const cancel of [false,true]){
-    const dom=new JSDOM('<section><button style="border-radius:16px;background:blue;color:white;font:700 17px Arial"><span>상세 견적</span></button></section>'),{document}=dom.window;
+    const dom=new JSDOM('<section><button style="border-radius:16px;background:blue;color:white;font:700 17px Arial"><span style="font:700 17px/24px Arial">상세 견적</span></button></section>'),{document}=dom.window;
     const shell=document.querySelector('section'),button=document.querySelector('button'),label=button.querySelector('span'),animations=[];
     shell.style.transform='translateX(20px)';
     const originalVisibility=cancel?'visible':'';button.style.visibility=originalVisibility;
-    const start={x:180,y:620,width:180,height:54,radius:'12px',label:'상세 견적'};
+    const start={x:180,y:620,width:180,height:54,radius:'12px',label:'상세 견적',borders:[2,2,2,2],corners:Array(4).fill('12px'),labelStyle:{fontSize:'15px',lineHeight:'24px',letterSpacing:'-.2px',color:'rgb(255, 255, 255)'}};
     button.getBoundingClientRect=()=>({x:200,y:300,width:160,height:160});label.getBoundingClientRect=()=>({x:240,y:390,width:80,height:24});
     dom.window.Element.prototype.animate=function(frames,options){let resolve,reject;const finished=new Promise((done,fail)=>{resolve=done;reject=fail;}),animation={finished,cancelCount:0,cancel(){this.cancelCount++;reject(new Error('cancelled'));},resolve,frames,options,element:this};animations.push(animation);return animation;};
     let completed=0,clicks=0;button.addEventListener('click',()=>clicks++);const controller=new dom.window.AbortController();
@@ -51,15 +51,29 @@ test('intro card morph uses one clock, unscaled labels and restores real control
     };
     assert.deepEqual(visualBounds(background[0]),{x:start.x,y:start.y,width:start.width,height:start.height});
     assert.deepEqual(visualBounds(background.at(-1)),button.getBoundingClientRect());
+    assert.ok(Math.abs(parseFloat(background[0].borderTopWidth)*start.height/160-2)<1e-9,'the starting border must remain two painted pixels after vertical scale');
+    const radii=background[0].borderRadius.split('/').map(value=>parseFloat(value));
+    assert.ok(Math.abs(radii[0]*start.width/160-12)<1e-9&&Math.abs(radii[1]*start.height/160-12)<1e-9,'the starting corner must not flatten with the new aspect ratio');
     assert.ok(text.every(frame=>!frame.transform.includes('scale')),'text must not stretch with a changing surface aspect ratio');
     assert.equal(animations[1].element.parentElement,layer,'the label must not inherit the scaled surface transform');
     assert.equal(animations[1].element.textContent,label.textContent);
     assert.equal(text[0].transform,'translate(270px,647px)');assert.equal(text.at(-1).transform,'translate(280px,402px)');
+    assert.equal(text[0].fontSize,'15px');assert.equal(text.at(-1).fontSize,'17px');
     if(cancel)controller.abort();else for(const animation of animations)animation.resolve();
     await settle();assert.equal(button.style.visibility,originalVisibility);assert.equal(document.querySelector('.research-mode-transition'),null);assert.equal(completed,cancel?0:1);
     assert.equal(button.querySelector('span'),label);button.click();assert.equal(clicks,1,'the original interactive control survives the transition');
     transition.cancel();await settle();assert.equal(completed,cancel?0:1);assert.ok(animations.every(animation=>animation.cancelCount===1),'cleanup is idempotent');dom.window.close();
   }
+});
+
+test('intro source capture keeps the actual label bounds and resize releases the temporary layer',async()=>{
+  const dom=new JSDOM('<section><button style="border:2px solid blue;border-radius:12px;font:700 15px/24px Arial"><span>간편 견적</span></button></section>'),w=dom.window,button=w.document.querySelector('button');
+  button.getBoundingClientRect=()=>({x:20,y:600,width:175,height:54});button.firstElementChild.getBoundingClientRect=()=>({x:65.25,y:616.5,width:84.5,height:24});
+  const before=captureIntroductionMode(button);assert.deepEqual(before.labelRect,{x:65.25,y:616.5,width:84.5,height:24});assert.deepEqual(before.borders,[2,2,2,2]);
+  w.Element.prototype.animate=()=>{let reject;const finished=new Promise((_,no)=>{reject=no;});return {finished,cancel(){reject(Error('cancelled'));}};};
+  let finished=0;const transition=morphIntroductionModes({shell:w.document.querySelector('section'),from:[before],cards:[button],onFinish:()=>finished++});
+  w.dispatchEvent(new w.Event('resize'));await settle();
+  assert.equal(button.style.visibility,'');assert.equal(w.document.querySelector('.research-mode-transition'),null);assert.equal(finished,1);transition.cancel();assert.equal(finished,1);w.close();
 });
 
 test('research onboarding adapts current behavior without mutating the frozen renderer',()=>{
