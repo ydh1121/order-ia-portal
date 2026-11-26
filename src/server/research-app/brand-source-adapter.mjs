@@ -3,11 +3,12 @@ const once = (source, marker, replacement) => {
   return source.replace(marker, replacement);
 };
 
-/** Research-only lifetime and retained-header placement seams. Original focus,
+/** Research-only lifetime and retained-header placement seams. User focus,
  * motions and stack pages remain canonical; panels may veto beforeLeave. */
 export function researchBrandSource(original) {
   let source = once(original, '  function disposePage(page){', String.raw`
   let researchLeavePending=null,researchAccessPending=null,researchDestroying=false;
+  const researchCanFocus=()=>doc.hasFocus()||win.navigator.userActivation?.isActive===true;
   const researchApprovedPages=new WeakSet();
   function researchLeavePages(reason){return reason==='back'||reason==='access'?[pages.at(-1)]:pages.slice(1).reverse();}
   function researchLeaveGuards(selected){
@@ -63,6 +64,12 @@ export function researchBrandSource(original) {
     return researchRequestLeave('back',()=>pop(settings));
   }
   function disposePage(page){`);
+  // Scenario navigation may run in an inactive review frame. Keep each
+  // transition and notification, checking permission only when focus is due.
+  source = once(source, 'target?.focus({preventScroll:true});', 'if(researchCanFocus())target?.focus({preventScroll:true});');
+  source = once(source, 'items[last?items.length-1:0]?.focus({preventScroll:true});', 'if(researchCanFocus())items[last?items.length-1:0]?.focus({preventScroll:true});');
+  source = once(source, 'if(focus)trigger.focus({preventScroll:true});', 'if(focus&&researchCanFocus())trigger.focus({preventScroll:true});');
+  source = once(source, 'items[target].focus();', 'if(researchCanFocus())items[target].focus();');
   source = once(source, '  function push(id,source=null,title=null){', '  function push(id,source=null,title=null){\n    if(researchLeavePending)return false;');
   // The morph starts at the actual three-path logo ink, not the 44px hit area.
   source = once(source, 'if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;',

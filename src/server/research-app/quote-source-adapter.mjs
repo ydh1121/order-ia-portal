@@ -145,12 +145,19 @@ export function researchQuoteResultSource(source){
   source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    if(protectedPreview)protectedPreview.hidden=m.state!=='unverified';");
   source=once(source,"[['new','새로운 견적'],['same','동일한 조건'],['close','닫기']]","[['new','새로운 견적'],['same','동일한 조건']]");
   source=source.replaceAll('동일한 조건으로 다시 비교하겠어요?','어떤 조건으로 다시 비교할까요?');
+  // Preserve the native modal top layer while an inactive review frame skips
+  // only showModal's synchronous focus step; restore interaction before paint.
   source=once(source,'    own.showModal();',`    own.addEventListener('click',event=>{
       if(event.target!==own)return;
       const rect=own.getBoundingClientRect();
       if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)own.close();
     });
-    own.showModal();`);
+    if(doc.hasFocus()||doc.defaultView.navigator.userActivation?.isActive===true)own.showModal();
+    else{
+      const inert=own.getAttribute('inert');own.setAttribute('inert','');
+      try{own.showModal();}
+      finally{if(inert===null)own.removeAttribute('inert');else own.setAttribute('inert',inert);}
+    }`);
   // This branch exists only in the review fixture wrapper. The regular quote
   // controller keeps its verified recompare/persistence implementation.
   if(source.includes("same:['quote-review','normal']")){

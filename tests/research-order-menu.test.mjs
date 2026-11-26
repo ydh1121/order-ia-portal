@@ -39,7 +39,7 @@ test('guests retain the plain wordmark and the member arrow joins the same arriv
 test('the one text-and-arrow button opens only two icon rows and preserves keyboard selection and explicit mode changes',async()=>{
   const f=setup();try{
     await f.menu.ready;const trigger=f.d.querySelector('.research-order-trigger'),panel=f.d.querySelector('[role=menu]');
-    f.word.click();await tick();assert.equal(panel.hidden,false);assert.equal(f.d.activeElement.dataset.orderMode,'simple');
+    trigger.focus();f.word.click();await tick();assert.equal(panel.hidden,false);assert.equal(f.d.activeElement.dataset.orderMode,'simple');
     assert.deepEqual([...panel.querySelectorAll('[role=menuitem]')].map(row=>row.textContent),['간편 견적','상세 견적']);
     assert.equal(panel.querySelectorAll('.research-order-icon').length,2);assert.equal(panel.querySelector('header,h2,[aria-checked],#research-order-eggs,#research-order-back'),null);
     f.d.activeElement.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));
@@ -73,4 +73,21 @@ test('loss of authentication cancels a pending account-close approval and a late
   try{await f.menu.ready;f.word.click();await tick();f.setAuth(false);release(true);await tick();assert.equal(f.d.querySelector('[role=menu]').hidden,true);assert.deepEqual(f.events,[]);}finally{f.close();}
   let publish;const pending=new Promise(resolve=>publish=resolve),g=setup({pending});
   try{g.setAuth(false);publish({orderMenu:true});await g.menu.ready;assert.equal(g.d.querySelector('.research-order-menu').hidden,true);assert.equal(g.word.parentNode,g.d.querySelector('.brand'));}finally{g.close();}
+});
+
+test('inactive selector completion preserves opening and mode choice while focus follows current document ownership',async()=>{
+  let release;const permission=new Promise(resolve=>release=resolve),f=setup({allow:permission});
+  try{
+    await f.menu.ready;const state={focused:true,active:false},attempts=[],focus=f.w.HTMLElement.prototype.focus;
+    f.d.hasFocus=()=>state.focused;Object.defineProperty(f.w.navigator,'userActivation',{value:{get isActive(){return state.active;}}});
+    f.w.HTMLElement.prototype.focus=function(options){attempts.push(this);return focus.call(this,options);};
+    const panel=f.d.querySelector('[role=menu]'),trigger=f.d.querySelector('.research-order-trigger');
+    trigger.click();await tick();state.focused=false;release(true);await tick();
+    assert.equal(panel.hidden,false);assert.equal(trigger.getAttribute('aria-expanded'),'true');assert.equal(attempts.length,0,'a pending account close does not retain stale focus permission');
+    panel.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'End',bubbles:true}));
+    f.d.querySelector('[data-order-mode=detailed]').click();assert.deepEqual(f.events,['detailed']);assert.equal(panel.hidden,true);assert.equal(attempts.length,0);
+    state.active=true;trigger.click();await tick();assert.equal(f.d.activeElement.dataset.orderMode,'simple');
+    panel.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'End',bubbles:true}));assert.equal(f.d.activeElement.dataset.orderMode,'detailed');
+    panel.dispatchEvent(new f.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(f.d.activeElement,trigger);assert.equal(panel.hidden,true);
+  }finally{f.close();}
 });

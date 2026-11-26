@@ -372,6 +372,36 @@ test('authenticated research sync and mode copy use regular storage only, picker
   }finally{f.close();}
 });
 
+test('result recompare keeps the native modal and gives initial focus only to an active document or user activation',async()=>{
+ const {researchScene}=await import('../src/server/research-app/page.mjs');
+ const source=getResearchQuoteSource('web/quote-result-screen.mjs',served('web/quote-result-screen.mjs'));
+ const scene=await researchScene('quote-result','recompare');
+ for(const entry of ['quote','review'])for(const [focused,activated] of [[false,false],[true,false],[false,true]]){
+  const dom=new JSDOM('<main><div data-review-result></div></main>',{runScripts:'outside-only',pretendToBeVisual:true});
+  const w=dom.window,doc=w.document,root=doc.querySelector('main'),host=root.querySelector('[data-review-result]');
+  const attempts=[],opens=[];let dispose;
+  w.matchMedia=()=>({matches:true});
+  Object.defineProperty(doc,'hasFocus',{value:()=>focused});Object.defineProperty(w.navigator,'userActivation',{value:{isActive:activated}});
+  const focus=w.HTMLElement.prototype.focus;w.HTMLElement.prototype.focus=function(options){attempts.push(this);return focus.call(this,options);};
+  w.HTMLDialogElement.prototype.showModal=function(){opens.push({dialog:this,inert:this.hasAttribute('inert')});this.open=true;if(!this.hasAttribute('inert'))this.querySelector('button').focus();};
+  w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
+  try{
+   if(entry==='quote'){
+    const mount=w.eval(source.replace(/^export /gm,'')+'\nmountQuoteResult'),view=mount(host,{brand:false,reducedMotion:()=>true});
+    dispose=()=>view.clear();view.show({state:'expired',issued:Date.parse('2026-11-14T00:00:00+09:00'),end:Date.parse('2026-11-21T00:00:00+09:00')});view.chooseConditions();
+   }else{
+    w.eval(scene.mount);dispose=w.ORDER_DESIGN_MODULES.find(r=>r.id==='quote-result').mount(root,'recompare',{select(){}});
+   }
+   const dialog=doc.querySelector('dialog');assert.ok(dialog?.open,entry);
+   assert.equal(opens.length,1);assert.equal(opens[0].dialog,dialog);assert.equal(opens[0].inert,!(focused||activated));
+   assert.equal(attempts.length,focused||activated?1:0,entry+' must preserve inactive parent focus');
+   assert.equal(dialog.hasAttribute('inert'),false,'native modal remains interactive after its synchronous open');
+   assert.deepEqual([...dialog.querySelectorAll('button')].map(button=>button.textContent),['새로운 견적','동일한 조건']);
+   dialog.close();assert.equal(doc.querySelector('dialog'),null);
+  }finally{dispose?.();dom.window.close();}
+ }
+});
+
 test('issued and expiry dates appear together only when disclosed on the regular and review result screens',async()=>{
  const {researchScene}=await import('../src/server/research-app/page.mjs');
  const dom=new JSDOM('<main><div data-review-result></div></main>',{runScripts:'outside-only',pretendToBeVisual:true});

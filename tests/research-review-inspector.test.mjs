@@ -262,6 +262,41 @@ test('auth focus classes do not desynchronize released projection, current pins 
   assert.equal(JSON.stringify(original),originalBytes);assert.equal(JSON.stringify(pins),packet);assert.equal(JSON.stringify(anchor),draft);
 });
 
+test('saved input pins survive reload with either native focus state without rewriting anchors or guessing duplicate controls',async t=>{
+  const session={...initial,screen:'login',state:'empty'},markup='<main id="order-single"><label class="field is-floating t-input-wrap"><span class="input-shell t-input"><input id="login-email" name="email" type="email"></span></label></main>';
+  const setup=focused=>(w,root)=>{
+    const input=root.querySelector('input'),label=input.closest('label');
+    input.addEventListener('focus',()=>label.classList.add('is-focused'));
+    input.addEventListener('blur',()=>label.classList.remove('is-focused'));
+    if(focused)input.focus();
+  };
+  for(const capturedFocused of [true,false]){
+    const original=harness(t,{initialSession:{...session,artifact:oldHash},markup,setup:setup(capturedFocused)});
+    original.hit(original.root.querySelector('input'));const source=original.root.outerHTML,oldAnchor=original.point();
+    const capture=harness(t,{initialSession:session,markup,setup:setup(capturedFocused)});
+    capture.hit(capture.root.querySelector('input'));const anchor=capture.point(),before=JSON.stringify(anchor);
+    const h=harness(t,{initialSession:session,markup,setup:setup(!capturedFocused)}),{w,root,send,messages}=h;
+    const input=root.querySelector('input'),bodyBefore=root.innerHTML;
+    const prior={id:'previous-reload-email',ordinal:1,previous:true,sourceArtifactHash:oldHash,anchor:{...oldAnchor,artifactHash:hash}};
+    const current={id:'current-reload-email',ordinal:2,previous:false,sourceArtifactHash:hash,anchor},pins=[prior,current],packet=JSON.stringify(pins);
+    send('pin-sources',[{artifactHash:oldHash,sourceHash:oldHash,html:source}]);send('pins',pins);
+    send('pin-view',{draft:anchor,selected:[prior.id,current.id]});
+    await until(()=>w.document.querySelector('.r3-pin.is-mixed')&&!w.document.querySelector('.approval-draft-pin').hidden,w);
+    assert.equal(w.document.querySelectorAll('.r3-pin').length,1);assert.deepEqual(Array.from(messages('missing').at(-1).payload.ids),[]);
+    assert.equal(root.innerHTML,bodyBefore,'display aliases do not edit product focus classes or markup');
+    w.document.querySelector('.r3-pin').click();assert.deepEqual(Array.from(messages('openPins').at(-1).payload.ids),[prior.id,current.id]);
+    send('restore',anchor);await frame(w);assert.equal(w.document.activeElement,input);
+    const later=w.document.createElement('span');later.textContent='다른 영역 갱신';root.append(later);await frame(w);
+    send('pins',pins);await until(()=>w.document.querySelector('.r3-pin.is-mixed'),w);
+    assert.equal(JSON.stringify(anchor),before);assert.equal(JSON.stringify(pins),packet);
+
+    const ambiguous=harness(t,{initialSession:session,markup:markup.replace('</main>',markup.slice(markup.indexOf('<label'),markup.indexOf('</main>'))+'</main>')});
+    ambiguous.send('pins',[current]);await frame(ambiguous.w);
+    assert.equal(ambiguous.w.document.querySelector('.r3-pin'),null,'identical controls cannot acquire a guessed alias');
+    assert.deepEqual(Array.from(ambiguous.messages('missing').at(-1).payload.ids),[current.id]);
+  }
+});
+
 test('child-list changes and explicit identity resets still refresh the inspector index',async t=>{
   const h=harness(t),{w,root,send}=h,button=w.document.createElement('button');button.id='late-field';button.textContent='지연 입력';root.append(button);
   await frame(w);h.hit(button);const first=h.point();assert.notEqual(first.id,'screen');
