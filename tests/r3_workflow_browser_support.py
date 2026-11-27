@@ -1,7 +1,7 @@
 """Shared assertions against canonical workflow UI with the isolated QA transport."""
 import base64
 from playwright.sync_api import expect
-from r3_feedback_browser_support import frame_click
+from r3_feedback_browser_support import frame_click, frame_pointer_position
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
 
@@ -21,13 +21,45 @@ def release(frame, value=None):
 def check_consultation_flow(page, frame):
     target = frame.locator('[name="consult-pass"][data-id="qa-existing-quote"]')
     expect(target).to_have_count(1)
-    expect(frame.locator('[name="consult-pass"]')).to_have_count(1)
+    compound = frame.locator('[name="consult-pass"][data-id="b17"]')
+    expect(frame.locator('[name="consult-pass"]')).to_have_count(2)
+    layout = frame.locator('.consult-tickets').evaluate("""list=>{
+      const cards=[...list.children].map(card=>card.getBoundingClientRect());
+      const bounds=list.getBoundingClientRect(),cta=list.parentElement.querySelector('[data-action="open-drawer"]').getBoundingClientRect();
+      return {sameRow:Math.abs(cards[0].top-cards[1].top)<1,sideBySide:cards[1].left>=cards[0].right,
+        listShowsCards:cards.every(card=>card.bottom<=bounds.bottom+1),ctaBelow:cta.top>=bounds.bottom-1};
+    }""")
+    assert all(layout.values()), layout
+    card = frame.locator('.consult-ticket').filter(has=compound)
+    expect(card.locator('label')).to_contain_text('특란 30구 · 대란 30구 · 복합 주문')
+    frame_click(page, card.get_by_role('button', name='패스 상세'))
+    detail = frame.get_by_role('dialog', name='오더 패스 상세')
+    expect(detail.locator('h2')).to_have_text('샘플베이커리')
+    expect(detail.locator('.ticket-item')).to_have_count(2)
+    for item, values in zip(detail.locator('.ticket-item').all(), [('특란 30구','1,200판','정기 주문'),('대란 30구','800판','소진 시 주문')]):
+        for value in values:
+            expect(item).to_contain_text(value)
+    frame_click(page, detail.get_by_role('button', name='패스 상세 닫기'))
+    expect(detail).to_be_hidden()
     opener = frame.locator('[data-action="open-drawer"]')
     panel = frame.locator('.functional-drawer')
     frame_click(page, opener)
     expect(panel).to_be_hidden()
     expect(frame.locator('.consult-selection-message')).to_contain_text('선택')
+    frame_click(page, compound)
+    listing = frame.locator('.consult-tickets')
+    if listing.evaluate('el=>el.scrollWidth>el.clientWidth'):
+        x, y = frame_pointer_position(page, card.locator('label'))
+        page.mouse.move(x,y)
+        page.mouse.wheel(680,0)
+        moved = listing.evaluate("""async el=>{
+          for(let i=0;i<100&&el.scrollLeft<el.scrollWidth-el.clientWidth-1;i++)await new Promise(requestAnimationFrame);
+          return el.scrollLeft>0;
+        }""")
+        assert moved, 'the horizontal pass list must accept a real horizontal scroll'
     frame_click(page, target)
+    expect(compound).to_be_checked()
+    expect(target).to_be_checked()
     frame_click(page, opener)
     expect(panel).to_be_visible()
     memo = frame.locator('.consult-memo textarea')
@@ -82,14 +114,14 @@ def check_consultation_flow(page, frame):
     writes = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__consultationWrites')
     creates = [item for item in writes if item['action'] == 'create']
     assert len(creates) == 2 and creates[0] == creates[1]
-    assert creates[-1]['context']['targets'] == ['qa-existing-quote']
+    assert creates[-1]['context']['targets'] == ['b17', 'qa-existing-quote']
     assert creates[-1]['context']['desiredDate'] == '2026-12-17'
     assert '제품 검수용 상담 메모' in creates[-1]['context']['memo']
     assert '희망 시간: 18:00' in creates[-1]['context']['memo']
     return {'scope': 'frame-memory QA consultation via canonical product adapter', 'sameForm': True, 'requestRetryPreserved': True, 'savedCase': saved, 'submittedContext': creates[-1]['context']}
 
 
-def check_signature_flow(page, frame, *, open_proof, fail_first=True, on_step=lambda name: None):
+def check_signature_flow(page, frame, *, open_proof, open_signature=None, fail_first=True, on_step=lambda name: None):
     on_step('signature review and proof editor startup')
     expect(frame.get_by_role('heading', name='서명이 필요해요', exact=True)).to_be_visible()
     expect(frame.locator('.wf-panel')).to_have_attribute('data-review-scenario', 'signature/empty')
@@ -176,8 +208,34 @@ def check_signature_flow(page, frame, *, open_proof, fail_first=True, on_step=la
     frame_click(page, submit)
     expect(frame.locator('.wf-signature [data-workflow-error]')).to_contain_text('서명')
     assert not any(call['path'] == '/evidence' and call['method'] == 'POST' for call in inspect_fixture(frame)['calls'])
+    canvas = frame.locator('.research-signature-pad canvas')
+    ink = '''canvas=>{const pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;let count=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i]<175)count++;return count;}'''
+    start = frame_pointer_position(page, canvas, {'x': 40, 'y': 60})
+    end = frame_pointer_position(page, canvas, {'x': 122, 'y': 85})
+    if page.evaluate('navigator.maxTouchPoints>0'):
+        touch = page.context.new_cdp_session(page)
+        try:
+            for phase, points in [('touchStart', [start]), ('touchMove', [end]), ('touchEnd', [])]:
+                touch.send('Input.dispatchTouchEvent', {'type': phase, 'touchPoints': [{'x': x, 'y': y} for x, y in points]})
+        finally:
+            touch.detach()
+    else:
+        page.mouse.move(*start)
+        page.mouse.down()
+        page.mouse.move(*end, steps=4)
+        page.mouse.up()
+    drawn = canvas.evaluate(ink)
+    assert drawn > 30, drawn
+    expect(frame.locator('.wf-signature [data-workflow-error]')).to_be_hidden()
+    frame_click(page, frame.get_by_role('button', name='자료 수정', exact=True))
+    frame_click(page, frame.get_by_role('button', name='다음', exact=True))
+    assert canvas.evaluate(ink) == drawn
+    frame_click(page, frame.get_by_role('button', name='다시 하기', exact=True))
+    assert canvas.evaluate(ink) == 0
     frame_click(page, frame.locator('.research-signature-alternative > summary'))
     frame.get_by_label('또는 이름 입력으로 서명', exact=True).fill('검수용 합성 서명')
+    typed_ink = canvas.evaluate(ink)
+    assert typed_ink > 30, typed_ink
     if fail_first:
         on_step('signature sealed upload failure and retention')
         configure(frame, {'requests': {'role POST /evidence': {'scenario': 'error', 'status': 503}}})
@@ -211,4 +269,14 @@ def check_signature_flow(page, frame, *, open_proof, fail_first=True, on_step=la
     attachments = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signatureAttachments')
     assert len(attachments) == 1 and attachments[0]['context']['memo'] == '제출 증빙의 검수용 추가 요청'
     assert fixture['source']['persistent'] is False and fixture['source']['commercial'] is False
-    return {'scope': 'current proof preparation and signature submission through the same product editor and canonical adapter with frame-memory QA transport', 'entry': entered, 'observerBeforeAutomaticPreparation': True, 'savedCase': case, 'packets': packets, 'attachments': attachments, 'confirmation': confirmation_state, 'missingSignatureBlocked': True, 'failureRetry': fail_first, 'pendingAwaited': True}
+    if open_signature:
+        saved = open_signature()
+        expect(saved.get_by_role('heading', name='제출한 자료와 서명', exact=True)).to_be_visible()
+        expect(saved.locator('.wf-signature')).to_have_count(0)
+        frame_click(page, saved.get_by_role('button', name='연결된 증빙 열기', exact=True))
+        saved_pages = saved.locator('.research-evidence-pages canvas')
+        expect(saved_pages).to_have_count(2)
+        assert saved_pages.last.evaluate(ink) > 0
+        assert saved_pages.last.evaluate('c=>[c.width,c.height]') == [360, 100]
+        assert len(inspect_fixture(saved)['calls']) >= len(fixture['calls'])
+    return {'scope': 'current proof preparation and signature submission through the same product editor and canonical adapter with frame-memory QA transport', 'drawnInkPixels': drawn, 'typedInkPixelsBeforeSubmission': typed_ink, 'reopenedSignedPacket': bool(open_signature), 'entry': entered, 'observerBeforeAutomaticPreparation': True, 'savedCase': case, 'packets': packets, 'attachments': attachments, 'confirmation': confirmation_state, 'missingSignatureBlocked': True, 'failureRetry': fail_first, 'pendingAwaited': True}

@@ -16,7 +16,7 @@ async function setup(t,screen='passes',state='grid',reduced=true){
   w.eval('window.__adapter=('+installQaFixtureAdapter.toString()+')({screen:'+JSON.stringify(screen)+',state:'+JSON.stringify(state)+',fixture:{persona:"buyer"}},'+installProductAdapter.toString()+')');const adapter=w.__adapter;await adapter.ready;const installed=installResearchPasses(w),source=await researchScene(screen,state,'email');w.ORDER_DESIGN_MODULES=[];w.eval(source.mount);const module=w.ORDER_DESIGN_MODULES.find(row=>row.id===screen);root.innerHTML=source.html;
   const writes=[],request=adapter.request;adapter.request=(path,body,signal)=>{if(body)writes.push({path,body:JSON.parse(JSON.stringify(body))});return request(path,body,signal);};
   w.__root=root;w.eval('window.__motion=('+mountAsyncMotion.toString()+')(__root)');const motion=w.__motion,controller=new w.AbortController(),notices=[],disposers=[];
-  const mount=()=>{const dispose=module.mount(root,state,{mode:'product',screen,adapter,motion,signal:controller.signal,reduced:()=>reduced,select(){},toast:message=>notices.push(message)});disposers.push(dispose);return dispose;};
+  const mount=(reviewScenario=false)=>{const dispose=module.mount(root,state,{mode:'product',reviewScenario,screen,adapter,motion,signal:controller.signal,reduced:()=>reduced,select(){},toast:message=>notices.push(message)});disposers.push(dispose);return dispose;};
   t.after(()=>{controller.abort();for(const dispose of disposers)dispose?.();installed.destroy();motion.destroy();adapter.fixture.dispose();w.dispatchEvent(new w.Event('pagehide'));w.close();assert.deepEqual(errors,[]);});
   return {w,root,adapter,motion,mount,notices,controller,writes};
 }
@@ -132,4 +132,25 @@ test('tear gesture previews physical separation but only a validated receipt ack
   v.adapter.fixture.configure({requests:{'product POST /purchases':{scenario:'loading'}}});area.querySelector('[data-action=confirm-tear]').click();await until(()=>v.adapter.fixture.inspect().pending===1);assert.equal(area.querySelector('[data-phase=acknowledged]'),null);assert.equal(flights.length,0);
   v.adapter.fixture.releasePending({requests:{}});await until(()=>flights.length===1);assert.equal(area.querySelector('.pass-tear-preview').dataset.phase,'acknowledged');assert.equal(v.adapter.fixture.inspect().data.purchases.find(row=>row.id==='qa-order-shipped').status,'RECEIVED');assert.equal(v.root.querySelector('.ticket-received'),null,'the acknowledged visual handoff finishes before the deck moves');
   flights[0].finish();await until(()=>v.root.querySelector('.ticket-received'));assert.equal(area.querySelector('.pass-tear-preview'),null);assert.equal(v.root.querySelector('.pass-stage').lastElementChild.dataset.passId,'qa-order-shipped');assert.equal(v.writes.filter(call=>call.path==='/purchases').length,2);
+});
+
+
+test('empty, expired and compound QA examples use the requested states without changing the underlying orders',async t=>{
+  for(const [screen,state] of [['passes','empty'],['passes','expired'],['search','empty'],['search','detail']]){
+    const view=await setup(t,screen,state);
+    const before=await view.adapter.request('/purchases');
+    await view.mount(true).ready;
+    if(screen==='search'){
+      assert.match(view.root.textContent,/특란 30구/);assert.match(view.root.textContent,/대란 30구/);
+      if(state==='detail')assert.equal(view.root.querySelectorAll('.ticket-detail .ticket-item').length,2);
+    }else if(state==='empty'){
+      assert.ok(view.root.querySelector('.empty-ticket [data-action="new-quote"]'));assert.equal(view.root.querySelectorAll('.pass-stage [data-pass-id]').length,0);
+    }else{
+      const reminder=view.root.querySelector('.expired-reminder');
+      assert.equal(reminder.hidden,false);reminder.querySelector('button').click();assert.equal(reminder.hidden,true);
+      view.root.querySelector('.order-pass.tone-expired').click();
+      assert.equal(view.root.querySelector('.expanded-pass [data-action="tear-ticket"]'),null);
+    }
+    assert.deepEqual(await view.adapter.request('/purchases'),before);assert.deepEqual(view.writes,[]);
+  }
 });

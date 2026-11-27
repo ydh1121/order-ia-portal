@@ -37,7 +37,7 @@ MOBILE += [(screen, state, 'simple', 390) for screen, states in (
 DESKTOP = [(screen, state, mode, 1280) for mode in ('simple', 'detailed') for screen, state in (('q1', 'before'), ('q2', 'filled'))]
 DESKTOP += [('q3', 'closed', 'detailed', 1280), ('q4', 'open', 'detailed', 1280)]
 RELATED = [('quote-wait', state, 'simple', 390) for state in ('entry', 'comparing', 'delayed', 'complete', 'offline', 'server-error')]
-RELATED += [('quote-result', state, 'simple', 390) for state in ('expired', 'recompare', 'no-result', 'locked')]
+RELATED += [('quote-result', state, 'simple', 390) for state in ('expired', 'recompare', 'no-result', 'locked', 'locked-guest')]
 RELATED += [(screen, state, 'simple', 390) for screen, state in (
     ('signature', 'empty'), ('proof', 'empty'), ('profile', 'notification'), ('notifications', 'list'),
     ('passes', 'loading'), ('drawer', 'closed'))]

@@ -12,7 +12,7 @@ import {researchReleases} from '../src/server/research-app/releases.gen.mjs';
 import {gunzipSync} from 'node:zlib';
 import {deliveryBuild,deliveryManifest} from '../src/server/research-delivery-identity.gen.mjs';
 import {qaCatalogIdentity} from '../src/server/r3-qa-catalog-identity.gen.mjs';
-import {qaFixtureForRow} from '../src/server/r3-qa-review-runtime.mjs';
+import {qaFixtureForRow,qaReviewRuntimeDigest} from '../src/server/r3-qa-review-runtime.mjs';
 import {reviewedDelivery,retainedReviewedParts} from '../src/server/reviewed-delivery-index.gen.mjs';
 import {r1Recorded} from '../src/server/r1-recorded-index.gen.mjs';
 if(!globalThis.crypto)globalThis.crypto=webcrypto;
@@ -126,6 +126,42 @@ test('public entry remains nonconfidential and private releases are confined to 
   assert.equal(bytes.length,identity.bytes);assert.equal(sha(bytes),identity.sha256);currentCatalogs[mode]=JSON.parse(bytes);
  }
  const reviewHash=(build,id,width,mode)=>sha(JSON.stringify(['order-research-application/v1',build,id,Number(width),...(mode==='detailed'?['detailed']:[])]));
+ // PR30 is the last published inventory before the two new native screens.
+ // Old catalogs keep their exact reference even when current renderers change.
+ const pr30Build='617fee8a3ac9f299b3e87515cdc9816aa5c2e51c42afa89b52effbeb4987b8ee';
+ assert.ok(deliveryBuilds.includes(pr30Build));
+ assert.equal(researchReleases[pr30Build].packSha256,'27335bb79baf0058494552ebd8283fef9f87c3581eab4c6ad1571a9db5540c65');
+ const pr30CatalogDigests={simple:'f3c47f45fd2e880e1735b6288e04658317a4201d4f83c966973aa84ceb4b1adc',detailed:'bb4098090189c877ba18921507ffe92d948b5a7ed2ccd14bbd76976a65598968'};
+ const pr30Catalogs={};
+ for(const [mode,digest]of Object.entries(pr30CatalogDigests)){
+  const bytes=readFileSync(join(catalogRoot,digest+'.json'));assert.equal(sha(bytes),digest);
+  const previous=pr30Catalogs[mode]=JSON.parse(bytes),current=currentCatalogs[mode];
+  assert.equal(previous.items.length,mode==='simple'?543:430);
+  const expected=structuredClone(previous);
+  expected.navigationDefaults.assignments['admin-icon-library']='future';
+  const member=previous.items.find(row=>row.id==='quote-result/locked/email');
+  const guest={...member,id:'quote-result/locked-guest/email',state:'locked-guest',stateLabel:'비회원 잠금',authoredChange:false,supplemental:true};
+  const iconLibrary={...guest,id:'admin-icon-library/list/email',screen:'admin-icon-library',state:'list',group:'관리자 · 공통 자산',label:'아이콘 라이브러리',stateLabel:'사용처',role:'admin',description:'',routeIds:[]};
+  const nativeIds=new Set([guest.id,iconLibrary.id]);
+  const currentById=new Map(current.items.map(row=>[row.id,row]));
+  const prices=current.items.filter(row=>row.screen==='price-workspace').map(row=>[row.id,row.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
+  assert.equal(prices.length,9);
+  assert.equal(sha(JSON.stringify(prices)),'59c712fbe1a3b9a3cf9d4f3398237c3bf7d26bde34b5c46e7b9fa436fe22f81a','price content retains the updated shared workflow renderer');
+  expected.items.push(guest,iconLibrary);
+  for(const row of expected.items){
+   const widths=Object.keys(row.hashes);
+   if(row.application){
+    assert.ok(sealedRowsByBuild.get(deliveryBuild).has(row.id));
+    const native=nativeIds.has(row.id)||JSON.stringify(row.contentHashes)===JSON.stringify(row.hashes);
+    row.hashes=Object.fromEntries(widths.map(width=>[width,reviewHash(deliveryBuild,row.id,width,mode)]));
+    if(native)row.contentHashes=row.hashes;
+    else if(row.screen==='price-workspace')row.contentHashes=currentById.get(row.id).contentHashes;
+   }else{
+    row.hashes=Object.fromEntries(widths.map(width=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',row.contentHashes[width],qaReviewRuntimeDigest,qaFixtureForRow(row)]))]));
+   }
+  }
+  assert.deepEqual(current,expected,'preserve the complete ordered catalog, metadata, widths, native routes and review holds');
+ }
  // Baseline 69779 retains twelve catalog files from this exact bootstrap epoch.
  // The common paint refactor changes current pricing content and QA wrapper
  // fingerprints. Verify the old epoch before normalizing comparison objects.
@@ -154,11 +190,15 @@ test('public entry remains nonconfidential and private releases are confined to 
  for(const entry of catalogEntries){
   assert.ok(entry.isFile());
   const bytes=readFileSync(join(catalogRoot,entry.name));assert.equal(entry.name,sha(bytes)+'.json');
-  const catalog=JSON.parse(bytes),mode=catalog.mode??'simple',reference=currentCatalogs[mode];
+  const catalog=JSON.parse(bytes),mode=catalog.mode??'simple',reference=pr30Catalogs[mode];
   assert.ok(reference);const first=catalog.items.find(item=>item.application);assert.ok(first);
   const width=Object.keys(first.hashes)[0],builds=deliveryBuilds.filter(build=>reviewHash(build,first.id,width,mode)===first.hashes[width]);
   assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
+  if(build===deliveryBuild){
+   assert.equal(entry.name,qaCatalogIdentity.modes[mode].sha256+'.json');assert.deepEqual(catalog,currentCatalogs[mode]);
+   continue;
+  }
   const priorSourceEpoch=build!==deliveryBuild&&priorSourceBuilds.has(build);
   // Retain the separately sealed main3391 module-cleanup epoch. Its static
   // component contents are unchanged, but the QA wrapper has its own runtime.

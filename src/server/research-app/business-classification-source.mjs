@@ -4,6 +4,7 @@ const once=(source,before,after)=>{if(source.split(before).length!==2)throw Erro
 export function researchBusinessClassificationSource(source){
   source=once(source,'const sectors=[','const sectors=w.ORDER_RESEARCH_WORKFLOW_POLISH?.businessClasses.sectors||[');
   source=once(source,'const industries=[','const industries=w.ORDER_RESEARCH_WORKFLOW_POLISH?.businessClasses.industries||[');
+  source=once(source,'mountBusiness(root,{api,signal:c.signal})','mountBusiness(root,{api,state:s,signal:c.signal})');
   const evidence="mountEvidence(root,{api,kind:'reprice',signal:c.signal})";
   if(source.split(evidence).length!==3)throw Error('RESEARCH_WORKFLOW_REVIEW_STATE_SOURCE_CHANGED');
   source=source.replaceAll(evidence,"mountEvidence(root,{api,kind:'reprice',state:s,signal:c.signal})");

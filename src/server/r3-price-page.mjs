@@ -48,7 +48,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
   async function api(path,body,signal){
     const res=await fetch((window.ORDER_APP_CONTEXT?.endpoints?.price||'/api/ia/r3-price')+(state.practice?'/practice/'+$('persona').value:'')+path,{signal,method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',headers:body?{'Content-Type':'application/json','X-IA-CSRF':state.csrf}:{},body:body?JSON.stringify(body):undefined});
     const data=await res.json();if(state.ownerSession&&(res.status===401||res.status===403&&['IA_ACCESS_DENIED','CSRF_DENIED','SESSION_DENIED','SESSION_EXPIRED','AUTHENTICATION_REQUIRED'].includes(data.error)))document.dispatchEvent(new CustomEvent('ia-session-invalid',{detail:{reason:'AUTHENTICATION_REQUIRED'}}));
-    if(!res.ok){const error=new Error(data.error||'SERVICE_UNAVAILABLE');error.candidates=data.candidates;throw error;}return data;
+    if(!res.ok){const error=new Error(data.error||'SERVICE_UNAVAILABLE');error.status=res.status;error.candidates=data.candidates;throw error;}return data;
   }
   const commit=(button,path,body)=>motion.run(button,({signal})=>api(path,body,signal),{
     requestId:body.requestKey||undefined,labels:{pending:'저장 중',success:'저장됨',error:'저장 실패'}

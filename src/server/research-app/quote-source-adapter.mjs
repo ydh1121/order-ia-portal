@@ -1,5 +1,6 @@
 import {quoteTemplate,quoteCommit} from '../r3-product-sources.mjs';
 import {browserFunction} from '../browser-source.mjs';
+import {mountQuoteLock,quoteLockMarkup,quoteLockCss} from './quote-preview.mjs';
 import {mountSavedBusinessPicker} from '../r3-saved-business-client.mjs';
 import {createQuoteDraftSync,mountQuoteDraftSync} from '../r3-quote-draft-client.mjs';
 import {mountResearchClosedQuoteRows} from './quote-row-swipe.mjs';
@@ -161,6 +162,8 @@ const researchBridge=Object.freeze({
 
 /** The regular and review routes render the same expiry note from disclosed dates. */
 export function researchQuoteResultSource(source){
+  const denied="      if (generation === detailRequest) show({state:[401,403].includes(err?.status) || err?.message==='ACCESS_REQUIRED' ? 'unverified' : 'unavailable'});";
+  source=once(source,denied,"      if(generation===detailRequest && options.onLock && ([401,403].includes(err?.status)||err?.message==='ACCESS_REQUIRED'))options.onLock(err?.status);else "+denied.trim());
   const expiry="m.state==='expired'&&dated(m.end)?'견적 만료일 '+dated(m.end):''";
   source=once(source,expiry,`m.state==='expired'&&dated(m.end)?(
     Number.isFinite(m.issued)&&m.issued>=-8640000000000000&&m.issued<m.end
@@ -171,13 +174,10 @@ export function researchQuoteResultSource(source){
   // transition halfway through the graph-to-detail morph.
   source=once(source,"stage.toggleAttribute('data-morph',Boolean(prior && same && selection!==lastSelected));",
     "if(prior && same && selection!==lastSelected)stage.setAttribute('data-morph','');else if(!prior || !same)stage.removeAttribute('data-morph');");
-  source=once(source,"  const plot = node('div','plot',stage);",`  const plot = node('div','plot',stage);
-  const protectedPreview=options.preview?.tagName==='IMG'?options.preview:null;
-  if(protectedPreview){protectedPreview.classList.add('research-quote-protected-preview');protectedPreview.hidden=true;plot.append(protectedPreview);}`);
   source=once(source,"  const note = node('p','note',notice), basis = node('p','basis',notice);",`  const note = node('p','note',notice), basis = node('p','basis',notice);
   const expiredDetails=node('button','expired-details',stage);expiredDetails.type='button';expiredDetails.hidden=true;
   text(expiredDetails,'이전 견적서 상세보기');expiredDetails.onclick=showExpiredDetails;`);
-  source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    if(protectedPreview)protectedPreview.hidden=m.state!=='unverified';\n    expiredDetails.hidden=m.state!=='expired';\n    plot.setAttribute('aria-label',m.state==='expired'?'만료된 견적 안내. 금액은 표시하지 않습니다.':'1회 납품가 비교');");
+  source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    expiredDetails.hidden=m.state!=='expired';\n    plot.setAttribute('aria-label',m.state==='expired'?'만료된 견적 안내. 금액은 표시하지 않습니다.':'1회 납품가 비교');");
   source=once(source,"[['new','새로운 견적'],['same','동일한 조건'],['close','닫기']]","[['new','새로운 견적'],['same','동일한 조건']]");
   source=once(source,"  function chooseConditions() {",expiredResultDetailsSource+"\n  function chooseConditions() {");
   // Preserve the native modal top layer while an inactive review frame skips
@@ -187,7 +187,7 @@ export function researchQuoteResultSource(source){
   // controller keeps its verified recompare/persistence implementation.
   if(source.includes("same:['quote-review','normal']")){
     source=once(source,"same:['quote-review','normal'],back:['quote-review','normal']","same:['quote-wait','entry'],back:['q2','filled']");
-    source=once(source,"    const view=mount(host,{","    const view=mount(host,{\n      preview:root.querySelector('template[data-research-result-preview]')?.content.querySelector('img')?.cloneNode(true),");
+
   }
   return source;
 }
@@ -197,6 +197,32 @@ export function getResearchQuoteSource(path,source){
   if(typeof source!=='string')throw TypeError('RESEARCH_QUOTE_SOURCE_REQUIRED');
   if(path==='web/quote-result-screen.mjs')return researchQuoteResultSource(source);
   if(path==='web/app.mjs'){
+    // Only the isolated review rows use a saving fixture. An operational result
+    // without an authorized issued snapshot receives a fixed, neutral lock.
+    source=once(source,"const resultScreen=mountQuoteResult($('receipt'),{",`const resultHost=$('receipt');
+const resultScreen=mountQuoteResult(resultHost,{
+ brand:!researchEnvironment?.externalHeader,onLock:status=>showLockedResult(status),`);
+    source=once(source,"return privateProduct&&raw&&/^[a-z0-9_-]{1,128}$/i.test(raw)?raw:null;","return raw&&/^[a-z0-9_-]{1,128}$/i.test(raw)?raw:null;");
+    source=once(source," resultScreen.show({state:'pending'});"," if(window.ORDER_APP_CONTEXT?.actor?.authenticated!==true){showLockedResult(401);return;}\n resultScreen.show({state:'pending'});");
+    source=once(source,"function clearPrivateResult(){",`function showLockedResult(status){
+ resultScreen.clear();
+ const guest=status===401||window.ORDER_APP_CONTEXT?.actor?.authenticated!==true;
+ const markup=(${browserFunction(quoteLockMarkup)})(guest?'guest':'unverified');
+ (${browserFunction(mountQuoteLock)})(resultHost,markup,action=>{
+   if(action==='consult')location.assign('/ia?view=roles-r3&menu=consult');
+   else onAuthRequest?.(action);
+ });
+}
+function clearPrivateResult(){`);
+    source=once(source,"if([401,403].includes(error.status))resultScreen.gate();","if([401,403].includes(error.status))showLockedResult(error.status);");
+    source=once(source," }else if(page==='result'){\n  $('result-details').hidden=false;",` }else if(page==='result' && !researchEnvironment?.fixtureScope){
+  $('result-details').hidden=true;$('result-details').open=false;$('result-detail-content').replaceChildren();
+  $('email-notice').hidden=true;showLockedResult();
+ }else if(page==='result'){
+  $('result-details').hidden=false;`);
+    source=once(source," if(issuedId()||current!=='result')return;"," if(issuedId()||current!=='result'||!researchEnvironment?.fixtureScope)return;");
+    source=once(source,"resultStyle.textContent=quoteResultScreenCss;","resultStyle.textContent=quoteResultScreenCss+"+JSON.stringify(quoteLockCss)+";");
+
     // Carry the validation intent through the regular helper and pick handler.
     // Both verdicts own their copy, and unrelated SKU errors use the same helper.
     source=once(source,"const err=(id,message)=>{const node=$(id);if(!node)return;","const err=(id,message,missingChoices=false)=>{const node=$(id);if(!node)return;if(id==='err-q1')node.toggleAttribute('data-missing-choices',Boolean(message&&missingChoices));");
@@ -219,7 +245,6 @@ export function getResearchQuoteSource(path,source){
     source=once(source,"const q2UnitMenu=bindQuantityMenu($('q2-lines'));","const q2UnitMenu=bindQuantityMenu($('q2-lines'),researchEnvironment);");
     source=once(source,'counter=createSpinningCounter(output);','counter=createSpinningCounter(output,{view:researchEnvironment?.window});');
     source=once(source,'const addressEditor=createAddressEditor({','const addressEditor=createAddressEditor({\n document,service:researchEnvironment?.addressService,');
-    source=once(source,'const resultScreen=mountQuoteResult($(\'receipt\'),{','const resultScreen=mountQuoteResult($(\'receipt\'),{\n brand:!researchEnvironment?.externalHeader,');
     source=once(source,'simpleUI=createSimpleQuoteUI({onAuthRequest,bridge:', 'simpleUI=createSimpleQuoteUI({researchEnvironment,onAuthRequest,bridge:');
     // A keyboard focus change or a mode dialog opened after this request owns
     // focus. Its close must not be overwritten by an older accordion RAF.

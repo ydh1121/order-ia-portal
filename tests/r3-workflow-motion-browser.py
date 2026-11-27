@@ -98,8 +98,7 @@ def check_business(page, frame, reduced):
         expect(field).to_have_value(value)
         expect(field).to_have_attribute('aria-expanded', 'false')
         expect(frame.locator('#'+field.get_attribute('aria-controls'))).to_be_hidden()
-    frame.locator('[type=file]').set_input_files({'name': 'synthetic-registration.png', 'mimeType': 'image/png', 'buffer': PNG})
-    expect(frame.locator('#order-app-page, #order-single:not([data-research-application])')).to_have_attribute('data-file-selected', 'true')
+    expect(frame.locator('.document-section')).to_be_hidden()
     verify = frame.locator('[data-action=verify-business]')
     step('business provider failure and input retention')
     configure(frame, {'requests': {'product POST /business-verifications': {'scenario': 'error', 'errorCode': 'BUSINESS_PROVIDER_UNAVAILABLE', 'status': 503}}})
@@ -132,8 +131,10 @@ def check_business(page, frame, reduced):
     assert snapshot['data']['businessVerifications'][0]['provider'] == 'QA_FIXTURE'
     frame_click(page, frame.locator('[data-action=business-next]'))
     expect(frame.get_by_role('heading', name='사업자등록증 제출', exact=True)).to_be_visible()
+    expect(frame.locator('.business-fields')).to_have_count(0)
+    frame.locator('input[type=file]').set_input_files({'name': 'synthetic-registration.png', 'mimeType': 'image/png', 'buffer': PNG})
     expect(frame.locator('canvas[aria-label="1쪽 가림 영역 선택"]')).to_be_visible()
-    return {'provider': 'QA_FIXTURE', 'failureRestoredInputs': True, 'sameRetry': writes[0]['body'] == writes[1]['body'], 'selectedFileReused': True, 'pendingFrames': pending}
+    return {'provider': 'QA_FIXTURE', 'failureRestoredInputs': True, 'sameRetry': writes[0]['body'] == writes[1]['body'], 'separateFileUpload': True, 'pendingFrames': pending}
 
 
 def fixture_persona_remount(frame, persona):
@@ -287,7 +288,7 @@ def check(page, origin, reduced, workflow):
         REPORT['billing'] = check_billing(page, screens.screen('admin-billing', 'draft'), reduced)
     elif workflow == 'signature':
         step('opening signature review before current proof-to-signature submission')
-        REPORT['signature'] = check_signature_flow(page, screens.screen('signature', 'empty'), open_proof=lambda: screens.screen('proof', 'empty'), on_step=step)
+        REPORT['signature'] = check_signature_flow(page, screens.screen('signature', 'empty'), open_proof=lambda: screens.screen('proof', 'empty'), open_signature=lambda: screens.screen('signature', 'empty'), on_step=step)
     else:
         raise ValueError('Unknown workflow: '+workflow)
     step('complete')

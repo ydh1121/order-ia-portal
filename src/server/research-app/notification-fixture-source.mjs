@@ -28,5 +28,9 @@ export function researchNotificationFixtureSource(source) {
    data.notificationPreferences[key]=result;return copy(result);
   }
   if(path==='/notifications'){`);
+  // The canonical consultation contract re-reads this same workspace on submit.
+  // Supply both scoped quote IDs only while the review example owns the drawer.
+  source = once(source, /\bif\s*\(\s*path\s*===\s*(['"])\/workspace\1\s*&&\s*!body\s*\)\s*return\b/g,
+    "if(path==='/workspace'&&!body&&session.reviewConsultationWorkspace&&controls.scenario!=='empty'&&controls.persona==='buyer')return copy(session.reviewConsultationWorkspace);if(path==='/workspace'&&!body)return");
   return source;
 }

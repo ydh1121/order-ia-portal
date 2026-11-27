@@ -1,4 +1,5 @@
 import {mountQuoteResult,quoteResultScreenCss} from './order-engine/browser/quote-result-screen.mjs';
+import {quoteLockMarkup,mountQuoteLock,quoteLockCss} from './research-app/quote-preview.mjs';
 import {browserFunction} from './browser-source.mjs';
 import * as productSources from './r3-product-sources.mjs';
 // Only the verified buyer response may provide amounts. Pricing drafts, local form
@@ -46,14 +47,28 @@ export function projectBuyerResult(snapshot, now = Date.now()) {
 
 
 // Keep the quote id in the authenticated controller, outside the renderer and the exported QA data.
-function createBuyerResult(host,project,readDetail,recompare,mount) {
-  let id=null;
+function createBuyerResult(host,project,readDetail,recompare,mount,markup,mountLock) {
+  let id=null, revision=0;
+  function navigateLocked(action){
+    if(action==='signup'){location.assign('/ia?view=research-r3&screen=signup&state=empty');return;}
+    location.assign('/ia?'+new URLSearchParams({view:'roles-r3',menu:action==='verify'?'business':'consult'}));
+  }
+  function gate(audience='unverified'){
+    revision++;id=null;view.clear();mountLock(host,markup(audience),navigateLocked);
+  }
   let guide=true;
   const guideKey='order_result_graph_guide_v1';
   try{guide=localStorage.getItem(guideKey)!=='seen';}catch{}
   const view=mount(host,{
     guide,onGuideSeen(){try{localStorage.setItem(guideKey,'seen');}catch{}},
-    async onDetail(){return project(await readDetail(id));},
+    async onDetail(){
+      const requesting=revision;
+      try{return project(await readDetail(id));}
+      catch(error){
+        if(revision===requesting && ([401,403].includes(error?.status)||error?.message==='ACCESS_REQUIRED'))gate(error.status===401?'guest':'unverified');
+        throw error;
+      }
+    },
     onAction(action){
       if((action==='consult'||action==='delivery')&&id){
         location.assign('/ia?'+new URLSearchParams({view:'roles-r3',menu:action,quote:id}));
@@ -62,13 +77,13 @@ function createBuyerResult(host,project,readDetail,recompare,mount) {
     }
   });
   return {
-    clear(){id=null;view.clear();},gate(){id=null;view.gate();},empty(){id=null;view.empty();},
-    show(snapshot,selected=null){id=snapshot?.id||null;view.show(project(snapshot),selected);}
+    clear(){revision++;id=null;view.clear();},gate,empty(){revision++;id=null;view.empty();},
+    show(snapshot,selected=null){revision++;id=snapshot?.id||null;view.show(project(snapshot),selected);}
   };
 }
 // The non-module controller receives the same verified brand dependency closure
 // as the normal product's ESM renderer. It does not infer a login from a quote
 // state, nor install a replacement drawing or a second global brand runtime.
 const brandRuntime=typeof productSources.productBrandRuntime==='string'?productSources.productBrandRuntime:'throw new Error("PRODUCT_BRAND_FACTORY_NOT_SEALED");';
-export const buyerResultClient='((mount,controller)=>{'+brandRuntime+'\nreturn (...args)=>controller(...args,(host,options)=>mount(host,{...options,brandFactory:OrderProductBrand}));})('+browserFunction(mountQuoteResult)+','+browserFunction(createBuyerResult)+')';
-export const buyerResultCss=quoteResultScreenCss;
+export const buyerResultClient='((mount,controller)=>{'+brandRuntime+'\nreturn (...args)=>controller(...args,(host,options)=>mount(host,{...options,brandFactory:OrderProductBrand}),'+browserFunction(quoteLockMarkup)+','+browserFunction(mountQuoteLock)+');})('+browserFunction(mountQuoteResult)+','+browserFunction(createBuyerResult)+')';
+export const buyerResultCss=quoteResultScreenCss+quoteLockCss;

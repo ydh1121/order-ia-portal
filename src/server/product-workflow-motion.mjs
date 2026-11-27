@@ -27,19 +27,28 @@ export function installProductWorkflowMotion(win=window){
   for(const [key,e] of next){const before=positions.get(key);if(!before)continue;const dx=before.left-e.getBoundingClientRect().left;if(Math.abs(dx)>.5)animate(e,spring(dx,0,{stiffness:500,damping:40}).map(x=>({translate:x+'px 0'})));}
   digits.set(element,next);element.setAttribute('aria-label',text+'원');
  }
- function signaturePad({title='제출 서명',locked=()=>false,signal,width=360,height=100,background='#fff'}={}){
+ function signaturePad({title='제출 서명',locked=()=>false,signal,width=360,height=100,background='#fff',color='#203c6b'}={}){
   const controller=new win.AbortController(),on=(el,type,fn)=>el.addEventListener(type,fn,{signal:controller.signal}),element=node('fieldset',undefined,'wf-signature'),canvas=node('canvas'),ctx=canvas.getContext('2d'),typed=field('또는 이름 입력으로 서명'),placeholder=node('span','여기에 서명해 주세요','wf-sign-placeholder'),clear=button('다시 하기');
   canvas.width=width;canvas.height=height;canvas.tabIndex=0;canvas.setAttribute('aria-label','서명 그리기');typed.input.maxLength=40;typed.input.autocomplete='off';element.append(node('legend',title),canvas,placeholder,typed.wrap,clear);
   let active=false,activePointer=null,ink=false,raf=0,last=0,target={x:0,y:0},tip={x:0,y:0,vx:0,vy:0,width:2.2},pressure=1;
   const stop=()=>{win.cancelAnimationFrame(raf);raf=0;last=0;};
-  const reset=()=>{if(locked())return;stop();active=false;ink=false;typed.input.value='';ctx.fillStyle=background;ctx.fillRect(0,0,width,height);element.dataset.ink='false';};reset();
-  const step=dt=>{const px=tip.x,py=tip.y;tip.vx+=((target.x-tip.x)*2600-tip.vx*78)*dt;tip.vy+=((target.y-tip.y)*2600-tip.vy*78)*dt;tip.x+=tip.vx*dt;tip.y+=tip.vy*dt;const speed=Math.hypot(tip.vx,tip.vy);tip.width+=((3.6-2.5*Math.min(1,speed/1800))*pressure-tip.width)*.08;if(Math.hypot(tip.x-px,tip.y-py)>.01){ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(tip.x,tip.y);ctx.lineWidth=tip.width;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#203c6b';ctx.stroke();ink=true;element.dataset.ink='true';}return speed;};
-  const frame=time=>{let remaining=Math.min(.035,last?(time-last)/1000:1/60);last=time;while(remaining>0){const dt=Math.min(remaining,1/240);step(dt);remaining-=dt;}if(active||Math.hypot(target.x-tip.x,target.y-tip.y)>.1||Math.hypot(tip.vx,tip.vy)>1)raf=win.requestAnimationFrame(frame);else stop();};
+  const erase=()=>{ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ink=false;element.dataset.ink='false';};
+  const release=(captured=true)=>{const pointer=activePointer;active=false;activePointer=null;if(captured&&pointer!==null&&canvas.hasPointerCapture?.(pointer))canvas.releasePointerCapture(pointer);};
+  const reset=()=>{if(locked())return;stop();release();typed.input.value='';erase();};reset();
+  const line=(x1,y1,x2,y2,weight)=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.lineWidth=weight;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle=color;ctx.stroke();ink=true;element.dataset.ink='true';};
+  const step=dt=>{const px=tip.x,py=tip.y;tip.vx+=((target.x-tip.x)*2600-tip.vx*78)*dt;tip.vy+=((target.y-tip.y)*2600-tip.vy*78)*dt;tip.x+=tip.vx*dt;tip.y+=tip.vy*dt;const speed=Math.hypot(tip.vx,tip.vy);tip.width+=((3.6-2.5*Math.min(1,speed/1800))*pressure-tip.width)*.08;if(Math.hypot(tip.x-px,tip.y-py)>.01)line(px,py,tip.x,tip.y,tip.width);};
+  const frame=time=>{let remaining=Math.min(.035,last?(time-last)/1000:1/60);last=time;while(remaining>0){const dt=Math.min(remaining,1/240);step(dt);remaining-=dt;}if(active)raf=win.requestAnimationFrame(frame);else stop();};
   const point=e=>{const r=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(width,(e.clientX-r.left)*width/r.width)),y:Math.max(0,Math.min(height,(e.clientY-r.top)*height/r.height))};};
-  on(canvas,'pointerdown',e=>{if(locked()||active||e.button!==0)return;e.preventDefault();activePointer=e.pointerId;stop();typed.input.value='';target=point(e);tip={...target,vx:0,vy:0,width:2.2};pressure=e.pointerType==='pen'?.45+e.pressure*.9:1;active=true;canvas.setPointerCapture(e.pointerId);raf=win.requestAnimationFrame(frame);});
-  on(canvas,'pointermove',e=>{if(active&&e.pointerId===activePointer){target=point(e);pressure=e.pointerType==='pen'?.45+e.pressure*.9:1;}});
-  for(const type of ['pointerup','pointercancel','lostpointercapture'])on(canvas,type,e=>{if(e.pointerId===activePointer){active=false;activePointer=null;}});
-  on(typed.input,'input',()=>{if(locked())return;stop();ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ink=false;element.dataset.ink=String(Boolean(typed.input.value.trim()));});on(clear,'click',reset);
+  const finish=(captured=true)=>{if(!active)return;stop();for(let i=0;i<80;i++)step(1/240);release(captured);};
+  const track=e=>{target=point(e);pressure=e.pointerType==='pen'&&e.pressure>0?.45+e.pressure*.9:1;step(1/240);};
+  on(canvas,'pointerdown',e=>{if(locked()||active||e.button!==0)return;e.preventDefault();stop();if(typed.input.value){typed.input.value='';erase();}active=true;activePointer=e.pointerId;target=point(e);tip={...target,vx:0,vy:0,width:2.2};track(e);line(tip.x,tip.y,tip.x+.01,tip.y,tip.width);canvas.setPointerCapture(e.pointerId);raf=win.requestAnimationFrame(frame);});
+  on(canvas,'pointermove',e=>{if(!active||e.pointerId!==activePointer)return;for(const sample of e.getCoalescedEvents?.()||[])track(sample);track(e);});
+  // A fast pen/touch stroke belongs to this surface. Native pointerup already
+  // releases capture. Cancelling the touch pan keeps the next tap actionable.
+  canvas.addEventListener('touchmove',e=>{if(e.cancelable)e.preventDefault();},{passive:false,signal:controller.signal});
+  on(canvas,'pointerup',e=>{if(e.pointerId===activePointer){track(e);finish(false);}});
+  for(const type of ['pointercancel','lostpointercapture'])on(canvas,type,e=>{if(e.pointerId===activePointer)finish(false);});
+  on(typed.input,'input',()=>{if(locked())return;finish();erase();const name=typed.input.value.trim();if(name){ctx.fillStyle=color;ctx.font='24px sans-serif';ctx.fillText(name,10,height/2+10,width-20);ink=true;element.dataset.ink='true';}});on(clear,'click',reset);
   let submissionCanvas=null;
   const submission=()=>{
    // evidenceSignatureBinding owns the immutable 360×100 signed-page format.
@@ -52,7 +61,7 @@ export function installProductWorkflowMotion(win=window){
    return submissionCanvas;
   };
   const destroy=()=>{stop();controller.abort();canvas.width=canvas.height=0;if(submissionCanvas)submissionCanvas.width=submissionCanvas.height=0;};signal?.addEventListener('abort',destroy,{once:true});
-  return {element,reset,destroy,page(){if(!ink&&!typed.input.value.trim())throw Error('자료를 확인한 뒤 서명해 주세요.');stop();active=false;if(ink)for(let i=0;i<80;i++)step(1/240);else{ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ctx.fillStyle='#203c6b';ctx.font='24px sans-serif';ctx.fillText(typed.input.value.trim(),10,height/2+10,width-20);}return submission();}};
+  return {element,reset,destroy,restoreDrawing(paint){if(locked())return;reset();paint(ctx);ink=true;element.dataset.ink='true';},page(){finish();if(!ink)throw Error('자료를 확인한 뒤 서명해 주세요.');return submission();}};
  }
  function receiptPaper(container,item,{signal}={}){
   container.replaceChildren();const printer=node('div',undefined,'wf-printer'),paper=node('article',undefined,'wf-paper');paper.tabIndex=0;paper.setAttribute('aria-label','발급 영수증');paper.append(node('h3','영수증'),node('p',item.number));const list=node('dl');
@@ -116,12 +125,20 @@ export function installProductWorkflowMotion(win=window){
   const adapter=api.adapter||win.ORDER_APP_ADAPTER,ctl=new win.AbortController(),panel=node('section',undefined,'wf-panel'),status=node('p','','wf-status'),select=field('신청 내역','select'),start=button('자료와 서명 준비',true),editor=node('div');status.setAttribute('role','status');panel.append(node('h2',kind==='business'?'사업자등록증 제출':'거래내역 증빙과 서명'));const memo=field('추가 요청 · 선택','textarea'),meter=node('progress'),remaining=node('output','500자 남음');memo.input.name='document-memo';memo.input.maxLength=4000;meter.max=500;meter.value=0;meter.setAttribute('aria-label','추가 요청 글자 수');remaining.setAttribute('aria-live','polite');const memoMeter=node('div',undefined,'memo-meter');memoMeter.append(meter,remaining);
   const countMemo=()=>{const segmenter=typeof win.Intl.Segmenter==='function'?new win.Intl.Segmenter('ko',{granularity:'grapheme'}):null,tokens=segmenter?[...segmenter.segment(memo.input.value)].map(x=>x.segment):[...memo.input.value];let count=0,value='';for(const token of tokens){if(!/^\s+$/u.test(token)&&++count>500)break;value+=token;}memo.input.value=value;meter.value=Math.min(count,500);remaining.textContent=(500-Math.min(count,500))+'자 남음';};
   memo.input.addEventListener('input',e=>{if(!e.isComposing)countMemo();},{signal:ctl.signal});memo.input.addEventListener('compositionend',countMemo,{signal:ctl.signal});
-  if(kind==='reprice'){const purpose=node('section',undefined,'proof-purpose');purpose.append(node('h3','거래내역 증빙 시 주의사항'));const list=node('ul');for(const text of ['직전 1개월 정산서에서 가격과 수량, 거래일이 보이도록 올려주세요.','사업장을 제외한 제3자의 개인정보는 가려주세요.','보완을 위해 최근 3개월 내 자료를 추가로 요청할 수 있어요.'])list.append(node('li',text));purpose.append(list);panel.append(purpose,memo.wrap,memoMeter);}panel.append(select.wrap,start,status,editor);root.replaceChildren(panel);let current=caseRecord,items=[],disposeEditor;
+  if(kind==='reprice'){const purpose=node('section',undefined,'proof-purpose');purpose.append(node('h3','거래내역 증빙 시 주의사항'));const list=node('ul');for(const text of ['직전 1개월 정산서에서 가격과 수량, 거래일이 보이도록 올려주세요.','사업장을 제외한 제3자의 개인정보는 가려주세요.','보완을 위해 최근 3개월 내 자료를 추가로 요청할 수 있어요.','제출할 자료는 확인 용도로만 사용해요.'])list.append(node('li',text));purpose.append(list);panel.append(purpose,memo.wrap,memoMeter);}panel.append(select.wrap,start,status,editor);root.replaceChildren(panel);let current=caseRecord,items=[],disposeEditor;
   const say=(message,error=false)=>{status.textContent=message;status.dataset.error=String(error);};
   const open=async()=>{if(!current)current=items.find(c=>c.id===select.input.value);if(!current)return say('신청 내역을 선택해 주세요.',true);try{
    if(kind==='business'&&current.state==='DRAFT')current=await adapter.workflows.transition(current,'manual',{},ctl.signal);
    if(!win.ORDER_EVIDENCE_EDITOR)throw Error('증빙 편집기를 불러오지 못했어요.');disposeEditor?.();editor.replaceChildren();const options=await adapter.workflows.evidenceOptions();if(ctl.signal.aborted)return;
-   disposeEditor=win.ORDER_EVIDENCE_EDITOR({container:editor,caseId:current.id,kind,...options,motion:api.motion,initialFiles,evidenceId:current.evidenceId,readOnly:!['DRAFT','NEEDS_INFO','EVIDENCE_REQUIRED'].includes(current.state),onError:message=>say(message,true),onReceipt:async(evidenceId,b)=>{
+   const openedCase=current,readOnly=!['DRAFT','NEEDS_INFO','EVIDENCE_REQUIRED'].includes(current.state);
+   panel.dataset.evidenceReadOnly=String(readOnly);
+   panel.dataset.evidenceBusiness=openedCase.context?.businessName||'';
+   if(!panel.dataset.evidenceBusiness&&kind==='reprice'&&adapter.roleRequest)adapter.roleRequest('/workspace',null,ctl.signal).then(workspace=>{
+    if(ctl.signal.aborted||current!==openedCase)return;
+    const business=workspace.businesses?.find(site=>site.org_id===openedCase.org_id&&site.site_id===openedCase.site_id);
+    if(business?.businessName)panel.dataset.evidenceBusiness=business.businessName;
+   }).catch(()=>{});
+   disposeEditor=win.ORDER_EVIDENCE_EDITOR({container:editor,caseId:current.id,kind,...options,motion:api.motion,initialFiles,evidenceId:current.evidenceId,readOnly,onError:message=>say(message,true),onReceipt:async(evidenceId,b)=>{
     const save=async()=>{current=await adapter.workflows.transition(current,'attach',{evidenceId,...(kind==='reprice'&&memo.input.value.trim()?{context:{memo:memo.input.value}}:{})},ctl.signal);return current;};try{await save();say('자료와 서명을 접수했어요. 신청번호 '+current.id+' · 검토 중');panel.dataset.success='true';return true;}catch(e){say(adapter.message(e),true);return false;}
    }});say('자료를 확인하고 개인정보를 가린 뒤 제출해 주세요.');
   }catch(e){say(adapter?.message?.(e)||e.message,true);}};

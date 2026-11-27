@@ -46,7 +46,23 @@ async function workspace(t){
   for(const script of w.document.querySelectorAll('script'))if(!script.src)w.eval(script.textContent);
   await w.ORDER_APP_ADAPTER.ready;await tick();
   const brand=w.document.querySelector('.obm-brand'),menu=brand.__orderAccountMenu,panel=menu.panel,svg=brand.querySelector('svg');
-  const open=async id=>{menu.close({immediate:true});menu.open('manage');assert.equal(menu.show(id),true);await until(()=>panel.querySelector('[data-obm-page="'+id+'"] .obm-panel-content')?.getAttribute('aria-busy')!=='true','panel loads '+id);return panel.querySelector('[data-obm-page="'+id+'"] .obm-panel-content');};
+  const open=async id=>{
+   menu.close({immediate:true});menu.open('manage');assert.equal(menu.show(id),true);
+   const content=panel.querySelector('[data-obm-page="'+id+'"] .obm-panel-content');
+   assert.ok(content,'panel exists '+id);
+   if(content.getAttribute('aria-busy')==='true'){
+    await new Promise((resolve,reject)=>{
+     const observer=new w.MutationObserver(()=>{
+      if(content.getAttribute('aria-busy')==='true')return;
+      clearTimeout(timer);observer.disconnect();resolve();
+     });
+     const timer=setTimeout(()=>{observer.disconnect();reject(Error('panel loads '+id));},30000);
+     observer.observe(content,{attributes:true,attributeFilter:['aria-busy']});
+    });
+   }
+   assert.equal(content.querySelector('.obm-load-error'),null,'panel loads successfully '+id);
+   return content;
+  };
   const unchanged=()=>{assert.equal(w.location.href,url);assert.equal(brand.querySelector('svg'),svg);assert.equal(menu.panel,panel);assert.equal(w.document.querySelectorAll('.obm-panel').length,1);assert.deepEqual(navigation,[]);assert.deepEqual(errors,[]);const ids=[...w.document.querySelectorAll('[id]')].map(node=>node.id);assert.equal(new Set(ids).size,ids.length,'panel field IDs do not collide with the host');};
   return {w,brand,menu,panel,calls,errors,navigation,open,unchanged};
  }

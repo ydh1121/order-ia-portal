@@ -640,6 +640,7 @@ def evidence_presentation_probe(page, capture):
                     expect(panel.locator('.research-file-drop')).to_be_visible()
                     expect(panel.locator('input[type=file]')).to_be_enabled() if state != 'checking' else None
                     expect(panel.locator('.proof-purpose')).to_be_visible()
+                    expect(panel.locator('.proof-purpose').get_by_text('제출할 자료는 확인 용도로만 사용해요.', exact=True)).to_have_count(1)
                     expect(panel.locator('.wf-signature')).to_be_hidden()
                     expect(panel.locator('[data-evidence-submit]')).to_be_hidden()
                     expect(panel.locator('.research-proof-next')).to_be_visible()

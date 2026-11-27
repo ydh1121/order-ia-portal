@@ -20,7 +20,7 @@ test('the QA menu covers the complete pinned state inventory without copying rev
   const {getQaSupplemental}=await import('../src/server/r3-qa-assets.mjs');
   const pinnedSupplemental=(await getQaSupplemental()).rows.filter(row=>row.supplemental).map(row=>row.id);
   assert.deepEqual(list.items.filter(row=>row.supplemental).map(row=>row.id).sort(),
-    [...pinnedSupplemental,'notifications/list/email'].sort());
+    [...pinnedSupplemental,'notifications/list/email','admin-icon-library/list/email','quote-result/locked-guest/email'].sort());
   for(const entry of list.items){assert.equal('approved' in entry,false);assert.equal(typeof entry.hashes['390'],'string');}
 });
 test('stable target is bound to width, variant, release and generated artifact',async()=>{
