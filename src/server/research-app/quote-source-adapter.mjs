@@ -197,10 +197,15 @@ export function getResearchQuoteSource(path,source){
   if(typeof source!=='string')throw TypeError('RESEARCH_QUOTE_SOURCE_REQUIRED');
   if(path==='web/quote-result-screen.mjs')return researchQuoteResultSource(source);
   if(path==='web/app.mjs'){
-    // The regular simple verdict uses different copy for the same missing
-    // specification fields. Keep its field ownership and clearing behavior.
-    source=once(source,"if(id==='err-q1'&&message.includes('난각번호'))","if(id==='err-q1'&&(message.includes('난각번호')||message==='계란 규격을 선택해 주세요.'))");
-    source=once(source,"!note.hidden&&note.textContent.includes('난각번호')","!note.hidden&&(note.textContent.includes('난각번호')||note.textContent==='계란 규격을 선택해 주세요.')");
+    // Carry the validation intent through the regular helper and pick handler.
+    // Both verdicts own their copy, and unrelated SKU errors use the same helper.
+    source=once(source,"const err=(id,message)=>{const node=$(id);if(!node)return;","const err=(id,message,missingChoices=false)=>{const node=$(id);if(!node)return;if(id==='err-q1')node.toggleAttribute('data-missing-choices',Boolean(message&&missingChoices));");
+    source=once(source,"if(id==='err-q1'&&message.includes('난각번호'))","if(id==='err-q1'&&$(id).hasAttribute('data-missing-choices'))");
+    source=once(source,"!note.hidden&&note.textContent.includes('난각번호')","!note.hidden&&note.hasAttribute('data-missing-choices')");
+    source=once(source,"err('err-q1','난각번호·계란 크기·포장을 모두 선택해 주세요.');","err('err-q1','난각번호·계란 크기·포장을 모두 선택해 주세요.',true);");
+    source=once(source,"function errorAt(q,msg){changeOpen(q);err('err-'+q,msg)}","function isInitialQ1Issue(stage){return stage==='q1'&&editorMode==='initial'&&!S.lines.length;}\nfunction errorAt(q,msg){changeOpen(q);err('err-'+q,msg,isInitialQ1Issue(q));}");
+    source=once(source," if(simpleMode){\n  if(S.open!==issue.stage", " if(simpleMode||(!issue.blocker&&isInitialQ1Issue(issue.stage))){\n  if(S.open!==issue.stage");
+    source=once(source,"err('err-'+issue.stage,issue.message||'입력을 확인해 주세요.');","err('err-'+issue.stage,issue.message||'입력을 확인해 주세요.',isInitialQ1Issue(issue.stage));");
     source=once(source,
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null}={}){",
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null,researchEnvironment=null}={}){"+environmentBindings);

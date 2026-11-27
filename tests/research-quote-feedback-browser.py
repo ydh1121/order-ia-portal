@@ -391,26 +391,42 @@ def qa_mode_navigation_checks(open_source, receipt):
         page.close()
 
 
+def assert_q1_missing_group(page, group):
+    seen = page.locator('#picks-' + group).evaluate("""group => {
+      const style = getComputedStyle(group);
+      return {outer: [style.borderTopWidth, style.outlineWidth, style.boxShadow],
+        choices: [...group.querySelectorAll('[data-pick]')].map(button => {
+          const paint = getComputedStyle(button);
+          return [button.getAttribute('aria-invalid'), button.getAttribute('aria-describedby'),
+            paint.borderTopWidth, paint.borderTopStyle, paint.borderTopColor];
+        })};
+    }""")
+    assert seen['outer'] == ['0px', '0px', 'none'], seen
+    assert seen['choices'] and all(choice == ['true', 'err-q1', '1px', 'solid', 'rgb(217, 45, 72)']
+                                   for choice in seen['choices']), seen
+
+
 def core_checks(open_source, receipt):
-    page, identity, _ = open_source('q1', 'before', 'simple', 390)
-    try:
-        page.locator('#to-result').click()
-        expect(page.locator('#err-q1')).to_have_text('계란 규격을 선택해 주세요.')
-        for group in ('housing', 'size', 'pack'):
-            assert page.locator('#picks-' + group + ' [data-pick][aria-invalid=true]').count() > 0
-        page.locator('[data-pick=housing][data-value="1"]').click()
-        assert page.locator('#picks-housing [aria-invalid=true]').count() == 0
-        for group in ('size', 'pack'):
-            assert page.locator('#picks-' + group + ' [data-pick][aria-invalid=true]').count() > 0
-        page.locator('[data-pick=size][data-value="대란"]').click()
-        page.locator('[data-pick=pack][data-value="30"]').click()
-        page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
-        expect(page.locator('#err-q1')).to_be_hidden()
-        line = page_quote(page)['lines'][0]
-        assert all(line[key] == value for key, value in [('housing', '1'), ('size', '대란'), ('pack', '30'), ('qty', '')])
-        receipt['checks'].append({'check': 'Q1 real completion, individual missing-field exposure and per-group repair', 'initialSource': identity, 'line': line})
-    finally:
-        page.close()
+    for mode, helper in [('simple', '계란 규격을 선택해 주세요.'), ('detailed', '계란 제품을 한 개 이상 선택해 주세요.')]:
+        page, identity, _ = open_source('q1', 'before', mode, 390)
+        try:
+            page.locator('#to-result').click()
+            expect(page.locator('#err-q1')).to_have_text(helper)
+            for group in ('housing', 'size', 'pack'):
+                assert_q1_missing_group(page, group)
+            page.locator('[data-pick=housing][data-value="1"]').click()
+            assert page.locator('#picks-housing [aria-invalid=true]').count() == 0
+            for group in ('size', 'pack'):
+                assert_q1_missing_group(page, group)
+            page.locator('[data-pick=size][data-value="대란"]').click()
+            page.locator('[data-pick=pack][data-value="30"]').click()
+            page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
+            expect(page.locator('#err-q1')).to_be_hidden()
+            line = page_quote(page)['lines'][0]
+            assert all(line[key] == value for key, value in [('housing', '1'), ('size', '대란'), ('pack', '30'), ('qty', '')])
+            receipt['checks'].append({'check': 'Q1 real completion, individual missing-field exposure and per-group repair', 'mode': mode, 'initialSource': identity, 'line': line})
+        finally:
+            page.close()
 
     page, identity, _ = open_source('q2', 'empty', 'detailed', 390)
     try:
@@ -688,6 +704,9 @@ def main():
                 write_json(OUT / (label + '.dom-paint.json'), captured)
                 page.screenshot(OUT / (label + '.viewport.png'))
                 if screen in ('q1', 'q2', 'q3', 'q4'):
+                    if screen == 'q1' and state == 'error':
+                        for group in ('housing', 'size', 'pack'):
+                            assert_q1_missing_group(page, group)
                     assert captured['anchors']['duplicateModeSwitchVisible'] is False, 'C622 duplicate switch must be absent from paint'
                     form = captured['anchors']['form']
                     assert form['background'] == 'rgba(0, 0, 0, 0)', 'C623 calculator shares the plain white page'

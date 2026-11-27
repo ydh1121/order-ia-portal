@@ -110,23 +110,29 @@ test('concurrent mount is one owner and modal back stays inside the quote worksp
   }finally{f.close();}
 });
 
-test('simple Q1 actual completion attempt exposes only missing choices and clears each repaired group through the regular engine',async()=>{
-  const f=setup();try{
-    const workspace=await f.mount('simple');await settle();
-    const groups=()=>['housing','size','pack'].map(name=>f.root.querySelector('#picks-'+name));
-    f.root.querySelector('#to-result').click();await settle();
-    assert.equal(f.root.querySelector('#err-q1').textContent,'계란 규격을 선택해 주세요.');
-    for(const group of groups())assert.ok([...group.querySelectorAll('[data-pick]')].every(button=>button.getAttribute('aria-invalid')==='true'),group.id+' must use the existing missing-choice verdict');
-    f.root.querySelector('[data-pick="housing"][data-value="1"]').click();await settle();
-    assert.ok([...groups()[0].querySelectorAll('[data-pick]')].every(button=>!button.hasAttribute('aria-invalid')),'a selected field is no longer an error');
-    for(const group of groups().slice(1))assert.ok([...group.querySelectorAll('[data-pick]')].every(button=>button.getAttribute('aria-invalid')==='true'),group.id);
-    for(const [field,value]of [['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
-    await idle(workspace);assert.equal(workspace.snapshot().lines.length,1);assert.equal(f.root.querySelector('#err-q1').hidden,true);
-    assert.ok(groups().every(group=>!group.querySelector('[aria-invalid=true]')));
-    assert.equal(workspace.snapshot().lines[0].qty,'','selection must not invent the later purchase data');
-    workspace.dispose();assert.deepEqual(f.failures,[]);
-  }finally{f.close();}
-});
+for(const [mode,helper] of [['simple','계란 규격을 선택해 주세요.'],['detailed','계란 제품을 한 개 이상 선택해 주세요.']]){
+  for(const source of ['completion','error fixture']){
+    test(mode+' Q1 '+source+' exposes individual missing choices and clears each repaired group',async()=>{
+      const f=setup();try{
+        const workspace=await f.mount(mode,{fixtureScope:source==='error fixture'});await settle();
+        const groups=()=>['housing','size','pack'].map(name=>f.root.querySelector('#picks-'+name));
+        if(source==='completion')f.root.querySelector('#to-result').click();
+        else assert.equal((await workspace.applyScenario({screen:'q1',state:'error'})).ok,true);
+        await settle();
+        assert.equal(f.root.querySelector('#err-q1').textContent,helper);
+        for(const group of groups())assert.ok([...group.querySelectorAll('[data-pick]')].every(button=>button.getAttribute('aria-invalid')==='true'),group.id+' must use the existing missing-choice verdict');
+        f.root.querySelector('[data-pick="housing"][data-value="1"]').click();await settle();
+        assert.ok([...groups()[0].querySelectorAll('[data-pick]')].every(button=>!button.hasAttribute('aria-invalid')),'a selected field is no longer an error');
+        for(const group of groups().slice(1))assert.ok([...group.querySelectorAll('[data-pick]')].every(button=>button.getAttribute('aria-invalid')==='true'),group.id);
+        for(const [field,value]of [['size','대란'],['pack','30']])f.root.querySelector('[data-pick="'+field+'"][data-value="'+value+'"]').click();
+        await idle(workspace);assert.equal(workspace.snapshot().lines.length,1);assert.equal(f.root.querySelector('#err-q1').hidden,true);
+        assert.ok(groups().every(group=>!group.querySelector('[aria-invalid=true]')));
+        assert.equal(workspace.snapshot().lines[0].qty,'','selection must not invent the later purchase data');
+        workspace.dispose();assert.deepEqual(f.failures,[]);
+      }finally{f.close();}
+    });
+  }
+}
 
 test('Q1 summary tags come from actual Q2 data, and stack edit plus swipe cancel retain the original quote transaction',async()=>{
   const f=setup();try{
