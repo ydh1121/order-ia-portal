@@ -131,17 +131,28 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     }
     position();
   }
+  function logoBounds(){
+    const boxes=paths.map(path=>path.getBoundingClientRect()).filter(box=>box.width>0&&box.height>0);
+    if(boxes.length===paths.length){
+      const left=Math.min(...boxes.map(box=>box.left)),top=Math.min(...boxes.map(box=>box.top)),right=Math.max(...boxes.map(box=>box.right)),bottom=Math.max(...boxes.map(box=>box.bottom));
+      return {left,top,right,bottom,width:right-left,height:bottom-top};
+    }
+    const hit=trigger.getBoundingClientRect(),height=markHeight,width=Math.min(markWidth,hit.width||markWidth),right=hit.right,top=hit.top+((hit.height||44)-height)/2;
+    return {left:right-width,top,right,bottom:top+height,width,height};
+  }
   function position(){
-    if(panel.hidden)return;const r=trigger.getBoundingClientRect(),view=win.visualViewport;
+    if(panel.hidden)return;const r=logoBounds(),view=win.visualViewport;
     const x=view?.offsetLeft||0,y=view?.offsetTop||0,width=view?.width||win.innerWidth,height=view?.height||win.innerHeight;
-    const w=Math.max(1,Math.min(320,width-24)),bottom=y+height-12;
-    // The morph keeps the trigger's upper-right origin even for a long form.
+    const right=Math.max(x+13,Math.min(r.right,x+width-12));
+    const w=Math.max(1,Math.min(320,width-24,right-x-12)),bottom=y+height-12;
+    // C527: use the visible logo's upper-right corner, not its 44px hit target
+    // or the padded SVG viewport. The same corner stays fixed for long forms.
     // Give the menu only the space below that origin; its existing scroll
     // container exposes the remaining controls without moving the header.
     const top=Math.max(y+12,Math.min(r.top,bottom-1));
     const h=Math.max(1,Math.min(measure(pages.at(-1).node)+20,bottom-top));
     panel.style.width=w+'px';panel.style.height=h+'px';
-    const left=Math.max(x+12,Math.min(r.right-w,x+width-w-12));
+    const left=right-w;
     panel.style.left=left+'px';panel.style.top=top+'px';
     for(const [key,value] of Object.entries({'--obm-open-w':w,'--obm-open-h':h,'--obm-closed-w':r.width||Math.max(44,markWidth+8),'--obm-closed-h':r.height||44,'--obm-start-x':r.right-left-w,'--obm-start-y':r.top-top}))panel.style.setProperty(key,value+'px');
   }
@@ -270,8 +281,9 @@ export function mountBrandAccountMenu(brand, initial = {}) {
     const from=points(),version=++generation;cancelArrival();halt();
     phase='opening';brand.dataset.accountOpen='true';trigger.setAttribute('aria-expanded','true');trigger.setAttribute('aria-label','계정 메뉴 닫기');
     panel.hidden=false;panel.inert=false;try{if(panel.showPopover&&!panel.matches(':popover-open'))panel.showPopover();else if(!panel.showPopover)panel.removeAttribute('popover');}catch{panel.removeAttribute('popover');}
+    player?.stopRandom?.();player?.stop?.();
     resetPages();slider.style.height=measure(root.node)+'px';position();
-    player?.stopRandom?.();player?.stop?.();svg.style.opacity='0';root.node.dataset.pointsMoving='true';
+    svg.style.opacity='0';root.node.dataset.pointsMoving='true';
     const duration=time('--morph-open-dur',350);void surface.offsetWidth;surface.dataset.open='true';
     // Measure the final row positions without freezing layout or scaling text.
     lastRootRects=rootPointsAtRest();

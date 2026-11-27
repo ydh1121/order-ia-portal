@@ -27,21 +27,21 @@ export function installProductWorkflowMotion(win=window){
   for(const [key,e] of next){const before=positions.get(key);if(!before)continue;const dx=before.left-e.getBoundingClientRect().left;if(Math.abs(dx)>.5)animate(e,spring(dx,0,{stiffness:500,damping:40}).map(x=>({translate:x+'px 0'})));}
   digits.set(element,next);element.setAttribute('aria-label',text+'원');
  }
- function signaturePad({title='제출 서명',locked=()=>false,signal}={}){
+ function signaturePad({title='제출 서명',locked=()=>false,signal,width=360,height=100,background='#fff'}={}){
   const controller=new win.AbortController(),on=(el,type,fn)=>el.addEventListener(type,fn,{signal:controller.signal}),element=node('fieldset',undefined,'wf-signature'),canvas=node('canvas'),ctx=canvas.getContext('2d'),typed=field('또는 이름 입력으로 서명'),placeholder=node('span','여기에 서명해 주세요','wf-sign-placeholder'),clear=button('다시 하기');
-  canvas.width=360;canvas.height=100;canvas.tabIndex=0;canvas.setAttribute('aria-label','서명 그리기');typed.input.maxLength=40;typed.input.autocomplete='off';element.append(node('legend',title),canvas,placeholder,typed.wrap,clear);
+  canvas.width=width;canvas.height=height;canvas.tabIndex=0;canvas.setAttribute('aria-label','서명 그리기');typed.input.maxLength=40;typed.input.autocomplete='off';element.append(node('legend',title),canvas,placeholder,typed.wrap,clear);
   let active=false,activePointer=null,ink=false,raf=0,last=0,target={x:0,y:0},tip={x:0,y:0,vx:0,vy:0,width:2.2},pressure=1;
   const stop=()=>{win.cancelAnimationFrame(raf);raf=0;last=0;};
-  const reset=()=>{if(locked())return;stop();active=false;ink=false;typed.input.value='';ctx.fillStyle='#fff';ctx.fillRect(0,0,360,100);element.dataset.ink='false';};reset();
+  const reset=()=>{if(locked())return;stop();active=false;ink=false;typed.input.value='';ctx.fillStyle=background;ctx.fillRect(0,0,width,height);element.dataset.ink='false';};reset();
   const step=dt=>{const px=tip.x,py=tip.y;tip.vx+=((target.x-tip.x)*2600-tip.vx*78)*dt;tip.vy+=((target.y-tip.y)*2600-tip.vy*78)*dt;tip.x+=tip.vx*dt;tip.y+=tip.vy*dt;const speed=Math.hypot(tip.vx,tip.vy);tip.width+=((3.6-2.5*Math.min(1,speed/1800))*pressure-tip.width)*.08;if(Math.hypot(tip.x-px,tip.y-py)>.01){ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(tip.x,tip.y);ctx.lineWidth=tip.width;ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#203c6b';ctx.stroke();ink=true;element.dataset.ink='true';}return speed;};
   const frame=time=>{let remaining=Math.min(.035,last?(time-last)/1000:1/60);last=time;while(remaining>0){const dt=Math.min(remaining,1/240);step(dt);remaining-=dt;}if(active||Math.hypot(target.x-tip.x,target.y-tip.y)>.1||Math.hypot(tip.vx,tip.vy)>1)raf=win.requestAnimationFrame(frame);else stop();};
-  const point=e=>{const r=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(360,(e.clientX-r.left)*360/r.width)),y:Math.max(0,Math.min(100,(e.clientY-r.top)*100/r.height))};};
+  const point=e=>{const r=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(width,(e.clientX-r.left)*width/r.width)),y:Math.max(0,Math.min(height,(e.clientY-r.top)*height/r.height))};};
   on(canvas,'pointerdown',e=>{if(locked()||active||e.button!==0)return;e.preventDefault();activePointer=e.pointerId;stop();typed.input.value='';target=point(e);tip={...target,vx:0,vy:0,width:2.2};pressure=e.pointerType==='pen'?.45+e.pressure*.9:1;active=true;canvas.setPointerCapture(e.pointerId);raf=win.requestAnimationFrame(frame);});
   on(canvas,'pointermove',e=>{if(active&&e.pointerId===activePointer){target=point(e);pressure=e.pointerType==='pen'?.45+e.pressure*.9:1;}});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])on(canvas,type,e=>{if(e.pointerId===activePointer){active=false;activePointer=null;}});
-  on(typed.input,'input',()=>{if(locked())return;stop();ctx.fillStyle='#fff';ctx.fillRect(0,0,360,100);ink=false;element.dataset.ink=String(Boolean(typed.input.value.trim()));});on(clear,'click',reset);
+  on(typed.input,'input',()=>{if(locked())return;stop();ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ink=false;element.dataset.ink=String(Boolean(typed.input.value.trim()));});on(clear,'click',reset);
   const destroy=()=>{stop();controller.abort();canvas.width=canvas.height=0;};signal?.addEventListener('abort',destroy,{once:true});
-  return {element,reset,destroy,page(){if(!ink&&!typed.input.value.trim())throw Error('자료를 확인한 뒤 서명해 주세요.');stop();active=false;if(ink)for(let i=0;i<80;i++)step(1/240);else{ctx.fillStyle='#fff';ctx.fillRect(0,0,360,100);ctx.fillStyle='#203c6b';ctx.font='24px sans-serif';ctx.fillText(typed.input.value.trim(),10,60,340);}return canvas;}};
+  return {element,reset,destroy,page(){if(!ink&&!typed.input.value.trim())throw Error('자료를 확인한 뒤 서명해 주세요.');stop();active=false;if(ink)for(let i=0;i<80;i++)step(1/240);else{ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ctx.fillStyle='#203c6b';ctx.font='24px sans-serif';ctx.fillText(typed.input.value.trim(),10,height/2+10,width-20);}return canvas;}};
  }
  function receiptPaper(container,item,{signal}={}){
   container.replaceChildren();const printer=node('div',undefined,'wf-printer'),paper=node('article',undefined,'wf-paper');paper.tabIndex=0;paper.setAttribute('aria-label','발급 영수증');paper.append(node('h3','영수증'),node('p',item.number));const list=node('dl');

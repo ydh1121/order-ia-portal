@@ -153,15 +153,22 @@ test('public entry remains nonconfidential and private releases are confined to 
    '42f484c16e8a3a1882ed93e5f137f0c688bbe80b92bc7ff5bf2e123a0f51571e':'f2190e0ff02e7f79645b2481ea0a4d784ed0b44f0e230407bd3b76435768bda2'
   };
   const moduleCleanupEpoch=Object.hasOwn(moduleCleanupPacks,build);
+  // Signature pad rendering changes the shared bootstrap and therefore the
+  // pricing wrapper content identity. Retain the exact prior source epoch,
+  // including the later PR29 releases with their separately sealed QA runtime.
+  const priorSharedUiEpoch=build!==deliveryBuild&&sealedBootstrapByBuild.get(build)==='807ee8843806f8ed7e4a49b4b6d7487ce1784e8cd844d1cf82af6cfae5036887';
   if(moduleCleanupEpoch){
    assert.equal(sealedBootstrapByBuild.get(build),'807ee8843806f8ed7e4a49b4b6d7487ce1784e8cd844d1cf82af6cfae5036887');
    assert.equal(researchReleases[build].packSha256,moduleCleanupPacks[build]);
   }
   if(priorSourceEpoch){
    assert.equal(sealedBootstrapByBuild.get(build),'d757da165e7a2a60e21720c1bd4dd8c262e587cdbfc990e2c5a23ba482a00b8b');
+  }
+  if(priorSourceEpoch||priorSharedUiEpoch){
    const prices=catalog.items.filter(item=>item.screen==='price-workspace').map(item=>[item.id,item.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
    assert.equal(prices.length,9);
-   assert.equal(sha(JSON.stringify(prices)),'1a1b61b037780a7ce4e877c1e6c7d700efa97e59aaf84411ee2f2665fe592e1b','historical pricing content hashes must remain exact');
+   const priceDigest=priorSourceEpoch?'1a1b61b037780a7ce4e877c1e6c7d700efa97e59aaf84411ee2f2665fe592e1b':'994de4c7ac1cdf88f30f2e71a1c2eea6303ab96b708c72f7b7dd975b41b61328';
+   assert.equal(sha(JSON.stringify(prices)),priceDigest,'historical pricing content hashes must remain exact for their sealed bootstrap epoch');
   }
   // A historical catalogue retains its own approved inventory. Nov 25 removes
   // eight current targets and adds a review hold without rewriting old files.
@@ -172,9 +179,9 @@ test('public entry remains nonconfidential and private releases are confined to 
    const original=byId.get(item.id);
    if(!original){assert.ok(retired(item));assert.notEqual(build,deliveryBuild);}
    if(!item.application){
-    if(priorSourceEpoch||moduleCleanupEpoch){
+    if(priorSourceEpoch||priorSharedUiEpoch){
      assert.ok(original);assert.deepEqual(item.contentHashes,original.contentHashes);
-     const runtime=moduleCleanupEpoch?'e2571d4d977451fe43e6361148803a43fb15cf6c3fe0e3f6c8ebc38518dabfb5':'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40';
+     const runtime=moduleCleanupEpoch?'e2571d4d977451fe43e6361148803a43fb15cf6c3fe0e3f6c8ebc38518dabfb5':priorSharedUiEpoch?'ebd5af4061daab00f35a5efa117dd1dfbabd5718748657f85b54b5fb080147e3':'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40';
      const hashes=Object.fromEntries(Object.entries(item.contentHashes).map(([width,contentHash])=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',contentHash,runtime,qaFixtureForRow(item)]))]));
      assert.deepEqual(item.hashes,hashes,'historical QA wrapper hashes must retain their original runtime identity');
      item.hashes=original.hashes;
@@ -186,7 +193,7 @@ test('public entry remains nonconfidential and private releases are confined to 
    assert.deepEqual(item.hashes,hashes);
    if(!original)continue;
    const native=JSON.stringify(original.contentHashes)===JSON.stringify(original.hashes);
-   if(!(priorSourceEpoch&&item.screen==='price-workspace'))assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
+   if(!((priorSourceEpoch||priorSharedUiEpoch)&&item.screen==='price-workspace'))assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
    item.hashes=original.hashes;item.contentHashes=original.contentHashes;
    if(original.reviewHold)item.reviewHold=original.reviewHold;
    assert.deepEqual(item,original);

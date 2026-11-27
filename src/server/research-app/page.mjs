@@ -139,7 +139,12 @@ html,body{margin:0;min-height:100%;background:#fff}body{overflow-x:clip}#order-s
 let foundation;
 function researchFoundation(){return foundation??=(async()=>{
   styles??=inflate(cssGzip);const [css,panels,auth]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap()]);
-  return {css:productFontCss+css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
+  // The retained screen catalogue uses generic .ds .page/button rules. Its
+  // styles must stop at the regular calculator, which owns its page geometry
+  // and controls. Inheritance still supplies the shared font; the calculator's
+  // scoped tokens and original control styles remain its single owner.
+  const sceneCss='@scope (html) to ([data-research-quote]){\n'+css+'\n}\n';
+  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
     script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 

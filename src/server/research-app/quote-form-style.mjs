@@ -6,7 +6,7 @@ import {researchQuoteModeCss} from './quote-mode-presentation.mjs';
  * Latest Q1 feedback requires a white page and depth on white accordions.
  */
 export const researchQuoteFormCss=`
-[data-research-quote] .main{width:min(calc(100% - 40px),var(--max));margin:0 auto;padding-bottom:40px}
+[data-research-quote] .main{width:min(calc(100% - 48px),var(--max));margin:0 auto;padding-bottom:40px}
 [data-research-quote] #form-back{display:none}
 /* C622's recorded pin identifies this duplicate switch. The application header
  * still invokes the original bound trigger and its opt-in save/copy dialog. */
@@ -14,12 +14,13 @@ export const researchQuoteFormCss=`
 [data-research-quote] .qcopy strong{font-weight:750;letter-spacing:-.035em}
 [data-research-quote] .ui-input-control{min-height:48px}
 /* There is no second calculator surface: the original form shares the page. */
-#order-app-quote [data-research-quote] #page-form{padding-top:22px;background:#fff}
+#order-app-quote [data-research-quote] #page-form{width:100%;max-width:none;min-height:0;margin:0;padding:22px 0 0;border:0;border-radius:0;box-shadow:none;background:transparent}
 #order-app-quote [data-research-quote] #page-form>.stack{gap:12px}
 #order-app-quote [data-research-quote] #page-form>.stack>.t-acc{border:0;border-radius:14px;background:#fff;box-shadow:0 2px 12px rgb(23 33 47 / 7%),0 1px 3px rgb(23 33 47 / 4%)}
 #order-app-quote [data-research-quote] #page-form>.stack>.t-acc[data-open=true]{box-shadow:0 4px 18px rgb(23 33 47 / 9%),0 1px 4px rgb(23 33 47 / 4%)}
-#order-app-quote [data-research-quote] #page-form>.stack>.t-acc>.accordion-trigger{min-height:68px;padding:16px;border:0;background:transparent;column-gap:10px}
+#order-app-quote [data-research-quote] #page-form>.stack>.t-acc>.accordion-trigger{min-height:var(--stage-header-min,3.25rem);padding:.78rem .9rem;border:0;background:transparent;column-gap:10px}
 #order-app-quote [data-research-quote] #page-form>.stack>.t-acc>.accordion-body>.t-acc-panel-inner{padding:0 16px 16px}
+#order-app-quote [data-research-quote] #page-form>.stack>.t-acc[data-open=false]>.accordion-body>.t-acc-panel-inner{padding-block:0}
 #order-app-quote [data-research-quote] #page-form>.stack>.t-acc>.accordion-trigger .qcopy strong{color:var(--text-primary,#20272a);font-size:var(--type-label,.9375rem);line-height:1.5}
 #order-app-quote [data-research-quote] #page-form>.stack>.t-acc>.accordion-trigger .t-acc-chevron{color:var(--text-secondary,#56677b)}
 /* Read only the engine's exposed error state; opening a panel is not completion. */

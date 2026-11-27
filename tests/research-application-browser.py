@@ -191,7 +191,9 @@ def review_target_snapshot(page):
 def choose_review_route(page, frame, screen, state):
     """Select the exact QA row through its existing search and navigation UI."""
     page.locator('#catalog-search').fill(screen + '/' + state + '/email')
-    page.locator('#catalog button[data-module="' + screen + '"]').click()
+    mode = frame.locator('[data-research-quote]').get_attribute('data-research-quote') if screen in ('q1', 'q2', 'q3', 'q4') and frame.locator('[data-research-quote]').count() else 'simple'
+    suffix = '[data-quote-mode="' + mode + '"]' if screen in ('q1', 'q2', 'q3', 'q4') else ''
+    page.locator('#catalog button[data-module="' + screen + '"]' + suffix).click()
     ready_review_route(page, frame, screen, state)
 
 
@@ -628,7 +630,7 @@ def main():
                 closedWidth:number('--obm-closed-w'),closedHeight:number('--obm-closed-h'),orderHit:hit?.closest('.research-order-trigger')===order};
         }''')
         anchor=appearance['accountAnchor']
-        assert anchor['pathCount']==3 and anchor['panelTop']>=anchor['headerBottom']+7.5, anchor
+        assert anchor['pathCount']==3 and abs(anchor['panelTop']-anchor['ink']['top'])<=0.5, anchor
         assert abs(anchor['morphTop']-anchor['ink']['top'])<=0.5 and abs(anchor['morphRight']-anchor['ink']['right'])<=0.5, anchor
         assert abs(anchor['closedWidth']-(anchor['ink']['right']-anchor['ink']['left']))<=0.5, anchor
         assert abs(anchor['closedHeight']-(anchor['ink']['bottom']-anchor['ink']['top']))<=0.5, anchor
@@ -1145,7 +1147,9 @@ def main():
         for screen, state in blocked_targets:
             rejected_before = page.evaluate('window.__researchQuoteBoundaryErrors.length')
             page.locator('#catalog-search').fill(screen + '/' + state + '/email')
-            page.locator('#catalog button[data-module="' + screen + '"]').click()
+            mode = frame.locator('[data-research-quote]').get_attribute('data-research-quote') if screen in ('q1', 'q2', 'q3', 'q4') else 'simple'
+            suffix = '[data-quote-mode="' + mode + '"]' if screen in ('q1', 'q2', 'q3', 'q4') else ''
+            page.locator('#catalog button[data-module="' + screen + '"]' + suffix).click()
             wait_for_expression(page, 'window.__researchQuoteBoundaryErrors.length===' + str(rejected_before + 1))
             assert page.evaluate('window.__researchQuoteBoundaryErrors.at(-1).code') == 'INSPECTION_NAVIGATION_CANCELLED'
             ready_review_route(page, frame, 'q2', 'filled')

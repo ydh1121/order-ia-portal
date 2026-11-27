@@ -121,7 +121,7 @@ def check_result(view, state):
         if state=='locked':
             preview=view.locator('.research-quote-protected-preview')
             expect(preview).to_be_visible()
-            expect(preview).to_have_attribute('alt',re.compile('실제 금액과 비율은 인증 후'))
+            expect(preview).to_have_attribute('alt',re.compile('계산된 현재 납품가와 검색된 가격의 흐린 미리보기.*정확한 금액은 인증 후'))
             assert view.locator('.oq-price-value,.oq-card-value').all_text_contents()==['','','','']
         if state=='no-result':
             expect(view.locator('.oq-title')).to_have_text('길을 잃으셨나요?')

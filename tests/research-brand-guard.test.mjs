@@ -77,7 +77,7 @@ test('account motion checks focus ownership at completion without cancelling its
   f.api.open();finish();await tick();assert.equal(f.api.inspect().phase,'open');assert.equal(f.api.panel.hidden,false);assert.equal(attempts.length,0);
 });
 
-test('the research menu starts at the logo ink and expands below the unchanged application header', async t => {
+test('C527 keeps both research menu corners at the logo ink while retaining the unchanged header', async t => {
   const f=await fixture(t,()=>true),header=f.doc.querySelector('header');
   header.id='order-app-header';
   header.getBoundingClientRect=()=>({left:0,top:0,right:390,bottom:78,width:390,height:78});
@@ -91,7 +91,7 @@ test('the research menu starts at the logo ink and expands below the unchanged a
   [...f.api.trigger.querySelectorAll('g > path')].forEach((path,index)=>{path.getBoundingClientRect=()=>boxes[index];});
   await f.api.requestClose({immediate:true});f.api.open();await tick();
   const panel=f.api.panel,value=key=>parseFloat(panel.style.getPropertyValue(key));
-  assert.equal(parseFloat(panel.style.top),86,'the expanded menu leaves all header controls above it');
+  assert.equal(parseFloat(panel.style.top),29.25,'the final corner stays at the logo, without the old header-bottom offset');
   assert.equal(parseFloat(panel.style.top)+value('--obm-start-y'),29.25,'the closed surface retains the actual logo top');
   assert.equal(parseFloat(panel.style.left)+value('--obm-open-w')+value('--obm-start-x'),366.25,'the closed surface retains the actual logo right');
   assert.equal(value('--obm-closed-w'),52.125);assert.equal(value('--obm-closed-h'),20.75,'the ink, not the hit box, defines the starting shape');

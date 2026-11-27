@@ -32,6 +32,8 @@ MOBILE += [('q2', state, mode, 390) for mode in ('simple', 'detailed') for state
 MOBILE += [('q2', 'unknown', 'simple', 390), ('q2', 'mixed', 'detailed', 390)]
 MOBILE += [(screen, state, 'detailed', 390) for screen, states in (
     ('q3', ('closed', 'open', 'incomplete', 'long-name')), ('q4', ('closed', 'open', 'mixed', 'missing'))) for state in states]
+MOBILE += [(screen, state, 'simple', 390) for screen, states in (
+    ('q3', ('closed', 'open')), ('q4', ('closed', 'open', 'missing'))) for state in states]
 DESKTOP = [(screen, state, mode, 1280) for mode in ('simple', 'detailed') for screen, state in (('q1', 'before'), ('q2', 'filled'))]
 DESKTOP += [('q3', 'closed', 'detailed', 1280), ('q4', 'open', 'detailed', 1280)]
 RELATED = [('quote-wait', state, 'simple', 390) for state in ('entry', 'comparing')]
@@ -331,6 +333,36 @@ def page_quote(page):
     return page.evaluate('ORDER_RESEARCH_APP.snapshot().quote')
 
 
+def qa_mode_navigation_checks(open_source, receipt):
+    page, identity, _ = open_source('q1', 'before', 'simple', 390)
+    try:
+        host = page.native_page
+        simple = host.locator('#catalog button[data-module="q1"][data-quote-mode="simple"]')
+        detailed = host.locator('#catalog button[data-module="q1"][data-quote-mode="detailed"]')
+        expect(simple).to_have_count(1)
+        expect(detailed).to_have_count(1)
+        assert '간편 견적' in simple.inner_text() and '상세 견적' in detailed.inner_text()
+        observations = []
+        for mode, control in [('detailed', detailed), ('simple', simple)]:
+            with host.expect_response(lambda response: '/r3-qa/artifact?' in response.url and
+                    'id=q1%2Fbefore%2Femail' in response.url and
+                    ('mode=detailed' in response.url) == (mode == 'detailed')) as response:
+                control.click()
+            artifact = response.value.json()
+            page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().route.mode===' + json.dumps(mode) +
+                '&&document.getElementById("order-single").__orderResearchInspector.inspect().session.artifact===' + json.dumps(artifact['hash']))
+            expect(control).to_have_attribute('aria-current', 'page')
+            for screen in ('q2', 'q3', 'q4'):
+                expect(host.locator('#catalog button[data-module="' + screen + '"][data-quote-mode="' + mode + '"]')).to_have_count(1)
+            observations.append({'mode': mode, 'artifactHash': artifact['hash'], 'url': host.url,
+                'footerCount': host.locator('#open-total').inner_text()})
+        assert observations[0]['artifactHash'] != observations[1]['artifactHash']
+        assert observations[0]['footerCount'] == observations[1]['footerCount'], 'Changing calculator mode must not hide other review counts'
+        receipt['checks'].append({'check': 'C624 separate QA menu buttons select distinct simple/detailed sources', 'initialSource': identity, 'observed': observations})
+    finally:
+        page.close()
+
+
 def core_checks(open_source, receipt):
     page, identity, _ = open_source('q1', 'before', 'simple', 390)
     try:
@@ -589,6 +621,7 @@ def main():
                 'sourceHtmlBytes': len(source_html), 'parent': parent_observation, 'parentGeometry': geometry,
                 'sameQaIframeRetained': True, 'sourceMutatedForCapture': False}
 
+        qa_mode_navigation_checks(open_source, receipt)
         core_checks(open_source, receipt)
         mode_motion_checks(open_source, receipt)
         for screen, state, mode, width in MOBILE + DESKTOP + RELATED:
@@ -603,7 +636,14 @@ def main():
                 write_json(OUT / (label + '.dom-paint.json'), captured)
                 if screen in ('q1', 'q2', 'q3', 'q4'):
                     assert captured['anchors']['duplicateModeSwitchVisible'] is False, 'C622 duplicate switch must be absent from paint'
-                    assert captured['anchors']['form']['background'] == 'rgb(255, 255, 255)', 'C623/C625 white calculator surface'
+                    form = captured['anchors']['form']
+                    assert form['background'] == 'rgba(0, 0, 0, 0)', 'C623 calculator shares the plain white page'
+                    assert form['paddingLeft'] == form['paddingRight'] == form['border'] == '0px' and form['boxShadow'] == 'none', 'No second calculator surface'
+                    if width == 390:
+                        assert abs(form['rect']['x'] - 24) < .1 and abs(form['rect']['width'] - 342) < .1, 'Same 24px page inset as other product screens'
+                    for closed in captured['anchors']['closedAccordions']:
+                        assert abs(closed['rect']['height'] - 52) < .1, ('Original closed accordion height is 52px', closed)
+                        assert abs(closed['header']['height'] - 52) < .1 and closed['body']['height'] == 0, 'Closed content contributes no phantom padding'
                     assert page.locator('header.header').count() == 0
                 if screen == 'profile' and state == 'notification':
                     assert captured['source']['route']['panel'] == 'notifications', 'Direct notification entry must retain its actual panel'

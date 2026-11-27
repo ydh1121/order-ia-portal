@@ -9,11 +9,29 @@ const checksum=bytes=>{let crc=0xffffffff;for(const byte of bytes)crc=crcTable[(
 const be32=value=>Uint8Array.of(value>>>24,value>>>16,value>>>8,value);
 function concat(...chunks){const out=new Uint8Array(chunks.reduce((n,c)=>n+c.length,0));let offset=0;for(const chunk of chunks){out.set(chunk,offset);offset+=chunk.length;}return out;}
 function chunk(type,bytes){const content=concat(new TextEncoder().encode(type),bytes);return concat(be32(bytes.length),content,be32(checksum(content)));}
-function comparisonExists(model){
-  const valid=value=>typeof value==='string'&&/^\d{1,100}(?:\.\d{1,12})?$/.test(value);
-  return valid(model?.current)&&valid(model?.proposed);
+function values(model){
+  const parse=value=>typeof value==='string'&&/^\d{1,100}(?:\.\d{1,12})?$/.test(value)?value.split('.'):null;
+  const current=parse(model?.current),proposed=parse(model?.proposed);if(!current||!proposed)return null;
+  const scale=Math.max(current[1]?.length||0,proposed[1]?.length||0);
+  const minor=parts=>BigInt(parts[0]+(parts[1]||'').padEnd(scale,'0'));
+  const label=parts=>parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',')+(parts[1]?.replace(/0+$/,'')?'.'+parts[1].replace(/0+$/,''):'')+'원';
+  return {current:minor(current),proposed:minor(proposed),labels:[label(current),label(proposed)]};
 }
-function painted(){
+
+// Tiny server masks from the existing Pretendard font (9599f12fd42f), at 6px.
+// Workers needs no font service or client canvas. These render the real labels
+// and amounts into a private buffer; only the already-blurred PNG is returned.
+const glyphs={
+  '0':[4,'e,a,a,e'],'1':[3,'6,2,2,2'],'2':[4,'e,2,4,e'],'3':[4,'e,6,2,e'],
+  '4':[4,'6,6,e,2'],'5':[4,'e,e,2,e'],'6':[4,'7,6,4,7'],'7':[3,'7,1,2,2'],
+  '8':[4,'7,7,4,7'],'9':[4,'6,4,7,7'],',':[2,'0,2'],'.':[2,'2'],
+  '원':[5,'f,17,1f,f,8,f'],
+  '현재 납품가':[27,'24645e3,7fe445f,5d67fe7,37e25eb,2063d33,3c03de1'],
+  '검색된 가격':[27,'357d06d,1d713e7,27ed0ff,3dff16f,2428261,3c0f021'],
+  '최저가':[16,'5046,f27e,f3ce,5756,f466,42']
+};
+function painted(model){
+  const money=values(model);if(!money)return null;
   const pixels=new Uint8Array(width*height*3).fill(255);
   const set=(x,y,color)=>{if(x<0||y<0||x>=width||y>=height)return;const at=(y*width+x)*3;pixels.set(color,at);};
   const rect=(x,y,w,h,color,radius=0)=>{
@@ -22,18 +40,26 @@ function painted(){
       if(!radius||dx*dx+dy*dy<=radius*radius)set(px,py,color);
     }
   };
-  // Locked pixels are deliberately independent of price, relative change,
-  // ordering and zero values. Blurring a real graph still leaks its geometry.
-  // The disclosed renderer continues to receive the authorized real model.
-  for(const [index,tall]of [[0,79],[1,60]]){
-    const left=index?63:34,top=107-tall;
+  const text=(value,x,y,color,maxWidth=44)=>{
+    const masks=glyphs[value]?[glyphs[value]]:[...value].map(character=>glyphs[character]);
+    const natural=masks.reduce((sum,mask)=>sum+mask[0],0),scale=Math.min(1,maxWidth/natural);let advance=0;
+    for(const [wide,rows]of masks){
+      rows.split(',').forEach((row,dy)=>{const bits=parseInt(row,16);for(let dx=0;dx<wide;dx++)if(bits&2**(wide-dx-1))set(Math.floor(x+(advance+dx)*scale),y+dy,color);});
+      advance+=wide;
+    }
+  };
+  const delta=money.current>money.proposed?money.current-money.proposed:money.proposed-money.current;
+  // Match the existing disclosed renderer's zoomed axis, including zero and
+  // equal prices. Decimal normalization stays exact until pixel quantization.
+  const spread=money.current?Number(delta*100000n/money.current)/100000:1;
+  const short=Math.max(.12,Math.min(1,1-spread*5.38)),currentHigh=money.current>=money.proposed;
+  for(const [index,high]of [[0,currentHigh],[1,!currentHigh||money.current===money.proposed]]){
+    const value=index?money.proposed:money.current;
+    const tall=value===0n?0:high?79:Math.round(79*short),left=index?63:34,top=107-tall;
     rect(left,top,18,tall,index?[105,126,169]:[218,218,218],3);
-    // Fixed, non-numeric text silhouettes are intentionally independent of the
-    // actual amount, digit count and currency precision. Blurring real digits
-    // would leave a recoverable source image; these masks contain no digits.
     const labelLeft=index?63:8;
-    for(let glyph=0;glyph<6;glyph++)rect(labelLeft+glyph*6,top-17,4,4,[122,135,154]);
-    for(let glyph=0;glyph<9;glyph++)rect(labelLeft+glyph*4,top-10,2,5,[100,112,130],1);
+    text(index?(money.current>money.proposed?'최저가':'검색된 가격'):'현재 납품가',labelLeft,top-17,[122,135,154]);
+    text(money.labels[index],labelLeft,top-10,[100,112,130]);
   }
   // Blur the pixels before transmission, rather than hiding source data with
   // CSS. A fixed three-pass box blur needs no font/canvas runtime in Workers.
@@ -52,12 +78,11 @@ function painted(){
   return output;
 }
 
-/** A valid, caller-authorized comparison may show a generic locked preview.
- * Its PNG is identical for every price pair; neither digits nor real graph
- * proportions cross this boundary. Actual proportions require disclosure. */
+/** Only already-obscured pixels cross this presentation boundary. Raw amounts
+ * and an unblurred image are never returned. Actual graph shapes necessarily
+ * convey relative prices; this cannot promise that visual inference is zero. */
 export async function createProtectedQuotePreview(model){
-  if(!comparisonExists(model))return null;
-  const pixels=painted();
+  const pixels=painted(model);if(!pixels)return null;
   const rows=new Uint8Array((width*3+1)*height);
   for(let y=0;y<height;y++)rows.set(pixels.subarray(y*width*3,(y+1)*width*3),y*(width*3+1)+1);
   const compressed=new Uint8Array(await new Response(new Blob([rows]).stream().pipeThrough(new CompressionStream('deflate'))).arrayBuffer());
@@ -72,5 +97,5 @@ export async function researchQuoteResultMarkup(html){
   // without replacing its DOM. Ship the same safe preview with those scenes.
   fixturePreview??=createProtectedQuotePreview(reviewQuoteFixture('saving').model);
   const preview=await fixturePreview;
-  return preview?html+'<template data-research-result-preview><img src="'+preview.image+'" width="342" height="324" alt="비공개 견적 결과의 예시 미리보기. 실제 금액과 비율은 인증 후 확인할 수 있어요."></template>':html;
+  return preview?html+'<template data-research-result-preview><img src="'+preview.image+'" width="342" height="324" alt="계산된 현재 납품가와 검색된 가격의 흐린 미리보기. 정확한 금액은 인증 후 확인할 수 있어요."></template>':html;
 }

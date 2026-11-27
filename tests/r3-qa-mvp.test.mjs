@@ -77,6 +77,30 @@ test('navigation accordions support rename, mouse transfer and keyboard transfer
   assert.equal(w.document.querySelectorAll('#catalog [data-module]').length,1);dom.window.close();
 });
 
+test('simple and detailed calculators have separate QA menu entries and retain mode through state changes and board previews',()=>{
+  const dom=setup(approvedShellBody()),w=dom.window;w.ResizeObserver=class{observe(){}disconnect(){}};w.HTMLElement.prototype.scrollTo=()=>{};
+  const screens=catalog.filter(row=>['q1','q2','q3','q4'].includes(row.screen)).map(row=>({...row,application:true}));
+  let current={...screens.find(row=>row.screen==='q1'&&row.state==='before'),mode:'simple'},shell;const selected=[],previews=[];
+  const layout=defaultQaNavigation(screens.map(row=>row.screen));
+  w.__h={snapshot:()=>({screens,current,records:new Map(),legacy:new Map(),navigation:{layout},navigationReady:true}),
+    label:row=>(row.mode==='detailed'?'상세 견적':'간편 견적')+' · '+row.label,
+    select(row){current=row;selected.push(row);shell.render();},width:()=>390,info:()=>({}),feedbackFor:()=>[],
+    loadPreview:async row=>{previews.push(row);},notes(){},leaveEditor(){},close(){}};
+  w.eval('window.__shell=('+bootApprovedShell.toString()+')(window.__h)');shell=w.__shell;shell.render();
+  const $=selector=>w.document.querySelector(selector);
+  for(const screen of ['q1','q2','q3','q4'])for(const mode of ['simple','detailed'])assert.ok($(`[data-module="${screen}"][data-quote-mode="${mode}"]`));
+  $('[data-module="q1"][data-quote-mode="detailed"]').click();assert.equal(selected.at(-1).mode,'detailed');
+  assert.equal(w.document.querySelectorAll('#catalog [aria-current="page"]').length,1);
+  assert.equal($('#catalog [aria-current="page"]').dataset.quoteMode,'detailed');
+  $('#state-buttons [data-state="error"]').click();assert.equal(selected.at(-1).state,'error');assert.equal(selected.at(-1).mode,'detailed');
+  shell.setActiveMode('board');assert.ok(previews.length>1);assert.ok(previews.every(row=>row.mode==='detailed'));
+  $('[data-module="q1"][data-quote-mode="simple"]').click();assert.equal(selected.at(-1).mode,'simple');
+  $('#catalog-search').value='상세 견적';$('#catalog-search').dispatchEvent(new w.Event('input'));
+  assert.equal(w.document.querySelectorAll('#catalog [data-quote-mode="simple"]').length,0);
+  assert.equal(w.document.querySelectorAll('#catalog [data-quote-mode="detailed"]').length,4);
+  dom.window.close();
+});
+
 test('new review assets have independent targets and prior delivery artifacts remain byte-identical',async()=>{
   const list=await(await serveR3Artifact(new Request('https://x/api/ia/r3-qa/artifact'))).json();
   const originals=list.items.filter(r=>!r.supplemental);assert.equal(originals.length,catalog.length-8);assert.equal(new Set(originals.map(r=>r.screen)).size,96);

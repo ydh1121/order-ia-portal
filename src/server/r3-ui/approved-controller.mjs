@@ -38,6 +38,9 @@ export function bootApprovedShell(h) {
   let pcWidth = pcChoices.includes(initialWidth) ? initialWidth : 1280;
   let renderKey = '', panel = 'review', previewEpoch = 0;
   const distinct = (rows, key) => [...new Map(rows.map(row => [row[key], row])).values()];
+  const calculatorScreens=new Set(['q1','q2','q3','q4']);
+  const calculatorRow=row=>row.application&&calculatorScreens.has(row.screen);
+  const quoteModeLabel=mode=>mode==='detailed'?'상세 견적':'간편 견적';
   const label = row => h.label?.(row)||row.label;
   function openRow(row, width) {
     if (!row) return;
@@ -46,7 +49,7 @@ export function bootApprovedShell(h) {
     stage.scrollTop = 0;
     return h.select(row);
   }
-  function sameScreen(rows, row) { return rows.filter(r => r.screen === row.screen); }
+  function sameScreen(rows, row) { return rows.filter(r => r.screen === row.screen).map(r=>r.application?{...r,mode:row.mode||'simple'}:r); }
   function states(rows, row) {
     const byState = new Map();
     for (const r of sameScreen(rows,row)) {
@@ -100,16 +103,28 @@ export function bootApprovedShell(h) {
   function rowCounts(rows, legacy, records) {
     return h.feedbackCounts?.(rows)||new Map();
   }
-  function nav(s, counts) {
+  function nav(s) {
     const term = byId('catalog-search').value.trim().toLocaleLowerCase();
     const catalog = byId('catalog');
     if(renamingGroup)return;
     const fragment = document.createDocumentFragment();
     const groups = new Map();
-    for (const r of s.screens) {
+    for (const original of s.screens) {
+      const r=original.application?{...original,mode:'simple'}:original;
       if (!groups.has(r.screen)) groups.set(r.screen,[]);
       groups.get(r.screen).push(r);
     }
+    // These are review entries for the existing mode-bound artifacts, not new
+    // product screens or copied comments. Each button carries its mode through
+    // state chips, board previews, URL restoration and the review channel.
+    const families=[...groups.values()].flatMap(family=>calculatorRow(family[0])
+      ? ['simple','detailed'].map(quoteMode=>family.map(row=>({...row,mode:quoteMode}))) : [family]);
+    const counts=rowCounts(families.flat(),s.legacy,s.records);
+    const rank=row=>{
+      const original=mvpOrder.get(row.screen)?.rank??10000;
+      if(calculatorRow(row))return original+(row.mode==='detailed'?4:0);
+      return original>4&&original<100?original+4:original;
+    };
     const layout=s.navigation?.layout||{groups:[{id:'mvp',name:'1차 MVP'},{id:'future',name:'정식 - 향후 검토'}],assignments:{}};
     const groupFor=id=>layout.assignments[id]||(groups.get(id)?.[0].phase==='future'?'future':'mvp');
     const move=(screen,group)=>{
@@ -119,8 +134,8 @@ export function bootApprovedShell(h) {
     };
     for(const section of layout.groups){
       if(role==='current'&&section.id!=='mvp'||role==='future'&&section.id!=='future')continue;
-      const matches=[...groups.values()].filter(f=>groupFor(f[0].screen)===section.id).map(family=>({family,found:term?family.find(r=>[r.id,r.label,r.group,r.stateLabel,r.description,...(r.routeIds||[])].join(' ').toLocaleLowerCase().includes(term)):family[0]})).filter(({family,found})=>found&&(['all','current','future'].includes(role)||family[0].role===role));
-      if(section.id==='mvp')matches.sort((a,b)=>(mvpOrder.get(a.family[0].screen)?.rank??10000)-(mvpOrder.get(b.family[0].screen)?.rank??10000));
+      const matches=families.filter(f=>groupFor(f[0].screen)===section.id).map(family=>({family,found:term?family.find(r=>[r.id,label(r),r.group,calculatorRow(r)?quoteModeLabel(r.mode):'',r.stateLabel,r.description,...(r.routeIds||[])].join(' ').toLocaleLowerCase().includes(term)):family[0]})).filter(({family,found})=>found&&(['all','current','future'].includes(role)||family[0].role===role));
+      if(section.id==='mvp')matches.sort((a,b)=>rank(a.family[0])-rank(b.family[0]));
       if(term&&!matches.length)continue;
       const details=make('details','lab-nav-section');details.dataset.navGroup=section.id;
       details.open=Boolean(term)||expandedGroups[section.id];
@@ -145,18 +160,19 @@ export function bootApprovedShell(h) {
       details.append(summary);let lastGroup='';
       for(const {family,found} of matches){
         const row=family[0];
-        const groupLabel=section.id==='mvp'?mvpOrder.get(row.screen)?.label||row.group:row.group;
+        const groupLabel=calculatorRow(row)?quoteModeLabel(row.mode):section.id==='mvp'?mvpOrder.get(row.screen)?.label||row.group:row.group;
         if(groupLabel!==lastGroup){details.append(make('p','lab-group',groupLabel));lastGroup=groupLabel;}
         const wrap=make('div','lab-nav-item'), b=button('','lab-nav',()=>openRow(found));
-        b.dataset.module=row.screen;b.draggable=Boolean(s.navigationReady&&!s.navigationPending);
+        b.dataset.module=row.screen;if(calculatorRow(row))b.dataset.quoteMode=row.mode;b.draggable=Boolean(s.navigationReady&&!s.navigationPending);
         b.ondragstart=e=>{draggedScreen=row.screen;e.dataTransfer.setData('text/plain',row.screen);e.dataTransfer.effectAllowed='move';};
         b.ondragend=()=>{draggedScreen='';for(const d of all('.drag-over',catalog))d.classList.remove('drag-over');};
         const next=section.id==='mvp'?'future':'mvp',nextName=layout.groups.find(g=>g.id===next).name;
         b.onkeydown=e=>{if(e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();e.stopPropagation();move(row.screen,e.key==='ArrowLeft'?'mvp':'future');}};
         b.title='Alt+←: 1차 MVP · Alt+→: 향후 검토';
-        if(s.current?.screen===row.screen){b.classList.add('active');b.setAttribute('aria-current','page');}
+        if(s.current?.screen===row.screen&&(!calculatorRow(row)||(s.current.mode||'simple')===row.mode)){b.classList.add('active');b.setAttribute('aria-current','page');}
         b.append(make('span','nav-label',label(row)));
-        if(counts.get(row.screen))b.append(make('span','nav-comment-count',counts.get(row.screen)));
+        const familyCount=rowCounts(family,s.legacy,s.records).get(row.screen)||0;
+        if(familyCount)b.append(make('span','nav-comment-count',familyCount));
         b.append(make('span','nav-count',distinct(family,'state').length));wrap.append(b);
         const transfer=button('↔','lab-nav-move',()=>move(row.screen,next));transfer.title=nextName+'로 이동';transfer.setAttribute('aria-label',label(row)+' · '+nextName+'로 이동');transfer.dataset.moveModule=row.screen;transfer.disabled=!s.navigationReady||s.navigationPending;
         wrap.append(transfer);details.append(wrap);
@@ -168,7 +184,7 @@ export function bootApprovedShell(h) {
     catalog.replaceChildren(fragment);
     const total = [...counts.values()].reduce((a,b)=>a+b,0);
     if (byId('open-total')) byId('open-total').textContent = total;
-    if (byId('state-total')) byId('state-total').textContent = groups.size+'개 화면군 · '+distinct(s.screens.map(r=>({key:r.screen+'/'+r.state})),'key').length+'개 상태';
+    if (byId('state-total')) byId('state-total').textContent = families.length+'개 화면군 · '+distinct(families.flat().map(r=>({key:r.screen+'/'+r.state+'/'+(r.mode||'simple')})),'key').length+'개 상태';
     for (const b of all('.lab-role-filter [data-role]')) b.classList.toggle('active',b.dataset.role === role);
   }
   function chips(s, width) {
@@ -255,7 +271,7 @@ export function bootApprovedShell(h) {
   function render() {
     const s=h.snapshot();
     positionDrawer();
-    nav(s,rowCounts(s.screens,s.legacy,s.records));
+    nav(s);
     if (!s.current) return;
     const row=s.current,width=h.width(row),future=(s.navigation?.layout?.assignments[row.screen]||(row.phase==='future'?'future':'mvp'))==='future';
     if(byId('business-candidates'))byId('business-candidates').hidden=!['business','store-settings','q3'].includes(row.screen);

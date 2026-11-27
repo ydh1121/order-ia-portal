@@ -226,7 +226,11 @@ export function bootQaHost(nonce, frameBootstrap, bootShell, exportReview, creat
   }
   const filters=[['all','▤','전체'],['previous','↶','이전 수정 요청'],['changed','✎','이번 판 수정'],['approved','✓','사용자 통과'],['unreviewed','○','미검토'],['unknown','?','확인 전'],['needs','↻','재검토'],['untouched','…','미착수'],['verified','☑','구현 검증'],['blocked','Ⅱ','보류']];
   function widthFor(row){return Number($('width').value)||(row.defaultWidth>=768?1280:390);}
-  const qaLabel=row=>row.screen==='q2'?'Q2 구매량·현재 가격':row.label;
+  const qaLabel=row=>{
+    const title=row.screen==='q2'?'Q2 구매량·현재 가격':row.label;
+    return row.application&&row.mode&&['q1','q2','q3','q4'].includes(row.screen)
+      ? (row.mode==='detailed'?'상세 견적':'간편 견적')+' · '+title : title;
+  };
   function oldReviews(row){return rowMode(row)==='detailed'?[]:[...legacy.entries()].filter(([key])=>key.slice(0,key.lastIndexOf('/'))===row.id);}
   function historyWidth(row){return actionableWidth(row,{previous:true});}
   function resultWidth(row){return filter==='previous'?historyWidth(row)||widthFor(row):widthFor(row);}

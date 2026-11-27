@@ -11,6 +11,7 @@ import {mountAsyncMotion} from '../src/server/r3-async-motion.mjs';
 import {readFileSync} from 'node:fs';
 import {gunzipSync} from 'node:zlib';
 import {cssGzip} from '../src/server/product-ui/catalog.gen.mjs';
+import {sharedCoreScript} from '../src/server/product-ui/assets.gen.mjs';
 import {researchScene} from '../src/server/research-app/page.mjs';
 import {mountResearchDrawer,mountConsultationPassDetail} from '../src/server/research-app/drawer.mjs';
 const {JSDOM,VirtualConsole}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
@@ -25,7 +26,7 @@ async function setup(t){
   w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;};
   const contexts=new WeakMap();w.HTMLCanvasElement.prototype.getContext=function(){if(!contexts.has(this)){let ink=false;contexts.set(this,{fillStyle:'white',fillRect(){},drawImage(){},beginPath(){},moveTo(){},lineTo(){},stroke(){ink=true;},fillText(){ink=true;},getImageData:()=>({data:new Uint8Array(this.width*this.height*4).fill(ink?64:255)}),createImageData:(a,b)=>({data:new Uint8ClampedArray(a*b*4)}),putImageData(){}});}return contexts.get(this);};
   w.createImageBitmap=async()=>({width:4,height:4,close(){}});
-  w.eval('('+installProductWorkflowMotion.toString()+')(window);window.ORDER_EVIDENCE_EDITOR='+createEvidenceEditor.toString()+';');
+  w.eval(sharedCoreScript);w.eval('('+installProductWorkflowMotion.toString()+')(window);window.ORDER_EVIDENCE_EDITOR='+createEvidenceEditor.toString()+';');
   w.eval('window.__adapter=('+installQaFixtureAdapter.toString()+')({screen:"signature",state:"empty",fixture:{persona:"buyer"}},'+installProductAdapter.toString()+')');const adapter=w.__adapter;await adapter.ready;
   const installed=installResearchWorkflowPolish(w),motion=mountAsyncMotion(root),owned=[];
   t.after(()=>{for(const dispose of owned.reverse())dispose();installed.destroy();motion.destroy();adapter.fixture.dispose();w.close();assert.deepEqual(errors,[]);});
@@ -75,8 +76,9 @@ test('an invalid provider response retains the manual business evidence path',as
   v.root.querySelector('[data-action=business-next]').click();await until(()=>v.root.querySelector('.wf-panel'));
   assert.match(v.root.querySelector('.wf-panel').textContent,/사업자등록증/);assert.equal(v.root.querySelector('.research-workflow-receipt'),null,'manual upload still requires its own saved acknowledgement');
 });
-test('missing signatures show an icon and shake without changing the base pad or allowing export',async t=>{
-  const v=await setup(t),pad=v.workflow.signaturePad();v.root.append(pad.element);v.owned.push(pad.destroy);assert.throws(()=>pad.page(),/서명/);assert.equal(pad.element.getAttribute('aria-invalid'),'true');assert.equal(pad.element.querySelectorAll('[data-workflow-error] svg').length,1);assert.ok(pad.element.classList.contains('is-shaking'));
+test('missing signatures use the shared CircleAlert and shake without changing the base pad or allowing export',async t=>{
+  const v=await setup(t),sharedIcon=v.w.QAUI.icon,iconCalls=[];v.w.QAUI.icon=(...args)=>{iconCalls.push(args);return sharedIcon(...args);};
+  const pad=v.workflow.signaturePad();v.root.append(pad.element);v.owned.push(pad.destroy);assert.throws(()=>pad.page(),/서명/);assert.equal(pad.element.getAttribute('aria-invalid'),'true');assert.equal(pad.element.querySelectorAll('[data-workflow-error] svg').length,1);assert.deepEqual(iconCalls,[['alert',18]]);const expectedIcon=v.w.document.createElement('span');expectedIcon.innerHTML=sharedIcon('alert',18);assert.equal(pad.element.querySelector('[data-workflow-error] svg').outerHTML,expectedIcon.firstElementChild.outerHTML);assert.ok(pad.element.classList.contains('is-shaking'));
   const typed=pad.element.querySelector('input');typed.value='확인';typed.dispatchEvent(new v.w.Event('input',{bubbles:true}));assert.equal(pad.element.hasAttribute('aria-invalid'),false);assert.equal(pad.page(),pad.element.querySelector('canvas'));assert.ok(button(pad.element,'다시 하기'));
 });
 test('the immutable official catalogue populates the original Korean consonant picker only after integrity verification',async t=>{
@@ -108,7 +110,7 @@ test('unavailable business inspection has two-line guidance and retries entry wi
 });
 test('one existing evidence case opens its real editor in document-preview-signature-consent order without a submission',async t=>{
   const v=await setup(t),before=JSON.stringify(v.adapter.fixture.inspect().data.cases),c=v.workflow.mountEvidence(v.root,{api:{screen:'proof',adapter:v.adapter,motion:v.motion},kind:'reprice'});v.owned.push(c.destroy);await until(()=>v.root.querySelector('.research-evidence-settings'));
-  const panel=v.root.querySelector('.research-evidence-page.proof-page'),settings=panel.querySelector('.research-evidence-settings'),children=[...settings.children],upload=settings.querySelector('.research-file-drop'),pages=settings.querySelector('.research-evidence-pages'),signature=settings.querySelector('.wf-signature'),consent=settings.querySelector(':scope > label>input[type=checkbox]').parentElement,save=button(settings,'가림 처리본 제출');
+  const panel=v.root.querySelector('.research-evidence-page.proof-page'),settings=panel.querySelector('.research-evidence-settings'),children=[...settings.children],upload=settings.querySelector('.research-file-drop'),pages=settings.querySelector('.research-evidence-pages'),signature=settings.querySelector('.wf-signature'),consent=settings.querySelector(':scope > label>input[type=checkbox]').parentElement,save=settings.querySelector('[data-evidence-submit]');
   assert.ok(children.indexOf(upload)<children.indexOf(pages));assert.ok(children.indexOf(pages)<children.indexOf(signature));assert.ok(children.indexOf(signature)<children.indexOf(consent));assert.ok(children.indexOf(consent)<children.indexOf(save));assert.equal(panel.querySelector('select').closest('.wf-field').hidden,true);assert.equal(button(panel,'자료와 서명 준비').hidden,true);assert.equal(JSON.stringify(v.adapter.fixture.inspect().data.cases),before);assert.equal(v.adapter.fixture.inspect().calls.filter(call=>call.path==='/evidence').length,0);
 });
 test('live evidence controls reuse shared button paint while memo count, preview and signature reset keep their original actions',async t=>{
@@ -128,12 +130,15 @@ test('live evidence controls reuse shared button paint while memo count, preview
   for(const control of [preview,clear]){
     const paint=v.w.getComputedStyle(control);assert.equal(paint.minHeight,'44px');assert.equal(paint.borderTopWidth,'0px');assert.equal(paint.display,'inline-flex');
   }
-  assert.equal(v.w.getComputedStyle(typed.closest('.wf-field')).marginTop,'12px');assert.equal(v.w.getComputedStyle(clear).marginTop,'12px');
+  assert.equal(typed.closest('details').open,false);assert.equal(clear.parentElement.classList.contains('signature-label'),true);assert.equal(canvas.width,342);assert.equal(canvas.height,190);
   preview.click();assert.equal(v.root.querySelector('.research-evidence-viewer').open,true);
   button(v.root.querySelector('.research-evidence-viewer'),'닫기').click();assert.equal(v.root.querySelector('.research-evidence-viewer').open,false);
-  typed.value='검토';typed.dispatchEvent(new v.w.Event('input',{bubbles:true}));assert.equal(pad.dataset.ink,'true');clear.click();
+  assert.equal(pad.hidden,true);button(v.root,'다음').click();assert.equal(pad.hidden,false);assert.equal(v.root.querySelector('.research-evidence-page').dataset.evidenceStep,'signature');
+  v.root.querySelector('[data-evidence-submit]').click();assert.equal(pad.getAttribute('aria-invalid'),'true');assert.match(pad.querySelector('[data-workflow-error]').textContent,/서명/);assert.equal(v.adapter.fixture.inspect().calls.filter(call=>call.method==='POST').length,0);
+  typed.closest('details').open=true;typed.value='검토';typed.dispatchEvent(new v.w.Event('input',{bubbles:true}));assert.equal(pad.dataset.ink,'true');clear.click();
   assert.equal(typed.value,'');assert.equal(pad.dataset.ink,'false');assert.equal(pad.querySelector('canvas'),canvas);
-  assert.equal(v.root.querySelector('[name=document-memo]'),memo);assert.equal(memo.value,'계란 🥚');assert.equal(progress.value,3);
+  button(v.root,'자료 수정').click();assert.equal(v.root.querySelector('.research-evidence-page').dataset.evidenceStep,'proof');assert.equal(pad.hidden,true);assert.equal(v.root.querySelector('[name=document-memo]'),memo);assert.equal(memo.value,'계란 🥚');assert.equal(progress.value,3);
+  assert.equal(v.root.querySelector('.research-evidence-pages canvas'),preview.parentElement.querySelector('canvas'));assert.equal(v.root.querySelector('.wf-signature canvas'),canvas);
   assert.equal(v.adapter.fixture.inspect().calls.filter(call=>call.method==='POST').length,0);
 });
 for(const [screen,states]of [['proof',['empty','selected','oversize','format','checking','blocked','error','ready']],['signature',['empty','drawn','missing','processing','done']]])for(const state of states)test('explicit '+screen+'/'+state+' review uses the real editor without a submission or changed case',async t=>{
@@ -162,7 +167,7 @@ test('evidence headings and completion text follow the actual attach acknowledge
   const v=await setup(t),c=v.workflow.mountEvidence(v.root,{api:{screen:'signature',adapter:v.adapter,motion:v.motion},kind:'reprice'});v.owned.push(c.destroy);assert.equal(v.root.querySelector('h2').textContent,'서명이 필요해요');await until(()=>v.root.querySelector('select').options.length);button(v.root,'자료와 서명 준비').click();await until(()=>v.root.querySelector('input[type=file]'));
   const file=v.root.querySelector('input[type=file]'),bytes=Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,4,0,0,0,4]);Object.defineProperty(file,'files',{value:[{size:24,type:'image/png',name:'safe.png',arrayBuffer:async()=>bytes.buffer}],configurable:true});file.dispatchEvent(new v.w.Event('change',{bubbles:true}));await until(()=>v.root.querySelector('.research-evidence-pages canvas'));
   const typed=v.root.querySelector('.wf-signature input');typed.value='테스트';typed.dispatchEvent(new v.w.Event('input',{bubbles:true}));v.root.querySelector('input[type=checkbox]').checked=true;
-  v.adapter.fixture.configure({requests:{'role POST /evidence':{scenario:'error',status:503}}});const save=button(v.root,'가림 처리본 제출');save.click();await until(()=>/다시 시도/.test(v.root.querySelector('.wf-status').textContent));assert.equal(v.root.querySelector('.research-workflow-receipt'),null);assert.equal(v.root.querySelectorAll('.research-evidence-pages canvas').length,0);
+  v.adapter.fixture.configure({requests:{'role POST /evidence':{scenario:'error',status:503}}});const save=v.root.querySelector('[data-evidence-submit]');save.click();await until(()=>/다시 시도/.test(v.root.querySelector('.wf-status').textContent));assert.equal(v.root.querySelector('.research-workflow-receipt'),null);assert.equal(v.root.querySelectorAll('.research-evidence-pages canvas').length,0);
   v.adapter.fixture.configure({requests:{}});save.click();await until(()=>v.root.querySelector('.research-workflow-receipt'));assert.equal(v.root.querySelector('.wf-panel').dataset.success,'true');assert.match(v.root.querySelector('.research-workflow-receipt').textContent,/최대 2영업일 이내/);assert.equal(v.root.querySelector('h2').hidden,true);assert.equal(v.adapter.fixture.inspect().data.cases.find(row=>row.id==='qa-reprice-case').state,'REVIEW');
 });
 

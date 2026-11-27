@@ -603,37 +603,116 @@ def pass_tear_probe(page, capture):
     return trace
 
 
-def evidence_presentation_probe(page):
+def evidence_presentation_probe(page, capture):
     result = {'reportedBadBuild': '9f7f83753ad7245b1e6a0f7dc55f905093c2a2dfa8d0aa8f057d9f18e125f092', 'current': []}
-    for screen in ['proof', 'signature']:
-        before = page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length')
-        select(page, screen, 'empty')
-        panel = page.locator('.research-evidence-page[data-review-ready=true]')
+    scenarios = {'proof': ['empty', 'selected', 'oversize', 'format', 'checking', 'blocked', 'error', 'ready'],
+                 'signature': ['empty', 'drawn', 'missing', 'processing', 'done']}
+    for screen, states in scenarios.items():
+        for state in states:
+            before = page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length')
+            select(page, screen, state)
+            panel = page.locator('.research-evidence-page[data-review-ready=true]')
+            expect(panel).to_be_visible()
+            page.evaluate('document.fonts.ready')
+            if state == 'done':
+                expect(panel.locator('.research-workflow-receipt')).to_be_visible()
+                expect(panel.locator(':scope > h2')).to_be_hidden()
+                center = panel.locator('.research-workflow-receipt').evaluate("node=>{const r=node.getBoundingClientRect(),children=[...node.children].filter(x=>x.checkVisibility()),top=children[0].getBoundingClientRect().top,bottom=children.at(-1).getBoundingClientRect().bottom;return {areaCenter:r.top+r.height/2,contentCenter:(top+bottom)/2};}")
+                assert abs(center['areaCenter'] - center['contentCenter']) <= 2, center
+                result['current'].append({'screen': screen, 'state': state, 'center': center})
+            else:
+                expect(panel.locator('.research-evidence-settings')).to_be_visible()
+                if screen == 'proof':
+                    expect(panel.locator('.research-file-drop')).to_be_visible()
+                    expect(panel.locator('input[type=file]')).to_be_enabled() if state != 'checking' else None
+                    expect(panel.locator('.proof-purpose')).to_be_visible()
+                    expect(panel.locator('.wf-signature')).to_be_hidden()
+                    expect(panel.locator('[data-evidence-submit]')).to_be_hidden()
+                    expect(panel.locator('.research-proof-next')).to_be_visible()
+                    expect(panel.locator('[name=document-memo]')).to_be_visible()
+                else:
+                    expect(panel.locator('input[type=file]')).to_be_hidden()
+                    expect(panel.locator('.proof-purpose')).to_be_hidden()
+                    expect(panel.locator('.research-evidence-pages canvas')).to_have_count(1)
+                    expect(panel.locator('.wf-signature canvas')).to_be_visible()
+                    expect(panel.locator('[name=document-memo]')).to_be_hidden()
+                    pad = panel.locator('.wf-signature').evaluate("""node=>{const rect=x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};},canvas=node.querySelector('canvas'),label=node.querySelector('.signature-label h3'),clear=node.querySelector('.signature-label button'),placeholder=node.querySelector('.wf-sign-placeholder');return {canvas:rect(canvas),bitmap:{width:canvas.width,height:canvas.height},background:[...canvas.getContext('2d').getImageData(2,2,1,1).data],label:rect(label),clear:rect(clear),placeholder:rect(placeholder),alternativeExpanded:node.querySelector('details').open,errorOutline:getComputedStyle(node).outlineStyle};}""")
+                    assert pad['bitmap'] == {'width': 342, 'height': 190} and pad['canvas']['height'] == 190, pad
+                    assert pad['background'] == [242, 244, 246, 255] and not pad['alternativeExpanded'], pad
+                    assert abs(pad['label']['y'] + pad['label']['height']/2 - pad['clear']['y'] - pad['clear']['height']/2) <= 1, pad
+                    assert abs(pad['placeholder']['y'] + pad['placeholder']['height']/2 - pad['canvas']['y'] - 95) <= 1, pad
+                    if state == 'missing':
+                        expect(panel.locator('[data-workflow-error] svg')).to_be_visible()
+                        assert pad['errorOutline'] == 'none', pad
+                measurement = panel.evaluate("""panel => {
+                  const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+                  const box=rect(panel),targets=[panel.querySelector('.research-evidence-settings'),...panel.querySelectorAll('canvas')].filter(node=>node.checkVisibility());
+                  return {screen:panel.dataset.reviewScenario,box,padding:getComputedStyle(panel).padding,layout:getComputedStyle(panel.querySelector('.research-evidence-settings')).display,viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,headerCount:document.querySelectorAll('#order-app-header').length,targets:targets.map(rect),casePickerVisible:Boolean(panel.querySelector('select')?.checkVisibility()),prepareVisible:[...panel.querySelectorAll('button')].some(button=>button.textContent==='자료와 서명 준비'&&button.checkVisibility())};
+                }""")
+                assert measurement['padding'] == '24px' and measurement['layout'] == 'flex' and measurement['headerCount'] == 1, measurement
+                assert measurement['documentWidth'] <= measurement['viewport'] + 1, measurement
+                assert not measurement['casePickerVisible'] and not measurement['prepareVisible'], measurement
+                assert all(target['width'] > 0 and target['height'] > 0 and target['x'] >= measurement['box']['x'] - 1 and target['x'] + target['width'] <= measurement['box']['x'] + measurement['box']['width'] + 1 for target in measurement['targets']), measurement
+                result['current'].append(measurement)
+            assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length') == before
+            capture(screen + '-' + state + '-simple-390', 'C542/C543 original proof/signature presentation restored; actual editor, fixture state and no submission')
+    # Traverse both stages with trusted clicks and keep the same local editor,
+    # selected pixels and memo. Preview/edit does not submit any of those pixels.
+    select(page, 'proof', 'selected')
+    expect(page.locator('.research-evidence-page[data-review-ready=true]')).to_be_visible()
+    before_steps = page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length')
+    page.locator('[name=document-memo]').fill('보관된 요청 🥚')
+    page.evaluate("window.__evidenceStepNodes={canvas:document.querySelector('.research-evidence-pages canvas'),signature:document.querySelector('.wf-signature canvas'),memo:document.querySelector('[name=document-memo]')}")
+    page.get_by_role('button', name='다음', exact=True).click()
+    expect(page.locator('.research-evidence-page')).to_have_attribute('data-evidence-step', 'signature')
+    expect(page.locator('.research-signature-pad')).to_be_visible()
+    page.get_by_role('button', name='제출하기', exact=True).click()
+    expect(page.locator('.wf-signature [data-workflow-error]')).to_be_visible()
+    assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length') == before_steps
+    page.locator('.research-evidence-pages canvas').click()
+    expect(page.get_by_role('dialog', name='첨부 자료 크게 보기')).to_be_visible()
+    page.get_by_role('button', name='확대', exact=True).click()
+    page.get_by_role('button', name='가림 편집', exact=True).click()
+    page.get_by_role('button', name='가림 저장', exact=True).click()
+    page.get_by_role('button', name='닫기', exact=True).click()
+    expect(page.get_by_role('dialog', name='첨부 자료 크게 보기')).to_be_hidden()
+    page.get_by_role('button', name='자료 수정', exact=True).click()
+    expect(page.locator('.research-evidence-page')).to_have_attribute('data-evidence-step', 'proof')
+    assert page.evaluate("document.querySelector('.research-evidence-pages canvas')===__evidenceStepNodes.canvas&&document.querySelector('.wf-signature canvas')===__evidenceStepNodes.signature&&document.querySelector('[name=document-memo]')===__evidenceStepNodes.memo&&__evidenceStepNodes.memo.value==='보관된 요청 🥚'")
+    assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length') == before_steps
+    result['sameEditorAcrossSteps'] = True
+    result['limits'] = 'Original presentation requirements and all explicit fixture states checked. No user acceptance or external submission claimed.'
+    return result
+
+
+def panel_origin_probe(page, capture):
+    result = {'requirement': 'C527 panel upper-right corner equals painted logo upper-right corner', 'states': []}
+    for width in (320, 390, 1280):
+        page.set_viewport_size({'width': width, 'height': 844})
+        select(page, 'onboarding', 'member-1')
+        trigger = page.locator('[data-order-account-trigger]')
+        expect(trigger).to_be_visible()
+        trigger.click()
+        panel = page.locator('[data-order-account-panel]')
         expect(panel).to_be_visible()
-        page.evaluate('document.fonts.ready')
-        expect(panel.locator('.research-evidence-settings')).to_be_visible()
-        if screen == 'proof':
-            expect(panel.locator('.research-file-drop')).to_be_visible()
-            expect(panel.locator('input[type=file]')).to_be_enabled()
-            expect(panel.locator('.proof-purpose')).to_be_visible()
-        else:
-            expect(panel.locator('input[type=file]')).to_be_hidden()
-            expect(panel.locator('.proof-purpose')).to_be_hidden()
-            expect(panel.locator('.research-evidence-pages canvas')).to_have_count(1)
-        expect(panel.locator('.wf-signature canvas')).to_be_visible()
-        measurement = panel.evaluate('''panel => {
-          const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
-          const box=rect(panel),targets=[panel.querySelector('.research-evidence-settings'),...panel.querySelectorAll('canvas')].filter(node=>!node.closest('[hidden]'));
-          return {screen:panel.dataset.reviewScenario,box,padding:getComputedStyle(panel).padding,layout:getComputedStyle(panel.querySelector('.research-evidence-settings')).display,viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,headerCount:document.querySelectorAll('#order-app-header').length,targets:targets.map(rect),casePickerVisible:Boolean(panel.querySelector('select:not([hidden])')&&!panel.querySelector('select').closest('[hidden]')),prepareVisible:[...panel.querySelectorAll('button')].some(button=>button.textContent==='자료와 서명 준비'&&!button.hidden)};
-        }''')
-        assert measurement['padding'] == '24px' and measurement['layout'] == 'grid' and measurement['headerCount'] == 1, measurement
-        assert measurement['documentWidth'] <= measurement['viewport'] + 1, measurement
-        assert not measurement['casePickerVisible'] and not measurement['prepareVisible'], measurement
-        assert all(target['width'] > 0 and target['height'] > 0 and target['x'] >= measurement['box']['x'] - 1 and target['x'] + target['width'] <= measurement['box']['x'] + measurement['box']['width'] + 1 for target in measurement['targets']), measurement
-        assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length') == before
-        page.screenshot(path=str(OUT / (screen + '-current-layout-390.png')), full_page=True)
-        result['current'].append(measurement)
-    result['limits'] = 'Native current layout and retained controls; archived bad build was separately reproduced structurally. No claim that an unidentified older version is user accepted.'
+        CAPTURE_TOOLS.settle(page)
+        geometry = panel.evaluate("""node=>{const rect=x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};},paths=[...document.querySelectorAll('[data-order-account-trigger] svg g>path')].map(rect),logo={top:Math.min(...paths.map(r=>r.y)),right:Math.max(...paths.map(r=>r.right))};return {panel:rect(node),trigger:rect(document.querySelector('[data-order-account-trigger]')),logo};}""")
+        assert abs(geometry['panel']['right']-geometry['logo']['right']) <= .1, geometry
+        assert abs(geometry['panel']['y']-geometry['logo']['top']) <= .1, geometry
+        assert abs(geometry['panel']['y']-geometry['trigger']['y']) > 8, geometry
+        result['states'].append({'width': width, **geometry})
+        page.keyboard.press('Escape')
+        expect(panel).to_be_hidden()
+    page.set_viewport_size({'width': 390, 'height': 844})
+    for screen, state in [('profile', 'menu'), ('profile', 'default'), ('profile', 'notification'), ('notifications', 'list')]:
+        select(page, screen, state)
+        CAPTURE_TOOLS.settle(page)
+        if screen == 'profile':
+            panel = page.locator('[data-order-account-panel]')
+            expect(panel).to_be_visible()
+            geometry = panel.evaluate("""node=>{const r=node.getBoundingClientRect(),paths=[...document.querySelectorAll('[data-order-account-trigger] svg g>path')].map(n=>n.getBoundingClientRect());return {top:r.top,right:r.right,logoTop:Math.min(...paths.map(r=>r.top)),logoRight:Math.max(...paths.map(r=>r.right))};}""")
+            assert abs(geometry['top']-geometry['logoTop']) <= .1 and abs(geometry['right']-geometry['logoRight']) <= .1, geometry
+        capture(screen + '-' + state + '-simple-390', 'C527 actual painted-logo corner and authenticated parent context')
     return result
 
 
@@ -721,8 +800,9 @@ def main():
             receipt['checks'].append('e3b7703c pass silhouettes, measured skeleton geometry and three gray brand dots')
             receipt['passTear'] = pass_tear_probe(page, capture)
             receipt['checks'].append('a5dc1435 native partial tear, 48px confirmation, failure/cancel restore and ACK-gated visual separation in memory fixture')
-            receipt['evidencePresentation'] = evidence_presentation_probe(page)
-            receipt['checks'].append('C542/C543 current proof/signature layout, visible controls, single header and no submission while viewing')
+            receipt['evidencePresentation'] = evidence_presentation_probe(page, capture)
+            receipt['panelOrigin'] = panel_origin_probe(page, capture)
+            receipt['checks'].append('C542/C543 original signature layout and two retained evidence steps; C527 painted-logo panel corner at320/390/1280; no submission while viewing')
             receipt['presentation'] = existing_presentation_probe(page, capture)
             receipt['checks'].append('C713 date placeholder paint; C534 header-covering top-layer blur; C683/C684/C686/C687/C688/C691 terms contexts')
             receipt['pageErrors'], receipt['forbiddenWrites'] = page_errors, forbidden_writes
