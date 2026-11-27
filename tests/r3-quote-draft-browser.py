@@ -115,7 +115,7 @@ try:
         assert directory.locator('button[type=submit]').evaluate("e=>getComputedStyle(e).backgroundColor")=='rgb(49, 93, 230)'
         directory.screenshot(path=evidence/'business-common-style-1440.png')
         quote.locator('#section-q3 > .accordion-trigger').click()
-        quote.get_by_role('button',name='저장된 사업장 불러오기',exact=True).click()
+        quote.get_by_role('button',name='저장된 사업장 추가',exact=True).click()
         picker=quote.get_by_role('dialog',name='저장된 사업장',exact=True)
         expect(picker).to_have_attribute('data-modal-role','selection')
         assert quote.evaluate("window.OrderModalShell.activeIds.includes('saved-business-picker')")

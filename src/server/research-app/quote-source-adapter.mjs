@@ -1,3 +1,4 @@
+import {quoteInputMarkup} from '../quote-input-flow.mjs';
 import {quoteTemplate,quoteCommit} from '../r3-product-sources.mjs';
 import {browserFunction} from '../browser-source.mjs';
 import {mountQuoteLock,quoteLockMarkup,quoteLockCss} from './quote-preview.mjs';
@@ -69,15 +70,7 @@ const appBridge=`
 let researchDisposed=false;
 const researchModalShell=window.OrderModalShell;
 function prepareResearchNavigation(){
-  if(researchDisposed)return false;
-  const opened=[...document.querySelectorAll('dialog[open]')];
-  if(!opened.length)return true;
-  if(!guardPendingEdits('research-route')||opened.some(dialog=>dialog.id!=='input-review-dialog'))return false;
-  // The input review is read-only. Retiring it through its owning shell also
-  // releases the native top layer, scroll lock and workspace-local history.
-  // Editors and confirmations must stay visible until the user finishes them.
-  researchModalShell.close(opened[0],{immediate:true});
-  return !document.querySelector('dialog[open]');
+  return !researchDisposed&&!storagePending&&!document.querySelector('dialog[open]');
 }
 const researchBridge=Object.freeze({
   snapshot:()=>projectStoredPayload(bodyCheckpoint()),
@@ -92,22 +85,23 @@ const researchBridge=Object.freeze({
   async applyScenario({screen='q1',state='before',payload=null}={}){
     if(!researchEnvironment?.fixtureScope)throw Error('QUOTE_SCENARIO_SCOPE_REQUIRED');
     if(researchDisposed)return {ok:false,status:'DISPOSED'};
-    if(screen==='quote-review')screen='review';
-    if(!['q1','q2','q3','q4','review'].includes(screen))throw Error('QUOTE_SCENARIO_SCREEN');
+    if(screen==='quote-review'||screen==='review')screen=simpleMode?'q2':'q4';
+    if(!['q1','q2','q3','q4'].includes(screen))throw Error('QUOTE_SCENARIO_SCREEN');
     if(document.querySelector('dialog[open]')||!guardPendingEdits('scenario'))return {ok:false,status:'SCENARIO_REMOUNT_REQUIRED'};
     let candidate=payload;
     if(!candidate){
-      candidate={...blank(),allocationRevision:0,open:screen==='review'?'':screen};
-      if(screen!=='q1'||!['before','error'].includes(state)){
-        const line={...empty(),housing:'1',size:'대란',pack:'30',qty:screen==='q2'&&['empty','error'].includes(state)?'':'100',price:screen==='q2'&&['empty','error'].includes(state)?'':'5000',qtyUnit:'tray'};
+      candidate={...blank(),allocationRevision:0,open:screen};
+      const noSpec=screen==='q1'&&['before','error'].includes(state)||screen==='q2'&&state==='empty';
+      if(!noSpec){
+        const line={...empty(),housing:'1',size:'대란',pack:'30',qty:screen==='q2'&&state==='error'?'':'100',price:screen==='q2'&&state==='error'?'':'5000',qtyUnit:'tray'};
         candidate.lines=[line];candidate.current=line.id;
         if(screen==='q2'&&state==='mixed'&&!simpleMode)candidate.lines.push({...empty(),housing:'2',size:'특란',pack:'10',qty:'',price:'',qtyUnit:'pack'});
         if(simpleMode){
           candidate.simpleQuote.sharedRegionSelection=regionSelection('1100000000','1111000000');
           candidate.simpleQuote.sharedRegion='서울특별시 종로구';
           if(screen==='q2'&&state==='unknown'){candidate.simpleQuote.specUnknown=true;candidate.simpleQuote.unknownMonthly={qty:'100',unit:'tray',budget:''};}
-          if(['q4','review'].includes(screen)){candidate.simpleQuote.orderKind=state==='missing'?'':'FLEX';candidate.simpleQuote.flexBasis='WEEK';}
-        }else if(['q3','q4','review'].includes(screen)){
+          if(screen==='q4'){candidate.simpleQuote.orderKind=state==='missing'?'':'FLEX';candidate.simpleQuote.flexBasis='WEEK';}
+        }else if(['q3','q4'].includes(screen)){
           // These are editable model fixtures, never asserted address/DNS proof.
           const site={...blankSite(),name:state==='long-name'?'오더 연구 매장 서울 종로구 중앙시장 본점 별관 2층 식자재 입고 담당 사업장':'연구 매장 1',contactPhone:'010-1234-5678',email:'',basicInfoDraft:true};
           candidate.locations=[site];
@@ -122,7 +116,7 @@ const researchBridge=Object.freeze({
     const restored=await quoteDraftBridge.restore(candidate,{isCurrent:()=>!researchDisposed});
     if(!restored.ok||researchDisposed)return restored;
     if(!show('form',false))return {ok:false,status:'SCENARIO_NAVIGATION_BLOCKED'};
-    changeOpen(screen==='review'?'':screen);
+    changeOpen(screen);
     if(screen==='q1'&&state==='edit')document.querySelector('[data-edit]')?.click();
     if(screen==='q3'&&['open','incomplete','long-name'].includes(state)&&!simpleMode)editSite(S.locations[0]?.id);
     if(screen==='q4'&&state==='open'&&!simpleMode&&S.allocations[0])openRegularQ4(S.allocations[0].id,document.querySelector('[data-edit-allocation]'));
@@ -131,16 +125,15 @@ const researchBridge=Object.freeze({
       const issue=(simpleMode?simpleVerdict():orderVerdict('full')).fieldErrors.find(value=>value.stage===screen);
       if(issue)errorAt(screen,issue.message);
     }
-    if(screen==='review')inputReview.open();
     researchEnvironment.notify({mode:quoteMode,page:current,step:S.open,scenario:{screen,state}});
     return {ok:true,status:'SCENARIO_READY',screen,state};
   },
   navigate({step=null,page='form'}={}){
     if(researchDisposed||!['home','form','result'].includes(page))return false;
-    if(!(page==='form'&&step==='review'&&$('input-review-dialog').open)&&!prepareResearchNavigation())return false;
+    if(!prepareResearchNavigation())return false;
+    if(step==='review')step=simpleMode?'q2':'q4';
     if(!show(page,false))return false;
-    if(page==='form'&&step==='review'){if(!canReviewInput())return false;inputReview.open();}
-    else if(page==='form'&&['q1','q2','q3','q4'].includes(step)){
+    if(page==='form'&&['q1','q2','q3','q4'].includes(step)){
       if(!changeOpen(step))return false;navigateRegularStage(step);
     }
     researchEnvironment?.notify?.({mode:quoteMode,page:current,step:S.open});return true;
@@ -263,7 +256,6 @@ function clearPrivateResult(){`);
     source=once(source,"CODE1_UI.textAction('삭제','delete-allocation',esc(a.id),false)","CODE1_UI.textAction('해제','delete-allocation',esc(a.id),false)");
     source=once(source,'<span class="q4-body-subtitle">${esc(summary)}</span>','<span class="q4-body-subtitle">${rows.length?\'<span class="research-q4-tag">\'+esc(summary)+\'</span>\':esc(summary)}</span>');
     source=once(source,"}).join('');$('q3-empty').hidden=S.locations.length>0;","}).join('');$('q3-empty').hidden=S.locations.length>0;$('q3-next').hidden=!S.locations.length;");
-    source=once(source," }).join('');\n updateResultCTA();\n}\n\nfunction invoiceDetails(stats){"," }).join('');\n $('q4-next').hidden=!S.allocations.length;updateResultCTA();\n}\n\nfunction invoiceDetails(stats){");
     source=once(source,'return Object.freeze({quoteDraftBridge,savedBusinessBridge,regularBridge:',appBridge+'\nreturn Object.freeze({researchBridge,quoteDraftBridge,savedBusinessBridge,regularBridge:');
     return source;
   }
@@ -330,7 +322,7 @@ function clearPrivateResult(){`);
 
 /** The regular app owns these view bodies/dialogs; the application owns header. */
 export function getResearchQuoteMarkup(){
-  let body=quoteTemplate.split('<body>')[1]?.split('</body>')[0];
+  let body=quoteInputMarkup(quoteTemplate).split('<body>')[1]?.split('</body>')[0];
   if(!body||body.split('<header class="header">').length!==2)throw Error('RESEARCH_QUOTE_TEMPLATE_MISMATCH');
   const from=body.indexOf('<header class="header">'),to=body.indexOf('</header>',from);
   if(to<0)throw Error('RESEARCH_QUOTE_TEMPLATE_HEADER_MISMATCH');

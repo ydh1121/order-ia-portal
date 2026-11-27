@@ -69,74 +69,23 @@ async function seedQuote(f,mode='detailed'){
   return {root,workspace,parent:root.querySelector('#app'),shell:f.win.OrderModalShell,lines:plain(workspace.snapshot().lines)};
 }
 
-async function openReview(f,q){
-  q.root.querySelector('#input-review-open').click();await settle();
-  const dialog=q.root.querySelector('#input-review-dialog');
-  assert.equal(dialog.open,true);assert.equal(f.nativeModals.has(dialog),true);
-  assert.equal(q.workspace.inspect().lifecycle.modalHistory,true);
-  assert.ok(q.shell.activeIds.includes(dialog.id));
-  return dialog;
-}
-
-function assertReviewReleased(f,q,dialog){
-  assert.equal(dialog.open,false,'the original native dialog must be closed');
-  assert.equal(f.nativeModals.has(dialog),false,'a hidden parent does not release a native modal');
-  assert.equal(q.shell.activeIds.includes(dialog.id),false,'the owning shell must retire its entry');
-  assert.equal(q.workspace.inspect().lifecycle.modalHistory,false,'the local modal history must be retired');
-  const content=q.root.querySelector('[data-research-quote]');
-  assert.equal(content.classList.contains('ui-modal-locked'),false);
-  assert.equal(content.classList.contains('ui-modal-body-locked'),false);
-  assert.equal(q.root.querySelector('#app'),q.parent);
-  assert.deepEqual(plain(q.workspace.snapshot().lines),q.lines);
-}
-
-test('same-quote navigation releases the real input review and its local modal history without resetting input',async()=>{
+test('legacy review links keep entered values in each live calculator without creating a modal',async()=>{
   for(const mode of ['simple','detailed']){
     const f=await setup();try{
-      const q=await seedQuote(f,mode),dialog=await openReview(f,q),url=f.win.location.href;
-      assert.equal(q.workspace.navigate({step:'review'}),true,'reselecting an already open review is harmless');
-      assert.equal(dialog.open,true);assert.equal(q.workspace.inspect().lifecycle.modalHistory,true);
-      assert.equal(q.workspace.navigate({step:'q3'}),true);await settle();
-      assertReviewReleased(f,q,dialog);assert.equal(q.workspace.inspect().step,'q3');
-      assert.equal(q.workspace.back(),false,'no stale modal history may consume the next application Back');
-      assert.equal(new URL(f.win.location.href).origin,new URL(url).origin);
+      const q=await seedQuote(f,mode);
+      assert.equal(q.root.querySelector('#input-review-open,#input-review-dialog'),null);
+      assert.equal(q.workspace.navigate({step:'review'}),true);
+      assert.equal(q.workspace.inspect().step,mode==='simple'?'q2':'q4');
+      assert.equal(q.workspace.inspect().lifecycle.modalHistory,false);
+      assert.equal(q.workspace.back(),false);
+      assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-2'}),true);
+      assert.equal(f.nativeModals.size,0);
+      assert.equal(await f.app.navigate({screen:'q2',mode}),true);
+      assert.equal(q.root.querySelector('#app'),q.parent);
+      assert.deepEqual(plain(q.workspace.snapshot().lines),q.lines);
       assert.deepEqual(f.failures,[]);
     }finally{await f.close();}
   }
-});
-
-test('application quote, external page and authentication boundaries close only the read-only review and retain the same quote',async()=>{
-  const f=await setup();try{
-    const q=await seedQuote(f),header=f.doc.getElementById('order-app-header');
-    for(const destination of [{screen:'q1',mode:'detailed'},{screen:'onboarding',state:'guest-2'},{screen:'signup',state:'empty'}]){
-      if(q.root.hidden)assert.equal(await f.app.navigate({screen:'q2',mode:'detailed'}),true);
-      const dialog=await openReview(f,q);
-      assert.equal(await f.app.navigate(destination),true);await settle();
-      assert.equal(f.app.snapshot().route.screen,destination.screen);
-      assertReviewReleased(f,q,dialog);
-      assert.equal(f.doc.getElementById('order-app-header'),header);
-      if(destination.screen==='onboarding')assert.equal(q.root.hidden,true);
-      if(destination.screen==='signup'){
-        assert.equal(q.root.hidden,false);const overlay=f.doc.querySelector('[data-product-auth-sheet]');assert.ok(overlay);
-        const input=overlay.querySelector('input');input.focus();input.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
-        await waitFor(()=>!f.doc.querySelector('[data-product-auth-sheet]'));assert.equal(f.app.snapshot().route.kind,'quote');
-      }
-    }
-    assert.deepEqual(plain((await q.workspace.repository.read('detailed')).data.lines),q.lines);
-    assert.deepEqual(f.failures,[]);
-  }finally{await f.close();}
-});
-
-test('a quote-owned modal is retired even if its retained parent was already hidden and the application route is elsewhere',async()=>{
-  const f=await setup();try{
-    const q=await seedQuote(f);assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-2'}),true);
-    // Reproduce the old retained-owner condition independently of its fixed
-    // entry path: the quote is hidden but its native modal remains active.
-    const dialog=await openReview(f,q);assert.equal(q.root.hidden,true);assert.equal(f.app.snapshot().route.screen,'onboarding');
-    assert.equal(await f.app.navigate({screen:'signup',state:'empty'}),true);await settle();
-    assertReviewReleased(f,q,dialog);assert.ok(f.doc.querySelector('[data-product-auth-sheet]'));
-    assert.deepEqual(f.failures,[]);
-  }finally{await f.close();}
 });
 
 test('SKU drafts and ordinary confirmation dialogs reject every navigation boundary without cancelling their owner',async()=>{
@@ -174,33 +123,28 @@ test('SKU drafts and ordinary confirmation dialogs reject every navigation bound
   }finally{await clean.close();}
 });
 
-test('pending canonical storage prevents review cleanup and route changes until the write finishes',async()=>{
+test('pending canonical storage prevents route changes until the write finishes',async()=>{
   const f=await setup();let held;try{
-    const q=await seedQuote(f),dialog=await openReview(f,q),route=plain(f.app.snapshot().route);
+    const q=await seedQuote(f),route=plain(f.app.snapshot().route);
     held=f.holdWrites();const saving=q.workspace.save();await waitFor(()=>held.entered&&q.workspace.inspect().pending>0);
     for(const destination of [{screen:'q3',mode:'detailed'},{screen:'onboarding',state:'guest-2'},{screen:'signup',state:'empty'}]){
       assert.equal(await f.app.navigate(destination),false);await settle();
       assert.deepEqual(plain(f.app.snapshot().route),route);assert.equal(q.root.hidden,false);
-      assert.equal(dialog.open,true);assert.equal(f.nativeModals.has(dialog),true);assert.equal(q.workspace.inspect().lifecycle.modalHistory,true);
       assert.deepEqual(plain(q.workspace.snapshot().lines),q.lines);
     }
     held.release();held=null;assert.equal((await saving).ok,true);await waitFor(()=>q.workspace.inspect().pending===0);
-    assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-2'}),true);await settle();assertReviewReleased(f,q,dialog);
+    assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-2'}),true);await settle();assert.deepEqual(plain(q.workspace.snapshot().lines),q.lines);
     assert.deepEqual(f.failures,[]);
   }finally{held?.release();await f.close();}
 });
 
 test('modal cleanup and disposal use the captured quote shell when another owner replaces the shared global',async()=>{
   const f=await setup();try{
-    const q=await seedQuote(f),dialog=await openReview(f,q);
-    let foreignClose=0,foreignDestroy=0;
-    const foreign={close(){foreignClose++;},destroy(){foreignDestroy++;}};
-    f.win.OrderModalShell=foreign;
-    assert.equal(await f.app.navigate({screen:'onboarding',state:'guest-2'}),true);await settle();assertReviewReleased(f,q,dialog);
-    assert.equal(f.win.OrderModalShell,foreign);assert.equal(foreignClose,0);
-    // Reopen with the original read-only controller, then destroy while it owns
-    // an actual native modal. The replacement shell must remain untouched.
-    await openReview(f,q);f.app.dispose();await settle();
+    const q=await seedQuote(f),dialog=q.root.querySelector('#quote-mode-dialog');
+    q.root.querySelector('#quote-mode-switch').click();await settle();
+    assert.equal(dialog.open,true);assert.equal(f.nativeModals.has(dialog),true);
+    let foreignDestroy=0;const foreign={destroy(){foreignDestroy++;}};
+    f.win.OrderModalShell=foreign;f.app.dispose();await settle();
     assert.equal(dialog.open,false);assert.equal(f.nativeModals.has(dialog),false);assert.equal(q.workspace.inspect().lifecycle.disposed,true);
     assert.equal(f.win.OrderModalShell,foreign);assert.equal(foreignDestroy,0);assert.deepEqual(f.failures,[]);
   }finally{await f.close();}

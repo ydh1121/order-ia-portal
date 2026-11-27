@@ -41,7 +41,7 @@ test('research quote cards, add regions and egg choices override the current reg
  const relevant=[...regular.matchAll(/(?:^|\n)((?:\.sku-editor \.q1-egg|\.subaction|\.t-acc\[data-status="active"\])\{[^{}]*\})/g)].map(match=>match[1]).join('\n');
  assert.match(relevant,/stroke:#aeb4be/);assert.match(relevant,/fill:#f3eee4/);
  const egg='<div class="sku-editor"><button class="pick" aria-pressed="false"><svg class="q1-egg"></svg></button><button class="pick" aria-pressed="true"><svg class="q1-egg"></svg></button></div>';
- const dom=new JSDOM('<!doctype html><style>'+relevant+'\n'+researchQuoteCss+'</style><section id="order-app-quote"><div data-research-quote><section id="page-form"><div class="stack"><section class="t-acc" data-status="active"><button class="accordion-trigger">품목</button></section></div><button id="add-line" class="subaction">계란 추가</button><button id="add-site" class="subaction">+ 사업장 추가</button>'+egg+'<button id="q3-next" hidden>완료</button><button id="q4-next" hidden>완료</button></section></div></section><section id="unrelated">'+egg+'</section>');
+ const dom=new JSDOM('<!doctype html><style>'+relevant+'\n'+researchQuoteCss+'</style><section id="order-app-quote"><div data-research-quote><section id="page-form"><div class="stack"><section class="t-acc" data-status="active"><button class="accordion-trigger">품목</button></section></div><button id="add-line" class="subaction">계란 추가</button><button id="add-site" class="subaction">+ 사업장 추가</button>'+egg+'<button id="q3-next" hidden>완료</button></section></div></section><section id="unrelated">'+egg+'</section>');
  try{
   const w=dom.window,d=w.document,scope=d.querySelector('[data-research-quote]');
   assert.equal(w.getComputedStyle(d.querySelector('#page-form')).backgroundColor,'rgba(0, 0, 0, 0)','calculator shares the page instead of adding another surface');
@@ -55,7 +55,7 @@ test('research quote cards, add regions and egg choices override the current reg
   assert.equal(w.getComputedStyle(scope.querySelector('[aria-pressed=true] .q1-egg')).fill,'white');
   for(const element of scope.querySelectorAll('.q1-egg'))assert.equal(w.getComputedStyle(element).stroke,'none');
   assert.equal(w.getComputedStyle(d.querySelector('#unrelated .q1-egg')).stroke,'#aeb4be');
-  for(const id of ['q3-next','q4-next'])assert.equal(w.getComputedStyle(d.getElementById(id)).display,'none');
+  assert.equal(w.getComputedStyle(d.getElementById('q3-next')).display,'none');
  }finally{dom.window.close();}
 });
 
@@ -64,7 +64,7 @@ test('Q1 errors highlight individual choices while saved purchase tags stay one 
  try{
   const w=dom.window,d=w.document,group=d.querySelector('.picks'),choice=group.querySelector('.pick'),tags=d.querySelector('.saved-quantity-tags');
   assert.equal(w.getComputedStyle(group).borderWidth,'0px');assert.equal(w.getComputedStyle(group).boxShadow,'none');
-  assert.equal(w.getComputedStyle(choice).borderWidth,'1px');assert.equal(w.getComputedStyle(choice).borderStyle,'solid');
+  assert.equal(w.getComputedStyle(choice).borderWidth,'0px');assert.equal(w.getComputedStyle(choice).backgroundColor,'rgb(255, 240, 242)');
   assert.equal(w.getComputedStyle(tags).flexWrap,'nowrap');assert.equal(w.getComputedStyle(d.querySelector('.sku-entry-copy')).alignContent,'center');
   assert.equal(d.querySelectorAll('.saved-quantity-tags button').length,0,'quantity tags never acquire dismiss controls');
  }finally{dom.window.close();}

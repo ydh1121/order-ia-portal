@@ -74,7 +74,7 @@ test('different detailed local and server drafts block an opt-in copy instead of
 });
 
 test('saved-business picker uses actual common modal lifecycle and copy presentation with cancel-safe loading',async()=>{
- const dom=new JSDOM('<!doctype html><html><body><div id="q3-sites"></div></body></html>',{url:'https://review.invalid/ia?view=simple-r3',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
+ const dom=new JSDOM('<!doctype html><html><body><section id="section-q3" data-open="true"><div class="add-row"><button id="add-site"></button></div></section></body></html>',{url:'https://review.invalid/ia?view=simple-r3',runScripts:'outside-only',pretendToBeVisual:true}),w=dom.window;
  try{
   w.matchMedia=()=>({matches:true});w.scrollTo=()=>{};w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
   const common=await r3ProductAsset('/ia/r3-product/web/common-ui.mjs').text();const start=common.indexOf('window.OrderCopyDialog=');const end=common.indexOf('/* MSG0465:',start);
@@ -82,6 +82,7 @@ test('saved-business picker uses actual common modal lifecycle and copy presenta
   w.ORDER_APP_CONTEXT={endpoints:{role:'/api/ia/lab/runs/test/as/buyer/role'}};let url,resolve,loaded=0;
   w.fetch=async value=>{url=value;return new Promise(r=>{resolve=()=>r(Response.json({businesses:[{id:'saved',profile:{name:'실제 저장 사업장',road:'소재지'}}]}));});};
   const picker=w.eval('('+browserFunction(mountSavedBusinessPicker)+')')({savedBusinessBridge:{canOpen:()=>true,load:async(records,{isCurrent})=>{assert.equal(isCurrent(),true);loaded++;return {ok:true};}}});
+  assert.equal(picker.trigger.hidden,true);resolve();await new Promise(r=>setTimeout(r,0));assert.equal(picker.trigger.hidden,false);
   picker.trigger.click();assert.deepEqual([...w.OrderModalShell.activeIds],['saved-business-picker']);assert.equal(picker.dialog.dataset.modalVariant,'copy');assert.equal(picker.dialog.dataset.modalRole,'selection');assert.equal(picker.dialog.querySelector('[data-copy-apply]').disabled,true);assert.match(url,/\/lab\/runs\/test\/as\/buyer\/role\/businesses$/);
   picker.dialog.querySelector('[data-copy-cancel]').click();resolve();await new Promise(r=>setTimeout(r,0));assert.equal(picker.dialog.open,false);assert.equal(picker.dialog.querySelectorAll('input').length,0);
   picker.trigger.click();resolve();await new Promise(r=>setTimeout(r,0));const checkbox=picker.dialog.querySelector('input');checkbox.checked=true;checkbox.dispatchEvent(new w.Event('change',{bubbles:true}));picker.dialog.querySelector('[data-copy-apply]').click();await new Promise(r=>setTimeout(r,0));assert.equal(loaded,1);assert.equal(picker.dialog.open,false);assert.ok(w.OrderModalShell.inspect().events.some(x=>x.reason==='cancel'));

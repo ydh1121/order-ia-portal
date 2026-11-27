@@ -35,9 +35,9 @@ export const researchQuoteFormCss=`
 #order-app-quote [data-research-quote] #section-q1 #sku-editor{border:0;box-shadow:none;background:transparent;padding-inline:0}
 #order-app-quote [data-research-quote] .sku-editor .q1-egg{fill:#bfc7d1;stroke:none}
 #order-app-quote [data-research-quote] .sku-editor .pick[aria-pressed=true] .q1-egg{fill:white;stroke:none}
-/* Missing choices get their own existing one-pixel border, never a group ring. */
+/* Paint the individual missing choices while their group remains unframed. */
 #order-app-quote [data-research-quote] .sku-editor .picks[aria-invalid=true]{border:0;outline:0;box-shadow:none}
-#order-app-quote [data-research-quote] .sku-editor .pick[aria-invalid=true]{border-width:1px;border-style:solid;border-color:var(--ui-danger,#d92d48);outline-color:var(--ui-danger,#d92d48);box-shadow:none}
+#order-app-quote [data-research-quote] .sku-editor .pick[aria-invalid=true]{border:0;background:#fff0f2;color:#b42332;outline-color:var(--ui-danger,#d92d48);box-shadow:none}
 #order-app-quote [data-research-quote] .sku-editor .ui-field-title[data-order-invalid=true]{color:var(--ui-danger,#d92d48)}
 #order-app-quote [data-research-quote] #add-controls>.add-row,#order-app-quote [data-research-quote] #section-q3 .add-row{display:block;width:100%;padding-inline:0}
 #order-app-quote [data-research-quote] #add-line,#order-app-quote [data-research-quote] #add-site{display:flex;align-items:center;justify-content:center;width:100%;min-height:60px;border:1px dashed #cbd3de;border-radius:10px;background:transparent;color:var(--text-secondary,#576579);font-size:var(--type-body,14px);font-weight:600;cursor:pointer}
@@ -55,7 +55,6 @@ export const researchQuoteFormCss=`
 #order-app-quote [data-research-quote] #page-form [data-saved-row] .saved-row-actions>.code1-text-action:first-child{inset-inline-end:56px}
 #order-app-quote [data-research-quote] #page-form [data-saved-open=true] .saved-row-actions>.code1-text-action:nth-child(2){min-height:44px;padding-inline:10px}
 /* Q2 fields and totals are the original calculation controls, in the same card. */
-#order-app-quote [data-research-quote] #q2-purpose{margin:0 0 18px;color:var(--text-secondary,#56677b);font-size:var(--type-small,.8125rem);line-height:1.65;word-break:keep-all}
 #order-app-quote [data-research-quote] #q2-lines{gap:16px}
 #order-app-quote [data-research-quote] #q2-lines>.line-panel{padding:0 0 16px;border-color:var(--line,#e3e8eb);background:transparent}
 #order-app-quote [data-research-quote] #q2-lines>.line-panel:last-child{padding-bottom:0;border-bottom:0}
@@ -75,7 +74,7 @@ export const researchQuoteFormCss=`
 #order-app-quote [data-research-quote] .research-q3-tags{display:inline-flex;align-items:center;margin-inline-start:8px;padding:3px 7px;border-radius:6px;background:#e8edf3;color:var(--text-secondary,#576579);font-size:var(--type-meta,.75rem);font-weight:var(--type-weight-information,400);white-space:nowrap}
 #order-app-quote [data-research-quote] .q3-site-accordion>.accordion-trigger[aria-expanded=true] .research-q3-tags{display:none}
 #order-app-quote [data-research-quote] .research-q4-tag{display:inline-flex;align-items:center;padding:3px 7px;border-radius:6px;background:#e8edf3;color:var(--text-secondary,#576579);font-size:var(--type-meta,.75rem);font-weight:var(--type-weight-information,400);white-space:nowrap}
-#order-app-quote [data-research-quote] :is(#q3-next,#q4-next)[hidden]{display:none}
+#order-app-quote [data-research-quote] #q3-next[hidden]{display:none}
 @media(min-width:768px){[data-research-quote] .main{width:min(calc(100% - 56px),var(--max))}#order-app-quote [data-research-quote] #page-form{padding-top:32px}}
 ${researchQuoteModeCss}
 `;
