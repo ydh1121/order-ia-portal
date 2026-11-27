@@ -92,7 +92,7 @@ export async function mountResearchApplication(config, environment) {
     }
     return navigate({screen:'quote-result',state:authenticated()?'locked':'locked-guest',mode:destination.mode},{replace:true});
   }
-  const api={mode:'product',interactive:true,adapter,variant:'email',get screen(){return route.screen;},get reviewScenario(){return fixtureSelecting;},get brandAccount(){return win.ORDER_BRAND_ACCOUNT_CONTEXT;},applicationHeader:{element:header,get menu(){return brandMenu;},subscribe(listener){brandListeners.add(listener);if(brandMenu)listener(brandMenu.inspect());return()=>brandListeners.delete(listener);}},signal,
+  const api={mode:'product',interactive:true,adapter,readMarketChart:(query,options)=>environment.priceWorkspace.readChart(query,options),variant:'email',get screen(){return route.screen;},get reviewScenario(){return fixtureSelecting;},get brandAccount(){return win.ORDER_BRAND_ACCOUNT_CONTEXT;},applicationHeader:{element:header,get menu(){return brandMenu;},subscribe(listener){brandListeners.add(listener);if(brandMenu)listener(brandMenu.inspect());return()=>brandListeners.delete(listener);}},signal,
     reduced:()=>win.matchMedia('(prefers-reduced-motion: reduce)').matches,select:(screen,state,options={})=>{
       if(route.screen==='quote-result'&&isQuoteLock(route.state)&&(screen==='signup'||screen==='business')){
         return startQuoteVerification(screen==='signup'?'signup':'verify','preview');

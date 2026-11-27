@@ -7,7 +7,7 @@ import {qaReviewRuntimeDigest,qaFixtureForRow} from './r3-qa-review-runtime.mjs'
 import {researchBuild} from './research-app/assets.gen.mjs';
 
 // Issue a fresh candidate ID before publishing a different IA commit, even with an identical product catalog.
-const candidateId = 'MSG0585-R3-20261127-QA-FEEDBACK-05';
+const candidateId = 'MSG0585-R3-20261127-EGG-MARKET-01';
 let digest;
 
 export async function publicationIdentity() {

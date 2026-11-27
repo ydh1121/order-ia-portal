@@ -197,5 +197,80 @@ export function createPriceWorkspaceModel() {
     const ar=grades.indexOf(a.grade),br=grades.indexOf(b.grade),ac=packages.indexOf(a.pack),bc=packages.indexOf(b.pack);if([ar,br,ac,bc].some(n=>n<0))return [];
     const keys=[];for(let r=Math.min(ar,br);r<=Math.max(ar,br);r++)for(let c=Math.min(ac,bc);c<=Math.max(ac,bc);c++)keys.push(grades[r]+'/'+packages[c]);return keys;
   }
-  return {clone,initial,normalize,calculated,bulk,pg,bound,remove,order,rectangle,productPrice,movePackaging,standard,day,money,syncCatalogProducts,storeProduct,previewConsumerMarkup,applyConsumerMarkup,deliveryBounds,deliveryFor};
+  // The market publication is a complete, customer-readable slice of the
+  // applied table. Drafts, raw costs, addresses and custom product names
+  // never enter it. Competing products for the same spec have no single rate.
+  function marketSnapshot(d){
+    const shells=d.shells.filter(s=>s.number>=1&&s.number<=4).map(s=>({id:String(s.number),name:s.number+'번'}));
+    const grades=d.grades.map(g=>({id:g.id,name:g.name}));
+    const pack=d.packages.find(p=>p.eggs===30),values={};
+    if(pack)for(const shell of shells){
+      const id=d.shells.find(s=>String(s.number)===shell.id).id;
+      for(const grade of grades){
+        const products=d.products.filter(p=>p.audience==='store'&&p.shell===id&&p.grade===grade.id&&p.package===pack.id);
+        // Old tables without materialized catalog products use the same
+        // automatic business price that syncCatalogProducts shows on opening.
+        const available=products.filter(p=>p.enabled);
+        if(products.length===0)available.push({shell:id,grade:grade.id,package:pack.id,audience:'store',auto:true});
+        if(available.length!==1)continue;
+        const price=productPrice(d,available[0]);
+        if(Number.isFinite(price)&&price>=0)values[shell.id+'/'+grade.id]=price;
+      }
+    }
+    return {shells,grades,values};
+  }
+  const marketDay=instant=>new Date(Date.parse(instant)+9*3600000).toISOString().slice(0,10);
+  const shiftDay=(date,offset)=>new Date(Date.parse(date+'T00:00:00Z')+offset*86400000).toISOString().slice(0,10);
+  function marketRange(query,now){
+    const today=marketDay(now),to=query.get('to')||today;
+    if(!day(to))fail('MARKET_FILTER_INVALID');
+    const from=query.get('from')||shiftDay(to,-29);
+    for(const key of query.keys())if(!['from','to','shell','grade'].includes(key)||query.getAll(key).length!==1)fail('MARKET_FILTER_INVALID');
+    if(!day(from)||from>to||from>today||(Date.parse(to)-Date.parse(from))/86400000>365)fail('MARKET_FILTER_INVALID');
+    const shell=query.get('shell')||'',grade=query.get('grade')||'';
+    if(shell&&!/^[1-4]$/.test(shell)||grade&&!token(grade))fail('MARKET_FILTER_INVALID');
+    return {today,from,to:to>today?today:to,shell,grade};
+  }
+  function marketSelection(range,entries){
+    const shells=new Map(),grades=new Map();
+    // The list of selectable specifications follows this period's tables, including
+    // the one in force on its first day. Older retired labels stay in history.
+    const carried=entries.filter(entry=>marketDay(entry.effectiveAt)<range.from).slice(-1);
+    const visible=entries.filter(entry=>marketDay(entry.effectiveAt)>=range.from);
+    for(const {market} of [...carried,...visible]){
+      for(const s of market.shells)shells.set(s.id,s);
+      for(const g of market.grades)grades.set(g.id,g);
+    }
+    const shell=range.shell||(shells.has('3')?'3':shells.keys().next().value)||'3';
+    const grade=range.grade||(grades.has('xl')?'xl':grades.keys().next().value)||'xl';
+    return {shells:[...shells.values()].sort((a,b)=>Number(a.id)-Number(b.id)),grades:[...grades.values()],shell,grade};
+  }
+  function marketSeries(range,entries,asOf,firstDate){
+    const {today,from,to}=range,selection=marketSelection(range,entries),points=[];
+    const daily=new Map();
+    for(const entry of entries)daily.set(marketDay(entry.effectiveAt),entry);
+    const closes=[...daily.entries()];
+    let cursor=0,value=null,activeSince=null;
+    for(let date=from;date<=to;date=shiftDay(date,1)){
+      while(cursor<closes.length&&closes[cursor][0]<=date){
+        const [closed,entry]=closes[cursor++],next=entry.market.values[selection.shell+'/'+selection.grade]??null;
+        if(next!==value){activeSince=entry.runStart||closed;value=next;}
+      }
+      points.push({date,price:value});
+    }
+    const priced=points.filter(p=>p.price!==null).map(p=>p.price);
+    function extreme(price){
+      const periods=[];let run=null;
+      for(const p of points){
+        if(p.price!==price){run=null;continue;}
+        if(!run){run={start:p.date,end:p.date};periods.push(run);}
+        run.end=p.date===today?null:p.date;
+        if(p.date===today)run.start=activeSince;
+      }
+      return {price,periods};
+    }
+    return {asOf,today,firstDate,from,to,...selection,unit:'원/30구',points,
+      low:priced.length?extreme(Math.min(...priced)):null,high:priced.length?extreme(Math.max(...priced)):null};
+  }
+  return {marketSnapshot,marketDay,marketRange,marketSelection,marketSeries,clone,initial,normalize,calculated,bulk,pg,bound,remove,order,rectangle,productPrice,movePackaging,standard,day,money,syncCatalogProducts,storeProduct,previewConsumerMarkup,applyConsumerMarkup,deliveryBounds,deliveryFor};
 }

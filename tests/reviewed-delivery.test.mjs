@@ -118,6 +118,23 @@ test('the published PR31 wrappers and source documents remain bound to their iss
   assert.equal(families.size,122);
 });
 
+test('published PR33 price and component pins retain the exact recorded response', async () => {
+  const snapshot = await unpack(new URL('./fixtures/reviewed-bed73995.capture.json.gz', import.meta.url));
+  assert.equal(snapshot.commit, '9fa51af20687ba2ee244fe25b8cde0dc7e78ef68');
+  assert.equal(snapshot.tree, 'bca30ce17860b45b5064123e8a209bb28f1af24a');
+  assert.equal(snapshot.targetChecks.length, 110);
+  for (const {target, sourceResponseSha256} of snapshot.targetChecks) {
+    const id = [target.screen, target.state, target.variant].join('/');
+    assert.ok(await isDeliveredReviewedTarget(id, target.viewport, target.artifactHash, env, origin), id);
+    const url = new URL('/api/ia/r3-qa/artifact', origin);
+    url.search = new URLSearchParams({id, width: target.viewport, version: 'recorded', artifactHash: target.artifactHash});
+    const response = await serveDeliveredQaArtifact(new Request(url), env);
+    assert.equal(response.status, 200, id);
+    assert.equal(createHash('sha256').update(await response.text()).digest('hex'), sourceResponseSha256, url.search);
+    assert.ok(await isDeliveredReviewTarget(target, snapshot.release, env, origin), url.search);
+  }
+});
+
 test('unresolved compact login pin opens through the private delivery path with exact response bytes', async () => {
   const id = 'login/empty/compact', width = 390;
   const hash = '6df5ad91b0725e4280d55d76960d2015dd63905df00dab2f9d4fdd04aa3a1e6d';

@@ -135,8 +135,15 @@ test('public entry remains nonconfidential and private releases are confined to 
  const {catalog:authoredCatalog}=await import('../src/server/r3-ui/catalog.gen.mjs');
  const {getQaSupplemental}=await import('../src/server/r3-qa-assets.mjs');
  const {reviewHashes}=await import('../src/server/r3-ui/approved-width.mjs');
- const signatureIndexes=[authoredCatalog.find(row=>row.id==='common/default/email'),(await getQaSupplemental()).rows.find(row=>row.id==='component-library/components/email')];
- const signatureHashes=new Map(await Promise.all(signatureIndexes.map(async row=>[row.id,await reviewHashes(row)])));
+ const supplementalRows=(await getQaSupplemental()).rows;
+ const refreshedAuthoredRows=[
+  authoredCatalog.find(row=>row.id==='common/default/email'),
+  ...supplementalRows.filter(row=>['component-library/components/email','component-library/svg/email'].includes(row.id))
+ ];
+ assert.equal(refreshedAuthoredRows.length,3);
+ const refreshedHashes=new Map(await Promise.all(refreshedAuthoredRows.map(async row=>[row.id,await reviewHashes(row)])));
+ const priceSourceHashes=new Map(await Promise.all(supplementalRows.filter(row=>row.screen==='price-workspace').map(async row=>[row.id,await reviewHashes(row)])));
+ assert.equal(priceSourceHashes.size,9);
  const pr30Catalogs={};
  for(const [mode,digest]of Object.entries(pr30CatalogDigests)){
   const bytes=readFileSync(join(catalogRoot,digest+'.json'));assert.equal(sha(bytes),digest);
@@ -148,11 +155,12 @@ test('public entry remains nonconfidential and private releases are confined to 
   const guest={...member,id:'quote-result/locked-guest/email',state:'locked-guest',stateLabel:'비회원 잠금',authoredChange:false,supplemental:true};
   const iconLibrary={...guest,id:'admin-icon-library/list/email',screen:'admin-icon-library',state:'list',group:'관리자 · 공통 자산',label:'아이콘 라이브러리',stateLabel:'사용처',role:'admin',description:'',routeIds:[]};
   const nativeIds=new Set([guest.id,iconLibrary.id]);
-  const currentById=new Map(current.items.map(row=>[row.id,row]));
   const prices=current.items.filter(row=>row.screen==='price-workspace').map(row=>[row.id,row.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
   assert.equal(prices.length,9);
-  const pricingDigest=deliveryBuild==='227aa0ae7dc1296ef5086efcaee1df89000fc10a81b833bf3f6782e226543539'?'59c712fbe1a3b9a3cf9d4f3398237c3bf7d26bde34b5c46e7b9fa436fe22f81a':'6a0dda1814ae28459452996ab390bd9fe98d7347e62c7321c874d182bc8526e5';
-  assert.equal(sha(JSON.stringify(prices)),pricingDigest,'price content retains the sealed shared workflow renderer');
+  for(const [id,hashes] of prices)assert.deepEqual(hashes,priceSourceHashes.get(id),'current price catalog must match its authored renderer at every width');
+  const retainedPriceCatalog=mode==='simple'?'081b32ec2e8726bdb5da1beaa27e455e05dcd63f6f338f22ed41af7b05ad4a8e':'49e14a17c22e78cac1eac81cc58e1f1f8e9a866a1f5f9b593edaf115cc980da9';
+  const lastPrices=JSON.parse(readFileSync(join(catalogRoot,retainedPriceCatalog+'.json'))).items.filter(row=>row.screen==='price-workspace').map(row=>[row.id,row.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
+  assert.equal(sha(JSON.stringify(lastPrices)),'6a0dda1814ae28459452996ab390bd9fe98d7347e62c7321c874d182bc8526e5','PR33 price content retains its original renderer');
   expected.items.push(guest,iconLibrary);
   for(const row of expected.items){
    const widths=Object.keys(row.hashes);
@@ -161,9 +169,9 @@ test('public entry remains nonconfidential and private releases are confined to 
     const native=nativeIds.has(row.id)||JSON.stringify(row.contentHashes)===JSON.stringify(row.hashes);
     row.hashes=Object.fromEntries(widths.map(width=>[width,reviewHash(deliveryBuild,row.id,width,mode)]));
     if(native)row.contentHashes=row.hashes;
-    else if(row.screen==='price-workspace')row.contentHashes=currentById.get(row.id).contentHashes;
+    else if(row.screen==='price-workspace')row.contentHashes=priceSourceHashes.get(row.id);
    }else{
-    if(signatureHashes.has(row.id))row.contentHashes=signatureHashes.get(row.id);
+    if(refreshedHashes.has(row.id))row.contentHashes=refreshedHashes.get(row.id);
     row.hashes=Object.fromEntries(widths.map(width=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',row.contentHashes[width],qaReviewRuntimeDigest,qaFixtureForRow(row)]))]));
    }
   }
@@ -211,6 +219,10 @@ test('public entry remains nonconfidential and private releases are confined to 
   ['9b28d4a82aed618b3a01ef6bfe568dc2c74eb2b06738a2a1b59a49a9e142cf8f',{
    pack:'8febfeefac3387923913aa900c2133d0b36c14be609312b9b17e948022e26563',
    simple:'065fdd110cd17b9b79c5c208b296c7458f319a2c871bdff01279bde604c9f259',detailed:'e4072bfbcb3b0c0517fe338324433f300d14fad749a86d5e800384de4809f5b7'
+  }],
+  ['bed739957d9416e13c2560d354011430ca99d4db7481027afd6a72c74d865b79',{
+   pack:'07554aa3f1f1c1a4101d9d1a520bfbc3cab4bc9b82c6dc612716e24fcede4b91',
+   simple:'081b32ec2e8726bdb5da1beaa27e455e05dcd63f6f338f22ed41af7b05ad4a8e',detailed:'49e14a17c22e78cac1eac81cc58e1f1f8e9a866a1f5f9b593edaf115cc980da9'
   }],
   // The first PR33 review build remains addressable by its original pack and mode URLs.
   ['f94f6ee900426b518468c58168f15cfb2b94fabf55339335505ad573cbe5baae',{
@@ -331,7 +343,7 @@ test('public entry remains nonconfidential and private releases are confined to 
  const recorded=[r1Recorded.shared,...r1Recorded.buckets].map(hash=>hash+'.json.gz');
  assert.equal(recorded.length,17);
  assert.deepEqual(readdirSync(join(releasesRoot,'r1-recorded')).sort(),recorded.sort());
- const reviewed=[...new Set([...reviewedDelivery.records,...reviewedDelivery.additionalRecords,...reviewedDelivery.fragments,...retainedReviewedParts])].map(hash=>hash+'.json.gz');
+ const reviewed=[...new Set([...reviewedDelivery.records,...reviewedDelivery.additionalRecords,...Object.values(reviewedDelivery.exactRecords),...reviewedDelivery.fragments,...retainedReviewedParts])].map(hash=>hash+'.json.gz');
  assert.deepEqual(readdirSync(join(releasesRoot,'reviewed-recorded')).sort(),reviewed.sort());
  for(const name of reviewed)assert.equal(sha(readFileSync(join(releasesRoot,'reviewed-recorded',name))),name.slice(0,-8),'reviewed parts remain content addressed');
  // The HTTP-denial and exact internal binding bytes are independently exercised

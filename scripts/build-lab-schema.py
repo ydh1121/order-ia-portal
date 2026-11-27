@@ -16,9 +16,10 @@ NAMES = [
     '0009_r3_price_registration', '0010_r3_member_requests',
     '0011_r3_personal_price_draft', '0014_r3_price_workspace',
     '0015_r3_saved_businesses', '0017_product_operations', '0018_notification_preferences',
-    '0019_notification_push',
+    '0019_notification_push', '0020_egg_market_chart',
 ]
 statements, sources = [], []
+market_migration = []
 db = sqlite3.connect(':memory:')
 for name in NAMES:
     raw = (ROOT / 'migrations' / (name + '.sql')).read_text()
@@ -28,6 +29,8 @@ for name in NAMES:
         pending += line
         if sqlite3.complete_statement(pending):
             statements.append(pending.strip())
+            if name == '0020_egg_market_chart':
+                market_migration.append(pending.strip())
             db.executescript(pending)
             pending = ''
     if pending.strip() and re.sub(r'--[^\n]*', '', pending).strip():
@@ -53,5 +56,9 @@ triggers = [sql for kind, _, _, sql in objects if kind == 'trigger' and sql]
 schema = {'version': 1, 'sources': sources, 'identifiers': [r[1] for r in objects], 'tables': tables, 'ddl': ddl, 'triggers': triggers}
 digest = hashlib.sha256(json.dumps(schema, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
 target = ROOT / 'src/server/product-lab-schema.gen.mjs'
-target.write_text('// Generated from canonical migrations by scripts/build-lab-schema.py.\nexport const labSchema = ' + json.dumps({**schema, 'digest': digest}, ensure_ascii=False, separators=(',', ':')) + ';\n')
+# Only the immediate predecessor can take this additive migration. A future
+# schema transition needs its own migration path.
+upgrade = {'from': '3b5068261c17f2f477e2490996ae934f8961a92b5e3690c704970dec9306d051',
+           'to': digest if NAMES[-1] == '0020_egg_market_chart' else None, 'sql': market_migration}
+target.write_text('// Generated from canonical migrations by scripts/build-lab-schema.py.\nexport const labSchema = ' + json.dumps({**schema, 'digest': digest}, ensure_ascii=False, separators=(',', ':')) + ';\nexport const marketUpgrade = ' + json.dumps(upgrade, separators=(',', ':')) + ';\n')
 print(json.dumps({'tables': len(tables), 'triggers': len(triggers), 'digest': digest}))

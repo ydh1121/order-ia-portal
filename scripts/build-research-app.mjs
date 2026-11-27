@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {createCommonControlPaint} from '../src/server/r3-common-motion.mjs';
 import {browserFunction} from '../src/server/browser-source.mjs';
+import {priceMarketReleaseFiles} from './price-market-release.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),directory=path.join(root,'src/server/research-app');
 const serverOnly=new Set(['assets.gen.mjs','releases.gen.mjs','release-store.mjs','page.mjs','regular-service-assets.mjs','quote-source-adapter.mjs','price-source-adapter.mjs','environment.mjs','inspector-panels-source.mjs','business-panel-source.mjs','scene-source-adapter.mjs','auth-sheet-source.mjs','brand-source-adapter.mjs','regular-address-handler.mjs','research-address-api.mjs','export-snapshot.mjs','regular-iana-reference.mjs']);
 serverOnly.add('notification-fixture-source.mjs');
@@ -30,7 +31,9 @@ const hash=value=>createHash('sha256').update(value).digest('hex'),identities={}
 for(const name of (await readdir(directory)).filter(name=>serverOnly.has(name)&&!['assets.gen.mjs','releases.gen.mjs'].includes(name)))sources.push('src/server/research-app/'+name);
 sources.push('src/server/product-ui/business-directory.mjs',...['page','client','model','xlsx','import','tree','defaults','qa'].map(name=>'src/server/r3-price-workspace-'+name+'.mjs'));
 sources.push('public/vendor/research/nts-industry-2025-edfa839b2a2d90fc.json');
+sources.push('src/server/product-ui/egg-market-chart.mjs','src/server/product-ui/egg-market-chart-style.mjs','src/server/product-ui/onboarding-market-chart.mjs','src/server/product-ui/market-price-icon.mjs');
 sources.push('src/server/product-ui/onboarding-gooey-style.mjs','src/server/product-fonts.mjs','public/vendor/fonts/pretendard-variable-9599f12fd42f.woff2','public/vendor/fonts/Pretendard-LICENSE.txt');
+sources.push(...priceMarketReleaseFiles);
 for(const file of [...new Set(sources)].sort())identities[file]=hash(await readFile(path.join(root,file)));
 const researchBuild={format:'order-research-build/v1',digest:hash(JSON.stringify(identities)),sources:identities};
 const researchAssets={};for(const [name,file]of files){const source=name==='r3-common-motion.mjs'?commonControlPaintSource:await readFile(path.join(root,file));researchAssets[name]=gzipSync(source,{level:9,mtime:0}).toString('base64');}
