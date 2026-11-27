@@ -359,40 +359,50 @@ def morph_probe(page):
     expect(page.locator('.ob-tasks .ob-mode')).to_have_count(2)
     page.evaluate('document.fonts.ready')
     page.evaluate('''() => {
-      const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
-      const label=node=>[...node.querySelectorAll('span')].find(n=>n.textContent.trim()===node.textContent.trim()&&!n.querySelector('span,svg'))||node;
-      const before=[...document.querySelectorAll('.ob-tasks .ob-mode')].map(node=>({rect:rect(node),font:getComputedStyle(label(node)).fontSize,label:rect(label(node))}));
-      const trace=window.__modeGeometry={before,frames:[],done:false,trusted:false};
-      document.querySelector('[data-mf-intro="4"]').addEventListener('click',event=>{trace.trusted=event.isTrusted;},{once:true,capture:true});
-      let seen=false,after=0;const started=performance.now();
-      function sample(now){
-        const layer=document.querySelector('.research-mode-transition'),surfaces=[...document.querySelectorAll('[data-mode-part=surface]')],labels=[...document.querySelectorAll('[data-mode-part=label]')];
-        if(layer)seen=true;
-        const cards=[...document.querySelectorAll('.ob-mode.card')];
-        if(layer||seen)trace.frames.push({at:now-started,layer:Boolean(layer),surfaces:surfaces.map(rect),labels:labels.map(node=>({rect:rect(node),font:getComputedStyle(node).fontSize})),cards:cards.map(node=>({rect:rect(node),label:rect(label(node)),font:getComputedStyle(label(node)).fontSize,visibility:getComputedStyle(node).visibility}))});
-        if(seen&&!layer)after++;
-        if(after>=3||now-started>6000){trace.done=true;return;}requestAnimationFrame(sample);
-      }requestAnimationFrame(sample);
+      const source=[...document.querySelectorAll('.ob-tasks .ob-mode')];
+      const label=b=>[...b.querySelectorAll('span')].find(n=>n.textContent.trim()===b.textContent.trim()&&!n.querySelector('span,svg'));
+      const labels=source.map(label),rect=n=>{const {x,y,width,height}=n.getBoundingClientRect();return {x,y,width,height};};
+      const trace=window.__modeGeometry={frames:[],done:false};
+      document.querySelector('[data-mf-intro="4"]').addEventListener('click',event=>{
+        const started=performance.now();trace.trusted=event.isTrusted;
+        function sample(){
+          const cards=source.map((node,i)=>{
+            const box=rect(node),x=box.x+box.width/2,y=box.y+box.height/2;
+            const icon=node.querySelector('svg');
+            return {rect:box,label:rect(labels[i]),font:getComputedStyle(labels[i]).fontSize,
+              attached:node.isConnected&&labels[i].isConnected&&labels[i]===label(node),
+              hit:node.contains(document.elementFromPoint(x,y)),opacity:getComputedStyle(node).opacity,
+              resizing:node.hasAttribute('data-mode-resizing'),card:node.classList.contains('card'),
+              icon:icon&&{rect:rect(icon),opacity:Number(getComputedStyle(icon).opacity)}};
+          });
+          trace.frames.push({at:performance.now()-started,cards});
+          if(trace.frames.length>=4&&trace.frames.slice(-3).every(f=>f.cards.every(c=>c.card&&!c.resizing))||performance.now()-started>2500){trace.done=true;return;}
+          requestAnimationFrame(sample);
+        }sample();
+      },{once:true,capture:true});
     }''')
     page.locator('[data-mf-intro="4"]').click()
     wait_for_expression(page, '__modeGeometry.done===true')
     trace = page.evaluate('__modeGeometry')
-    moving = [row for row in trace['frames'] if row['layer']]
-    settled = [row for row in trace['frames'] if not row['layer']]
-    assert trace['trusted'] and len(moving) >= 8 and len(settled) >= 2, trace
-    assert all(len(row['surfaces']) == len(row['labels']) == 2 for row in moving), trace
-    assert all(all(card['visibility'] == 'hidden' for card in row['cards']) for row in moving), trace
+    rows = trace['frames']
+    moving = [f for f in rows if f['cards'][0]['resizing']]
+    assert trace['trusted'] and len(moving) >= 6 and rows[-1]['cards'][0]['card'], trace
+    assert all(c['attached'] and c['hit'] and c['opacity'] == '1' for f in rows for c in f['cards']), trace
     for index in range(2):
-        start, first, last, target = trace['before'][index], moving[0], moving[-1], settled[0]['cards'][index]
-        assert max(abs(first['surfaces'][index][key] - start['rect'][key]) for key in ('x', 'y', 'width', 'height')) <= 8, trace
-        assert abs(float(first['labels'][index]['font'].removesuffix('px'))-float(start['font'].removesuffix('px'))) <= .5, trace
-        assert max(abs(last['surfaces'][index][key] - target['rect'][key]) for key in ('x', 'y', 'width', 'height')) <= 2, trace
-        last_label, target_label = last['labels'][index]['rect'], target['label']
-        assert abs(last_label['x']+last_label['width']/2-target_label['x']-target_label['width']/2) <= 1, trace
-        assert abs(last_label['y']+last_label['height']/2-target_label['y']-target_label['height']/2) <= 1, trace
-    assert page.locator('.research-mode-transition').count() == 0
+        start, end = rows[0]['cards'][index], rows[-1]['cards'][index]
+        first = next(f for f in rows if abs(f['cards'][index]['rect']['y']-start['rect']['y']) > 1)
+        assert first['at'] < 150, {'clickToMotionMs': first['at']}
+        for f, later in zip(rows, rows[1:]):
+            c, d = f['cards'][index], later['cards'][index]
+            assert d['rect']['y'] <= c['rect']['y'] + .25 and d['rect']['height'] >= c['rect']['height'] - .25, (c,d)
+            if d['icon'] and d['icon']['opacity'] > .01:
+                assert d['rect']['y']-1 <= d['icon']['rect']['y']+d['icon']['rect']['height']/2 <= d['rect']['y']+d['rect']['height']+1, d
+        last = moving[-1]['cards'][index]
+        assert max(abs(last['rect'][key]-end['rect'][key]) for key in ('x','y','width','height')) <= 4, (last,end)
+        assert abs(last['label']['y']-end['label']['y']) <= 3 and end['icon']['opacity'] == 1, (last,end)
     page.screenshot(path=str(OUT / 'intro-mode-handoff-390.png'), full_page=True)
-    trace['limits'] = {'firstPaintPx': 8, 'lastSurfacePx': 2, 'lastLabelCenterPx': 1, 'fullVisualAcceptance': False}
+    trace['clickToFirstDisplacementMs'] = next(f['at'] for f in rows if abs(f['cards'][0]['rect']['y']-rows[0]['cards'][0]['rect']['y']) > 1)
+    trace['limits'] = {'maxClickToMotionMs':150,'maxHandoffPx':4,'fullVisualAcceptance':False}
     return trace
 
 

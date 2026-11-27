@@ -193,7 +193,7 @@ test('public entry remains nonconfidential and private releases are confined to 
   'supplier-shipments/packing/email'
  ]);
  const priorPresentationItem=item=>item.screen==='component-library'||priorPresentationRows.has(item.id);
- // Both PR31 releases were published for review. Their complete packs and
+ // These PR31 releases were published for review. Their complete packs and
  // ordered catalogs remain addressable after the next research build is sealed.
  const publishedPr31=new Map([
   ['b4e938cfe5b7731534bdd523705d9ab78c07d5b2101471f217c1b3a62155c885',{
@@ -203,6 +203,10 @@ test('public entry remains nonconfidential and private releases are confined to 
   ['227aa0ae7dc1296ef5086efcaee1df89000fc10a81b833bf3f6782e226543539',{
    pack:'57be6fc90bc8058348da6d3e5e495896c636e833d14a36c31edf333116a66835',
    simple:'6287be04f5b0e734c8d93dd8de3085927a404d59d365b2cfb85f99adddcdf914',detailed:'f16147bbcd6e9fd0fa1733beb019444126e592d64c80c9e75e22320c8773e776'
+  }],
+  ['498b585df8f07e80c1d8909b14d87ead98b69e60629b3032b2cc1609850959a4',{
+   pack:'434d022853c0ddb7e71fdb4ce678514eaafaf8fabd30bff71b42a350508b3b31',
+   simple:'bea1f00c2aaea30ec9f3ff014f1c02b8e276e04dd5ac96a3e2f3d1906159838c',detailed:'a18453bc90364b27addee863a4a3118177dece744464cea44816bb12784c0072'
   }]
  ]);
  for(const [build,identity]of publishedPr31){

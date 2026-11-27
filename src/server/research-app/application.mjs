@@ -259,6 +259,11 @@ export async function mountResearchApplication(config, environment) {
     // review scenario remains an explicit, guarded request for another state.
     const resumePrice=!scenario&&priceWorkspace&&['price-workspace','pricing-r3'].includes(requested.screen)&&(!requested.state||requested.state==='default');
     const next=researchRoute(resumePrice?{...requested,state:priceWorkspace.snapshot().state}:requested,route), sequence=++epoch;notify('');
+    if(next.screen==='onboarding'&&next.state==='member-3'){
+      // Fetch the adjacent sealed scene with this page. A failed prefetch is
+      // evicted by loadScene and can be retried by the actual navigation.
+      void loadScene({...next,state:'member-4'}).catch(()=>{});
+    }
     navigating++;
     const priorFixtureSelecting=fixtureSelecting;fixtureSelecting=scenario;
     try{
