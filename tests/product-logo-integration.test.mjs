@@ -7,6 +7,8 @@ import {renderProductApplication,injectProductContext} from '../src/server/produ
 import {renderR3ProductPage,r3ProductAsset} from '../src/server/r3-product-page.mjs';
 import {serveR3Artifact,isR3ReviewTarget} from '../src/server/r3-qa-page.mjs';
 import * as beforeLogo from '../src/server/r3-ui/logo-correction-history.gen.mjs';
+import {mountBrandAccountMenu} from '../src/server/order-engine/browser/brand-account-menu.mjs';
+import {browserFunction} from '../src/server/browser-source.mjs';
 
 const require=createRequire(new URL('./build-tools/package.json',import.meta.url));
 const {JSDOM,VirtualConsole}=require('jsdom'),{build}=require('esbuild');
@@ -63,6 +65,7 @@ async function document(t,{screen='onboarding',state='member-1',authenticated=tr
   w.eval(await servedQuoteBrand());assert.equal(typeof w.OrderBrandUnderReview.mountOrderBrand,'function');w.__quoteBrand=w.OrderBrandUnderReview.mountOrderBrand(w.document);
  }
  t.after(()=>{w.dispatchEvent(new w.Event('pagehide'));w.__quoteBrand?.destroy();for(const motion of motions)motion.cancel();w.close();});
+ if(!quote)assert.equal(w.mountBrandAccountMenu.toString(),w.eval(browserFunction(mountBrandAccountMenu)).toString(),'the actual rendered family must mount the canonical menu after its retained runtime registers');
  await w.ORDER_APP_ADAPTER.ready;await tick();return {w,doc:w.document,errors,navigation,messages,motions,consumed,calls};
 }
 

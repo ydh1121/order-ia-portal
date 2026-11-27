@@ -17,7 +17,7 @@ export function researchConfirmationCss(regularCss){
     dialog+'::backdrop{'+rule(regularCss,'dialog[data-modal-variant]::backdrop')+';'+rule(researchQuoteModeCss,'#order-app-quote [data-research-quote] #quote-mode-dialog::backdrop')+'}\n'+
     prefix+' .oq-dialog-title{'+rule(regularCss,'.q1-confirm h2')+';grid-column:1/-1;margin:0;text-align:left;word-break:keep-all}\n'+
     choice+'{'+rule(regularCss,'.ui-transaction-action')+';white-space:nowrap}\n'+
-    choice+':last-child{'+rule(regularCss,'.ui-transaction-action--primary')+'}\n'+
+    choice+':not(:has(~.oq-choice)){'+rule(regularCss,'.ui-transaction-action--primary')+'}\n'+
     choice+':focus-visible{'+rule(regularCss,'.ui-transaction-action:focus-visible')+'}\n'+
     choice+':disabled{'+rule(regularCss,'.ui-transaction-action:disabled')+'}\n';
   const roots=new Map();for(const match of regularCss.matchAll(/:root\s*\{([^{}]*)\}/g))for(const [name,value] of declarations(match[1]))if(name.startsWith('--'))roots.set(name,value);

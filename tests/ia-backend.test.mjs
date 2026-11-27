@@ -180,6 +180,19 @@ test('public entry remains nonconfidential and private releases are confined to 
    assert.equal(entry.name,({simple:'380b62d82cfd47daccfca7388696492c246ac4b6db505af5245f595afbd45087',detailed:'2dc72dfc9c7efa0d9aa1f40c8fd6395bcff4765bd219123df6d073ef6b75f7d2'})[mode]+'.json');
   }
   const oldSources=sealedSourcesByBuild.get(build);
+  // The second remote PR30 publication predates the shared signature binding
+  // correction. Its pricing content and QA wrapper retain that exact bootstrap;
+  // the already refreshed R4/shared presentation bytes remain unchanged.
+  const secondFeedbackEpoch=build==='ccb6fecfc3c93008fe324353644ea18140220f28a7d2d2c68e49b0403d6b4762';
+  const feedbackSignatureEpoch=firstFeedbackEpoch||secondFeedbackEpoch;
+  if(secondFeedbackEpoch){
+   assert.equal(researchReleases[build].packSha256,'2c70a06a14d5dbb0f13f8b6d39ee55172422ccfa05a40e4e70aaec1a131eecfa');
+   assert.equal(sealedBootstrapByBuild.get(build),'4b54aa33151fa37f485c682988ea1537ca2046d5bb72469cf01a6906597e9e9f');
+   assert.equal(oldSources['src/server/product-ui/assets.gen.mjs'],'5823ef36ce55fb3a855695f59c0be387ba58f392300b268a06c992a652e6d39d');
+   assert.equal(oldSources['src/server/product-ui/catalog.gen.mjs'],'deb0aeee20b27290e55e913edf5b46e8fe475315d73e2bceeed38e1ee31427b9');
+   assert.equal(oldSources['src/server/product-ui/runtime.gen.mjs'],'ce5ca420372a644afdd8853760c74ad7f094e05bbbe58da199e74845687c0f5f');
+   assert.equal(entry.name,({simple:'de2e9aa7cb70d134e02376ecc6fce996090b9170fd447a04eb2c7341e42cde7d',detailed:'5a496ebe0ab2a442708bae91fd6d69c5d307fa392538b3862f50b23bb72ed443'})[mode]+'.json');
+  }
   const priorPresentationEpoch=build!==deliveryBuild&&oldSources['src/server/product-ui/assets.gen.mjs']==='9b9a61cf610e86e2bdc76e7de89a08124d94fffad2bacd510fdee97f281df5b9';
   if(priorPresentationEpoch){
    assert.ok(priorSourceEpoch||priorSharedUiEpoch||firstFeedbackEpoch,'only the identified published epochs may retain old presentation content');
@@ -196,10 +209,10 @@ test('public entry remains nonconfidential and private releases are confined to 
   if(priorSourceEpoch){
    assert.equal(sealedBootstrapByBuild.get(build),'d757da165e7a2a60e21720c1bd4dd8c262e587cdbfc990e2c5a23ba482a00b8b');
   }
-  if(priorSourceEpoch||priorSharedUiEpoch||firstFeedbackEpoch){
+  if(priorSourceEpoch||priorSharedUiEpoch||feedbackSignatureEpoch){
    const prices=catalog.items.filter(item=>item.screen==='price-workspace').map(item=>[item.id,item.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
    assert.equal(prices.length,9);
-   const priceDigest=firstFeedbackEpoch?'a0512e8e624d66fbfce975c063c0ab1832183c7401ee8189bbaab26c6fc44e1c':priorSourceEpoch?'1a1b61b037780a7ce4e877c1e6c7d700efa97e59aaf84411ee2f2665fe592e1b':'994de4c7ac1cdf88f30f2e71a1c2eea6303ab96b708c72f7b7dd975b41b61328';
+   const priceDigest=feedbackSignatureEpoch?'a0512e8e624d66fbfce975c063c0ab1832183c7401ee8189bbaab26c6fc44e1c':priorSourceEpoch?'1a1b61b037780a7ce4e877c1e6c7d700efa97e59aaf84411ee2f2665fe592e1b':'994de4c7ac1cdf88f30f2e71a1c2eea6303ab96b708c72f7b7dd975b41b61328';
    assert.equal(sha(JSON.stringify(prices)),priceDigest,'historical pricing content hashes must remain exact for their sealed bootstrap epoch');
   }
   // A historical catalogue retains its own approved inventory. Nov 25 removes
@@ -211,9 +224,9 @@ test('public entry remains nonconfidential and private releases are confined to 
    const original=byId.get(item.id);
    if(!original){assert.ok(retired(item));assert.notEqual(build,deliveryBuild);}
    if(!item.application){
-    if(priorSourceEpoch||priorSharedUiEpoch||firstFeedbackEpoch){
+    if(priorSourceEpoch||priorSharedUiEpoch||feedbackSignatureEpoch){
      assert.ok(original);if(!(priorPresentationEpoch&&priorPresentationItem(item)))assert.deepEqual(item.contentHashes,original.contentHashes);
-     const runtime=firstFeedbackEpoch?'e3e5f90a750f78396ec3dae057f68c8e277ffe0f2aa48faccf1e0ea0bb091ed6':moduleCleanupEpoch?'e2571d4d977451fe43e6361148803a43fb15cf6c3fe0e3f6c8ebc38518dabfb5':priorSharedUiEpoch?'ebd5af4061daab00f35a5efa117dd1dfbabd5718748657f85b54b5fb080147e3':'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40';
+     const runtime=feedbackSignatureEpoch?'e3e5f90a750f78396ec3dae057f68c8e277ffe0f2aa48faccf1e0ea0bb091ed6':moduleCleanupEpoch?'e2571d4d977451fe43e6361148803a43fb15cf6c3fe0e3f6c8ebc38518dabfb5':priorSharedUiEpoch?'ebd5af4061daab00f35a5efa117dd1dfbabd5718748657f85b54b5fb080147e3':'47661fb4fd590cddba55025d8fb992748451f28683b262429e82a42137df0e40';
      const hashes=Object.fromEntries(Object.entries(item.contentHashes).map(([width,contentHash])=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',contentHash,runtime,qaFixtureForRow(item)]))]));
      assert.deepEqual(item.hashes,hashes,'historical QA wrapper hashes must retain their original runtime identity');
      item.hashes=original.hashes;
@@ -226,7 +239,7 @@ test('public entry remains nonconfidential and private releases are confined to 
    assert.deepEqual(item.hashes,hashes);
    if(!original)continue;
    const native=JSON.stringify(original.contentHashes)===JSON.stringify(original.hashes);
-   if(!((priorSourceEpoch||priorSharedUiEpoch)&&item.screen==='price-workspace')&&!(priorPresentationEpoch&&priorPresentationItem(item)))assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
+   if(!((priorSourceEpoch||priorSharedUiEpoch||feedbackSignatureEpoch)&&item.screen==='price-workspace')&&!(priorPresentationEpoch&&priorPresentationItem(item)))assert.deepEqual(item.contentHashes,native?hashes:original.contentHashes);
    item.hashes=original.hashes;item.contentHashes=original.contentHashes;
    if(original.reviewHold)item.reviewHold=original.reviewHold;
    assert.deepEqual(item,original);

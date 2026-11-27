@@ -40,8 +40,19 @@ export function installProductWorkflowMotion(win=window){
   on(canvas,'pointermove',e=>{if(active&&e.pointerId===activePointer){target=point(e);pressure=e.pointerType==='pen'?.45+e.pressure*.9:1;}});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])on(canvas,type,e=>{if(e.pointerId===activePointer){active=false;activePointer=null;}});
   on(typed.input,'input',()=>{if(locked())return;stop();ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ink=false;element.dataset.ink=String(Boolean(typed.input.value.trim()));});on(clear,'click',reset);
-  const destroy=()=>{stop();controller.abort();canvas.width=canvas.height=0;};signal?.addEventListener('abort',destroy,{once:true});
-  return {element,reset,destroy,page(){if(!ink&&!typed.input.value.trim())throw Error('자료를 확인한 뒤 서명해 주세요.');stop();active=false;if(ink)for(let i=0;i<80;i++)step(1/240);else{ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ctx.fillStyle='#203c6b';ctx.font='24px sans-serif';ctx.fillText(typed.input.value.trim(),10,height/2+10,width-20);}return canvas;}};
+  let submissionCanvas=null;
+  const submission=()=>{
+   // evidenceSignatureBinding owns the immutable 360×100 signed-page format.
+   // A larger drawing surface must keep its stroke proportions when exported.
+   if(width===360&&height===100)return canvas;
+   submissionCanvas??=node('canvas');submissionCanvas.width=360;submissionCanvas.height=100;
+   const context=submissionCanvas.getContext('2d'),scale=Math.min(360/width,100/height),w=width*scale,h=height*scale;
+   context.fillStyle='#fff';context.fillRect(0,0,360,100);
+   context.drawImage(canvas,0,0,width,height,(360-w)/2,(100-h)/2,w,h);
+   return submissionCanvas;
+  };
+  const destroy=()=>{stop();controller.abort();canvas.width=canvas.height=0;if(submissionCanvas)submissionCanvas.width=submissionCanvas.height=0;};signal?.addEventListener('abort',destroy,{once:true});
+  return {element,reset,destroy,page(){if(!ink&&!typed.input.value.trim())throw Error('자료를 확인한 뒤 서명해 주세요.');stop();active=false;if(ink)for(let i=0;i<80;i++)step(1/240);else{ctx.fillStyle=background;ctx.fillRect(0,0,width,height);ctx.fillStyle='#203c6b';ctx.font='24px sans-serif';ctx.fillText(typed.input.value.trim(),10,height/2+10,width-20);}return submission();}};
  }
  function receiptPaper(container,item,{signal}={}){
   container.replaceChildren();const printer=node('div',undefined,'wf-printer'),paper=node('article',undefined,'wf-paper');paper.tabIndex=0;paper.setAttribute('aria-label','발급 영수증');paper.append(node('h3','영수증'),node('p',item.number));const list=node('dl');
