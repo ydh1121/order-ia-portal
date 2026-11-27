@@ -6,7 +6,7 @@ export function installWaitPlayer(montages,createWait,mountScene) {
     const host=root.querySelector('.mf-wait');
     if(!host)return;
     host.dataset.waitScene='';host.dataset.waitSource='review-fixture';
-    const items=[['4번 특란','대란','중란','왕란'],['2,000판','400판','600판'],['서울 관악구','서울 종로구'],['정기배송','1회 배송']].map(values=>({values}));
+    const items=[['egg',['4번 특란','대란','중란','왕란']],['quantity',['2,000판','400판','600판']],['region',['서울 관악구','서울 종로구']],['delivery',['정기배송','1회 배송']]].map(([kind,values])=>({kind,values}));
     let resolve,reject,ended=false,serial=0,terminalPlayer=null;
     const ctl=new AbortController();
     const runner=mountScene(host,montages,createWait,(phase,data)=>{

@@ -36,7 +36,7 @@ MOBILE += [(screen, state, 'simple', 390) for screen, states in (
     ('q3', ('closed', 'open')), ('q4', ('closed', 'open', 'missing'))) for state in states]
 DESKTOP = [(screen, state, mode, 1280) for mode in ('simple', 'detailed') for screen, state in (('q1', 'before'), ('q2', 'filled'))]
 DESKTOP += [('q3', 'closed', 'detailed', 1280), ('q4', 'open', 'detailed', 1280)]
-RELATED = [('quote-wait', state, 'simple', 390) for state in ('entry', 'comparing')]
+RELATED = [('quote-wait', state, 'simple', 390) for state in ('entry', 'comparing', 'delayed', 'complete', 'offline', 'server-error')]
 RELATED += [('quote-result', state, 'simple', 390) for state in ('expired', 'recompare', 'no-result', 'locked')]
 RELATED += [(screen, state, 'simple', 390) for screen, state in (
     ('signature', 'empty'), ('proof', 'empty'), ('profile', 'notification'), ('notifications', 'list'),
@@ -419,6 +419,25 @@ def core_checks(open_source, receipt):
         page.close()
 
 
+def confirmation_presentation(page, reference=False):
+    return page.evaluate("""reference=>{
+        const surface=document.querySelector(reference?'#quote-mode-dialog':'dialog.oq-dialog[open]'),
+          panel=reference?surface.querySelector('.q1-confirm'):surface,
+          title=panel.querySelector(reference?'h2':'.oq-dialog-title'),
+          group=reference?panel.querySelector('.ui-transaction-group'):panel,
+          css=getComputedStyle(surface),inside=getComputedStyle(panel),heading=getComputedStyle(title);
+        const buttons=[...panel.querySelectorAll(reference?'.ui-transaction-action':'.oq-choice')].map(node=>{
+          const c=getComputedStyle(node);return {height:node.getBoundingClientRect().height,
+            radius:c.borderRadius,background:c.backgroundColor,color:c.color,fontSize:c.fontSize,
+            fontWeight:c.fontWeight,lineHeight:c.lineHeight};
+        });
+        return {width:surface.getBoundingClientRect().width,radius:reference?inside.borderRadius:css.borderRadius,
+          background:inside.backgroundColor,padding:[inside.paddingTop,inside.paddingRight,inside.paddingBottom,inside.paddingLeft],
+          title:{fontSize:heading.fontSize,fontWeight:heading.fontWeight,lineHeight:heading.lineHeight},
+          gap:getComputedStyle(group).columnGap,buttons};
+    }""", reference)
+
+
 def mode_motion_checks(open_source, receipt):
     for mode, other in [('simple', 'detailed'), ('detailed', 'simple')]:
         page, identity, provenance = open_source('q1', 'selected', mode, 390)
@@ -480,6 +499,11 @@ def mode_motion_checks(open_source, receipt):
             reduced = page.locator('#quote-mode-dialog>.q1-confirm').evaluate('''panel=>({
                 transform:getComputedStyle(panel).transform,activeAnimations:panel.getAnimations().filter(a=>a.playState==='running').length})''')
             assert reduced['activeAnimations'] == 0 and reduced['transform'] in ('none', 'matrix(1, 0, 0, 1, 0, 0)'), reduced
+            appearance = confirmation_presentation(page, reference=True)
+            if 'commonConfirmation' in receipt:
+                assert appearance == receipt['commonConfirmation'], 'Simple and detailed modes must consume one common confirmation style'
+            else:
+                receipt['commonConfirmation'] = appearance
             page.locator('#quote-mode-dialog [data-mode-cancel]').click()
             expect(page.locator('#quote-mode-dialog')).to_be_hidden()
             expect(page.locator('#research-order-trigger')).to_be_focused()
@@ -634,13 +658,14 @@ def main():
                 # capture; failed receipts never authorize Figma synchronization.
                 write_json(OUT / (label + '.chrome-layout.json'), native)
                 write_json(OUT / (label + '.dom-paint.json'), captured)
+                page.screenshot(OUT / (label + '.viewport.png'))
                 if screen in ('q1', 'q2', 'q3', 'q4'):
                     assert captured['anchors']['duplicateModeSwitchVisible'] is False, 'C622 duplicate switch must be absent from paint'
                     form = captured['anchors']['form']
                     assert form['background'] == 'rgba(0, 0, 0, 0)', 'C623 calculator shares the plain white page'
                     assert form['paddingLeft'] == form['paddingRight'] == form['border'] == '0px' and form['boxShadow'] == 'none', 'No second calculator surface'
                     if width == 390:
-                        assert abs(form['rect']['x'] - 24) < .1 and abs(form['rect']['width'] - 342) < .1, 'Same 24px page inset as other product screens'
+                        assert abs(form['rect']['x'] - 24) < .1 and abs(form['rect']['width'] - 342) < .1, ('Same 24px page inset as other product screens', form)
                     for closed in captured['anchors']['closedAccordions']:
                         assert abs(closed['rect']['height'] - 52) < .1, ('Original closed accordion height is 52px', closed)
                         assert abs(closed['header']['height'] - 52) < .1 and closed['body']['height'] == 0, 'Closed content contributes no phantom padding'
@@ -649,6 +674,23 @@ def main():
                     assert captured['source']['route']['panel'] == 'notifications', 'Direct notification entry must retain its actual panel'
                     expect(page.locator('[data-obm-page="notifications"] .obm-heading')).to_have_text('알림')
                     expect(page.locator('[data-notification-preferences]')).to_be_visible()
+                if screen == 'quote-result' and state == 'expired':
+                    expired = page.locator('[data-order-result][data-state=expired]').first
+                    shapes = expired.locator('.oq-plot').evaluate("""node=>['::before','::after'].map(pseudo=>{
+                        const css=getComputedStyle(node,pseudo);
+                        return {width:parseFloat(css.width),height:parseFloat(css.height),
+                          backgroundImage:css.backgroundImage,borderRadius:css.borderRadius};
+                    })""")
+                    assert all(shape['width'] == 53 and shape['height'] > 80 and shape['backgroundImage'] == 'none' for shape in shapes), shapes
+                    assert shapes[0]['height'] == shapes[1]['height'], 'Expired empty outlines must not invent a price comparison'
+                    assert expired.locator('.oq-series:not([hidden])').count() == 0
+                    expect(expired.locator('.oq-expired-details')).to_be_visible()
+                    captured['expiredGraph'] = {'kind':'empty price-free outlines', 'shapes':shapes}
+                if screen == 'quote-result' and state == 'recompare':
+                    expect(page.locator('dialog[open]')).to_have_accessible_name('동일한 조건으로 다시 비교하겠어요?')
+                    appearance = confirmation_presentation(page)
+                    assert appearance == receipt['commonConfirmation'], {'common':receipt['commonConfirmation'], 'recompare':appearance}
+                    captured['commonConfirmation'] = appearance
                 assert page.locator('#order-app-header').count() == 1
                 assert captured['viewport']['devicePixelRatio'] == 1
                 assert captured['viewport']['documentWidth'] <= width + 1, 'Form must not overflow the native viewport'
@@ -717,6 +759,30 @@ def main():
                         'interaction': 'trusted detail-button click, close and return focus; selection unchanged',
                         'domPaint': detail_label + '.dom-paint.json', 'nativeLayout': detail_label + '.chrome-layout.json',
                         'screenshot': detail_screenshot})
+                if screen == 'quote-result' and state == 'expired':
+                    page.evaluate('scrollTo(0,0)')
+                    opener = page.locator('.oq-expired-details')
+                    opener.click()
+                    dialog = page.locator('dialog[open]')
+                    expect(dialog).to_have_accessible_name('이전 견적서 상세보기')
+                    expect(dialog.locator('.oq-dialog-copy')).to_contain_text('2026.11.14 ~ 2026.11.21')
+                    expect(dialog.locator('.oq-dialog-copy')).to_contain_text('만료된 견적은 가격을 표시하지 않아요.')
+                    assert dialog.locator('button').all_text_contents() == ['닫기', '동일한 조건']
+                    settle(page)
+                    detail_label = 'quote-result-expired-details-simple-390'
+                    detail = page.evaluate(CAPTURE, {'expected': source, 'label': detail_label})
+                    detail.update(provenance=provenance, interaction=['actual previous-quote detail click'], sourceState='quote-result/expired/email')
+                    write_json(OUT / (detail_label + '.dom-paint.json'), detail)
+                    write_json(OUT / (detail_label + '.chrome-layout.json'), chrome_layout(page))
+                    page.screenshot(OUT / (detail_label + '.viewport.png'))
+                    detail_screenshot = screenshot_identity(OUT / (detail_label + '.viewport.png'))
+                    dialog.get_by_role('button', name='닫기', exact=True).click()
+                    expect(dialog).to_have_count(0)
+                    expect(opener).to_be_focused()
+                    receipt.setdefault('derivedCaptures', []).append({'label':detail_label, 'from':label,
+                        'interaction':'trusted previous-quote detail click, disclosed dates only, close and return focus',
+                        'domPaint':detail_label + '.dom-paint.json', 'nativeLayout':detail_label + '.chrome-layout.json',
+                        'screenshot':detail_screenshot})
                 write_json(OUT / 'receipt.json', receipt)
             finally:
                 page.close()

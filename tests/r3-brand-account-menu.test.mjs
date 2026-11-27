@@ -9,6 +9,8 @@ import * as history from '../src/server/r3-ui/brand-history.gen.mjs';
 import {extendBrandAccountSource} from '../src/server/r3-brand-account-extension.mjs';
 import {extendQuoteSource} from '../src/server/r3-product-extensions.mjs';
 import {mountBrandAccountMenu,brandAccountMenuCss} from '../src/server/order-engine/browser/brand-account-menu.mjs';
+import {brandAccountScript,brandAccountCss} from '../src/server/product-ui/assets.gen.mjs';
+import {browserFunction} from '../src/server/browser-source.mjs';
 import {getQaMvpRuntimeSource} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
 import {buyerResultClient,projectBuyerResult} from '../src/server/r3-quote-result.mjs';
 const {quoteJellyRuntime,quoteFiles}=productSources;
@@ -16,6 +18,10 @@ const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url
 const original=gunzipSync(Buffer.from(frames[catalog.find(row=>row.screen==='onboarding'&&row.state==='guest-1').current],'base64')).toString();
 const source=new JSDOM(original),svg=source.window.document.querySelector('header svg').outerHTML;source.window.close();
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('the shipped product brand account asset matches its canonical source',()=>{
+  assert.equal(brandAccountScript,'window.mountBrandAccountMenu=('+browserFunction(mountBrandAccountMenu)+');','Regenerate shared product assets with collect-qa-assets.mjs before sealing');
+  assert.equal(brandAccountCss,brandAccountMenuCss);
+});
 function fixture(options={}){
   const dom=new JSDOM('<style>'+brandAccountMenuCss+'</style><header><span class="brand"><span class="brand-word">Order<span class="brand-dot">.</span></span>'+svg+'</span></header><button id="outside">다른 화면</button>',{runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window,d=w.document;

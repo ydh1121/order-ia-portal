@@ -393,6 +393,7 @@ test('result recompare keeps the native modal and gives initial focus only to an
     w.eval(scene.mount);dispose=w.ORDER_DESIGN_MODULES.find(r=>r.id==='quote-result').mount(root,'recompare',{select(){}});
    }
    const dialog=doc.querySelector('dialog');assert.ok(dialog?.open,entry);
+   assert.equal(dialog.getAttribute('aria-label'),'동일한 조건으로 다시 비교하겠어요?');
    assert.equal(opens.length,1);assert.equal(opens[0].dialog,dialog);assert.equal(opens[0].inert,!(focused||activated));
    assert.equal(attempts.length,focused||activated?1:0,entry+' must preserve inactive parent focus');
    assert.equal(dialog.hasAttribute('inert'),false,'native modal remains interactive after its synchronous open');
@@ -407,19 +408,30 @@ test('issued and expiry dates appear together only when disclosed on the regular
  const dom=new JSDOM('<main><div data-review-result></div></main>',{runScripts:'outside-only',pretendToBeVisual:true});
  const w=dom.window,root=w.document.querySelector('main'),host=root.querySelector('[data-review-result]');
  w.matchMedia=()=>({matches:true});
+ w.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
+ w.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new w.Event('close'));};
  try{
   const path='web/quote-result-screen.mjs',source=getResearchQuoteSource(path,served(path));
   const mount=w.eval(source.replace(/^export /gm,'')+'\nmountQuoteResult');
-  const view=mount(host,{brand:false,reducedMotion:()=>true});
+  const actions=[],view=mount(host,{brand:false,reducedMotion:()=>true,onAction:action=>actions.push(action)});
   const issued=Date.parse('2026-11-14T00:00:00+09:00'),end=Date.parse('2026-11-21T00:00:00+09:00');
   for(const start of [undefined,NaN,end,end+1,issued]){
    view.show({state:'expired',issued:start,end,proposed:'11940000'});
-   assert.equal(host.querySelector('.oq-note').textContent,start===issued?'견적 유효기간 2026.11.14 ~ 2026.11.21':'견적 만료일 2026.11.21');
+   assert.equal(host.querySelector('.oq-note').textContent,start===issued?'견적 유효기간\n2026.11.14 ~ 2026.11.21':'견적 만료일 2026.11.21');
    assert.equal(host.querySelectorAll('.oq-series:not([hidden])').length,0);
+   const details=host.querySelector('.oq-expired-details');assert.equal(details.hidden,false);details.click();
+   const dialog=host.querySelector('dialog');assert.ok(dialog.open);
+   assert.equal(dialog.getAttribute('aria-label'),'이전 견적서 상세보기');
+   assert.ok(dialog.textContent.includes(host.querySelector('.oq-note').textContent));
+   assert.doesNotMatch(host.textContent,/11,?940,?000/,'expired prices stay absent even when supplied to the renderer');
+   assert.deepEqual([...dialog.querySelectorAll('button')].map(button=>button.textContent),['닫기','동일한 조건']);
+   dialog.querySelector('button:last-child').click();assert.equal(host.querySelector('dialog'),null);
   }
+  assert.deepEqual(actions,Array(5).fill('same'),'the previous quote action retains the caller’s conditions handler');
+  view.show({state:'unverified'});assert.equal(host.querySelector('.oq-expired-details').hidden,true);
   view.clear();const scene=await researchScene('quote-result','expired');
   w.eval(scene.mount);const dispose=w.ORDER_DESIGN_MODULES.find(r=>r.id==='quote-result').mount(root,'expired',{select(){}});
-  assert.equal(host.querySelector('.oq-note').textContent,'견적 유효기간 2026.11.14 ~ 2026.11.21');
+  assert.equal(host.querySelector('.oq-note').textContent,'견적 유효기간\n2026.11.14 ~ 2026.11.21');
   assert.equal(host.querySelectorAll('.oq-series:not([hidden])').length,0);
   dispose?.();
  }finally{dom.window.close();}

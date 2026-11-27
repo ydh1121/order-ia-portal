@@ -23,7 +23,27 @@ function replaceOnce(source, before, after) {
   if (source.split(before).length !== 2) throw Error('REGULAR_CONTACT_SOURCE_CHANGED:' + before.slice(0, 65));
   return source.replace(before, after);
 }
-let identityPromise, modulePromise;
+let identityPromise, modulePromise, presentationPromise;
+
+/** Reuse the regular phone editor's actual layout and tokens wherever the
+ * same controller is mounted inside the shared 64px floating input. */
+export function regularContactPresentationCss() {
+  return presentationPromise ??= (async () => {
+    const path='web/styles.css',source=await sealedText(path),host='.ds .field.is-floating .input-shell';
+    const rules=source.split('\n').filter(line=>line.startsWith('.ui-phone'));
+    if(rules.length!==8||rules.some(rule=>!/^\.ui-phone[^{}]+\{[^{}]+\}$/.test(rule)))throw Error('REGULAR_PHONE_PRESENTATION_SOURCE_CHANGED');
+    const tokens=['--ui-border','--ui-control-radius','--ui-control-height','--ui-danger','--ui-input-focus','--ui-phone-hyphen-size','--text-primary','--text-secondary','--type-control','--pale'].map(name=>{
+      const matches=[...source.matchAll(new RegExp(name+':([^;}{]+)','g'))];if(matches.length!==1)throw Error('REGULAR_PHONE_PRESENTATION_TOKEN_CHANGED:'+name);return name+':'+matches[0][1];
+    });
+    const scoped=rules.map(rule=>{const index=rule.indexOf('{');return rule.slice(0,index).split(',').map(selector=>host+' '+selector).join(',')+rule.slice(index);}).join('\n');
+    return '/* Regular phone layout: '+path+'; sealed SHA256 '+await sha256(source)+' */\n'+host+':has(>.ui-phone-shell){'+tokens.join(';')+'}\n'+scoped+'\n'+
+      // The retained common input supplies its label, surface and focus ring.
+      // Adapt the inner editor to that box without replacing any input node.
+      host+'>.ui-phone-shell{box-sizing:border-box;height:100%;min-height:0;padding:25px 14px 8px;border:0;border-radius:0;background:transparent}\n'+
+      host+'>.ui-phone-shell:focus-within{border:0;outline:0;box-shadow:none;background:transparent}\n'+
+      host+'>.ui-phone-shell>.ui-phone-part,'+host+'>.ui-phone-shell>.ui-phone-part:focus-visible{height:100%;min-height:0;padding:0 .125rem}\n';
+  })();
+}
 export function regularServiceSourceIdentity() {
   return identityPromise ??= Promise.all(SOURCES.map(async path => ({path,
     originalSha256: quoteSourceHashes[path], servedSealedSha256: await sha256(await sealedText(path))

@@ -6,6 +6,11 @@ import {researchQuoteModeCss} from './quote-mode-presentation.mjs';
  * Latest Q1 feedback requires a white page and depth on white accordions.
  */
 export const researchQuoteFormCss=`
+/* The regular document owns its scrollbar. In the embedded workspace the
+ * application document owns scrolling, so reserving two inner gutters would
+ * move every calculator control an extra 15px away from the page edge. */
+#order-app-quote [data-research-quote]{box-sizing:border-box;min-width:0;scrollbar-gutter:auto}
+#order-app-quote [data-research-quote]:not(.ui-modal-locked):not(.ui-modal-body-locked){overflow:visible}
 [data-research-quote] .main{width:min(calc(100% - 48px),var(--max));margin:0 auto;padding-bottom:40px}
 [data-research-quote] #form-back{display:none}
 /* C622's recorded pin identifies this duplicate switch. The application header

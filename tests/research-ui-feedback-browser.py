@@ -28,12 +28,14 @@ _capture_spec.loader.exec_module(CAPTURE_TOOLS)
 
 def measured_state_capture(page, label, interaction, source, font_responses, receipt):
     """Read the already exercised standalone state; do not create a QA session."""
+    page.evaluate('window.scrollTo(0,0)')
     CAPTURE_TOOLS.settle(page)
     expected = page.evaluate('''() => {const snapshot=ORDER_RESEARCH_APP.snapshot();return {
       build:snapshot.build,route:snapshot.route,viewport:{width:innerWidth,height:innerHeight}};}''')
     assert expected['build'] == source['build']['digest']
     captured = page.evaluate(CAPTURE_TOOLS.CAPTURE, {'expected': expected, 'label': label,
                                                    'captureMode': 'existing-standalone-research-route'})
+    assert captured['viewport']['scrollX'] == 0 and captured['viewport']['scrollY'] == 0, captured['viewport']
     native = CAPTURE_TOOLS.chrome_layout(SimpleNamespace(context=page.context, native_page=page, evaluate=page.evaluate))
     resources = []
     for response in font_responses:
@@ -66,6 +68,16 @@ def measured_state_capture(page, label, interaction, source, font_responses, rec
     assert screenshot['pngDimensions'] == expected['viewport'], screenshot
     captured['screenshots'] = [{**screenshot, 'kind': 'viewport', 'nativeScreenshot': True, 'viewportUnchanged': True,
                                'scroll': {'x': captured['viewport']['scrollX'], 'y': captured['viewport']['scrollY']}}]
+    if label.startswith(('proof-', 'signature-')) and captured['viewport']['documentHeight'] > expected['viewport']['height'] + 1:
+        page.evaluate('window.scrollTo(0,document.documentElement.scrollHeight)')
+        CAPTURE_TOOLS.settle(page)
+        bottom_scroll = page.evaluate('({x:scrollX,y:scrollY})')
+        bottom_path = OUT / (label + '.bottom.png')
+        page.screenshot(path=str(bottom_path), full_page=False, animations='allow')
+        captured['belowFoldScreenshot'] = {**CAPTURE_TOOLS.screenshot_identity(bottom_path), 'nativeScreenshot': True,
+                                          'viewportUnchanged': True, 'scroll': bottom_scroll}
+        page.evaluate('window.scrollTo(0,0)')
+        CAPTURE_TOOLS.settle(page)
     CAPTURE_TOOLS.write_json(OUT / (label + '.dom-paint.json'), captured)
     CAPTURE_TOOLS.write_json(OUT / (label + '.chrome-layout.json'), native)
     entry = {'label': label, 'route': expected['route'], 'viewport': expected['viewport'], 'build': expected['build'],
@@ -73,6 +85,8 @@ def measured_state_capture(page, label, interaction, source, font_responses, rec
              'domPaint': label + '.dom-paint.json', 'nativeLayout': label + '.chrome-layout.json',
              'screenshots': captured['screenshots'], 'elementCount': len(captured['elements']),
              'rangeTextCount': len(captured['texts']), 'platformFonts': fonts, 'userAcceptance': False}
+    if 'belowFoldScreenshot' in captured:
+        entry['belowFoldScreenshot'] = captured['belowFoldScreenshot']
     receipt['supplementalCaptures'].append(entry)
     return entry
 
@@ -636,9 +650,10 @@ def evidence_presentation_probe(page, capture):
                     expect(panel.locator('.research-evidence-pages canvas')).to_have_count(1)
                     expect(panel.locator('.wf-signature canvas')).to_be_visible()
                     expect(panel.locator('[name=document-memo]')).to_be_hidden()
-                    pad = panel.locator('.wf-signature').evaluate("""node=>{const rect=x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};},canvas=node.querySelector('canvas'),label=node.querySelector('.signature-label h3'),clear=node.querySelector('.signature-label button'),placeholder=node.querySelector('.wf-sign-placeholder');return {canvas:rect(canvas),bitmap:{width:canvas.width,height:canvas.height},background:[...canvas.getContext('2d').getImageData(2,2,1,1).data],label:rect(label),clear:rect(clear),placeholder:rect(placeholder),alternativeExpanded:node.querySelector('details').open,errorOutline:getComputedStyle(node).outlineStyle};}""")
+                    pad = panel.locator('.wf-signature').evaluate("""node=>{const rect=x=>{const r=x.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};},canvas=node.querySelector('canvas'),label=node.querySelector('.signature-label h3'),clear=node.querySelector('.signature-label button'),placeholder=node.querySelector('.wf-sign-placeholder');return {canvas:rect(canvas),bitmap:{width:canvas.width,height:canvas.height},background:[...canvas.getContext('2d').getImageData(2,2,1,1).data],label:rect(label),clear:rect(clear),labelMargin:getComputedStyle(label.parentElement).margin,placeholder:rect(placeholder),alternativeExpanded:node.querySelector('details').open,errorOutline:getComputedStyle(node).outlineStyle};}""")
                     assert pad['bitmap'] == {'width': 342, 'height': 190} and pad['canvas']['height'] == 190, pad
                     assert pad['background'] == [242, 244, 246, 255] and not pad['alternativeExpanded'], pad
+                    assert pad['labelMargin'] == '0px', pad
                     assert abs(pad['label']['y'] + pad['label']['height']/2 - pad['clear']['y'] - pad['clear']['height']/2) <= 1, pad
                     assert abs(pad['placeholder']['y'] + pad['placeholder']['height']/2 - pad['canvas']['y'] - 95) <= 1, pad
                     if state == 'missing':
@@ -647,12 +662,20 @@ def evidence_presentation_probe(page, capture):
                 measurement = panel.evaluate("""panel => {
                   const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
                   const box=rect(panel),targets=[panel.querySelector('.research-evidence-settings'),...panel.querySelectorAll('canvas')].filter(node=>node.checkVisibility());
-                  return {screen:panel.dataset.reviewScenario,box,padding:getComputedStyle(panel).padding,layout:getComputedStyle(panel.querySelector('.research-evidence-settings')).display,viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,headerCount:document.querySelectorAll('#order-app-header').length,targets:targets.map(rect),casePickerVisible:Boolean(panel.querySelector('select')?.checkVisibility()),prepareVisible:[...panel.querySelectorAll('button')].some(button=>button.textContent==='자료와 서명 준비'&&button.checkVisibility())};
+                  const heading=getComputedStyle(panel.querySelector(':scope > h2')),cta=[...panel.querySelectorAll('.research-proof-next,[data-evidence-submit]')].find(node=>node.checkVisibility()),paint=getComputedStyle(cta),memo=panel.querySelector('[name=document-memo]'),shell=memo.closest('.input-shell');
+                  return {screen:panel.dataset.reviewScenario,box,padding:getComputedStyle(panel).padding,layout:getComputedStyle(panel.querySelector('.research-evidence-settings')).display,viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,headerCount:document.querySelectorAll('#order-app-header').length,targets:targets.map(rect),heading:{fontSize:heading.fontSize,lineHeight:heading.lineHeight},cta:{rect:rect(cta),background:paint.backgroundColor,color:paint.color},memo:memo.checkVisibility()?{rect:rect(memo),shell:shell?rect(shell):null,background:shell?getComputedStyle(shell).backgroundColor:null,labelMargin:getComputedStyle(memo.closest('.wf-field')).margin}:null,casePickerVisible:Boolean(panel.querySelector('select')?.checkVisibility()),prepareVisible:[...panel.querySelectorAll('button')].some(button=>button.textContent==='자료와 서명 준비'&&button.checkVisibility())};
                 }""")
                 assert measurement['padding'] == '24px' and measurement['layout'] == 'flex' and measurement['headerCount'] == 1, measurement
                 assert measurement['documentWidth'] <= measurement['viewport'] + 1, measurement
                 assert not measurement['casePickerVisible'] and not measurement['prepareVisible'], measurement
                 assert all(target['width'] > 0 and target['height'] > 0 and target['x'] >= measurement['box']['x'] - 1 and target['x'] + target['width'] <= measurement['box']['x'] + measurement['box']['width'] + 1 for target in measurement['targets']), measurement
+                assert measurement['heading']['fontSize'] == '28px' and abs(float(measurement['heading']['lineHeight'][:-2]) - 37.8) <= .1, measurement
+                assert measurement['cta']['background'] == 'rgb(49, 93, 230)' and measurement['cta']['color'] == 'rgb(255, 255, 255)', measurement
+                assert measurement['cta']['rect']['height'] == 52 and abs(measurement['cta']['rect']['width'] - measurement['box']['width'] + 48) <= .1, measurement
+                if screen == 'proof':
+                    memo = measurement['memo']
+                    assert memo and memo['shell'] and memo['background'] == 'rgb(242, 244, 246)' and memo['labelMargin'] == '0px', measurement
+                    assert memo['shell']['height'] == 120 and abs(memo['shell']['width'] - measurement['box']['width'] + 48) <= .1, measurement
                 result['current'].append(measurement)
             assert page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length') == before
             capture(screen + '-' + state + '-simple-390', 'C542/C543 original proof/signature presentation restored; actual editor, fixture state and no submission')
@@ -686,7 +709,7 @@ def evidence_presentation_probe(page, capture):
 
 
 def panel_origin_probe(page, capture):
-    result = {'requirement': 'C527 panel upper-right corner equals painted logo upper-right corner', 'states': []}
+    result = {'requirement': 'C527 panel upper-right corner equals painted logo upper-right corner', 'states': [], 'phoneFields': []}
     for width in (320, 390, 1280):
         page.set_viewport_size({'width': width, 'height': 844})
         select(page, 'onboarding', 'member-1')
@@ -701,6 +724,21 @@ def panel_origin_probe(page, capture):
         assert abs(geometry['panel']['y']-geometry['logo']['top']) <= .1, geometry
         assert abs(geometry['panel']['y']-geometry['trigger']['y']) > 8, geometry
         result['states'].append({'width': width, **geometry})
+        page.keyboard.press('Escape')
+        expect(panel).to_be_hidden()
+        select(page, 'profile', 'default')
+        phone = page.locator('.research-account-panel .ui-phone-shell')
+        expect(phone.locator('.ui-phone-part')).to_have_count(3)
+        expect(phone).to_be_visible()
+        measured = phone.evaluate("""shell=>{const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};},parts=[...shell.querySelectorAll('.ui-phone-part')],outer=shell.closest('.input-shell');return {display:getComputedStyle(shell).display,shell:rect(shell),outer:rect(outer),parts:parts.map(node=>({rect:rect(node),value:node.value,hit:document.elementFromPoint(node.getBoundingClientRect().x+node.getBoundingClientRect().width/2,node.getBoundingClientRect().y+node.getBoundingClientRect().height/2)===node})),separators:[...shell.querySelectorAll('.ui-phone-separator')].map(rect),regularValue:window.OrderPhone.get(parts[0])};}""")
+        assert measured['display'] == 'flex' and measured['outer']['height'] == 64, measured
+        assert len(measured['separators']) == 2 and all(part['hit'] for part in measured['parts']), measured
+        assert ''.join(part['value'] for part in measured['parts']) == re.sub(r'\D', '', measured['regularValue']), measured
+        assert all(part['value'] for part in measured['parts']), measured
+        assert max(part['rect']['y'] for part in measured['parts']) - min(part['rect']['y'] for part in measured['parts']) <= .1, measured
+        for rect in [part['rect'] for part in measured['parts']] + measured['separators']:
+            assert rect['width'] > 0 and rect['height'] > 0 and rect['x'] >= measured['outer']['x'] and rect['right'] <= measured['outer']['right'] and rect['y'] >= measured['outer']['y'] and rect['bottom'] <= measured['outer']['bottom'], measured
+        result['phoneFields'].append({'width': width, **measured})
         page.keyboard.press('Escape')
         expect(panel).to_be_hidden()
     page.set_viewport_size({'width': 390, 'height': 844})

@@ -541,7 +541,7 @@ function priceDesk(createWait,makeWaitScene,montages,makeResult,project,makeMode
     const body={orgId:site.org_id,siteId:site.site_id,inputRevision,lines:[{id:'line',shipmentId:'first',productId:offer.product_id,versionId:offer.id,unit:offer.unit,serviceDate:$('quoteDay').value,deliveryQty:number($('quoteQty').value),grade:$('buyerGrade').value.split('/')[0]||undefined,packing:$('buyerGrade').value.split('/')[1]||undefined}]};
     const signature=JSON.stringify(body);if(buyerState.retry?.signature!==signature)buyerState.retry={signature,key:crypto.randomUUID()};
     retryButton=$('quoteIssue');
-    const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[{values:[offer.product_id]},{values:[String(body.lines[0].deliveryQty)+' '+offer.unit]},{values:[body.lines[0].serviceDate]}]);
+    const result=await quoteWait.request(signal=>api('/quote',{...body,requestKey:buyerState.retry.key},signal),[{kind:'egg',values:[offer.product_id]},{kind:'quantity',values:[String(body.lines[0].deliveryQty)+' '+offer.unit]},{kind:'delivery',values:[body.lines[0].serviceDate]}]);
     if(!result)return;resultView.show(result);$('quoteHistory').add(new Option(result.id,result.id));$('quoteHistory').value=result.id;
   });
   $('quoteRecall').onclick=run(async()=>{retryButton=$('quoteRecall');resultView.clear();const result=await quoteWait.request(signal=>api('/quote?id='+encodeURIComponent($('quoteHistory').value),undefined,signal),[]);if(result)resultView.show(result);});

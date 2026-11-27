@@ -79,6 +79,7 @@ test('an invalid provider response retains the manual business evidence path',as
 test('missing signatures use the shared CircleAlert and shake without changing the base pad or allowing export',async t=>{
   const v=await setup(t),sharedIcon=v.w.QAUI.icon,iconCalls=[];v.w.QAUI.icon=(...args)=>{iconCalls.push(args);return sharedIcon(...args);};
   const pad=v.workflow.signaturePad();v.root.append(pad.element);v.owned.push(pad.destroy);assert.throws(()=>pad.page(),/서명/);assert.equal(pad.element.getAttribute('aria-invalid'),'true');assert.equal(pad.element.querySelectorAll('[data-workflow-error] svg').length,1);assert.deepEqual(iconCalls,[['alert',18]]);const expectedIcon=v.w.document.createElement('span');expectedIcon.innerHTML=sharedIcon('alert',18);assert.equal(pad.element.querySelector('[data-workflow-error] svg').outerHTML,expectedIcon.firstElementChild.outerHTML);assert.ok(pad.element.classList.contains('is-shaking'));
+  const feedback=pad.element.querySelector('[data-workflow-error]'),alternative=pad.element.querySelector('.research-signature-alternative'),summary=alternative.querySelector('summary');summary.dispatchEvent(new v.w.Event('pointerdown',{bubbles:true}));assert.equal(pad.element.querySelector('[data-workflow-error]'),feedback,'opening the alternate method must retain feedback and page height until the click');summary.click();assert.equal(alternative.open,true);assert.equal(pad.element.querySelector('[data-workflow-error]'),feedback);
   const typed=pad.element.querySelector('input');typed.value='확인';typed.dispatchEvent(new v.w.Event('input',{bubbles:true}));assert.equal(pad.element.hasAttribute('aria-invalid'),false);assert.equal(pad.page(),pad.element.querySelector('canvas'));assert.ok(button(pad.element,'다시 하기'));
 });
 test('the immutable official catalogue populates the original Korean consonant picker only after integrity verification',async t=>{
@@ -119,8 +120,10 @@ test('live evidence controls reuse shared button paint while memo count, preview
   const source=await researchScene('proof','selected','email');v.w.ORDER_DESIGN_MODULES=[];v.w.eval(source.mount);
   const module=v.w.ORDER_DESIGN_MODULES.find(row=>row.id==='proof');v.root.innerHTML=source.html;
   v.owned.push(module.mount(v.root,'selected',{screen:'proof',reviewScenario:true,adapter:v.adapter,motion:v.motion,reduced:()=>true,toast(){},select(){}}));
+  const originalMemo=v.root.querySelector('[name=document-memo]');
   await until(()=>v.root.querySelector('.research-evidence-page')?.dataset.reviewReady==='true');
   const memo=v.root.querySelector('[name=document-memo]'),meter=v.root.querySelector('.memo-meter'),progress=meter.querySelector('progress');
+  assert.equal(memo,originalMemo);assert.equal(memo.maxLength,4000);assert.equal(memo.closest('.field.is-floating').htmlFor,memo.id);assert.equal(memo.closest('.input-shell.is-multiline').querySelector('textarea'),memo);assert.equal(v.w.document.getElementById(memo.getAttribute('aria-labelledby')).textContent,'추가 요청 · 선택');assert.ok(v.w.document.getElementById(memo.getAttribute('aria-describedby')));
   const meterStyle=v.w.getComputedStyle(meter),progressStyle=v.w.getComputedStyle(progress);
   assert.equal(meterStyle.display,'flex');assert.equal(meterStyle.justifyContent,'flex-end');assert.equal(meterStyle.gap,'12px');
   assert.equal(progressStyle.width,'80px');assert.equal(progressStyle.height,'6px');

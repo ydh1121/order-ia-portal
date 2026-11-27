@@ -84,6 +84,14 @@ export function createQuoteWait({paint, avatar, env = globalThis, now = () => en
 
 // Both the signed desk and isolated review frame use the same DOM and player adapter.
 export function mountWaitScene(host,montages,createWait,draw=()=>{}) {
+  // Original R4 DROPIN condition glyphs; keep these inside the serialized
+  // adapter so both the buyer desk and review runtime receive the same art.
+  const icons={
+    egg:'M12 2C8.3 2 4 10.4 4 15a8 8 0 0016 0C20 10.4 15.7 2 12 2Z',
+    quantity:'M3 4h18v5H3zM3 11h8v9H3zM13 11h8v9h-8z',
+    region:'M12 2a8 8 0 00-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 00-8-8Zm0 4a4 4 0 110 8 4 4 0 010-8Z',
+    delivery:'M2 5h12v10h2l2-4h4v7h-2a3 3 0 01-6 0H9a3 3 0 01-6 0H2Zm15 3h3l2 3h-6Z'
+  };
   const doc=host.ownerDocument,env=doc.defaultView,stack=host.querySelector('[data-banner-stack]'),
     art=host.querySelector('[data-wait-avatar],.mf-wait-avatar'),message=host.querySelector('[data-wait-copy],.mf-wait-message');
   const fallback=art.querySelector('svg'),copy=doc.createElement('span'),pulse=doc.createElement('span');
@@ -108,7 +116,12 @@ export function mountWaitScene(host,montages,createWait,draw=()=>{}) {
     for(const el of Array.from(stack.children))if(!keys.has(el.dataset.bannerIndex))el.remove();
     for(const [depth,banner] of [...banners].reverse().entries()){
       let el=stack.querySelector('[data-banner-index="'+banner.index+'"]');
-      if(!el){el=doc.createElement('div');el.className='mf-banner';el.dataset.bannerIndex=String(banner.index);const label=doc.createElement('span');
+      if(!el){el=doc.createElement('div');el.className='mf-banner';el.dataset.bannerIndex=String(banner.index);
+        if(Object.hasOwn(icons,banner.kind)){
+          const icon=doc.createElement('span'),svg=doc.createElementNS('http://www.w3.org/2000/svg','svg'),path=doc.createElementNS('http://www.w3.org/2000/svg','path');
+          icon.className='mf-banner-icon';icon.setAttribute('aria-hidden','true');svg.setAttribute('viewBox','0 0 24 24');path.setAttribute('d',icons[banner.kind]);svg.append(path);icon.append(svg);el.append(icon);
+        }
+        const label=doc.createElement('span');label.className='mf-banner-text';
         const values=banner.values.map(String);label.textContent=values.slice(0,4).join(', ')+(values.length>4?'…':'');el.append(label);stack.prepend(el);}
       el.style.setProperty('--layer',String(depth));}
     draw(phase,data);
@@ -119,8 +132,10 @@ export const waitSceneCss=`
 #quotePending[data-wait-scene]{display:grid;justify-items:center;gap:.65rem;width:min(100%,26rem);margin:1rem auto}
 #quotePending [data-banner-stack]{width:100%}
 [data-wait-scene] [data-banner-stack]{display:grid;position:relative;isolation:isolate;overflow:hidden;align-items:start;justify-items:center;min-height:5rem;pointer-events:none}
-[data-wait-scene] [data-banner-stack] .mf-banner{grid-area:1/1;position:relative;inset:auto;width:min(100%,19rem);height:2.6rem;padding:.5rem .9rem;border:0;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#eef2f7;color:#374359;box-shadow:none;z-index:calc(3 - var(--layer));transform:translateY(calc(var(--layer) * 13px)) scale(calc(1 - var(--layer) * .05));opacity:1;animation:order-banner-in .28s ease-out;transition:transform .25s ease-out}
+[data-wait-scene] [data-banner-stack] .mf-banner{grid-area:1/1;position:relative;inset:auto;width:min(100%,19rem);height:2.6rem;padding:.5rem .9rem;border:0;border-radius:14px;display:flex;align-items:center;justify-content:center;gap:10px;background:#eef2f7;color:#374359;box-shadow:none;z-index:calc(3 - var(--layer));transform:translateY(calc(var(--layer) * 13px)) scale(calc(1 - var(--layer) * .05));opacity:1;animation:order-banner-in .28s ease-out;transition:transform .25s ease-out}
 [data-wait-scene] .mf-banner span{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+[data-wait-scene] .mf-banner .mf-banner-icon{width:20px;height:20px;flex:0 0 20px;color:#9ba3ae}
+[data-wait-scene] .mf-banner .mf-banner-icon svg{display:block;width:100%;height:100%;fill:currentColor}
 [data-wait-scene] .wait-swap,[data-wait-scene] .wait-thinking{display:block}
 [data-wait-scene] :is(.mf-wait-message,[data-wait-copy]){display:grid;align-content:center;min-height:3em;white-space:pre-line;text-align:center;font-size:15px;line-height:1.5;animation:none}
 [data-wait-scene] .mf-wait-message.thinking{animation:none}
