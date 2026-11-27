@@ -63,6 +63,16 @@ for(const row of catalog.filter(r=>r.role==='admin'||['common','receipt'].includ
   Object.defineProperty(w,'parent',{value:{postMessage:message=>events.push(message)}});
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});
   w.HTMLElement.prototype.scrollIntoView=()=>{};
+  const signatureBackgrounds = new WeakMap();
+  if(w.document.querySelector('[data-library-signature-slot]')){
+    // JSDOM does not rasterize canvas. Record the actual pad's initialization
+    // in this DOM smoke test; native Chrome tests exercise its rendered ink.
+    w.HTMLCanvasElement.prototype.getContext=function(kind){
+      assert.equal(kind,'2d');
+      const canvas=this;
+      return {fillRect(x,y,width,height){signatureBackgrounds.set(canvas,[x,y,width,height]);}};
+    };
+  }
   try{
     w.eval(artifact.mount);
     w.eval('('+frameCode+')')({screen:row.screen,state:row.state,variant:row.variant,artifact:artifact.hash,channel:'test',version:'current'});
@@ -70,6 +80,10 @@ for(const row of catalog.filter(r=>r.role==='admin'||['common','receipt'].includ
     assert.equal(doc.dataset.motionRuntime,'admin-common',row.id);
     assert.ok(events.some(msg=>msg.type==='ready'),row.id);
     if(row.id==='common/default/email'){
+      const pad=doc.querySelector('[data-library-signature-slot] .wf-signature');
+      assert.equal(pad?.dataset.ink,'false','the blank signature pad mounted');
+      const canvas=pad.querySelector('canvas');
+      assert.deepEqual(signatureBackgrounds.get(canvas),[0,0,canvas.width,canvas.height]);
       const change=mode=>doc.dispatchEvent(new w.CustomEvent('r3-motion-scenario',{detail:{mode}}));
       const save=doc.querySelector('[data-action=save-demo]');
       const phases=[];doc.addEventListener('r3:async-state',e=>phases.push(e.detail));
