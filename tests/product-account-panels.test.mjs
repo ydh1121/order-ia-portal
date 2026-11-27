@@ -36,6 +36,9 @@ async function workspace(t){
   const response=await onRequest({request:new Request(url,{headers:{Cookie:cookie}}),env});assert.equal(response.status,200);
   const errors=[],calls=[],navigation=[],console=new VirtualConsole();console.on('jsdomError',error=>{if(/^Not implemented: navigation/.test(error.message))navigation.push(error);else if(error.type!=='css parsing')errors.push(error);});
   const dom=new JSDOM(await response.text(),{url,runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:console}),w=dom.window;doms.push(dom);
+  // JSDOM has no layout. Avoid cascading the full product stylesheet for every
+  // semantic stack transition; stylesheet scope is tested separately below.
+  for(const style of w.document.querySelectorAll('style'))style.remove();
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});w.ResizeObserver=class{observe(){}disconnect(){}};w.HTMLElement.prototype.scrollTo=function(){};w.HTMLElement.prototype.animate=()=>({finished:Promise.resolve(),cancel(){},pause(){},play(){}});
   w.fetch=async(input,init={})=>{
    const dest=new URL(String(input),url);assert.equal(dest.origin,origin);const headers=new Headers(init.headers);headers.set('Cookie',cookie);if(init.body)headers.set('Origin',origin);
