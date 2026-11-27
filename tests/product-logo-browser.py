@@ -161,8 +161,8 @@ def menu_settled(page, current, phase="open"):
         assert 'rgb(183, 193, 206)' in paint['shadow'] and 'inset' in paint['shadow'], paint
         rect = actual["panel"]
         assert rect and rect["x"] >= 0 and rect["y"] >= 0 and rect["x"] + rect["width"] <= 376 and rect["y"] + rect["height"] <= 829, rect
-        near(rect["x"]+rect["width"],actual["trigger"]["x"]+actual["trigger"]["width"],"panel upper-right anchor")
-        near(rect["y"],actual["trigger"]["y"],"panel starts at trigger top")
+        near(rect["x"]+rect["width"],actual["mark"]["x"]+actual["mark"]["width"],"C527 panel right edge equals painted logo right edge")
+        near(rect["y"],actual["mark"]["y"],"C527 panel top equals painted logo top")
         # Permission-denied entries remain in the DOM with hidden=true. They
         # must stay unpainted; every permitted entry must finish fully visible.
         assert all(label["opacity"] == 0 if label["hidden"] else label["opacity"] > .99
@@ -450,7 +450,7 @@ def main():
                     controls.last.scroll_into_view_if_needed()
                     last_control, panel_bounds = controls.last.bounding_box(), panel.bounding_box()
                     assert last_control and last_control["y"] >= panel_bounds["y"] - 1 and last_control["y"] + last_control["height"] <= panel_bounds["y"] + panel_bounds["height"] + 1, {"page": item, "lastControl": last_control, "panel": panel_bounds}
-                    near(panel_bounds["y"], state(product)["trigger"]["y"], "scrolling a long form preserves its trigger-top anchor")
+                    near(panel_bounds["y"], state(product)["mark"]["y"], "scrolling a long form preserves its painted-logo anchor")
                 leaves.append(item)
                 panel.locator(".obm-back").click()
                 menu_settled(product, "manage")
@@ -470,7 +470,7 @@ def main():
             expect(panel).to_be_hidden()
             expect(trigger).to_be_focused()
 
-            # The opened panel replaces the trigger's upper-right footprint.
+            # The opened panel starts at the painted logo's upper-right corner.
             # Native keyboard activation still supports rapid reverse/reopen.
             trigger.press("Enter")
             product.wait_for_timeout(65)

@@ -121,7 +121,7 @@ def check_result(view, state):
         if state=='locked':
             preview=view.locator('.research-quote-protected-preview')
             expect(preview).to_be_visible()
-            expect(preview).to_have_attribute('alt',re.compile('실제 금액과 비율은 인증 후'))
+            expect(preview).to_have_attribute('alt',re.compile('계산된 현재 납품가와 검색된 가격의 흐린 미리보기.*정확한 금액은 인증 후'))
             assert view.locator('.oq-price-value,.oq-card-value').all_text_contents()==['','','','']
         if state=='no-result':
             expect(view.locator('.oq-title')).to_have_text('길을 잃으셨나요?')
@@ -219,7 +219,7 @@ def check_motion(page, origin):
     assert action.evaluate('b=>JSON.stringify(b.getBoundingClientRect().toJSON())')==fixed
     page.mouse.up();expect(view.locator('dialog[open]')).to_have_count(1)
     dialog=view.locator('dialog[open]')
-    expect(dialog).to_have_accessible_name('어떤 조건으로 다시 비교할까요?')
+    expect(dialog).to_have_accessible_name('동일한 조건으로 다시 비교하겠어요?')
     expect(dialog.locator('button')).to_have_count(2)
     expect(dialog.get_by_role('button',name='새로운 견적',exact=True)).to_be_visible()
     expect(dialog.get_by_role('button',name='동일한 조건',exact=True)).to_be_visible()

@@ -24,6 +24,47 @@ test('pass projection keeps compound rows and escaping inputs, deduplicates issu
   const rows=researchPassRows({items:[{id:'p',revision:3,status:'DISPATCHED',product:'대란',quantity:3,date:'2026-11-20',target:'<img src=x onerror=alert(1)>',quoteId:'ordered',actions:[]}]},{quotes:[{id:'ordered'},{id:'multi',site_id:'s',org_id:'o',expires_at:'2027-01-01',lines:[{productName:'특란',quantity:10,unit:'tray',serviceDate:'2026-12-01'},{productName:'대란',quantity:5,unit:'box',serviceDate:'2026-12-02'}]}],businesses:[{org_id:'o',site_id:'s',businessName:'테스트'}]},Date.parse('2026-11-23'));
   assert.equal(rows.length,2);assert.equal(rows[0].canReceive,false);assert.equal(rows[1].lines.length,2);assert.equal(rows[1].lines[1][1],'5상자');assert.equal(rows[1].canReceive,false);
 });
+test('distinct business identities with one display name have separately selectable pass chips',async t=>{
+  const v=await setup(t),request=v.adapter.request,role=v.adapter.roleRequest;
+  const purchases=[{id:'purchase-west',quoteId:'west',targetId:'main',status:'RECEIVED',target:'main'}];
+  const quotes=[
+    {id:'west',org_id:'west',site_id:'main'},
+    {id:'east',org_id:'east',site_id:'main'},
+    {id:'annex',org_id:'east',site_id:'annex'}
+  ];
+  const location='동남권 분점 '+ '긴 도로명 '.repeat(24).trim();
+  const businesses=quotes.map(({org_id,site_id})=>({org_id,site_id,businessName:'공동 상호',branchName:site_id==='annex'?location:''}));
+  v.adapter.request=(path,body,signal)=>path==='/purchases'&&!body?Promise.resolve({items:purchases}):request(path,body,signal);
+  v.adapter.roleRequest=(path,body,signal)=>path==='/workspace'?Promise.resolve({quotes,businesses}):role(path,body,signal);
+  await v.mount().ready;
+  const chips=[...v.root.querySelectorAll('.site-chips button')];
+  assert.equal(chips.length,4);
+  const capture=()=>Object.fromEntries([...v.root.querySelectorAll('.site-chips button')].map(chip=>[chip.dataset.site,chip.title]));
+  const labels=capture();
+  assert.equal(new Set(Object.values(labels)).size,4);
+  assert.equal(labels['["east","annex"]'],'공동 상호 · '+location);
+  assert.equal(labels['["west","main"]'],'공동 상호 · 사업장 3');
+  assert.equal(labels['["east","main"]'],'공동 상호 · 사업장 2');
+  const longChip=chips.find(chip=>chip.title.endsWith(location));
+  assert.equal(v.w.getComputedStyle(longChip).maxWidth,'100%');
+  assert.equal(v.w.getComputedStyle(longChip.querySelector('.pass-site-hint')).textOverflow,'ellipsis');
+  for(const [key,expected] of [[['west','main'],'purchase-west'],[['east','main'],'quote:east'],[['east','annex'],'quote:annex']]){
+    const chip=chips.find(button=>button.dataset.site===JSON.stringify(key));
+    assert.ok(chip);chip.click();
+    assert.equal(chip.getAttribute('aria-pressed'),'true');
+    assert.deepEqual([...v.root.querySelectorAll('.pass-stage [data-pass-id]')].map(card=>card.dataset.passId),[expected]);
+  }
+  chips[0].click();
+  assert.equal(v.root.querySelectorAll('.pass-stage [data-pass-id]').length,3);
+  assert.equal(v.writes.length,0);
+  quotes.reverse();
+  await v.mount().ready;
+  assert.deepEqual(capture(),labels,'fallback labels survive changes in service enumeration order');
+  const legacyRow=researchPassRows({items:[{id:'legacy',target:'이전 상호'}]})[0];
+  assert.deepEqual(JSON.parse(legacyRow.siteKey),[null,null,'이전 상호']);
+  const scoped=researchPassRows({items:[{id:'p',buyerOrgId:'east',targetId:'main'}]},{businesses})[0];
+  assert.deepEqual(JSON.parse(scoped.siteKey),['east','main']);
+});
 test('purchase display names require a unique authorized business for a local site key',()=>{
   const item={id:'p',targetId:'main',target:'main',revision:1,status:'DISPATCHED',actions:['receive'],quantity:1,product:'특란'},alpha={org_id:'alpha',site_id:'main',businessName:'알파 사업장'},beta={org_id:'beta',site_id:'main',businessName:'베타 사업장'};
   assert.equal(researchPassRows({items:[item]},{businesses:[alpha]})[0].site,'알파 사업장');

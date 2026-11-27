@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createQuoteWait} from '../src/server/r3-quote-wait.mjs';
+import {createRequire} from 'node:module';
+import {createQuoteWait,mountWaitScene} from '../src/server/r3-quote-wait.mjs';
 import {renderR3PricePage} from '../src/server/r3-price-page.mjs';
+const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url))('jsdom');
 
 function setup() {
   const frames=[],scheduled=new Map(),players=[];
@@ -52,4 +54,37 @@ test('the private pricing view emits valid standalone script for the supplied an
   assert.equal(scripts.length, 1);
   assert.ok(html.includes('id="quotePending"'));
   assert.doesNotThrow(() => new Function(scripts[0][1]));
+});
+
+test('serialized wait adapter renders the original R4 condition glyphs and retains text-only labels while recycling cards',()=>{
+  const dom=new JSDOM('<section data-wait-scene><div data-banner-stack></div><div class="mf-wait-avatar"><svg></svg></div><p class="mf-wait-message"></p></section>');
+  try{
+    const {document}=dom.window;dom.window.matchMedia=()=>({matches:true});
+    let paint;
+    // Exercise the same closure-free function serialization used by both
+    // generated consumers, not a second test-only icon renderer.
+    const mount=new Function('return ('+mountWaitScene.toString()+')')();
+    mount(document.querySelector('section'),{},options=>{paint=options.paint;return {};});
+    const original={
+      egg:'M12 2C8.3 2 4 10.4 4 15a8 8 0 0016 0C20 10.4 15.7 2 12 2Z',
+      quantity:'M3 4h18v5H3zM3 11h8v9H3zM13 11h8v9h-8z',
+      region:'M12 2a8 8 0 00-8 8c0 6 8 12 8 12s8-6 8-12a8 8 0 00-8-8Zm0 4a4 4 0 110 8 4 4 0 010-8Z',
+      delivery:'M2 5h12v10h2l2-4h4v7h-2a3 3 0 01-6 0H9a3 3 0 01-6 0H2Zm15 3h3l2 3h-6Z'
+    };
+    const items=Object.keys(original).map((kind,index)=>({kind,index,values:[index===0?'<img src=x onerror=alert(1)>':kind]}));
+    for(let index=0;index<items.length;index++){
+      paint('comparing',items.slice(Math.max(0,index-2),index+1),{requestId:1,emitted:index+1,visualMs:3500+500*index,avatarTime:0,copy:'비교 중',status:'pending'});
+      const cards=[...document.querySelectorAll('.mf-banner')];assert.equal(cards.length,Math.min(index+1,3));
+      assert.equal(cards[0].dataset.bannerIndex,String(index));
+      for(const card of cards){
+        const item=items[Number(card.dataset.bannerIndex)],icon=card.querySelector('.mf-banner-icon');
+        assert.equal(icon.getAttribute('aria-hidden'),'true');assert.equal(icon.querySelector('svg').getAttribute('viewBox'),'0 0 24 24');
+        assert.equal(icon.querySelector('path').getAttribute('d'),original[item.kind]);
+        assert.equal(card.querySelector('.mf-banner-text').textContent,item.values[0]);
+        assert.equal(card.querySelectorAll('.mf-banner-text *').length,0);
+      }
+    }
+    paint('complete',[],{requestId:1,emitted:4,visualMs:5000,avatarTime:null,copy:'',status:'success'});
+    assert.equal(document.querySelectorAll('.mf-banner').length,0);
+  }finally{dom.window.close();}
 });

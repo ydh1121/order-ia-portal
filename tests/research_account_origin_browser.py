@@ -8,7 +8,7 @@ from r3_feedback_browser_support import frame_click, prepare_frame_pointer
 
 def motion(page, trigger, opening, reduced):
     page.emulate_media(reduced_motion='reduce' if reduced else 'no-preference')
-    trigger.evaluate("""t=>{
+    trigger.evaluate("""(t,opening)=>{
       const p=document.querySelector('.obm-panel'),s=p.querySelector('.obm-surface'),m=p.querySelector('.obm-menu');
       const compact=n=>{const r=n.getBoundingClientRect();return {right:r.right,y:r.y,w:r.width,h:r.height};};
       const ink=()=>{const paths=[...t.querySelectorAll('svg g > path')].map(n=>n.getBoundingClientRect());
@@ -25,16 +25,24 @@ def motion(page, trigger, opening, reduced):
           staticPoints:[...p.querySelectorAll('[data-obm-point] .obm-point')].filter(n=>getComputedStyle(n).visibility!=='hidden').length});
       };
       window.__accountMotion={samples,done:false};
-      t.addEventListener('click',e=>{
+      const action=opening?t:p;
+      action.addEventListener(opening?'click':'keydown',e=>{
+        if(!opening&&e.key!=='Escape')return;
         window.__accountMotion.trusted=e.isTrusted;
+        window.__accountMotion.dismissal=opening?'trigger-click':'Escape';
         const start=performance.now(),observer=new MutationObserver(()=>snapshot('state'));
         observer.observe(t,{attributes:true,attributeFilter:['aria-expanded']});
         const step=now=>{snapshot('raf');if(now-start<650)requestAnimationFrame(step);
           else{observer.disconnect();window.__accountMotion.done=true;}};
         requestAnimationFrame(step);
       },{once:true,capture:true});
-    }""")
-    frame_click(page, trigger)
+    }""", opening)
+    if opening:
+        frame_click(page, trigger)
+    else:
+        # C527 puts the visible menu over the logo corner. Escape is the
+        # retained panel's real dismissal path while its trigger is covered.
+        page.frame_locator('#frame').locator('.obm-panel [data-obm-item]:visible').first.press('Escape')
     wait_for_expression(page,"document.querySelector('#frame')?.contentWindow.__accountMotion?.done",timeout=15000)
     result = trigger.evaluate('()=>window.__accountMotion')
     assert result['trusted']

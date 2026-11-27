@@ -56,6 +56,7 @@ MEASURE = """()=>{
    drawerTabs:all('button[data-drawer-tab]').map(b=>b.dataset.drawerTab),
    modeButtons:all('.lab-topbar button[data-mode]').map(b=>b.textContent.trim()),
    navCount:all('#catalog button[data-module]').length,navModules:all('#catalog button[data-module]').map(b=>b.dataset.module),
+   navEntries:all('#catalog button[data-module]').map(b=>({module:b.dataset.module,mode:b.dataset.quoteMode||null,states:Number(b.querySelector('.nav-count')?.textContent||0)})),
    navStateCounts:Object.fromEntries(all('#catalog button[data-module]').map(b=>[b.dataset.module,Number(b.querySelector('.nav-count')?.textContent||0)])),
    navGroups:all('#catalog [data-nav-group]').map(g=>g.dataset.navGroup),bodyOverflow:document.documentElement.scrollWidth-innerWidth,
    boardOpen:all('#preview-list button[data-open-state]').filter(visible).length,
@@ -120,7 +121,16 @@ def compare(name, original, candidate, drawer, mode):
     # the 2 result states new-only-detail/no-current. All other approved
     # modules and the shell geometry remain protected by this comparison.
     require(set(original["navModules"])-set(candidate["navModules"])=={"quote-review"},"the exact authorized retired module was not removed, or another approved module was lost")
-    require(candidate["navCount"]==102 and len(set(candidate["navModules"]))==102 and {"price-workspace","notifications"}.issubset(candidate["navModules"]),"MVP inventory, the canonical price workspace or the native notification page is missing or duplicated")
+    # Nov 27 explicitly separates simple/detailed calculator menu buttons.
+    # Only q1–q4 gain a second entry; the underlying 102 modules stay intact.
+    calculator_modules = {"q1", "q2", "q3", "q4"}
+    module_counts = {module:candidate["navModules"].count(module) for module in set(candidate["navModules"])}
+    require(candidate["navCount"]==106 and len(module_counts)==102 and {"price-workspace","notifications"}.issubset(module_counts),"MVP inventory, the canonical price workspace or the native notification page is missing")
+    require({module for module,count in module_counts.items() if count!=1}==calculator_modules and all(module_counts.get(module)==2 for module in calculator_modules),"only q1–q4 may have the authorized pair of calculator entries")
+    for module in calculator_modules:
+        entries = [entry for entry in candidate["navEntries"] if entry["module"]==module]
+        require(sorted(entry["mode"] or "" for entry in entries)==["detailed","simple"],f"{module} must expose simple and detailed exactly once")
+        require(len(entries)==2 and entries[0]["states"]==entries[1]["states"]==candidate["navStateCounts"].get(module),f"{module} mode entries must preserve the original state inventory")
     require("quote-review" not in candidate["navStateCounts"] and candidate["navStateCounts"].get("quote-result")==9 and sum(candidate["navStateCounts"].values())==541,"current inventory must remove exactly the 8 retired states and retain all 541 review states")
     require(candidate["navGroups"]==["mvp","future"],"MVP and future accordions missing")
     require(candidate["bodyOverflow"] <= 1, f"document horizontal overflow {candidate['bodyOverflow']}px")

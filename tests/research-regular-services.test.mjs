@@ -122,6 +122,27 @@ test('research email mounting preserves the focused input and selection without 
   } finally {f.close();}
 });
 
+test('refocusing an email field keeps fresh domain suggestions open until the user leaves again', async t => {
+  const f = await setup();
+  try {
+    t.mock.timers.enable({apis: ['setTimeout']});
+    const input = f.input('email'), other = f.input('query');
+    f.services.mountEmail(input, {autoValidate: false});
+    const suggestions = f.document.querySelector('.ui-email-suggestions');
+    input.focus();
+    other.focus();
+    input.focus();
+    input.value = 'shop@';
+    input.dispatchEvent(new f.window.Event('input', {bubbles: true}));
+    assert.ok(suggestions.children.length);
+    t.mock.timers.tick(120);
+    assert.equal(suggestions.hidden, false);
+    other.focus();
+    t.mock.timers.tick(120);
+    assert.equal(suggestions.hidden, true);
+  } finally {f.close();}
+});
+
 test('email proof gates actual commit, expires with clock, preserves local case and invalidates on edit/cancel', async () => {
   const f = await setup(); try {
     const email = f.services.mountEmail(f.input('email'), {autoValidate: false});

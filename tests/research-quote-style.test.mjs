@@ -44,7 +44,9 @@ test('research quote cards, add regions and egg choices override the current reg
  const dom=new JSDOM('<!doctype html><style>'+relevant+'\n'+researchQuoteCss+'</style><section id="order-app-quote"><div data-research-quote><section id="page-form"><div class="stack"><section class="t-acc" data-status="active"><button class="accordion-trigger">품목</button></section></div><button id="add-line" class="subaction">계란 추가</button><button id="add-site" class="subaction">+ 사업장 추가</button>'+egg+'<button id="q3-next" hidden>완료</button><button id="q4-next" hidden>완료</button></section></div></section><section id="unrelated">'+egg+'</section>');
  try{
   const w=dom.window,d=w.document,scope=d.querySelector('[data-research-quote]');
-  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).backgroundColor,'rgb(255, 255, 255)');
+  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).backgroundColor,'rgba(0, 0, 0, 0)','calculator shares the page instead of adding another surface');
+  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).paddingLeft,'0px');
+  assert.equal(w.getComputedStyle(d.querySelector('#page-form')).boxShadow,'none');
   assert.equal(w.getComputedStyle(scope.querySelector('.t-acc')).borderWidth,'0px');
   assert.notEqual(w.getComputedStyle(scope.querySelector('.t-acc')).boxShadow,'none','white accordions retain depth on the white page');
   assert.match(w.getComputedStyle(scope.querySelector('.t-acc')).boxShadow,/12px/);

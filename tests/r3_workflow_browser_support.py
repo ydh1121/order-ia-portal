@@ -146,7 +146,11 @@ def check_signature_flow(page, frame, *, open_proof, fail_first=True, on_step=la
     on_step('signature actual image load and missing-signature rejection')
     file.set_input_files({'name': 'synthetic-proof.png', 'mimeType': 'image/png', 'buffer': PNG})
     expect(frame.locator('canvas[aria-label="1쪽 가림 영역 선택"]')).to_be_visible()
-    confirmation = frame.get_by_label('가림 처리한 모든 페이지를 확인했습니다.', exact=True)
+    original_document = frame.locator('canvas[aria-label="1쪽 가림 영역 선택"]').element_handle()
+    frame_click(page, frame.get_by_role('button', name='다음', exact=True))
+    expect(frame.locator('.research-evidence-page')).to_have_attribute('data-evidence-step', 'signature')
+    assert original_document.evaluate("canvas=>canvas.isConnected&&document.querySelector('canvas[aria-label=\"1쪽 가림 영역 선택\"]')===canvas")
+    confirmation = frame.get_by_label('제출 자료와 서명 내용을 확인했어요.', exact=True)
     on_step('signature explicit confirmation with trusted frame click')
     expect(confirmation).not_to_be_checked()
     confirmation.evaluate('''el=>{
@@ -167,11 +171,12 @@ def check_signature_flow(page, frame, *, open_proof, fail_first=True, on_step=la
     assert confirmation_state['after'] == {'checked': True, 'disabled': False, 'sameInput': True}, confirmation_state
     assert [event['type'] for event in confirmation_state['events']] == ['pointerdown', 'click'], confirmation_state
     assert all(event['trusted'] and event['targetIsInput'] for event in confirmation_state['events']), confirmation_state
-    submit = frame.locator('.wf-panel button').filter(has_text='가림 처리본 제출')
+    submit = frame.locator('.wf-panel [data-evidence-submit]')
     on_step('signature missing-signature rejection after explicit confirmation')
     frame_click(page, submit)
-    expect(frame.locator('.wf-status')).to_contain_text('서명')
+    expect(frame.locator('.wf-signature [data-workflow-error]')).to_contain_text('서명')
     assert not any(call['path'] == '/evidence' and call['method'] == 'POST' for call in inspect_fixture(frame)['calls'])
+    frame_click(page, frame.locator('.research-signature-alternative > summary'))
     frame.get_by_label('또는 이름 입력으로 서명', exact=True).fill('검수용 합성 서명')
     if fail_first:
         on_step('signature sealed upload failure and retention')

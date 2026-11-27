@@ -32,9 +32,11 @@ MOBILE += [('q2', state, mode, 390) for mode in ('simple', 'detailed') for state
 MOBILE += [('q2', 'unknown', 'simple', 390), ('q2', 'mixed', 'detailed', 390)]
 MOBILE += [(screen, state, 'detailed', 390) for screen, states in (
     ('q3', ('closed', 'open', 'incomplete', 'long-name')), ('q4', ('closed', 'open', 'mixed', 'missing'))) for state in states]
+MOBILE += [(screen, state, 'simple', 390) for screen, states in (
+    ('q3', ('closed', 'open')), ('q4', ('closed', 'open', 'missing'))) for state in states]
 DESKTOP = [(screen, state, mode, 1280) for mode in ('simple', 'detailed') for screen, state in (('q1', 'before'), ('q2', 'filled'))]
 DESKTOP += [('q3', 'closed', 'detailed', 1280), ('q4', 'open', 'detailed', 1280)]
-RELATED = [('quote-wait', state, 'simple', 390) for state in ('entry', 'comparing')]
+RELATED = [('quote-wait', state, 'simple', 390) for state in ('entry', 'comparing', 'delayed', 'complete', 'offline', 'server-error')]
 RELATED += [('quote-result', state, 'simple', 390) for state in ('expired', 'recompare', 'no-result', 'locked')]
 RELATED += [(screen, state, 'simple', 390) for screen, state in (
     ('signature', 'empty'), ('proof', 'empty'), ('profile', 'notification'), ('notifications', 'list'),
@@ -331,26 +333,100 @@ def page_quote(page):
     return page.evaluate('ORDER_RESEARCH_APP.snapshot().quote')
 
 
-def core_checks(open_source, receipt):
+def wait_error_controls(page, width, state):
+    scene = page.locator('[data-wait-scene]')
+    expect(scene).to_have_attribute('data-phase', 'offline' if state == 'offline' else 'error')
+    seen = scene.evaluate("""el => {
+        const avatar = getComputedStyle(el.querySelector('.mf-wait-avatar'));
+        const footer = el.querySelector('.mf-actions');
+        const buttons = [...footer.querySelectorAll('button')].map(button => {
+            const box = button.getBoundingClientRect(), css = getComputedStyle(button);
+            const center = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return {label: button.textContent.trim(), x: box.x, y: box.y, width: box.width,
+                height: box.height, radius: css.borderTopLeftRadius, bg: css.backgroundColor,
+                fontSize: css.fontSize, fontWeight: css.fontWeight, hit: button.contains(center)};
+        });
+        return {viewport: innerWidth, outline: avatar.outlineStyle, opacity: avatar.opacity,
+            width: footer.getBoundingClientRect().width, buttons};
+    }""")
+    assert seen['viewport'] == width and seen['outline'] == 'none' and abs(float(seen['opacity']) - .72) < .001, seen
+    back, retry = seen['buttons']
+    assert [back['label'], retry['label']] == ['돌아가기', '다시 비교하기'], seen
+    assert [back['bg'], retry['bg']] == ['rgb(241, 243, 246)', 'rgb(49, 93, 230)'], seen
+    assert abs(retry['x'] - back['x'] - back['width'] - 10) < .1 and abs(back['y'] - retry['y']) < .1, seen
+    for button in (back, retry):
+        assert button['hit'] and button['height'] >= 54 and abs(2 * button['width'] + 10 - seen['width']) < .1, seen
+        assert button['radius'] == '12px' and button['fontWeight'] == '650', seen
+        assert button['fontSize'] == ('16px' if width < 360 else '17px'), seen
+    return seen
+
+
+def qa_mode_navigation_checks(open_source, receipt):
     page, identity, _ = open_source('q1', 'before', 'simple', 390)
     try:
-        page.locator('#to-result').click()
-        expect(page.locator('#err-q1')).to_have_text('계란 규격을 선택해 주세요.')
-        for group in ('housing', 'size', 'pack'):
-            assert page.locator('#picks-' + group + ' [data-pick][aria-invalid=true]').count() > 0
-        page.locator('[data-pick=housing][data-value="1"]').click()
-        assert page.locator('#picks-housing [aria-invalid=true]').count() == 0
-        for group in ('size', 'pack'):
-            assert page.locator('#picks-' + group + ' [data-pick][aria-invalid=true]').count() > 0
-        page.locator('[data-pick=size][data-value="대란"]').click()
-        page.locator('[data-pick=pack][data-value="30"]').click()
-        page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
-        expect(page.locator('#err-q1')).to_be_hidden()
-        line = page_quote(page)['lines'][0]
-        assert all(line[key] == value for key, value in [('housing', '1'), ('size', '대란'), ('pack', '30'), ('qty', '')])
-        receipt['checks'].append({'check': 'Q1 real completion, individual missing-field exposure and per-group repair', 'initialSource': identity, 'line': line})
+        host = page.native_page
+        simple = host.locator('#catalog button[data-module="q1"][data-quote-mode="simple"]')
+        detailed = host.locator('#catalog button[data-module="q1"][data-quote-mode="detailed"]')
+        expect(simple).to_have_count(1)
+        expect(detailed).to_have_count(1)
+        assert '간편 견적' in simple.inner_text() and '상세 견적' in detailed.inner_text()
+        observations = []
+        for mode, control in [('detailed', detailed), ('simple', simple)]:
+            with host.expect_response(lambda response: '/r3-qa/artifact?' in response.url and
+                    'id=q1%2Fbefore%2Femail' in response.url and
+                    ('mode=detailed' in response.url) == (mode == 'detailed')) as response:
+                control.click()
+            artifact = response.value.json()
+            page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().route.mode===' + json.dumps(mode) +
+                '&&document.getElementById("order-single").__orderResearchInspector.inspect().session.artifact===' + json.dumps(artifact['hash']))
+            expect(control).to_have_attribute('aria-current', 'page')
+            for screen in ('q2', 'q3', 'q4'):
+                expect(host.locator('#catalog button[data-module="' + screen + '"][data-quote-mode="' + mode + '"]')).to_have_count(1)
+            observations.append({'mode': mode, 'artifactHash': artifact['hash'], 'url': host.url,
+                'footerCount': host.locator('#open-total').inner_text()})
+        assert observations[0]['artifactHash'] != observations[1]['artifactHash']
+        assert observations[0]['footerCount'] == observations[1]['footerCount'], 'Changing calculator mode must not hide other review counts'
+        receipt['checks'].append({'check': 'C624 separate QA menu buttons select distinct simple/detailed sources', 'initialSource': identity, 'observed': observations})
     finally:
         page.close()
+
+
+def assert_q1_missing_group(page, group):
+    seen = page.locator('#picks-' + group).evaluate("""group => {
+      const style = getComputedStyle(group);
+      return {outer: [style.borderTopWidth, style.outlineWidth, style.boxShadow],
+        choices: [...group.querySelectorAll('[data-pick]')].map(button => {
+          const paint = getComputedStyle(button);
+          return [button.getAttribute('aria-invalid'), button.getAttribute('aria-describedby'),
+            paint.borderTopWidth, paint.borderTopStyle, paint.borderTopColor];
+        })};
+    }""")
+    assert seen['outer'] == ['0px', '0px', 'none'], seen
+    assert seen['choices'] and all(choice == ['true', 'err-q1', '1px', 'solid', 'rgb(217, 45, 72)']
+                                   for choice in seen['choices']), seen
+
+
+def core_checks(open_source, receipt):
+    for mode, helper in [('simple', '계란 규격을 선택해 주세요.'), ('detailed', '계란 제품을 한 개 이상 선택해 주세요.')]:
+        page, identity, _ = open_source('q1', 'before', mode, 390)
+        try:
+            page.locator('#to-result').click()
+            expect(page.locator('#err-q1')).to_have_text(helper)
+            for group in ('housing', 'size', 'pack'):
+                assert_q1_missing_group(page, group)
+            page.locator('[data-pick=housing][data-value="1"]').click()
+            assert page.locator('#picks-housing [aria-invalid=true]').count() == 0
+            for group in ('size', 'pack'):
+                assert_q1_missing_group(page, group)
+            page.locator('[data-pick=size][data-value="대란"]').click()
+            page.locator('[data-pick=pack][data-value="30"]').click()
+            page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
+            expect(page.locator('#err-q1')).to_be_hidden()
+            line = page_quote(page)['lines'][0]
+            assert all(line[key] == value for key, value in [('housing', '1'), ('size', '대란'), ('pack', '30'), ('qty', '')])
+            receipt['checks'].append({'check': 'Q1 real completion, individual missing-field exposure and per-group repair', 'mode': mode, 'initialSource': identity, 'line': line})
+        finally:
+            page.close()
 
     page, identity, _ = open_source('q2', 'empty', 'detailed', 390)
     try:
@@ -385,6 +461,25 @@ def core_checks(open_source, receipt):
                                   'quantity': before['lines'][0]['qty'], 'price': before['lines'][0]['price'], 'cancelPreservedExactQuote': True})
     finally:
         page.close()
+
+
+def confirmation_presentation(page, reference=False):
+    return page.evaluate("""reference=>{
+        const surface=document.querySelector(reference?'#quote-mode-dialog':'dialog.oq-dialog[open]'),
+          panel=reference?surface.querySelector('.q1-confirm'):surface,
+          title=panel.querySelector(reference?'h2':'.oq-dialog-title'),
+          group=reference?panel.querySelector('.ui-transaction-group'):panel,
+          css=getComputedStyle(surface),inside=getComputedStyle(panel),heading=getComputedStyle(title);
+        const buttons=[...panel.querySelectorAll(reference?'.ui-transaction-action':'.oq-choice')].map(node=>{
+          const c=getComputedStyle(node);return {height:node.getBoundingClientRect().height,
+            radius:c.borderRadius,background:c.backgroundColor,color:c.color,fontSize:c.fontSize,
+            fontWeight:c.fontWeight,lineHeight:c.lineHeight};
+        });
+        return {width:surface.getBoundingClientRect().width,radius:reference?inside.borderRadius:css.borderRadius,
+          background:inside.backgroundColor,padding:[inside.paddingTop,inside.paddingRight,inside.paddingBottom,inside.paddingLeft],
+          title:{fontSize:heading.fontSize,fontWeight:heading.fontWeight,lineHeight:heading.lineHeight},
+          gap:getComputedStyle(group).columnGap,buttons};
+    }""", reference)
 
 
 def mode_motion_checks(open_source, receipt):
@@ -448,6 +543,11 @@ def mode_motion_checks(open_source, receipt):
             reduced = page.locator('#quote-mode-dialog>.q1-confirm').evaluate('''panel=>({
                 transform:getComputedStyle(panel).transform,activeAnimations:panel.getAnimations().filter(a=>a.playState==='running').length})''')
             assert reduced['activeAnimations'] == 0 and reduced['transform'] in ('none', 'matrix(1, 0, 0, 1, 0, 0)'), reduced
+            appearance = confirmation_presentation(page, reference=True)
+            if 'commonConfirmation' in receipt:
+                assert appearance == receipt['commonConfirmation'], 'Simple and detailed modes must consume one common confirmation style'
+            else:
+                receipt['commonConfirmation'] = appearance
             page.locator('#quote-mode-dialog [data-mode-cancel]').click()
             expect(page.locator('#quote-mode-dialog')).to_be_hidden()
             expect(page.locator('#research-order-trigger')).to_be_focused()
@@ -589,6 +689,7 @@ def main():
                 'sourceHtmlBytes': len(source_html), 'parent': parent_observation, 'parentGeometry': geometry,
                 'sameQaIframeRetained': True, 'sourceMutatedForCapture': False}
 
+        qa_mode_navigation_checks(open_source, receipt)
         core_checks(open_source, receipt)
         mode_motion_checks(open_source, receipt)
         for screen, state, mode, width in MOBILE + DESKTOP + RELATED:
@@ -601,14 +702,45 @@ def main():
                 # capture; failed receipts never authorize Figma synchronization.
                 write_json(OUT / (label + '.chrome-layout.json'), native)
                 write_json(OUT / (label + '.dom-paint.json'), captured)
+                page.screenshot(OUT / (label + '.viewport.png'))
                 if screen in ('q1', 'q2', 'q3', 'q4'):
+                    if screen == 'q1' and state == 'error':
+                        for group in ('housing', 'size', 'pack'):
+                            assert_q1_missing_group(page, group)
                     assert captured['anchors']['duplicateModeSwitchVisible'] is False, 'C622 duplicate switch must be absent from paint'
-                    assert captured['anchors']['form']['background'] == 'rgb(255, 255, 255)', 'C623/C625 white calculator surface'
+                    form = captured['anchors']['form']
+                    assert form['background'] == 'rgba(0, 0, 0, 0)', 'C623 calculator shares the plain white page'
+                    assert form['paddingLeft'] == form['paddingRight'] == form['border'] == '0px' and form['boxShadow'] == 'none', 'No second calculator surface'
+                    if width == 390:
+                        assert abs(form['rect']['x'] - 24) < .1 and abs(form['rect']['width'] - 342) < .1, ('Same 24px page inset as other product screens', form)
+                    for closed in captured['anchors']['closedAccordions']:
+                        assert abs(closed['rect']['height'] - 52) < .1, ('Original closed accordion height is 52px', closed)
+                        assert abs(closed['header']['height'] - 52) < .1 and closed['body']['height'] == 0, 'Closed content contributes no phantom padding'
                     assert page.locator('header.header').count() == 0
+                if screen == 'quote-wait' and state in ('offline', 'server-error'):
+                    checks = receipt.setdefault('waitErrorControls', {})
+                    checks[label] = wait_error_controls(page, width, state)
                 if screen == 'profile' and state == 'notification':
                     assert captured['source']['route']['panel'] == 'notifications', 'Direct notification entry must retain its actual panel'
                     expect(page.locator('[data-obm-page="notifications"] .obm-heading')).to_have_text('알림')
                     expect(page.locator('[data-notification-preferences]')).to_be_visible()
+                if screen == 'quote-result' and state == 'expired':
+                    expired = page.locator('[data-order-result][data-state=expired]').first
+                    shapes = expired.locator('.oq-plot').evaluate("""node=>['::before','::after'].map(pseudo=>{
+                        const css=getComputedStyle(node,pseudo);
+                        return {width:parseFloat(css.width),height:parseFloat(css.height),
+                          backgroundImage:css.backgroundImage,borderRadius:css.borderRadius};
+                    })""")
+                    assert all(shape['width'] == 53 and shape['height'] > 80 and shape['backgroundImage'] == 'none' for shape in shapes), shapes
+                    assert shapes[0]['height'] == shapes[1]['height'], 'Expired empty outlines must not invent a price comparison'
+                    assert expired.locator('.oq-series:not([hidden])').count() == 0
+                    expect(expired.locator('.oq-expired-details')).to_be_visible()
+                    captured['expiredGraph'] = {'kind':'empty price-free outlines', 'shapes':shapes}
+                if screen == 'quote-result' and state == 'recompare':
+                    expect(page.locator('dialog[open]')).to_have_accessible_name('동일한 조건으로 다시 비교하겠어요?')
+                    appearance = confirmation_presentation(page)
+                    assert appearance == receipt['commonConfirmation'], {'common':receipt['commonConfirmation'], 'recompare':appearance}
+                    captured['commonConfirmation'] = appearance
                 assert page.locator('#order-app-header').count() == 1
                 assert captured['viewport']['devicePixelRatio'] == 1
                 assert captured['viewport']['documentWidth'] <= width + 1, 'Form must not overflow the native viewport'
@@ -677,9 +809,38 @@ def main():
                         'interaction': 'trusted detail-button click, close and return focus; selection unchanged',
                         'domPaint': detail_label + '.dom-paint.json', 'nativeLayout': detail_label + '.chrome-layout.json',
                         'screenshot': detail_screenshot})
+                if screen == 'quote-result' and state == 'expired':
+                    page.evaluate('scrollTo(0,0)')
+                    opener = page.locator('.oq-expired-details')
+                    opener.click()
+                    dialog = page.locator('dialog[open]')
+                    expect(dialog).to_have_accessible_name('이전 견적서 상세보기')
+                    expect(dialog.locator('.oq-dialog-copy')).to_contain_text('2026.11.14 ~ 2026.11.21')
+                    expect(dialog.locator('.oq-dialog-copy')).to_contain_text('만료된 견적은 가격을 표시하지 않아요.')
+                    assert dialog.locator('button').all_text_contents() == ['닫기', '동일한 조건']
+                    settle(page)
+                    detail_label = 'quote-result-expired-details-simple-390'
+                    detail = page.evaluate(CAPTURE, {'expected': source, 'label': detail_label})
+                    detail.update(provenance=provenance, interaction=['actual previous-quote detail click'], sourceState='quote-result/expired/email')
+                    write_json(OUT / (detail_label + '.dom-paint.json'), detail)
+                    write_json(OUT / (detail_label + '.chrome-layout.json'), chrome_layout(page))
+                    page.screenshot(OUT / (detail_label + '.viewport.png'))
+                    detail_screenshot = screenshot_identity(OUT / (detail_label + '.viewport.png'))
+                    dialog.get_by_role('button', name='닫기', exact=True).click()
+                    expect(dialog).to_have_count(0)
+                    expect(opener).to_be_focused()
+                    receipt.setdefault('derivedCaptures', []).append({'label':detail_label, 'from':label,
+                        'interaction':'trusted previous-quote detail click, disclosed dates only, close and return focus',
+                        'domPaint':detail_label + '.dom-paint.json', 'nativeLayout':detail_label + '.chrome-layout.json',
+                        'screenshot':detail_screenshot})
                 write_json(OUT / 'receipt.json', receipt)
             finally:
                 page.close()
+        narrow, _, _ = open_source('quote-wait', 'offline', 'simple', 320)
+        try:
+            receipt['waitErrorControls']['quote-wait-offline-simple-320'] = wait_error_controls(narrow, 320, 'offline')
+        finally:
+            narrow.close()
         resource_hashes()
         assert not forbidden_writes, forbidden_writes
         assert not errors, errors

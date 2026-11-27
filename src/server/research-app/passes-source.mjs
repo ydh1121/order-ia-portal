@@ -5,6 +5,7 @@ import {browserFunction} from '../browser-source.mjs';
 export function mountPassTearMotion(root,{signal,confirm,reduced=()=>false}){
   const document=root.ownerDocument,window=document.defaultView,media=window.matchMedia?.('(prefers-reduced-motion: reduce)');
   const style=document.createElement('style');style.textContent=`.expanded-pass{position:relative}.expanded-pass .pass-perforation:has(.pass-cut){position:relative;display:grid;place-items:center;height:48px;margin-block:14px;border:0}.expanded-pass .pass-perforation:has(.pass-cut)::before{content:"";position:absolute;inset:50% 0 auto;border-top:1px dashed #b7c3d4}.expanded-pass .pass-perforation>.pass-cut{position:relative;width:auto;max-width:calc(100% - 36px);min-height:44px;padding:6px 14px;border-radius:24px;border:1px dashed #8c9db8;background:#f7f9fc;touch-action:pan-y;user-select:none;-webkit-user-select:none}.pass-tear-preview{position:absolute;pointer-events:none;z-index:6;overflow:visible}.pass-tear-preview>.ticket-detail{position:absolute!important;inset:0;margin:0!important;width:100%!important;height:100%!important;box-sizing:border-box;transform-origin:0 50%;pointer-events:none}`;root.prepend(style);
+  style.textContent+='.passes-page .site-chips button{display:inline-flex;align-items:baseline;gap:.25em;min-width:0;max-width:100%}.passes-page .pass-site-name,.passes-page .pass-site-hint{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.passes-page .pass-site-hint{flex:none;max-width:52%}';
   let area=null,drag=null,preview=null,suppressClick=false;
   const moving=()=>!reduced()&&!media?.matches;
   function reset(){
@@ -73,7 +74,28 @@ export function mountPassTearMotion(root,{signal,confirm,reduced=()=>false}){
 const once=(source,before,after)=>{if(source.split(before).length!==2)throw Error('RESEARCH_PASS_SOURCE_CHANGED:'+before.slice(0,80));return source.replace(before,after);};
 export function researchPassesSource(source){
   source=once(source,'const passes=[','let passes=[');
-  source=once(source,'const sites=[...new Set(passes.map(p=>p.site))];','let sites=[...new Set(passes.map(p=>p.site))];');
+  source=once(source,'const sites=[...new Set(passes.map(p=>p.site))];',`
+const keyForSite=pass=>pass.siteKey||JSON.stringify([null,null,pass.site]);
+function siteChoices(){
+  const bySite=new Map(passes.map(pass=>[keyForSite(pass),pass]));
+  const groups=new Map();
+  for(const [key,pass] of bySite){
+    if(!groups.has(pass.site))groups.set(pass.site,[]);
+    groups.get(pass.site).push(key);
+  }
+  for(const group of groups.values())group.sort();
+  return Array.from(bySite,([key,pass])=>{
+    const group=groups.get(pass.site);
+    let hint='';
+    if(group.length>1||pass.site==='전체'){
+      const uniqueHint=pass.siteHint&&group.filter(id=>bySite.get(id).siteHint===pass.siteHint).length===1;
+      hint=uniqueHint?pass.siteHint:'사업장 '+(group.indexOf(key)+1);
+    }
+    return [key,pass.site,hint];
+  });
+}
+let sites=siteChoices();`);
+  source=once(source,"p.site===site","keyForSite(p)===site");
   source=once(source,'const dictionary=[...new Set(passes.flatMap','let dictionary=[...new Set(passes.flatMap');
   source=once(source,'const received=new Set();','const received=new Set(passes.filter(p=>p.received).map(p=>p.id));');
   // The old sample literals never contained markup. Service fields do, so
@@ -82,7 +104,9 @@ export function researchPassesSource(source){
   source=source.replaceAll("'+p.status+'","'+esc(p.status)+'");
   for(const value of ['p.id','p.site','summary(p)'])source=source.replaceAll("'+"+value+"+'","'+esc("+value+")+'");
   source=source.replaceAll('${p.lines.length>1?\'복합 주문\':p.lines[0][1]}','${p.lines.length>1?\'복합 주문\':esc(p.lines[0][1])}');
-  source=source.replaceAll('data-site="${site}"','data-site="${esc(site)}"').replaceAll('>${site}</button>','>${esc(site)}</button>');
+  source=once(source,"['전체',...sites].map((site,i)=>","[['전체','전체',''],...sites].map(([key,label,hint],i)=>");
+  source=once(source,'data-site="${site}"','data-site="${esc(key)}" title="${esc(hint?label+\' · \'+hint:label)}"');
+  source=once(source,'>${site}</button>','><span class="pass-site-name">${esc(label)}</span>${hint?`<span class="pass-site-hint"> · ${esc(hint)}</span>`:\'\'}</button>');
   source=once(source,"const terms=state==='results'?['특란']:state==='none'?['샘플카페','특란']:[];","const terms=state==='results'&&dictionary.length?[dictionary[0]]:[];");
   source=once(source,"s==='detail'?ticketDetail(passes[0])","s==='detail'&&passes.length?ticketDetail(passes[0])");
   // Consultation consumes the very same escaped detail function as passes and
@@ -116,7 +140,7 @@ for(const screen of ['passes','search']){
  module.mount=function(root,state,api){
   if(!api.adapter)return mount.call(module,root,state,api);
   if(!w.ORDER_RESEARCH_PASSES)throw Error('RESEARCH_PASSES_INSTALLER_MISSING');
-  return w.ORDER_RESEARCH_PASSES.mount(root,state,api,{screen,render:value=>module.render(value,{variant:api.variant}),mount:(target,value,context)=>mount.call(module,target,value,context),setRows:rows=>{passes=rows;sites=[...new Set(passes.map(p=>p.site))];dictionary=[...new Set(passes.flatMap(p=>[p.site,p.date,p.status,...p.lines.flatMap(([sku,,mode])=>[sku,mode])]))];}});
+  return w.ORDER_RESEARCH_PASSES.mount(root,state,api,{screen,render:value=>module.render(value,{variant:api.variant}),mount:(target,value,context)=>mount.call(module,target,value,context),setRows:rows=>{passes=rows;sites=siteChoices();dictionary=[...new Set(passes.flatMap(p=>[p.site,p.date,p.status,...p.lines.flatMap(([sku,,mode])=>[sku,mode])]))];}});
  };
 }
 `;

@@ -13,6 +13,38 @@ const once=(source,marker,replacement)=>{
   return source.replace(marker,replacement);
 };
 
+// The historical link uses only the dates already disclosed by this expired
+// projection. It never opens an unrelated draft or revives expired prices.
+const expiredResultDetailsSource=String.raw`
+  function showResearchDialog(own){
+    own.addEventListener('click',event=>{
+      if(event.target!==own)return;
+      const rect=own.getBoundingClientRect();
+      if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)own.close();
+    });
+    if(doc.hasFocus()||doc.defaultView.navigator.userActivation?.isActive===true)own.showModal();
+    else{
+      const inert=own.getAttribute('inert');own.setAttribute('inert','');
+      try{own.showModal();}
+      finally{if(inert===null)own.removeAttribute('inert');else own.setAttribute('inert',inert);}
+    }
+  }
+  function showExpiredDetails(){
+    if(model?.state!=='expired'||dialog?.open)return;
+    dialog=node('dialog','dialog',stage);
+    dialog.setAttribute('aria-label','이전 견적서 상세보기');
+    text(node('p','dialog-title',dialog),'이전 견적서');
+    text(node('p','dialog-copy',dialog),[note.textContent,'만료된 견적은 가격을 표시하지 않아요.'].filter(Boolean).join('\n\n'));
+    for(const [kind,label] of [['close','닫기'],['same','동일한 조건']]){
+      const button=node('button','choice',dialog);button.type='button';text(button,label);
+      button.onclick=()=>{dialog.close();if(kind==='same')options.onAction?.('same');};
+    }
+    const own=dialog;
+    own.addEventListener('close',()=>{own.remove();if(dialog===own)dialog=null;},{once:true});
+    showResearchDialog(own);
+  }
+`;
+
 const environmentBindings=`
 const document=researchEnvironment?.document??globalThis.document;
 const window=researchEnvironment?.window??globalThis.window;
@@ -132,7 +164,7 @@ export function researchQuoteResultSource(source){
   const expiry="m.state==='expired'&&dated(m.end)?'견적 만료일 '+dated(m.end):''";
   source=once(source,expiry,`m.state==='expired'&&dated(m.end)?(
     Number.isFinite(m.issued)&&m.issued>=-8640000000000000&&m.issued<m.end
-      ? '견적 유효기간 '+dated(m.issued)+' ~ '+dated(m.end)
+      ? '견적 유효기간\\n'+dated(m.issued)+' ~ '+dated(m.end)
       : '견적 만료일 '+dated(m.end)):''`);
   // A graph click first updates the retained renderer, then the application
   // echoes the selected route. That identical echo must not remove the CSS
@@ -142,22 +174,15 @@ export function researchQuoteResultSource(source){
   source=once(source,"  const plot = node('div','plot',stage);",`  const plot = node('div','plot',stage);
   const protectedPreview=options.preview?.tagName==='IMG'?options.preview:null;
   if(protectedPreview){protectedPreview.classList.add('research-quote-protected-preview');protectedPreview.hidden=true;plot.append(protectedPreview);}`);
-  source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    if(protectedPreview)protectedPreview.hidden=m.state!=='unverified';");
+  source=once(source,"  const note = node('p','note',notice), basis = node('p','basis',notice);",`  const note = node('p','note',notice), basis = node('p','basis',notice);
+  const expiredDetails=node('button','expired-details',stage);expiredDetails.type='button';expiredDetails.hidden=true;
+  text(expiredDetails,'이전 견적서 상세보기');expiredDetails.onclick=showExpiredDetails;`);
+  source=once(source,"    stage.dataset.state=host.dataset.state=m.state;","    stage.dataset.state=host.dataset.state=m.state;\n    if(protectedPreview)protectedPreview.hidden=m.state!=='unverified';\n    expiredDetails.hidden=m.state!=='expired';\n    plot.setAttribute('aria-label',m.state==='expired'?'만료된 견적 안내. 금액은 표시하지 않습니다.':'1회 납품가 비교');");
   source=once(source,"[['new','새로운 견적'],['same','동일한 조건'],['close','닫기']]","[['new','새로운 견적'],['same','동일한 조건']]");
-  source=source.replaceAll('동일한 조건으로 다시 비교하겠어요?','어떤 조건으로 다시 비교할까요?');
+  source=once(source,"  function chooseConditions() {",expiredResultDetailsSource+"\n  function chooseConditions() {");
   // Preserve the native modal top layer while an inactive review frame skips
   // only showModal's synchronous focus step; restore interaction before paint.
-  source=once(source,'    own.showModal();',`    own.addEventListener('click',event=>{
-      if(event.target!==own)return;
-      const rect=own.getBoundingClientRect();
-      if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)own.close();
-    });
-    if(doc.hasFocus()||doc.defaultView.navigator.userActivation?.isActive===true)own.showModal();
-    else{
-      const inert=own.getAttribute('inert');own.setAttribute('inert','');
-      try{own.showModal();}
-      finally{if(inert===null)own.removeAttribute('inert');else own.setAttribute('inert',inert);}
-    }`);
+  source=once(source,'    own.showModal();','    showResearchDialog(own);');
   // This branch exists only in the review fixture wrapper. The regular quote
   // controller keeps its verified recompare/persistence implementation.
   if(source.includes("same:['quote-review','normal']")){
@@ -172,10 +197,15 @@ export function getResearchQuoteSource(path,source){
   if(typeof source!=='string')throw TypeError('RESEARCH_QUOTE_SOURCE_REQUIRED');
   if(path==='web/quote-result-screen.mjs')return researchQuoteResultSource(source);
   if(path==='web/app.mjs'){
-    // The regular simple verdict uses different copy for the same missing
-    // specification fields. Keep its field ownership and clearing behavior.
-    source=once(source,"if(id==='err-q1'&&message.includes('난각번호'))","if(id==='err-q1'&&(message.includes('난각번호')||message==='계란 규격을 선택해 주세요.'))");
-    source=once(source,"!note.hidden&&note.textContent.includes('난각번호')","!note.hidden&&(note.textContent.includes('난각번호')||note.textContent==='계란 규격을 선택해 주세요.')");
+    // Carry the validation intent through the regular helper and pick handler.
+    // Both verdicts own their copy, and unrelated SKU errors use the same helper.
+    source=once(source,"const err=(id,message)=>{const node=$(id);if(!node)return;","const err=(id,message,missingChoices=false)=>{const node=$(id);if(!node)return;if(id==='err-q1')node.toggleAttribute('data-missing-choices',Boolean(message&&missingChoices));");
+    source=once(source,"if(id==='err-q1'&&message.includes('난각번호'))","if(id==='err-q1'&&$(id).hasAttribute('data-missing-choices'))");
+    source=once(source,"!note.hidden&&note.textContent.includes('난각번호')","!note.hidden&&note.hasAttribute('data-missing-choices')");
+    source=once(source,"err('err-q1','난각번호·계란 크기·포장을 모두 선택해 주세요.');","err('err-q1','난각번호·계란 크기·포장을 모두 선택해 주세요.',true);");
+    source=once(source,"function errorAt(q,msg){changeOpen(q);err('err-'+q,msg)}","function isInitialQ1Issue(stage){return stage==='q1'&&editorMode==='initial'&&!S.lines.length;}\nfunction errorAt(q,msg){changeOpen(q);err('err-'+q,msg,isInitialQ1Issue(q));}");
+    source=once(source," if(simpleMode){\n  if(S.open!==issue.stage", " if(simpleMode||(!issue.blocker&&isInitialQ1Issue(issue.stage))){\n  if(S.open!==issue.stage");
+    source=once(source,"err('err-'+issue.stage,issue.message||'입력을 확인해 주세요.');","err('err-'+issue.stage,issue.message||'입력을 확인해 주세요.',isInitialQ1Issue(issue.stage));");
     source=once(source,
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null}={}){",
       "export function createOrderApp({quoteProvider=null,quoteMode='detailed',onAuthRequest=null,researchEnvironment=null}={}){"+environmentBindings);

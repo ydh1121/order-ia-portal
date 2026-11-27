@@ -11,13 +11,13 @@ import {installQaFixtureAdapter} from '../r3-ui/qa-fixture-adapter.mjs';
 import {browserFunction} from '../browser-source.mjs';
 import {r3ProductAsset} from '../r3-product-page.mjs';
 import {quoteFiles} from '../r3-product-sources.mjs';
-import {regularContactModuleSource,regularServiceSourceIdentity} from './regular-service-assets.mjs';
+import {regularContactModuleSource,regularServiceSourceIdentity,regularContactPresentationCss} from './regular-service-assets.mjs';
 import {regularIanaReferenceJson} from './regular-iana-reference.mjs';
 import {getResearchQuoteSource,getResearchQuoteMarkup,getResearchQuoteStyleSource,getResearchQuoteIntegrationSource} from './quote-source-adapter.mjs';
 import {researchQuoteResultMarkup} from './quote-preview.mjs';
 import {createResearchEnvironment} from './environment.mjs';
 import {researchRoute} from './routes.mjs';
-import {researchQuoteCss} from './quote-style.mjs';
+import {researchQuoteCss,researchConfirmationCss} from './quote-style.mjs';
 import {researchAssets,researchBuild} from './assets.gen.mjs';
 import {getResearchInspectorPanelsModule,getResearchPinProjectionModule} from './inspector-panels-source.mjs';
 import {researchSceneSource} from './scene-source-adapter.mjs';
@@ -138,8 +138,16 @@ html,body{margin:0;min-height:100%;background:#fff}body{overflow-x:clip}#order-s
 
 let foundation;
 function researchFoundation(){return foundation??=(async()=>{
-  styles??=inflate(cssGzip);const [css,panels,auth]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap()]);
-  return {css:productFontCss+css+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss,
+  styles??=inflate(cssGzip);const [css,panels,auth,contactCss,regularCss]=await Promise.all([styles,getProductPanelBootstrap(),getProductAuthSheetBootstrap(),regularContactPresentationCss(),inflate(quoteFiles['web/styles.css'])]);
+  // The retained screen catalogue uses generic .ds .page/button rules. Its
+  // styles must stop at the regular calculator, which owns its page geometry
+  // and controls. Inheritance still supplies the shared font; the calculator's
+  // scoped tokens and original control styles remain its single owner.
+  // Scoped selectors are relative to their root. Select the root explicitly so
+  // shared color/motion tokens still inherit into every application screen.
+  const sceneRules=css.replace(/:root(?=\s*\{)/g,':scope').replace(/(^|[{},\s])html(?=[\s,.#[:{>+~])/g,'$1:scope');
+  const sceneCss='@scope (html) to ([data-research-quote]){\n'+sceneRules+'\n}\n';
+  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss),
     script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 

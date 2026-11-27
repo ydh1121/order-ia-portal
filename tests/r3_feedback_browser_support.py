@@ -146,7 +146,9 @@ class ReviewScreens:
             if page.locator("#open").is_visible() and "nav-open" not in (page.locator("#lab").get_attribute("class") or ""):
                 page.locator("#open").click()
             page.locator("#catalog-search").fill(target)
-            control = page.locator(f'#catalog [data-module="{module}"]')
+            mode = parse_qs(urlparse(page.url).query).get('mode', ['simple'])[0]
+            suffix = f'[data-quote-mode="{mode}"]' if module in ('q1', 'q2', 'q3', 'q4') else ''
+            control = page.locator(f'#catalog [data-module="{module}"]{suffix}')
         expect(control).to_have_count(1)
         def requested(res):
             query = parse_qs(urlparse(res.url).query)

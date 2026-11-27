@@ -9,6 +9,8 @@ import * as history from '../src/server/r3-ui/brand-history.gen.mjs';
 import {extendBrandAccountSource} from '../src/server/r3-brand-account-extension.mjs';
 import {extendQuoteSource} from '../src/server/r3-product-extensions.mjs';
 import {mountBrandAccountMenu,brandAccountMenuCss} from '../src/server/order-engine/browser/brand-account-menu.mjs';
+import {brandAccountScript,brandAccountCss} from '../src/server/product-ui/assets.gen.mjs';
+import {browserFunction} from '../src/server/browser-source.mjs';
 import {getQaMvpRuntimeSource} from '../src/server/r3-ui/qa-mvp-runtime.mjs';
 import {buyerResultClient,projectBuyerResult} from '../src/server/r3-quote-result.mjs';
 const {quoteJellyRuntime,quoteFiles}=productSources;
@@ -16,6 +18,10 @@ const {JSDOM}=createRequire(new URL('./build-tools/package.json',import.meta.url
 const original=gunzipSync(Buffer.from(frames[catalog.find(row=>row.screen==='onboarding'&&row.state==='guest-1').current],'base64')).toString();
 const source=new JSDOM(original),svg=source.window.document.querySelector('header svg').outerHTML;source.window.close();
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
+test('the shipped product brand account asset matches its canonical source',()=>{
+  assert.equal(brandAccountScript,'window.mountBrandAccountMenu=('+browserFunction(mountBrandAccountMenu)+');','Regenerate shared product assets with collect-qa-assets.mjs before sealing');
+  assert.equal(brandAccountCss,brandAccountMenuCss);
+});
 function fixture(options={}){
   const dom=new JSDOM('<style>'+brandAccountMenuCss+'</style><header><span class="brand"><span class="brand-word">Order<span class="brand-dot">.</span></span>'+svg+'</span></header><button id="outside">다른 화면</button>',{runScripts:'outside-only',pretendToBeVisual:true});
   const w=dom.window,d=w.document;
@@ -35,15 +41,19 @@ test('the original CODE1 paths remain the only trigger mark; a guest cannot open
   const again=mountBrandAccountMenu(f.brand,{unread:2});assert.equal(again,f.api);
   f.api.destroy();assert.equal(f.brand.querySelector('svg'),f.mark);assert.equal(f.d.querySelector('[data-order-account-panel]'),null);f.w.close();
 });
-test('the account panel stays inside its screen, remounts with stable identity, and anchors at the upper right',()=>{
+test('C527 anchors the panel to the painted logo corner rather than its padded hit target',()=>{
   const f=fixture({authenticated:true,beforeMount({d,brand}){const root=d.createElement('main');root.id='order-single';d.body.prepend(root);root.append(brand.closest('header'));}});
   Object.defineProperty(f.w,'innerWidth',{value:390});Object.defineProperty(f.w,'innerHeight',{value:844});
   f.api.trigger.getBoundingClientRect=()=>({left:314,top:24,width:52,height:44,right:366,bottom:68});
+  f.paths.forEach((path,index)=>{path.getBoundingClientRect=()=>({left:314+15*index,top:36,width:20,height:20,right:334+15*index,bottom:56});});
   const id=f.api.panel.id;f.api.open();
-  assert.equal(f.api.panel.parentElement.id,'order-single');assert.equal(f.api.panel.style.top,'24px');assert.equal(f.api.panel.style.left,'46px');
+  assert.equal(f.api.panel.parentElement.id,'order-single');assert.equal(f.api.panel.style.top,'36px');assert.equal(f.api.panel.style.left,'44px');assert.equal(f.api.panel.style.getPropertyValue('--obm-closed-h'),'20px');
+  f.api.close({immediate:true});Object.defineProperty(f.w,'innerWidth',{value:320});
+  f.paths.forEach((path,index)=>{path.getBoundingClientRect=()=>({left:244+15*index,top:36,width:20,height:20,right:264+15*index,bottom:56});});f.api.open();
+  assert.equal(f.api.panel.style.left,'12px');assert.equal(f.api.panel.style.width,'282px');assert.equal(parseFloat(f.api.panel.style.left)+parseFloat(f.api.panel.style.width),294,'a narrow viewport shrinks width instead of moving the panel off the logo corner');
   f.api.destroy();const again=mountBrandAccountMenu(f.brand,{authenticated:true,reducedMotion:true});assert.equal(again.panel.id,id);again.destroy();f.close();
 });
-test('a long account form keeps the trigger origin and uses the remaining viewport for its scroll container',async()=>{
+test('a long account form keeps the painted logo origin and uses the remaining viewport for its scroll container',async()=>{
   const f=fixture({authenticated:true,renderPanel({container}){
     Object.defineProperty(container.closest('[data-obm-page]'),'scrollHeight',{value:1500,configurable:true});
     const last=f.d.createElement('button');last.textContent='마지막 저장';container.append(last);
@@ -51,10 +61,11 @@ test('a long account form keeps the trigger origin and uses the remaining viewpo
   Object.defineProperty(f.w,'innerWidth',{value:375});Object.defineProperty(f.w,'innerHeight',{value:828});
   const triggerTop=20.37389;
   f.api.trigger.getBoundingClientRect=()=>({left:299,top:triggerTop,width:51.874,height:44,right:350.874,bottom:triggerTop+44});
+  f.paths.forEach((path,index)=>{path.getBoundingClientRect=()=>({left:299+15.563*index,top:32,width:20.748,height:20.748,right:319.748+15.563*index,bottom:52.748});});
   f.api.open();f.api.show('manage');f.api.show('manage.business');await tick();await tick();
   const panel=f.api.panel,menu=panel.querySelector('.obm-menu'),last=panel.querySelector('.obm-panel-content button');
-  assert.equal(parseFloat(panel.style.top),triggerTop,'a long form must not shift the morph above its trigger');
-  assert.ok(Math.abs(parseFloat(panel.style.height)-(828-12-triggerTop))<.0001,'height is limited by the available space below the trigger');
+  assert.equal(parseFloat(panel.style.top),32,'a long form must retain the painted logo corner');
+  assert.ok(Math.abs(parseFloat(panel.style.height)-(828-12-32))<.0001,'height is limited by the available space below the logo');
   assert.equal(f.w.getComputedStyle(menu).overflow,'auto','long content retains the internal scroll path');
   assert.equal(last.textContent,'마지막 저장');assert.equal(last.closest('[hidden],[inert]'),null);
   f.d.querySelector('#outside').dispatchEvent(new f.w.MouseEvent('pointerdown',{bubbles:true}));
