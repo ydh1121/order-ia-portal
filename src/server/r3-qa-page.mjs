@@ -1,3 +1,4 @@
+import {signatureLibraryRuntime,signatureLibraryCss} from './signature-library.mjs';
 import {frameStyle,authoredFrameDocuments} from './r3-authored-frame.mjs';
 import {catalog, cssHash, cssGzip, previousCssGzip, previousCssHash, frames, release} from './r3-ui/catalog.gen.mjs';
 import {runtimes} from './r3-ui/runtime.gen.mjs';
@@ -172,10 +173,12 @@ export async function serveR3Artifact(request,env){
   const logoCorrectionArchive=archived&&archived===beforeLogoCorrection.archivedRows[r.id];
   const archivedCssHash=logoCorrectionArchive?beforeLogoCorrection.cssHash:brandArchive?beforeBrand.cssHash:interactionArchive?beforeInteraction.cssHash:beforeMotion.cssHash;
   const css=archived&&cssHash!==archivedCssHash?await inflate(logoCorrectionArchive?beforeLogoCorrection.cssGzip:brandArchive?beforeBrand.cssGzip:interactionArchive?beforeInteraction.cssGzip:beforeMotion.cssGzip):await styles(sourceVersion);
-  const {page,editable}=authoredFrameDocuments({r,width,release,artifactHash,version,bodyDigest,styleDigest:version==='previous'?previousCssHash:archived?archivedCssHash:cssHash,body,css});
+  const libraryPad=!archived&&sourceVersion==='current'&&r.id==='common/default/email'&&body.includes('data-library-signature-slot');
+  const {page,editable}=authoredFrameDocuments({r,width,release,artifactHash,version,bodyDigest,styleDigest:version==='previous'?previousCssHash:archived?archivedCssHash:libraryPad?r.currentStyleHash:cssHash,body,css:libraryPad?css+signatureLibraryCss:css});
   const candidates={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member', 'quote-wait':'member'};
   const family=r.runtimeFamily || candidates[r.screen];
   let mount=sourceVersion==='current' && Object.hasOwn(runtimes,family) ? runtimes[family] : null;
+  if(libraryPad)mount=(mount||'')+'\n'+signatureLibraryRuntime;
   if(archived){
     mount=null;
     if(archived.script){

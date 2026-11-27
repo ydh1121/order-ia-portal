@@ -71,6 +71,34 @@ def geometry(target, width, selector='#order-single'):
     return result
 
 
+def check_library_signature(page, target):
+    slot=target.locator('[data-library-signature-slot]')
+    canvas=slot.get_by_label('서명 그리기')
+    canvas.scroll_into_view_if_needed()
+    bounds=canvas.bounding_box()
+    assert bounds and 150 <= bounds['width'] <= 343 and bounds['height']==190,bounds
+    pixel_count="""c=>{const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let count=0;for(let i=0;i<d.length;i+=4)if(d[i]<160)count++;return count}"""
+    assert canvas.evaluate(pixel_count)==0
+    page.mouse.move(bounds['x']+20,bounds['y']+50)
+    page.mouse.down()
+    page.mouse.move(bounds['x']+100,bounds['y']+90,steps=5)
+    page.mouse.up()
+    drawn=canvas.evaluate(pixel_count)
+    assert drawn>60,drawn
+    slot.get_by_role('button',name='다시 하기').click()
+    assert canvas.evaluate(pixel_count)==0
+    slot.get_by_text('이름으로 서명',exact=True).click()
+    name=slot.locator('input')
+    name.fill('Demo')
+    typed=canvas.evaluate(pixel_count)
+    assert typed>60,typed
+    slot.get_by_role('button',name='다시 하기').click()
+    expect(name).to_have_value('')
+    assert canvas.evaluate(pixel_count)==0
+    slot.get_by_text('이름으로 서명',exact=True).click()
+    return {'drawnPixels':drawn,'typedPixels':typed,'width':bounds['width'],'height':bounds['height']}
+
+
 def button_design(target, selector):
     return target.locator(selector).first.evaluate("""button=>{
       const s=getComputedStyle(button);return {fontFamily:s.fontFamily,fontSize:s.fontSize,
@@ -263,6 +291,9 @@ def check(page, origin, width, receipt):
     target=open_screen(page,'component-library','buyer')
     expect(target.locator('.qa-asset-card')).not_to_have_count(0)
     receipt['geometry']['libraryBoard']=geometry(target,width)
+    receipt['checks']['librarySignature']=check_library_signature(page,target)
+    signature=target.locator('.qa-signature-demo')
+    assert signature.locator('[data-source-usage]').evaluate_all('buttons=>buttons.map(b=>b.dataset.sourceUsage)') == ['signature/'+state+'/email' for state in ('empty','drawn','missing','processing','done')]
     target.locator('.qa-asset-card').filter(has=target.get_by_role('heading',name='이메일 입력',exact=True)).get_by_role('button',name='사용처와 동작 보기',exact=True).click()
     expect(target.locator('[data-component-runtime]')).to_contain_text('원본 화면과 런타임이 연결')
     source=target.locator('[data-component-source]')

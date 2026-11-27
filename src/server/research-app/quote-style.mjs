@@ -40,7 +40,7 @@ export const researchQuoteCss=`
   background:center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 104'%3E%3Cg fill='%23ffbc70'%3E%3Cpath d='M11 0C4.6 0 .1 5.1 .4 11.4L5 61.7c.3 3.7 2.6 6.3 6 6.3s5.8-2.6 6.1-6.3l4.5-50.3C22 5.1 17.4 0 11 0Z'/%3E%3Ccircle cx='10.5' cy='94' r='9.2'/%3E%3C/g%3E%3C/svg%3E");
 }
 /* The shared result artboard reserves its first 78px for the real app header. */
-#order-app-header:has(~ #order-app-page:not([hidden]) [data-review-result],~ #order-app-quote:not([hidden]) #page-result.active [data-order-result]){
+#order-app-header:has(~ #order-app-page:not([hidden]) [data-review-result] [data-order-result]:not(.oq-lock),~ #order-app-quote:not([hidden]) #page-result.active [data-order-result]:not(.oq-lock)){
   position:absolute;inset:0 0 auto;
 }
 /* Restore the final R4 DROPIN geometry (QA HTML SHA-256 fa35e0d35c0ce34e766f096e9ed6a260ef4ca4660ea4566b5aee2c69782ff5d3).
@@ -85,8 +85,6 @@ export const researchQuoteCss=`
 #order-single [data-order-result] .oq-expired-details{position:absolute;left:50%;bottom:140px;transform:translateX(-50%);padding:0;background:none;color:#535f70;font-size:14px;line-height:18px;white-space:nowrap;text-decoration:underline;text-underline-offset:3px}
 #order-single [data-order-result] .oq-dialog-copy{grid-column:1/-1;margin:0 0 12px;color:#535f70;font-size:14px;line-height:22px;text-align:left;white-space:pre-line}
 @media(max-height:720px){#order-single [data-order-result][data-state=expired] .oq-heading{top:94px}#order-single [data-order-result][data-state=expired] .oq-plot{top:220px;max-height:calc(100% - 430px)}#order-single [data-order-result][data-state=expired] .oq-notice{bottom:166px}#order-single [data-order-result] .oq-expired-details{bottom:126px}}
-#order-single [data-order-result] .research-quote-protected-preview{position:absolute;left:50%;bottom:0;width:100%;max-width:342px;height:auto;transform:translateX(-50%);pointer-events:none}
-#order-single [data-order-result][data-state=unverified] .oq-plot:has(.research-quote-protected-preview){filter:none;background:none}
 @keyframes research-result-error-enter{0%{opacity:0;transform:translate(-50%,-50%) scale(.65) rotate(-8deg)}65%{opacity:1;transform:translate(-50%,-50%) scale(1.08) rotate(3deg)}100%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(0)}}
 @media(prefers-reduced-motion:no-preference){#order-single [data-order-result][data-state=no-offer]::after{animation:research-result-error-enter 640ms cubic-bezier(.22,1,.36,1) both}}
 ${researchQuoteFormCss}

@@ -442,3 +442,38 @@ test('issued and expiry dates appear together only when disclosed on the regular
   dispose?.();
  }finally{dom.window.close();}
 });
+
+test('issued result gate uses the live actor and re-reads the same quote after verification',async()=>{
+  const f=setup(),id='qa-access-case',requests=[],actions=[];
+  try{
+    f.dom.reconfigure({url:'https://research.example/ia?view=research-r3&quote='+id});
+    const actor={authenticated:false};
+    let status=401;
+    f.services.context={actor,endpoints:{price:'/api/ia/r3-price',role:'/api/ia/r3-role'}};
+    f.services.adapter={ready:Promise.resolve(),async priceRequest(path){
+      requests.push(path);
+      if(status!==200)throw Object.assign(Error('ACCESS_REQUIRED'),{status});
+      return {id,status:'ISSUED',expiresAt:new Date(Date.now()+86400000).toISOString(),issuedAt:new Date().toISOString(),
+        response:{status:'OK',completion:'COMPLETE',quotes:[{currency:'KRW',total:{minorUnits:'738241',decimal:'738241',scale:0},comparisonEligibility:'INELIGIBLE'}]}};
+    }};
+    f.services.onAuthRequest=action=>actions.push(action);
+    const workspace=await f.mount();
+    const result=()=>f.root.querySelector('#receipt');
+    const open=async()=>{await workspace.navigate({page:'result'});await settle();};
+    await open();
+    const guest=result().querySelector('.oq-lock');
+    assert.equal(guest.dataset.state,'guest');assert.doesNotMatch(result().innerHTML,/738,?241|최저가를 찾았어요!/);
+    assert.equal(requests.length,0);
+    guest.querySelector('[data-action=signup]').click();assert.deepEqual(actions,['signup']);
+    guest.querySelector('[data-action=consult]').click();assert.equal(f.navigate.at(-1).screen,'role-consult');
+    actor.authenticated=true;status=403;await open();
+    assert.equal(result().querySelector('.oq-lock').dataset.state,'unverified');
+    result().querySelector('[data-action=verify]').click();assert.deepEqual(actions,['signup','verify']);
+    status=200;await open();assert.equal(result().querySelector('.oq-lock'),null);
+    assert.equal(result().querySelector('[data-order-result]').dataset.state,'offer');
+    assert.match(result().textContent,/738,241/);
+    status=403;await open();assert.doesNotMatch(result().innerHTML,/738,?241/);
+    assert.deepEqual(requests,Array(3).fill('/quote?id='+id));
+    workspace.dispose();
+  }finally{f.close();}
+});

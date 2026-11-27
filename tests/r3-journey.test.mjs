@@ -5,7 +5,7 @@ import {researchScene} from '../src/server/research-app/page.mjs';
 import {preservedReviewArtifact} from './helpers/preserved-review-artifact.mjs';
 const get=async(id,version='current')=>(await serveR3Artifact(new Request('https://review.test/api/ia/r3-qa/artifact?'+new URLSearchParams({id,width:'390',version})))).json();
 test('current research result scenes retain the shared display fixture and exclude commercial requests and issuer data',async()=>{
-  for(const state of ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result','locked']){
+  for(const state of ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result']){
     const doc=await get('quote-result/'+state+'/email');
     assert.ok(doc.application);assert.equal(new URL(doc.application.url,'https://review.test').searchParams.get('state'),state);
     const {html}=await researchScene('quote-result',state,'email');
@@ -22,7 +22,17 @@ test('current research result scenes retain the shared display fixture and exclu
       assert.match(html,/6일 21시간 13분 59초/);
       assert.match(html,/동일한 1회 납품 기준 \/ 2,000판<\/p>/);
     }
-    if(['locked','no-result','expired'].includes(state))assert.doesNotMatch(html,/12,540,000|11,940,000|13,140,000/);
+    if(['no-result','expired'].includes(state))assert.doesNotMatch(html,/12,540,000|11,940,000|13,140,000/);
+  }
+});
+test('both locked result routes render their own data-free silhouette and Figma actions',async()=>{
+  for(const [state,audience,cta] of [['locked','unverified','사업장 인증하기'],['locked-guest','guest','사업장 회원가입']]){
+    const doc=await get('quote-result/'+state+'/email');
+    assert.ok(doc.application);assert.equal(new URL(doc.application.url,'https://review.test').searchParams.get('state'),state);
+    const {html,mount,family}=await researchScene('quote-result',state,'email');
+    assert.equal(family,'researchQuoteLock');assert.ok(html.includes('data-state="'+audience+'"'));
+    assert.ok(html.includes(cta));assert.match(html,/상담 예약/);assert.match(html,/class="oq-lock-graph" aria-hidden="true"/);
+    assert.doesNotMatch(html+mount,/data-quote-fixture|reviewQuoteFixture|quoteService|r3-price\/quote|minorUnits|issuerDiagnostics|12,?540,?000|11,?940,?000|13,?140,?000|7,?200,?000|4\.78%/);
   }
 });
 test('current Q2 and Q4 select one application build while the retired review stays explicitly replayable',async()=>{

@@ -9,7 +9,10 @@ test('evidence notes accept 500 non-space graphemes and reject the next one with
  assert.equal(validCaseContext({memo:'e\u0301'.repeat(500)},'reprice','attach'),true);
  assert.equal(validCaseContext({memo:'e\u0301'.repeat(501)},'reprice','attach'),false);
  assert.equal(validCaseContext({memo:'😀'.repeat(500)},'reprice','attach'),true);
- assert.equal(validCaseContext({memo:'가'+' '.repeat(4000)},'reprice','attach'),false);
+ const family='👨‍👩‍👧‍👦';
+ assert.equal(validCaseContext({memo:family.repeat(500)},'reprice','attach'),true);
+ assert.equal(validCaseContext({memo:family.repeat(501)},'reprice','attach'),false);
+ assert.equal(validCaseContext({memo:' '.repeat(4100)+'가'},'reprice','attach'),true);
 });
 
 test('memo counting does not loosen the context field, empty-text or control-character boundary',()=>{

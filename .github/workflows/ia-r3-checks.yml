@@ -29,6 +29,7 @@ jobs:
         run: node scripts/r3/build-qa-review-runtime.mjs --check
       - name: Verify research application sources and immutable release packs
         run: |
+          node scripts/r3/build-signature-library.mjs --check
           node scripts/build-research-app.mjs --check
           node scripts/seal-research-release.mjs --check
           node scripts/build-research-delivery.mjs --check

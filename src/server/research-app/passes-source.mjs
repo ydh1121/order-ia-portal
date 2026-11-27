@@ -75,6 +75,7 @@ const once=(source,before,after)=>{if(source.split(before).length!==2)throw Erro
 export function researchPassesSource(source){
   source=once(source,'const passes=[','let passes=[');
   source=once(source,'const sites=[...new Set(passes.map(p=>p.site))];',`
+const reviewPasses=passes;
 const keyForSite=pass=>pass.siteKey||JSON.stringify([null,null,pass.site]);
 function siteChoices(){
   const bySite=new Map(passes.map(pass=>[keyForSite(pass),pass]));
@@ -111,7 +112,7 @@ let sites=siteChoices();`);
   source=once(source,"s==='detail'?ticketDetail(passes[0])","s==='detail'&&passes.length?ticketDetail(passes[0])");
   // Consultation consumes the very same escaped detail function as passes and
   // search; attach it where the released drawer module is registered.
-  source=once(source,"R.push({id:'drawer',group:","R.push({id:'drawer',renderPassDetail:ticketDetail,group:");
+  source=once(source,"R.push({id:'drawer',group:","R.push({id:'drawer',renderPassDetail:ticketDetail,reviewConsultationPass:passes.find(row=>row.id==='b17'),group:");
   // Keep the pass silhouette visible while each card's own text geometry is
   // loading. The existing brand mark is the same one used by the empty pass.
   source=once(source,'aria-label="오더 패스 불러오는 중">${passes.map(passCard).join(\'\')}</div>',
@@ -140,7 +141,7 @@ for(const screen of ['passes','search']){
  module.mount=function(root,state,api){
   if(!api.adapter)return mount.call(module,root,state,api);
   if(!w.ORDER_RESEARCH_PASSES)throw Error('RESEARCH_PASSES_INSTALLER_MISSING');
-  return w.ORDER_RESEARCH_PASSES.mount(root,state,api,{screen,render:value=>module.render(value,{variant:api.variant}),mount:(target,value,context)=>mount.call(module,target,value,context),setRows:rows=>{passes=rows;sites=siteChoices();dictionary=[...new Set(passes.flatMap(p=>[p.site,p.date,p.status,...p.lines.flatMap(([sku,,mode])=>[sku,mode])]))];}});
+  return w.ORDER_RESEARCH_PASSES.mount(root,state,api,{screen,reviewPasses,render:value=>module.render(value,{variant:api.variant}),mount:(target,value,context)=>mount.call(module,target,value,context),setRows:rows=>{passes=rows;sites=siteChoices();dictionary=[...new Set(passes.flatMap(p=>[p.site,p.date,p.status,...p.lines.flatMap(([sku,,mode])=>[sku,mode])]))];}});
  };
 }
 `;

@@ -127,9 +127,18 @@ test('signature uses captured pointer ink, flushes the spring before export, and
   signal.abort();assert.equal(v.frames.size,0);assert.equal(canvas.width,0);assert.equal(canvas.height,0);
 });
 
+test('quick pen strokes and taps survive release before the first animation frame',async t=>{
+  const v=await setup(t),pad=v.workflow.signaturePad();v.controls.push(pad);v.root.append(pad.element);
+  const canvas=pad.element.querySelector('canvas'),ctx=canvas.getContext('2d');
+  v.pointer(canvas,'pointerdown',{clientX:20,clientY:30});v.pointer(canvas,'pointerup',{clientX:20,clientY:30});
+  assert.equal(pad.page(),canvas);assert.ok(ctx.pixels[30*360+20]<255);
+  pad.reset();v.pointer(canvas,'pointerdown',{clientX:10,clientY:10});v.pointer(canvas,'pointermove',{clientX:60,clientY:40});v.pointer(canvas,'pointerup',{clientX:110,clientY:55});
+  assert.equal(pad.page(),canvas);assert.ok(ctx.pixels[55*360+110]<255,'the final pen position is captured synchronously');assert.equal(v.frames.size,0);
+});
+
 test('typed signature is accessible, replayable byte for byte and clear cannot mutate a locked signature',async t=>{
   const v=await setup(t),signal=new v.w.AbortController();let locked=false;const pad=v.workflow.signaturePad({signal:signal.signal,locked:()=>locked});v.controls.push(pad);v.root.append(pad.element);const typed=byLabel(pad.element,'또는 이름 입력'),canvas=pad.element.querySelector('canvas'),ctx=canvas.getContext('2d');
-  v.set(typed,'동의한 사용자');pad.page();const first=ctx.pixels.slice();pad.page();assert.deepEqual(ctx.pixels,first,'retries do not accumulate extra antialias ink');assert.equal(pad.element.dataset.ink,'true');locked=true;byText(pad.element,'다시 하기').click();assert.equal(typed.value,'동의한 사용자');locked=false;byText(pad.element,'다시 하기').click();assert.equal(typed.value,'');assert.throws(()=>pad.page(),/서명/);signal.abort();
+  v.set(typed,'동의한 사용자');const first=ctx.pixels.slice();assert.ok(first.some(pixel=>pixel<255),'the typed signature is already visible before submission');pad.page();assert.deepEqual(ctx.pixels,first,'retries do not accumulate extra antialias ink');assert.equal(pad.element.dataset.ink,'true');locked=true;byText(pad.element,'다시 하기').click();assert.equal(typed.value,'동의한 사용자');locked=false;byText(pad.element,'다시 하기').click();assert.equal(typed.value,'');assert.throws(()=>pad.page(),/서명/);signal.abort();
 });
 
 function businessForm(v){

@@ -71,8 +71,15 @@ export function validCaseContext(context,kind,action){
     if(!allowed.includes(key))return false;
     if(key==='replacementQuoteId')return typeof value==='string'&&/^[\w.:-]{1,128}$/.test(value);
     if(key==='targets')return Array.isArray(value)&&value.length>0&&value.length<=12&&new Set(value).size===value.length&&value.every(s=>typeof s==='string'&&/^[\w.:-]{1,128}$/.test(s));
-    if(typeof value!=='string'||!value.trim()||value.length>(key==='memo'?4000:100)||/[\u0000-\u001f]/u.test(value.replaceAll('\n',' ')))return false;
-    if(key==='memo'){const segmenter=typeof Intl.Segmenter==='function'?new Intl.Segmenter('ko',{granularity:'grapheme'}):null,tokens=segmenter?Array.from(segmenter.segment(value),s=>s.segment):Array.from(value);if(tokens.filter(token=>!/^\s+$/u.test(token)).length>500)return false;}
+    if(typeof value!=='string'||!value.trim()||(key!=='memo'&&value.length>100)||/[\u0000-\u001f]/u.test(value.replaceAll('\n',' ')))return false;
+    if(key==='memo'){
+      const segmenter=typeof Intl.Segmenter==='function'?new Intl.Segmenter('ko',{granularity:'grapheme'}):null;
+      let count=0;
+      for(const item of segmenter?segmenter.segment(value):value){
+        const grapheme=segmenter?item.segment:item;
+        if(!/^\s+$/u.test(grapheme)&&++count>500)return false;
+      }
+    }
     if(['openingDate','desiredDate'].includes(key)){
       const date=new Date(value+'T00:00:00Z');return /^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(+date)&&date.toISOString().slice(0,10)===value;
     }

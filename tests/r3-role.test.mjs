@@ -117,8 +117,11 @@ test('reprice attachment binds the uploaded receipt to its case and uploader wit
   assert.deepEqual(sql.prepare("SELECT id,state,revision,evidence_id FROM r3_case WHERE id IN ('reprice-a','reprice-b') ORDER BY id").all(),before);
   assert.equal(sql.prepare("SELECT count(*) n FROM r3_case_event WHERE case_id IN ('reprice-a','reprice-b')").get().n,eventsBefore);
   assert.equal(objects.size,1,'rejected links preserve the uploaded object');
-  const attached=await run('buyer','reprice-a',1,'attach',{evidenceId});
+  const memo='👨‍👩‍👧‍👦'.repeat(500);
+  const attached=await run('buyer','reprice-a',1,'attach',{evidenceId,context:{memo}});
   assert.equal(attached.status,200);assert.equal(attached.case.state,'REVIEW');assert.equal(attached.case.evidenceId,evidenceId);
+  const savedNote=sql.prepare('SELECT context_json FROM r3_case_note WHERE case_id=? AND revision=?').get('reprice-a',attached.case.revision);
+  assert.equal(JSON.parse(savedNote.context_json).memo,memo);
   const readable=await handleR3Role({request:new Request('https://ia.test/api/ia/r3-role/evidence?caseId=reprice-a&id='+evidenceId),env:{ORDER_QA_DB:db,ORDER_PRIVATE_EVIDENCE:bucket},actor:{id:'ops'}});
   assert.equal(readable.status,200);assert.deepEqual(new Uint8Array(await readable.arrayBuffer()),pixel);
 });

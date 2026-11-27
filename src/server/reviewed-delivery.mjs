@@ -16,10 +16,12 @@ async function part(binding, origin, hash) {
 }
 async function record(id, width, hash, env, origin) {
   if (!env?.ASSETS || !/^[a-f0-9]{64}$/.test(hash)) return null;
-  const bucket = await part(env.ASSETS, origin, reviewedDelivery.records[Number.parseInt(hash.slice(0, 2), 16) >>> 2]);
-  const key = [id, width, hash].join('|');
-  if (!Object.hasOwn(bucket, key)) return null;
-  return bucket[key];
+  const shard = Number.parseInt(hash.slice(0, 2), 16) >>> 2, key = [id, width, hash].join('|');
+  for (const layer of [reviewedDelivery.records, reviewedDelivery.additionalRecords]) {
+    const bucket = await part(env.ASSETS, origin, layer[shard]);
+    if (Object.hasOwn(bucket, key)) return bucket[key];
+  }
+  return null;
 }
 export async function isDeliveredReviewedTarget(id, width, hash, env, origin) {
   return Boolean(await record(id, width, hash, env, origin));

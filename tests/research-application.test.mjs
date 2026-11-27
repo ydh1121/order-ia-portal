@@ -27,7 +27,7 @@ const compiled=await build({stdin:{contents,resolveDir:process.cwd()},bundle:tru
 }]});
 const settle=async()=>{for(let i=0;i<10;i++)await new Promise(resolve=>setImmediate(resolve));};
 const waitFor=async predicate=>{const end=Date.now()+3000;while(!predicate()){if(Date.now()>end)assert.fail('Application state did not settle');await new Promise(resolve=>setTimeout(resolve,15));}};
-async function setup(initial={screen:'onboarding',state:'guest-2'}){
+async function setup(initial={screen:'onboarding',state:'guest-2'},prepareEnvironment=()=>{}){
  const html=await renderResearchApplication('a'.repeat(36),new URLSearchParams(initial)),failures=[];
  const vc=new VirtualConsole();vc.on('jsdomError',error=>{if(!/Could not parse CSS|Not implemented: navigation/.test(error.message))failures.push(error.message);});
  const dom=new JSDOM(html.replace(/<style>[\s\S]*?<\/style>/g,''),{url:'https://research.example/ia?view=research-r3',pretendToBeVisual:true,runScripts:'outside-only',virtualConsole:vc});
@@ -49,6 +49,7 @@ async function setup(initial={screen:'onboarding',state:'guest-2'}){
  environment.loadBusinessModule=path=>Promise.resolve(win.ResearchTest.serviceModules[path]);
  environment.priceWorkspace={loadModule:path=>Promise.resolve(win.ResearchTest.serviceModules[path.startsWith(researchAssetBase)?path.slice(researchAssetBase.length):path])};
  environment.loadScene=async route=>{const source=await researchScene(route.screen,route.state,route.variant);assert.ok(source,route.screen);const previous=win.ORDER_DESIGN_MODULES;win.ORDER_DESIGN_MODULES=[];try{win.eval(source.mount);return {modules:win.ORDER_DESIGN_MODULES.slice(),scene:{screen:source.row.screen,state:source.row.state,html:source.html,styles:[]}};}finally{win.ORDER_DESIGN_MODULES=previous;}};
+ prepareEnvironment(environment,win);
  const app=await win.ResearchTest.mountResearchApplication(config,environment);await settle();
  return {win,doc,app,environment,failures,async close(){app.dispose();await settle();dom.window.close();}};
 }
@@ -471,20 +472,21 @@ test('closed consultation owns selection and opener in the parent and retains th
   await f.app.inspectRoute({screen:'drawer',state:'closed'});
   await waitFor(()=>f.doc.querySelector('[name="consult-pass"][data-id="qa-existing-quote"]'));await settle();
   const root=f.doc.querySelector('[data-research-consult-entry]'),sheet=root.querySelector('.functional-drawer');
-  const choice=root.querySelector('[name="consult-pass"]'),opener=root.querySelector('[data-action="open-drawer"]');
+  const choice=root.querySelector('[name="consult-pass"][data-id="qa-existing-quote"]'),compound=root.querySelector('[name="consult-pass"][data-id="b17"]'),opener=root.querySelector('[data-action="open-drawer"]');
   assert.equal(root.parentElement,f.doc.getElementById('order-app-page'));
   assert.equal(parent.isConnected,true);assert.equal(f.doc.getElementById('order-app-header'),header);assert.equal(f.app.adapter,adapter);
-  assert.equal(opener.hidden,false);assert.equal(sheet.dataset.open,'false');assert.equal(root.querySelectorAll('[name="consult-pass"]').length,1);
+  assert.equal(opener.hidden,false);assert.equal(sheet.dataset.open,'false');assert.equal(root.querySelectorAll('[name="consult-pass"]').length,2);
   opener.click();await settle();assert.equal(sheet.dataset.open,'false');assert.match(root.querySelector('.consult-selection-message').textContent,/선택/);
-  choice.click();opener.focus();opener.click();await waitFor(()=>sheet.dataset.open==='true');
+  choice.click();compound.click();opener.focus();opener.click();await waitFor(()=>sheet.dataset.open==='true');
   const memo=sheet.querySelector('.consult-memo textarea');memo.value='같은 상담 메모';memo.focus();
   memo.dispatchEvent(new f.win.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));await waitFor(()=>sheet.dataset.open==='false');await settle();
-  assert.equal(f.doc.activeElement,opener);assert.equal(memo.isConnected,true);assert.equal(choice.checked,true);
+  assert.equal(f.doc.activeElement,opener);assert.equal(memo.isConnected,true);assert.equal(choice.checked,true);assert.equal(compound.checked,true);
   opener.click();await waitFor(()=>sheet.dataset.open==='true');
   assert.equal(root.querySelector('.consult-memo textarea'),memo);assert.equal(memo.value,'같은 상담 메모');
   assert.equal(adapter.fixture.inspect().source.commercial,false);
   assert.equal(adapter.fixture.inspect().calls.some(call=>call.method==='POST'),false,'opening a consultation cannot manufacture an issued quote or request');
   await f.app.navigate({screen:'onboarding',state:'member-4'});assert.equal(root.isConnected,false);
+  assert.deepEqual(Array.from((await adapter.roleRequest('/workspace')).quotes,quote=>quote.id),['qa-existing-quote'],'review passes leave the fixture workspace when the owning drawer closes');
   assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
 });
@@ -504,7 +506,7 @@ test('the original consultation calendar keeps holiday rules and disposes its li
   const open=async()=>{
    await f.app.inspectRoute({screen:'drawer',state:'closed'});
    await waitFor(()=>f.doc.querySelector('[name="consult-pass"][data-id="qa-existing-quote"]'));
-   const root=f.doc.querySelector('[data-research-consult-entry]');root.querySelector('[name="consult-pass"]').click();root.querySelector('[data-action="open-drawer"]').click();
+   const root=f.doc.querySelector('[data-research-consult-entry]');root.querySelector('[name="consult-pass"][data-id="qa-existing-quote"]').click();root.querySelector('[data-action="open-drawer"]').click();
    await waitFor(()=>root.querySelector('.functional-drawer').dataset.open==='true');
    const trigger=root.querySelector('[data-action="choose-consult-date"]'),dialog=root.querySelector('.consult-date-dialog');
    trigger.click();assert.equal(dialog.hidden,false);assert.equal(dialog.querySelectorAll('[data-day]').length,31);
@@ -558,12 +560,13 @@ test('quote result detail and QA state changes retain the original chart control
  }finally{await f.close();}
 });
 
-test('locked research preview exposes only an already obscured server PNG and recompare has two choices',async()=>{
+test('locked research preview contains only public shapes and recompare has two choices',async()=>{
  const f=await setup({screen:'quote-result',state:'locked'});try{
-  const plot=f.doc.querySelector('.oq-plot'),image=plot.querySelector('.research-quote-protected-preview');
-  assert.ok(image);assert.match(image.getAttribute('src'),/^data:image\/png;base64,/);assert.equal(image.hidden,false);
-  assert.equal(plot.querySelectorAll('.oq-series:not([hidden])').length,0);
-  for(const selector of ['.oq-number','.oq-price-value','.oq-card-value'])for(const node of f.doc.querySelectorAll(selector))assert.equal(node.textContent,'');
+  const lock=f.doc.querySelector('.oq-lock');
+  assert.equal(lock.querySelector('.oq-lock-graph').children.length,4);
+  assert.equal(lock.querySelector('[data-action=verify]').textContent,'사업장 인증하기');
+  assert.equal(lock.querySelector('[data-action=consult]').textContent,'상담 예약');
+  assert.equal(lock.querySelectorAll('.oq-number,.oq-price-value,.oq-card-value').length,0);
   await f.app.inspectRoute({screen:'quote-result',state:'recompare'});await settle();
   const dialog=f.doc.querySelector('.oq-dialog');assert.equal(dialog.open,true);
   assert.deepEqual([...dialog.querySelectorAll('button')].map(button=>button.textContent),['새로운 견적','동일한 조건']);
@@ -841,4 +844,121 @@ test('only the explicit closed-login review shows an authenticated return, while
   assert.equal(f.app.snapshot().pageRoute.state,'member-3');assert.equal(f.doc.querySelector('.product-auth-sheet'),null);
   assert.equal(f.doc.querySelector('[data-action="open-login"],[data-mf-go="login/empty"]'),null);assert.equal(f.doc.querySelector('.research-order-trigger').disabled,false);assert.deepEqual(f.failures,[]);
  }finally{await f.close();}
+});
+
+test('locked quote keeps the correct parent through signup cancellation and the business verification return',async()=>{
+ const f=await setup({screen:'quote-result',state:'locked-guest'});
+ try{
+  const page=f.doc.getElementById('order-app-page');
+  assert.equal(f.app.adapter.context.actor.authenticated,false);
+  page.querySelector('.oq-lock-primary').click();await waitFor(()=>f.app.snapshot().route.screen==='signup');
+  assert.equal(f.win.history.state.quoteVerification.source,'preview');
+  f.doc.querySelector('.product-auth-sheet .sheet-dim').click();
+  await waitFor(()=>f.app.snapshot().route.state==='locked-guest');
+  assert.equal(page.querySelector('.oq-lock-primary').textContent,'사업장 회원가입');
+  assert.equal(f.win.history.state.quoteVerification,undefined);
+  page.querySelector('.oq-lock-consult').click();await waitFor(()=>f.app.snapshot().route.screen==='login');
+  assert.equal(f.app.snapshot().route.parent.state,'locked-guest');
+  assert.equal(f.doc.querySelector('.functional-drawer'),null);
+  f.doc.querySelector('.product-auth-sheet .sheet-dim').click();
+  await waitFor(()=>f.app.snapshot().route.state==='locked-guest');
+  await f.app.inspectRoute({screen:'quote-result',state:'locked'});
+  assert.equal(f.app.adapter.context.actor.authenticated,true);
+  page.querySelector('.oq-lock-primary').click();await waitFor(()=>f.app.snapshot().pageRoute.screen==='business');
+  f.win.history.back();await waitFor(()=>f.app.snapshot().pageRoute.screen==='quote-result');
+  f.win.history.forward();await waitFor(()=>f.app.snapshot().pageRoute.screen==='business');
+  f.doc.querySelector('[data-app-back]').click();await waitFor(()=>f.app.snapshot().pageRoute.screen==='quote-result');
+  assert.equal(f.app.snapshot().route.state,'locked');
+  assert.equal(page.querySelector('.oq-lock-primary').textContent,'사업장 인증하기');
+  assert.ok(!page.querySelector('.oq-series,.oq-card-copy'));
+  assert.deepEqual(f.failures,[]);
+ }finally{await f.close();}
+});
+
+test('confirmed signup from a locked guest quote continues to verification and returns to the locked member quote',async()=>{
+ const f=await setup({screen:'quote-result',state:'locked-guest'},(environment,win)=>{
+  // Resolve the test domain locally. Keep the real syntax, domain and form checks.
+  environment.regular.fetcher=async(url,settings)=>{
+   const request=new URL(url);
+   if(request.pathname!=='/dns-query')return win.fetch(url,settings);
+   const name=request.searchParams.get('name'),kind=request.searchParams.get('type'),type={MX:15,A:1,AAAA:28}[kind];
+   const data={MX:'10 mail.example.com.',A:'192.0.2.10',AAAA:'2001:db8::10'}[kind];
+   return Response.json({Status:0,Question:[{name,type}],Answer:[{name,type,data,TTL:60}]});
+  };
+  environment.regular.dns={provider:'cloudflare',retries:0};
+ });try{
+  const calls=[];
+  f.environment.auth={async perform(action){
+    calls.push(action);
+    if(action==='verify-otp')f.app.adapter.fixture.releasePending({authenticated:true,persona:'buyer'});
+    return {confirmed:true};
+  }};
+  f.doc.querySelector('.oq-lock-primary').click();
+  await waitFor(()=>f.doc.querySelector('.product-auth-sheet [data-action=submit-signup]'));
+  for(const [name,value] of [['email','qa@example.com'],['password','ExampleOnly!2026'],['password-confirm','ExampleOnly!2026']]){
+    const input=f.doc.querySelector('.product-auth-sheet [name="'+name+'"]');
+    input.value=value;input.dispatchEvent(new f.win.Event('input',{bubbles:true}));
+  }
+  f.doc.querySelector('[name=required-consent]').click();
+  f.doc.querySelector('[data-action=submit-signup]').click();
+  f.doc.querySelector('[data-action=skip-notices]').click();
+  await waitFor(()=>f.doc.querySelector('[data-action=open-otp]'));
+  f.doc.querySelector('[data-action=open-otp]').click();
+  await waitFor(()=>f.doc.querySelector('.otp-digit'));
+  for(const input of f.doc.querySelectorAll('.otp-digit')){input.value='1';input.dispatchEvent(new f.win.Event('input',{bubbles:true}));}
+  f.doc.querySelector('[data-action=verify-otp]').click();
+  await waitFor(()=>f.app.snapshot().pageRoute.screen==='business');
+  assert.deepEqual(calls,['submit-signup','verify-otp']);
+  f.doc.querySelector('[data-app-back]').click();
+  await waitFor(()=>f.app.snapshot().pageRoute.screen==='quote-result');
+  assert.equal(f.app.snapshot().route.state,'locked');assert.equal(f.doc.querySelector('.oq-lock-primary').textContent,'사업장 인증하기');
+ }finally{await f.close();}
+});
+
+test('an issued quote deep link and its verification return always read the same scoped snapshot',async()=>{
+ const id='qa-issued-return',reads=[];let allowed=false;
+ const f=await setup({screen:'quote-result',state:'saving'},(environment,win)=>{
+   win.history.replaceState(null,'','/ia?view=research-r3&screen=quote-result&state=saving&quote='+id);
+   const create=environment.createAdapter;
+   environment.createAdapter=async options=>{
+     const adapter=await create(options);
+     adapter.priceRequest=async path=>{
+       reads.push(path);
+       if(!allowed)throw Object.assign(Error('ACCESS_REQUIRED'),{status:403});
+       return {id,status:'ISSUED',expiresAt:new Date(Date.now()+86400000).toISOString(),issuedAt:new Date().toISOString(),
+         response:{status:'OK',completion:'COMPLETE',quotes:[{currency:'KRW',total:{minorUnits:'738241',decimal:'738241',scale:0},comparisonEligibility:'INELIGIBLE'}]}};
+     };
+     return adapter;
+   };
+ });
+ try{
+   const receipt=f.doc.querySelector('#order-app-quote #receipt');
+   await waitFor(()=>receipt.querySelector('.oq-lock-primary'));
+   assert.equal(receipt.textContent.includes('738,241'),false);assert.equal(f.doc.querySelector('[data-review-result]'),null);
+   receipt.querySelector('.oq-lock-primary').click();await waitFor(()=>f.app.snapshot().pageRoute.screen==='business');
+   allowed=true;f.doc.querySelector('[data-app-back]').click();
+   await waitFor(()=>receipt.textContent.includes('738,241'));
+   assert.equal(f.app.snapshot().pageRoute.screen,'quote-result');assert.equal(new URL(f.win.location.href).searchParams.get('quote'),id);
+   assert.ok(reads.length>=2);assert.ok(reads.every(path=>path==='/quote?id='+id));
+ }finally{await f.close();}
+});
+
+test('the admin navigation opens the icon index and its real usage-state links',async()=>{
+  const f=await setup({screen:'admin-overview',state:'normal'});
+  try{
+    const nav=f.doc.querySelector('[aria-label="관리자 메뉴"] [data-op-route="admin-icon-library"]');
+    assert.ok(nav);nav.click();
+    await waitFor(()=>f.doc.querySelector('.admin-icon-usage select'));
+    const owner=f.doc.querySelector('.admin-icon-usage'),select=owner.querySelector('select');
+    assert.equal(f.app.snapshot().route.screen,'admin-icon-library');assert.equal(select.value,'empty-ticket');
+    const empty=owner.querySelector('[data-icon-uses="empty-ticket"]');
+    assert.match(empty.textContent,/최저가 알아보기/);assert.match(empty.textContent,/F06/);
+    const link=empty.querySelector('a');assert.equal(link.textContent,'내역 없음');
+    assert.equal(new URL(link.href).searchParams.get('screen'),'passes/empty/email');
+    select.value='quote-lock';select.dispatchEvent(new f.win.Event('change'));
+    assert.equal(empty.hidden,true);
+    const lock=owner.querySelector('[data-icon-uses="quote-lock"]');assert.equal(lock.hidden,false);
+    assert.deepEqual([...lock.querySelectorAll('a')].map(a=>new URL(a.href).searchParams.get('screen')),['quote-result/locked/email','quote-result/locked-guest/email']);
+    assert.deepEqual(f.failures,[]);
+  }finally{await f.close();}
 });

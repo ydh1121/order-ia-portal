@@ -84,7 +84,7 @@ export function createResearchQuoteEnvironment(root,{mode,services={},onNavigate
     const target=new URL(String(url),window.location.href),page=target.hash.replace(/^#\//,'');
     const view=target.searchParams.get('view');
     if(['simple-r3','detailed-r3'].includes(view))return onNavigate({type:'mode',mode:view==='simple-r3'?'simple':'detailed',page:page||'form'});
-    if(view==='roles-r3')return onNavigate({type:'application',screen:target.searchParams.get('menu')==='delivery'?'delivery-request':target.searchParams.get('menu')==='business'?'business':'consultation',quote:target.searchParams.get('quote')});
+    if(view==='roles-r3')return onNavigate({type:'application',screen:target.searchParams.get('menu')==='delivery'?'delivery-request':target.searchParams.get('menu')==='business'?'business':'role-consult',quote:target.searchParams.get('quote')});
     if(view==='pricing-r3')return onNavigate({type:'application',screen:'quote-result',quote:target.searchParams.get('quote')});
     if(['home','form','result'].includes(page)){hash='#/'+page;return onNavigate({type:'quote',mode,page});}
     throw new Error('APPLICATION_NAVIGATION_UNHANDLED');

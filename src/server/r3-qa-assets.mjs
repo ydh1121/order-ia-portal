@@ -1,3 +1,4 @@
+import {signatureLibraryStates,signatureLibrarySlot,signatureLibraryCss,signatureLibraryRuntime} from './signature-library.mjs';
 import {catalog,frames,cssHash} from './r3-ui/catalog.gen.mjs';
 import {assetPack,brandMotionScript,commonMotionScript,brandAccountScript,brandAccountCss,sharedCoreScript,sharedTemplates,sharedUiProvenance,createSharedUi,qaMvpRuntimeCode} from './r3-ui/qa-assets.gen.mjs';
 import {approvedWidths} from './r3-ui/approved-width-list.mjs';
@@ -96,8 +97,10 @@ async function build(){
     return html.replace(/\b(id|for|aria-labelledby|aria-describedby|aria-controls)="([^"]+)"/g,(_,attr,value)=>attr+'="'+value.split(' ').map(v=>ids.get(v)||v).join(' ')+'"');
   };
   for(const [state,name] of boards.filter(([state])=>state!=='bloub')){
-    const content='<nav class="qa-mvp-toolbar" aria-label="자산 종류">'+nav+'</nav><p class="muted">미리보기에서 자산을 찾고, 원본 화면에서 입력과 동작을 확인할 수 있어요.</p><div class="qa-asset-grid">'+assets.filter(a=>a.board===state).map(a=>'<article class="ops-panel qa-asset-card"><div class="qa-asset-thumbnail" aria-hidden="true" inert><div class="ds">'+(scopeThumbnail(a.preview,a.id)||'<p>'+esc(a.name)+' · 전체 화면에서 보기</p>')+'</div></div><h2>'+esc(a.name)+'</h2><p class="muted">사용 상태 '+(a.sourceUsages||a.usages).length+'개 · '+a.variants.length+'개 변형</p>'+go('사용처와 동작 보기','component-library','asset-'+a.id)+'</article>').join('')+'</div>';
-    await add({screen:'component-library',state,label:'컴포넌트 라이브러리',stateLabel:name,body:page(name,content,{library:true,screen:'component-library'}),description:'보드는 시각적 색인입니다. 각 상세는 컴포넌트 루트·원본 사용 화면·런타임을 연결합니다.'});
+    const hasSignature=state==='components';
+    const signatureCard=hasSignature?'<article class="ops-panel qa-asset-card qa-signature-demo"><h2>서명 패드</h2><p class="muted">사용 상태 5개</p>'+signatureLibrarySlot+'<div class="qa-asset-uses">'+signatureLibraryStates.map(state=>{const row=catalog.find(row=>row.id==='signature/'+state+'/email');return use({...row,routes:[]});}).join('')+'</div></article>':'';
+    const content='<nav class="qa-mvp-toolbar" aria-label="자산 종류">'+nav+'</nav><p class="muted">미리보기에서 자산을 찾고, 원본 화면에서 입력과 동작을 확인할 수 있어요.</p><div class="qa-asset-grid">'+assets.filter(a=>a.board===state).map(a=>'<article class="ops-panel qa-asset-card"><div class="qa-asset-thumbnail" aria-hidden="true" inert><div class="ds">'+(scopeThumbnail(a.preview,a.id)||'<p>'+esc(a.name)+' · 전체 화면에서 보기</p>')+'</div></div><h2>'+esc(a.name)+'</h2><p class="muted">사용 상태 '+(a.sourceUsages||a.usages).length+'개 · '+a.variants.length+'개 변형</p>'+go('사용처와 동작 보기','component-library','asset-'+a.id)+'</article>').join('')+signatureCard+'</div>';
+    await add({...(hasSignature?{css:qaMvpCss+signatureLibraryCss,mount:standardMount+'\n'+signatureLibraryRuntime}:{}),screen:'component-library',state,label:'컴포넌트 라이브러리',stateLabel:name,body:page(name,content,{library:true,screen:'component-library'}),description:'보드는 시각적 색인입니다. 각 상세는 컴포넌트 루트·원본 사용 화면·런타임을 연결합니다.'});
   }
   const fallback={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member','quote-wait':'member'};
   for(const asset of assets){

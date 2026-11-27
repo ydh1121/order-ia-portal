@@ -17,8 +17,12 @@ def capture_reference_viewports(qa_page, folder):
     # data. A module app must run on its authenticated origin, not set_content.
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
-    page = qa_page.context.new_page()
-    page.set_viewport_size({'width':375,'height':828})
+    reference = qa_page.context.browser.new_context(
+        storage_state=qa_page.context.storage_state(), viewport={'width':375,'height':828}, reduced_motion='reduce')
+    page = reference.new_page()
+    # The source artboard shows the initial second. Keep its fixture timestamp
+    # stable during font loading and PNG capture; the motion probe uses a live clock.
+    page.clock.set_fixed_time("2026-11-14T00:00:00+09:00")
     errors=[]
     try:
         for state in ['saving','new-detail','current-detail','equal','current-lower','no-result']:
@@ -66,7 +70,7 @@ def capture_reference_viewports(qa_page, folder):
                 errors.append((state,str(error)))
         assert not errors,errors
     finally:
-        page.close()
+        reference.close()
 
 def check_result(view, state):
     direct=['saving','new-detail','current-detail','equal','current-lower']
@@ -115,14 +119,15 @@ def check_result(view, state):
         expect(view.get_by_role('button',name='새로운 견적')).to_be_visible()
         expect(view.get_by_role('button',name='동일한 조건')).to_be_visible()
     else:
-        expect(view).to_have_attribute('data-state',{'locked':'unverified','no-result':'no-offer','expired':'expired'}[state])
+        expect(view).to_have_attribute('data-state',{'locked':'unverified','locked-guest':'guest','no-result':'no-offer','expired':'expired'}[state])
         expect(view.locator('.oq-series:visible')).to_have_count(0)
         assert not re.search(r'12,540,000|11,940,000|13,140,000',view.inner_text())
-        if state=='locked':
-            preview=view.locator('.research-quote-protected-preview')
-            expect(preview).to_be_visible()
-            expect(preview).to_have_attribute('alt',re.compile('계산된 현재 납품가와 검색된 가격의 흐린 미리보기.*정확한 금액은 인증 후'))
-            assert view.locator('.oq-price-value,.oq-card-value').all_text_contents()==['','','','']
+        if state in ('locked','locked-guest'):
+            expect(view.locator('.oq-lock-graph')).to_be_visible()
+            expect(view.locator('.oq-lock-graph > *')).to_have_count(4)
+            expect(view.get_by_role('button',name='사업장 회원가입' if state=='locked-guest' else '사업장 인증하기')).to_be_visible()
+            expect(view.get_by_role('button',name='상담 예약')).to_be_visible()
+            expect(view.locator('.oq-price-value,.oq-card-value')).to_have_count(0)
         if state=='no-result':
             expect(view.locator('.oq-title')).to_have_text('길을 잃으셨나요?')
             expect(view.locator('.oq-sub')).to_be_hidden()
@@ -299,13 +304,16 @@ def run(page, origin, width):
     frame_click(page,quote.locator('#input-review-open'))
     expect(review.locator('#input-review-rows')).to_contain_text('포장당 미입력')
     frame_click(page,review.locator('#input-review-back'))
-    for state in ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result','locked']:
+    for state in ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result','locked','locked-guest']:
         frame = screens.screen('quote-result',state)
         wrapper=frame.locator('[data-review-result]')
         expect(wrapper).to_have_attribute('data-view',state)
         view=wrapper.locator('[data-order-result]')
         if state=='saving':
             view.evaluate("el=>{window.originalReviewPlot=el.querySelector('.oq-plot')}")
+        elif state in ('locked','locked-guest'):
+            expect(wrapper.locator('.oq-plot')).to_have_count(0)
+            expect(view.locator('.oq-lock-graph')).to_have_attribute('aria-hidden','true')
         else:
             assert view.evaluate("el=>window.originalReviewPlot===el.querySelector('.oq-plot')"), (width,state,'preview replaced the live plot')
         check_result(view,state)
@@ -333,7 +341,7 @@ def run(page, origin, width):
     expect(legacy.locator('[name=price]')).to_be_disabled()
     frame_click(page,legacy.locator('.journey-check'))
     expect(legacy.locator('[name=price]')).to_be_enabled()
-    print('PASS browser: current regular Q2 → input review → edit, 9 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
+    print('PASS browser: current regular Q2 → input review → edit, 10 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
 if __name__=='__main__':
     host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:

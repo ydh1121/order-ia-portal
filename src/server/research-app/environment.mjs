@@ -23,13 +23,26 @@ export function createResearchEnvironment(config, installFixture, installAdapter
         await adapter.ready;return adapter;
       }
       session={...initial,fixture:saved?{...saved.controls,data:saved.data,selectedPurchaseId:saved.selectedPurchaseId}:config.fixture||{}};
+      if(!saved&&initial.screen==='quote-result'&&initial.state==='locked-guest'){
+        session.fixture={authenticated:false,persona:'guest',...session.fixture};
+      }
       adapter=installFixture(session,(context,options)=>installAdapter(context,{...options,navigate:(screen,state)=>navigate(typeof screen==='object'?screen:{screen,state}),onOperation(operation){options.onOperation?.(operation);persist();}}));
+      adapter.fixture.useConsultationPass=(pass,owner)=>{
+        const scope={org_id:'qa-store',site_id:'qa-site'};
+        const issued={...scope,businessName:pass.site,issued_at:pass.date.replaceAll('.','-'),expires_at:'2099-12-31T00:00:00.000Z'};
+        const workspace={businesses:[{...scope,businessName:pass.site}],products:[],quotes:[
+          {...issued,id:pass.id,productName:pass.lines.map(line=>line[0]).join(' · '),reviewPassId:pass.id},
+          {...issued,id:'qa-existing-quote',productName:'QA 검토용 발급 견적',serviceDate:'2026-11-21'}
+        ]};
+        session.reviewConsultationWorkspace=workspace;
+        owner.addEventListener('abort',()=>{if(session.reviewConsultationWorkspace===workspace)delete session.reviewConsultationWorkspace;},{once:true});
+      };
       signal.addEventListener('abort',persist,{once:true});return adapter;
     },
     async configure(route,current,fixture){
       if(run)return;
       Object.assign(session,route);
-      const authenticated=['login','signup','otp','password','terms'].includes(route.screen)?['success','verified'].includes(route.state)||route.screen==='login'&&route.state==='closed':route.screen==='onboarding'?route.state.startsWith('member-'):route.state!=='qa-guest'&&!(route.screen==='price-workspace'&&route.state==='guest');
+      const authenticated=['login','signup','otp','password','terms'].includes(route.screen)?['success','verified'].includes(route.state)||route.screen==='login'&&route.state==='closed':route.screen==='onboarding'?route.state.startsWith('member-'):route.state!=='qa-guest'&&!(route.screen==='quote-result'&&route.state==='locked-guest')&&!(route.screen==='price-workspace'&&route.state==='guest');
       const scenario=({'qa-loading':'loading','qa-error':'error','qa-empty':'empty'})[route.state]||'normal';
       const selectedScenario=fixture?.scenario||scenario;
       if(selectedScenario==='empty'&&!scenarioBackup)scenarioBackup=current.fixture.inspect().data;

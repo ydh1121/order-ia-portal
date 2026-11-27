@@ -122,16 +122,17 @@ def compare(name, original, candidate, drawer, mode):
     # modules and the shell geometry remain protected by this comparison.
     require(set(original["navModules"])-set(candidate["navModules"])=={"quote-review"},"the exact authorized retired module was not removed, or another approved module was lost")
     # Nov 27 explicitly separates simple/detailed calculator menu buttons.
-    # Only q1–q4 gain a second entry; the underlying 102 modules stay intact.
+    # The admin icon library adds one module; only q1–q4 have a second menu entry.
     calculator_modules = {"q1", "q2", "q3", "q4"}
     module_counts = {module:candidate["navModules"].count(module) for module in set(candidate["navModules"])}
-    require(candidate["navCount"]==106 and len(module_counts)==102 and {"price-workspace","notifications"}.issubset(module_counts),"MVP inventory, the canonical price workspace or the native notification page is missing")
+    require(candidate["navCount"]==107 and len(module_counts)==103 and {"price-workspace","notifications","admin-icon-library"}.issubset(module_counts),"expected 103 modules and 107 menu entries, including price, notifications and admin icon usage")
     require({module for module,count in module_counts.items() if count!=1}==calculator_modules and all(module_counts.get(module)==2 for module in calculator_modules),"only q1–q4 may have the authorized pair of calculator entries")
     for module in calculator_modules:
         entries = [entry for entry in candidate["navEntries"] if entry["module"]==module]
         require(sorted(entry["mode"] or "" for entry in entries)==["detailed","simple"],f"{module} must expose simple and detailed exactly once")
         require(len(entries)==2 and entries[0]["states"]==entries[1]["states"]==candidate["navStateCounts"].get(module),f"{module} mode entries must preserve the original state inventory")
-    require("quote-review" not in candidate["navStateCounts"] and candidate["navStateCounts"].get("quote-result")==9 and sum(candidate["navStateCounts"].values())==541,"current inventory must remove exactly the 8 retired states and retain all 541 review states")
+    state_counts = candidate["navStateCounts"]
+    require("quote-review" not in state_counts and state_counts.get("quote-result")==10 and state_counts.get("admin-icon-library")==1 and sum(state_counts.values())==543,"expected the 541 retained states plus the guest quote lock and admin icon usage list")
     require(candidate["navGroups"]==["mvp","future"],"MVP and future accordions missing")
     require(candidate["bodyOverflow"] <= 1, f"document horizontal overflow {candidate['bodyOverflow']}px")
     def compare_box(what, a, b, axes=range(4), tol=2):

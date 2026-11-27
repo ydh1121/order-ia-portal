@@ -333,8 +333,16 @@ test('the signed result closure mounts the sealed canonical factory and never de
     const brand=host.querySelector('.order-product-brand'),svg=brand?.querySelector('svg'),paths=[...svg.querySelectorAll('g>path')];
     assert.equal(brand.dataset.orderBrandSource,'canonical');assert.equal(brand.__orderAccountMenu.inspect().authenticated,authenticated);
     assert.equal(paths.length,3);assert.equal(w.OrderProductBrand,undefined,'the signed controller keeps its factory dependency local');
-    view.gate();assert.equal(host.querySelector('.order-product-brand'),brand);assert.equal(brand.querySelector('svg'),svg);
-    assert.deepEqual([...svg.querySelectorAll('g>path')],paths);assert.equal(brand.__orderAccountMenu.inspect().authenticated,authenticated,'result state cannot grant or remove authentication');
+    view.gate(authenticated?'unverified':'guest');
+    const lock=host.querySelector('.oq-lock');
+    assert.equal(lock.dataset.state,authenticated?'unverified':'guest');
+    assert.equal(lock.querySelector('.oq-lock-primary').textContent,authenticated?'사업장 인증하기':'사업장 회원가입');
+    assert.equal(lock.querySelector('.oq-lock-consult').textContent,'상담 예약');
+    assert.equal(lock.querySelectorAll('.oq-price-value,.oq-card-value,.order-product-brand').length,0);
+    assert.equal(w.ORDER_BRAND_ACCOUNT_CONTEXT.authenticated,authenticated);
+    view.show(snapshot);
+    assert.equal(host.querySelector('.order-product-brand'),brand);assert.equal(brand.querySelector('svg'),svg);
+    assert.deepEqual([...svg.querySelectorAll('g>path')],paths);assert.equal(brand.__orderAccountMenu.inspect().authenticated,authenticated,'returning from a price gate cannot grant or remove authentication');
     view.clear();assert.equal(w.document.querySelector('.obm-panel'),null);assert.equal(host.childElementCount,0);w.close();
   }
 });

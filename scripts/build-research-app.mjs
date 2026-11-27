@@ -14,6 +14,7 @@ serverOnly.add('auth-provider-assets.mjs');
 serverOnly.add('auth-motion.mjs');
 serverOnly.add('input-polish-source.mjs');
 serverOnly.add('quote-preview.mjs');
+serverOnly.add('admin-icon-usage.mjs');
 serverOnly.add('passes-source.mjs');
 serverOnly.add('business-classification-source.mjs');
 serverOnly.add('quote-row-swipe.mjs');
@@ -23,7 +24,7 @@ const sources=[...files.map(([,file])=>file),'src/server/research-app/page.mjs',
 // Research ESM imports only paint. Derive that export from its existing owner;
 // the complete motion controller remains in the product bootstrap. Bind both
 // generator and serializer bytes so a projection change gets a new build ID.
-sources.push('scripts/build-research-app.mjs','src/server/browser-source.mjs');
+sources.push('src/server/r3-ui/qa-assets.gen.mjs','scripts/build-research-app.mjs','src/server/browser-source.mjs');
 const commonControlPaintSource='// Generated from the existing common control paint owner.\nexport const createCommonControlPaint=('+browserFunction(createCommonControlPaint)+');\n';
 const hash=value=>createHash('sha256').update(value).digest('hex'),identities={};
 for(const name of (await readdir(directory)).filter(name=>serverOnly.has(name)&&!['assets.gen.mjs','releases.gen.mjs'].includes(name)))sources.push('src/server/research-app/'+name);

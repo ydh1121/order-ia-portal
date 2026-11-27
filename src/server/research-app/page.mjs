@@ -14,7 +14,8 @@ import {quoteFiles} from '../r3-product-sources.mjs';
 import {regularContactModuleSource,regularServiceSourceIdentity,regularContactPresentationCss} from './regular-service-assets.mjs';
 import {regularIanaReferenceJson} from './regular-iana-reference.mjs';
 import {getResearchQuoteSource,getResearchQuoteMarkup,getResearchQuoteStyleSource,getResearchQuoteIntegrationSource} from './quote-source-adapter.mjs';
-import {researchQuoteResultMarkup} from './quote-preview.mjs';
+import {adminIconMenu,adminIconRow,adminIconMarkup,adminIconCss,installAdminIconUsage} from './admin-icon-usage.mjs';
+import {installReviewQuoteLock,mountQuoteLock,quoteLockCss,quoteLockMarkup} from './quote-preview.mjs';
 import {createResearchEnvironment} from './environment.mjs';
 import {researchRoute} from './routes.mjs';
 import {researchQuoteCss,researchConfirmationCss} from './quote-style.mjs';
@@ -51,9 +52,13 @@ const staticCache=new Map(),scenes=new Map();let styles;
 const response=(body,type='text/javascript; charset=utf-8',status=200)=>new Response(body,{status,headers:{'Content-Type':type,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','X-Order-Research-Build':researchBuild.digest}});
 const fallbackFamily=screen=>['login','signup','otp','password','terms'].includes(screen)?'accountFeedback':['business','proof','signature'].includes(screen)?'business':screen.startsWith('admin-')||screen==='receipt'?'adminCommon':'member';
 const notificationRow=Object.freeze({id:'notifications/list/email',screen:'notifications',state:'list',variant:'email',group:'내 견적·메뉴',label:'알림',stateLabel:'전체 알림',defaultWidth:390,role:'customer',phase:'current',runtimeFamily:'researchNotifications',supplemental:true});
-export const researchNativeRows=Object.freeze([notificationRow]);
+const memberLockRow=catalog.find(row=>row.id==='quote-result/locked/email');
+const guestLockRow=Object.freeze({id:'quote-result/locked-guest/email',screen:'quote-result',state:'locked-guest',variant:'email',group:memberLockRow.group,label:memberLockRow.label,stateLabel:'비회원 잠금',defaultWidth:390,role:memberLockRow.role,phase:'current',runtimeFamily:'researchQuoteLock',supplemental:true});
+export const researchNativeRows=Object.freeze([notificationRow,guestLockRow,adminIconRow]);
 let runtimeSources;
 async function researchRuntime(family){
+  if(family==='researchAdminIcons')return '('+browserFunction(installAdminIconUsage)+')();';
+  if(family==='researchQuoteLock')return '('+browserFunction(installReviewQuoteLock)+')('+browserFunction(quoteLockMarkup)+','+browserFunction(mountQuoteLock)+');';
   if(!runtimeSources)runtimeSources=new Map();if(runtimeSources.has(family))return runtimeSources.get(family);
   const promise=(async()=>{
     const mount=family==='product'?(await getProductApplicationDocument('store-purchase','select')).mount:runtimes[family];
@@ -65,17 +70,22 @@ async function researchRuntime(family){
 export async function listResearchRows(){
   const {rows}=await getProductDocuments(),pricing=await getPriceWorkspaceQaDocuments(),byId=new Map([...catalog,...rows,...pricing.map(document=>document.row)].map(row=>[row.id,row]));
   const purchase=byId.get('store-purchase/select/email');
-  byId.set(notificationRow.id,notificationRow);
+  for(const row of researchNativeRows)byId.set(row.id,row);
   for(const [state,fixture]of [['qa-loading',{scenario:'loading'}],['qa-error',{scenario:'error'}],['qa-empty',{scenario:'empty'}],['qa-guest',{authenticated:false}]])byId.set('store-purchase/'+state+'/email',{...purchase,id:'store-purchase/'+state+'/email',state,fixture});
   return [...byId.values()].filter(isResearchRow);
 }
 export async function listResearchAssetPaths(){
   const rows=await listResearchRows();
-  return [...new Set([...Object.keys(researchAssets),...Object.keys(quoteFiles),'extension/brand-account-menu.mjs','bridge/contact-ui.mjs','bridge/business-directory.mjs','research/bootstrap.js','research/application.css','research/quote-document.html','research/quote-integrations.mjs','research/price-integrations.mjs','research/inspector-panels.mjs',...['product',...Object.keys(runtimes)].map(family=>'runtime/'+family+'.mjs'),...rows.filter(row=>row.screen!=='price-workspace').map(row=>'scene/'+row.id+'.mjs')])].sort();
+  return [...new Set([...Object.keys(researchAssets),...Object.keys(quoteFiles),'extension/brand-account-menu.mjs','bridge/contact-ui.mjs','bridge/business-directory.mjs','research/bootstrap.js','research/application.css','research/quote-document.html','research/quote-integrations.mjs','research/price-integrations.mjs','research/inspector-panels.mjs',...['product','researchQuoteLock','researchAdminIcons',...Object.keys(runtimes)].map(family=>'runtime/'+family+'.mjs'),...rows.filter(row=>row.screen!=='price-workspace').map(row=>'scene/'+row.id+'.mjs')])].sort();
 }
 
 export async function researchScene(screen,state='default',variant='email'){
+  if(screen===adminIconRow.screen && ['default','list'].includes(state) && variant==='email')return {row:adminIconRow,html:await adminIconMarkup(row=>!isRetiredResearchRow(row)),family:adminIconRow.runtimeFamily,mount:await researchRuntime(adminIconRow.runtimeFamily),css:adminIconCss};
   if(screen==='notifications'&&['list','default'].includes(state)&&variant==='email')return {row:notificationRow,html:'<section class="research-notifications" aria-label="알림"></section>',family:'researchNotifications',mount:'',css:''};
+  if(screen==='quote-result'&&['locked','locked-guest'].includes(state)&&variant==='email'){
+    const guest=state==='locked-guest',row=guest?guestLockRow:memberLockRow,family='researchQuoteLock';
+    return {row,html:'<div class="qa-screen"><div data-review-result>'+quoteLockMarkup(guest?'guest':'unverified')+'</div></div>',family,mount:await researchRuntime(family),css:''};
+  }
   const key=[screen,state,variant].join('/');if(scenes.has(key))return scenes.get(key);
   const source=(async()=>{
     let document=await getProductApplicationDocument(screen,state.startsWith('qa-')?'default':state,variant),family=document?'product':null;
@@ -84,7 +94,7 @@ export async function researchScene(screen,state='default',variant='email'){
       if(!row)return null;
       family=row.runtimeFamily||fallbackFamily(screen);document={row,body:await inflate(frames[row.current]),mount:runtimes[family]||'',css:''};
     }
-    return {row:document.row,html:screen==='onboarding'?researchOnboardingMarkup(document.body):screen==='quote-result'?await researchQuoteResultMarkup(document.body):document.body,family,mount:await researchRuntime(family),css:document.css||''};
+    return {row:document.row,html:screen==='onboarding'?researchOnboardingMarkup(document.body):document.row.role==='admin'&&!['denied','restricted','loading','error'].includes(state)?adminIconMenu(document.body):document.body,family,mount:await researchRuntime(family),css:document.css||''};
   })();scenes.set(key,source);return source;
 }
 export async function serveResearchAsset(path,env,origin='https://order-ia-portal.pages.dev'){
@@ -147,7 +157,7 @@ function researchFoundation(){return foundation??=(async()=>{
   // shared color/motion tokens still inherit into every application screen.
   const sceneRules=css.replace(/:root(?=\s*\{)/g,':scope').replace(/(^|[{},\s])html(?=[\s,.#[:{>+~])/g,'$1:scope');
   const sceneCss='@scope (html) to ([data-research-quote]){\n'+sceneRules+'\n}\n';
-  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss),
+  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+quoteLockCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss),
     script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 

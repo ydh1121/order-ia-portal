@@ -26,6 +26,22 @@ export async function mountResearchApplication(config, environment) {
   const arrowMotion=mountResearchArrowMotion(doc,{signal});
   const workflowPolish=installResearchWorkflowPolish(win),releasePasses=installResearchPasses(win);
   let route=researchRoute(config.initial), pageRoute=null, epoch=0, pageDispose=null, sharedDispose=null, workspace=null, priceWorkspace=null, brandMenu=null, authSheet=null, drawerDispose=null, disposed=false,started=false,reviewSelecting=false,fixtureSelecting=false,navigating=0,activeAccountPanel=null,authReturn=null;
+  const isQuoteLock=state=>state==='locked'||state==='locked-guest';
+  // History carries only navigation intent. Prices and authorization come from
+  // the issued-quote service each time the customer reopens the result.
+  let quoteVerification=null;
+  function restoreHistoryIntents(next,entry){
+    const saved=entry?.quoteVerification;
+    quoteVerification=(next.screen==='business'||next.kind==='auth')&&saved&&
+      ['simple','detailed'].includes(saved.mode)&&['workspace','preview'].includes(saved.source)
+      ?{mode:saved.mode,source:saved.source}:null;
+    const target=entry?.authReturn;
+    authReturn=next.kind==='auth'&&['notifications','drawer'].includes(target?.screen)?researchRoute(target):null;
+  }
+  const entry=win.history.state;
+  if(entry?.research&&entry.route?.screen===route.screen&&entry.route.state===route.state){
+    route=researchRoute(entry.route);restoreHistoryIntents(route,entry);
+  }
   const notify=text=>{status.textContent=String(text||'');status.hidden=!text;};
   const assetUrl=path=>config.assetBase+path;
   const loadScene=async r=>{
@@ -47,7 +63,7 @@ export async function mountResearchApplication(config, environment) {
     doc.documentElement.dataset.productBuild=config.build;root.dataset.applicationInstance=instance;
     win.dispatchEvent(new win.CustomEvent('order:research-route',{detail:{...route,build:config.build,instance,origin:reviewSelecting?'review':'application'}}));
   };
-  function updateLocation(replace=false){const url=researchRouteUrl(route,win.location.href);win.history[replace?'replaceState':'pushState']({research:true,route},'',url);}
+  function updateLocation(replace=false){const url=researchRouteUrl(route,win.location.href);win.history[replace?'replaceState':'pushState']({research:true,route,...(quoteVerification?{quoteVerification}:{}),...(authReturn?{authReturn}:{})},'',url);}
   function localState(state){if(typeof state!=='string'||state===route.state)return;route={...route,state};updateLocation(true);emit();}
   async function performAction(action,detail={}){
     const scope=detail.root||root, validations=[];
@@ -59,8 +75,31 @@ export async function mountResearchApplication(config, environment) {
     if(response?.confirmed!==true)return {...response,confirmed:false};
     await adapter.refreshSession?.();refreshBrand();return response;
   }
+  function startQuoteVerification(action,source){
+    quoteVerification={source,mode:route.mode};
+    const guest=action==='signup'||!authenticated();
+    return navigate({screen:guest?'signup':'business',state:'empty',mode:route.mode});
+  }
+  async function returnToLockedQuote(){
+    const destination=quoteVerification;
+    if(!destination)return false;
+    // A pending evidence receipt alone never grants access to a quote.
+    try{await adapter.refreshSession?.();}catch{}
+    if(destination!==quoteVerification||disposed)return false;
+    refreshBrand();
+    if(destination.source==='workspace'){
+      return navigate({screen:'quote-result',state:'locked',mode:destination.mode},{replace:true,resumeIssued:true});
+    }
+    return navigate({screen:'quote-result',state:authenticated()?'locked':'locked-guest',mode:destination.mode},{replace:true});
+  }
   const api={mode:'product',interactive:true,adapter,variant:'email',get screen(){return route.screen;},get reviewScenario(){return fixtureSelecting;},get brandAccount(){return win.ORDER_BRAND_ACCOUNT_CONTEXT;},applicationHeader:{element:header,get menu(){return brandMenu;},subscribe(listener){brandListeners.add(listener);if(brandMenu)listener(brandMenu.inspect());return()=>brandListeners.delete(listener);}},signal,
     reduced:()=>win.matchMedia('(prefers-reduced-motion: reduce)').matches,select:(screen,state,options={})=>{
+      if(route.screen==='quote-result'&&isQuoteLock(route.state)&&(screen==='signup'||screen==='business')){
+        return startQuoteVerification(screen==='signup'?'signup':'verify','preview');
+      }
+      if(screen==='onboarding'&&route.kind==='auth'&&quoteVerification&&authenticated()){
+        return navigate({screen:'business',state:'empty',mode:quoteVerification.mode});
+      }
       const destination=screen==='onboarding'&&route.kind==='auth'&&authenticated()&&authReturn?authReturn:screen==='onboarding'&&route.kind==='auth'&&route.parent?.screen!=='onboarding'?route.parent:{screen,state,...options};
       return navigate(destination);
     },
@@ -120,7 +159,7 @@ export async function mountResearchApplication(config, environment) {
   refreshBrand();await adapter.ready;refreshBrand();
   const headerStyle=doc.createElement('style');headerStyle.dataset.researchBrandCss='';
   headerStyle.textContent=doc.querySelector('[data-order-brand-header-css]').textContent.replaceAll('.order-product-brand','#order-app-header .order-product-brand');doc.head.append(headerStyle);
-  const back=header.querySelector('[data-app-back]');back.onclick=()=>{if(workspace&&route.kind==='quote'&&workspace.back())return;return route.kind==='quote'&&/^q[2-4]$/.test(route.screen)?navigate({screen:'q'+(Number(route.screen.slice(1))-1),mode:route.mode}):navigate(route.parent||{screen:'onboarding',state:authenticated()?'member-4':'guest-4'});};
+  const back=header.querySelector('[data-app-back]');back.onclick=()=>{if(route.screen==='business'&&quoteVerification)return returnToLockedQuote();if(workspace&&route.kind==='quote'&&workspace.back())return;return route.kind==='quote'&&/^q[2-4]$/.test(route.screen)?navigate({screen:'q'+(Number(route.screen.slice(1))-1),mode:route.mode}):navigate(route.parent||{screen:'onboarding',state:authenticated()?'member-4':'guest-4'});};
   authSheet=win.ORDER_AUTH_SHEET?.attach(root,api,{getState:()=>pageRoute?.screen==='onboarding'&&/^(guest|member)-[1-4]$/.test(pageRoute.state)?pageRoute.state:authenticated()?'member-4':'guest-4'});
   function navigatePanelDestination(destination){
     if(typeof destination==='object')return navigate(destination);
@@ -149,7 +188,22 @@ export async function mountResearchApplication(config, environment) {
     try{await created.ready;if(disposed)throw Error('RESEARCH_APPLICATION_DISPOSED');priceWorkspace=created;return created;}
     catch(error){created.dispose();throw error;}
   }
-  async function mountPage(next,sequence,{restartQuote=false,introScene=null,priceSelected=false,quoteFixtureScope=false}={}){
+  function markWorkspaceResult(mode){
+    const state=authenticated()?'locked':'locked-guest';
+    route={...researchRoute({screen:'quote-result',state,mode},route),kind:'quote'};
+    pageRoute=route;
+  }
+  async function mountPage(next,sequence,{restartQuote=false,introScene=null,priceSelected=false,quoteFixtureScope=false,resumeIssued=false}={}){
+    const issuedId=new URL(win.location.href).searchParams.get('quote')||'';
+    if(next.screen==='quote-result'&&!fixtureSelecting&&(resumeIssued||!config.inspect&&/^[a-z0-9_-]{1,128}$/i.test(issuedId))){
+      // A reload or verification return with an issued ID must go through the
+      // same scoped reader as the original calculator. The design scene owns
+      // only its explicitly isolated examples.
+      await mountPage(researchRoute({screen:'q1',mode:next.mode}),sequence);
+      if(sequence!==epoch||disposed||!workspace.navigate({page:'result'}))return false;
+      markWorkspaceResult(next.mode);
+      return true;
+    }
     if(next.screen==='notifications'){
       clearPage();page.hidden=false;quote.hidden=true;pricing.hidden=true;
       pageDispose=mountResearchNotifications({container:page,adapter,signal,mode:'full',setUnread:count=>brandMenu?.setUnread(count)});
@@ -170,15 +224,15 @@ export async function mountResearchApplication(config, environment) {
       const fixtureScope=scenarioFixtureScope||(!restartQuote&&quoteFixtureScope===true);
       if(workspace&&(workspace.mode!==next.mode||reviewSelecting||restartQuote||fixtureScope&&!workspace.fixtureScope)){workspace.dispose();workspace=null;quote.replaceChildren();}
       if(!workspace)workspace=await mountResearchQuote(quote,{mode:next.mode,step:next.screen==='quote-review'?'review':next.screen,namespace:environment.namespace||'research',fixtureScope,
-        services:{regular:services,adapter,context,repository,fetcher:environment.quoteFetch||environment.fetcher||win.fetch.bind(win),addressService:services.addressService,quoteProvider:environment.quoteProvider},
-        onNavigate:change=>{if(change.type==='back')return back.click();if(change.type==='mode')return navigate({screen:'q1',mode:change.mode},{quoteFixtureScope:fixtureScope});if(change.type==='application')return navigate(change);if(change.type==='quote'&&change.page==='home')return navigate({screen:'onboarding',state:authenticated()?'member-4':'guest-4'});if(change.type==='quote'&&change.page==='result'){route={...researchRoute({screen:'quote-result',state:'saving',mode:route.mode},route),kind:'quote'};pageRoute=route;updateLocation(true);emit();}},
+        services:{regular:services,adapter,context,repository,fetcher:environment.quoteFetch||environment.fetcher||win.fetch.bind(win),addressService:services.addressService,quoteProvider:environment.quoteProvider,onAuthRequest:action=>startQuoteVerification(action,'workspace')},
+        onNavigate:change=>{if(change.type==='back')return back.click();if(change.type==='mode')return navigate({screen:'q1',mode:change.mode},{quoteFixtureScope:fixtureScope});if(change.type==='application')return navigate(change);if(change.type==='quote'&&change.page==='home')return navigate({screen:'onboarding',state:authenticated()?'member-4':'guest-4'});if(change.type==='quote'&&change.page==='result'){markWorkspaceResult(route.mode);updateLocation(true);emit();}},
         onState:state=>{if(!navigating&&QUOTE_ROUTES.has(route.screen)&&state.step&&state.step!==route.screen){route=researchRoute({screen:state.step,mode:route.mode},route);updateLocation(true);emit();}},signal});
       else await workspace.navigate({step:next.screen==='quote-review'?'review':next.screen});
       if(scenarioFixtureScope&&workspace.applyScenario)await workspace.applyScenario({screen:next.screen,state:next.state});
       pageRoute=next;return;
     }
     quote.hidden=true;page.hidden=false;
-    if(pageRoute?.screen==='quote-result'&&next.screen==='quote-result'&&page.querySelector('[data-review-result]')){
+    if(pageRoute?.screen==='quote-result'&&next.screen==='quote-result'&&isQuoteLock(pageRoute.state)===isQuoteLock(next.state)&&page.querySelector('[data-review-result]')){
       page.dispatchEvent(new win.CustomEvent('r3-result-state',{detail:{state:next.state,replay:false}}));pageRoute=next;return;
     }
     if(retainsIntroduction(next)){
@@ -192,14 +246,14 @@ export async function mountResearchApplication(config, environment) {
     clearPage();page.innerHTML=scene.html;removeDocumentChrome(page);
     for(const style of scene.styles||[]){const node=doc.createElement('style');node.textContent=style;page.prepend(node);}
     const module=scene.module||modules.get(scene.screen)||modules.get(next.screen);
-    const mountedApi={...api,screen:next.screen,variant:next.variant,module};
+    const mountedApi={...api,screen:next.screen,variant:next.variant,module,...(next.screen==='business'&&quoteVerification?{returnToLockedQuote}:{})};
     sharedDispose=win.QAUI?.sharedMount?.(page,mountedApi);
     pageDispose=win.ORDER_PRODUCT_UI?.mount(module,page,next.state,mountedApi)||module?.mount?.(page,next.state,mountedApi);
     page.dataset.researchSceneConnection=module?'connected':'unconnected';
     pageRoute=next;
     if(!module)notify('이 화면의 동작은 아직 서비스에 연결되지 않았어요.');
   }
-  async function navigate(input,{replace=false,history=true,scenario=false,restartQuote=false,quoteFixtureScope=false}={}){
+  async function navigate(input,{replace=false,history=true,scenario=false,restartQuote=false,quoteFixtureScope=false,resumeIssued=false}={}){
     const requested=typeof input==='string'?{screen:input}:input;
     // Returning to an existing workspace resumes its own menu and draft. A
     // review scenario remains an explicit, guarded request for another state.
@@ -246,6 +300,7 @@ export async function mountResearchApplication(config, environment) {
       const accepted=await brandMenu.requestClose({focus:false,immediate:true});
       if(!accepted||sequence!==epoch){if(!history)updateLocation(true);return false;}
     }
+    if(scenario)quoteVerification=null;
     if(scenario&&environment.configure){await environment.configure(next,adapter,input.fixture);refreshBrand();}
     if(scenario&&next.screen==='login'&&next.state==='closed'){
       // This review example represents the completed return, while ordinary
@@ -258,7 +313,7 @@ export async function mountResearchApplication(config, environment) {
       if(history)updateLocation(replace);emit();return true;
     }
     closedAuthReview=false;
-    if(next.screen==='notifications'&&!authenticated()){
+    if(['notifications','drawer'].includes(next.screen)&&!authenticated()){
       authReturn=next;
       return await navigate({screen:'login',state:'empty',parent:pageRoute||{screen:'onboarding',state:'guest-4',variant:'email',mode:next.mode}},{replace,history});
     }
@@ -289,12 +344,13 @@ export async function mountResearchApplication(config, environment) {
       }
     }else{
       authSheet?.close?.({immediate:true});brandMenu?.close?.({immediate:true});
-      const retained=!scenario&&!restartQuote&&pageRoute&&['screen','state','variant','mode'].every(key=>next[key]===pageRoute[key]);
+      const retained=!resumeIssued&&!scenario&&!restartQuote&&pageRoute&&['screen','state','variant','mode'].every(key=>next[key]===pageRoute[key]);
       const previousRoute=route;route=next;
-      if(!retained&&await mountPage(next,sequence,{restartQuote,introScene,priceSelected,quoteFixtureScope})===false){route=previousRoute;if(!history)updateLocation(true);return false;}
+      if(!retained&&await mountPage(next,sequence,{restartQuote,introScene,priceSelected,quoteFixtureScope,resumeIssued})===false){route=previousRoute;if(!history)updateLocation(true);return false;}
     }
     if(sequence!==epoch||disposed)return false;
     if(route.kind!=='auth')authReturn=null;
+    if(route.kind!=='auth'&&route.screen!=='business')quoteVerification=null;
     back.hidden=route.screen==='onboarding'||route.screen==='quote-result'||route.kind==='quote';header.dataset.appRoute=route.screen;
     if(history)updateLocation(replace);emit();return true;
     }finally{navigating--;fixtureSelecting=priorFixtureSelecting;}
@@ -310,7 +366,7 @@ export async function mountResearchApplication(config, environment) {
     // legacy handlers still reading input.value must not receive a split DOM.
     if(started&&!navigating&&!disposed&&!closedAuthReview&&route.kind==='auth'){
       const current=authSheet?.inspect();
-      if(!current?.open){authReturn=null;route=researchRoute(route.parent||pageRoute);updateLocation(true);emit();}
+      if(!current?.open){authReturn=null;quoteVerification=null;route=researchRoute(route.parent||pageRoute);updateLocation(true);emit();}
       else if(current.screen!==route.screen||current.state!==route.state){route={...route,screen:current.screen,state:current.state};updateLocation(true);emit();}
     }
   }
@@ -323,7 +379,11 @@ export async function mountResearchApplication(config, environment) {
     const view=href.searchParams.get('view');
     if(['simple-r3','detailed-r3','product-r3','businesses-r3','roles-r3','pricing-r3'].includes(view)){event.preventDefault();navigate({screen:view==='product-r3'?href.searchParams.get('screen'):view==='businesses-r3'?'store-settings':view==='roles-r3'?'role-'+(href.searchParams.get('menu')||'consult'):view,state:href.searchParams.get('state')});}
   },{signal});
-  win.addEventListener('popstate',event=>{const p=new URL(win.location.href).searchParams;navigate(event.state?.route||Object.fromEntries(['screen','state','variant','mode'].map(key=>[key,p.get(key)])),{history:false});},{signal});
+  win.addEventListener('popstate',event=>{
+    const p=new URL(win.location.href).searchParams;
+    const target=researchRoute(event.state?.route||Object.fromEntries(['screen','state','variant','mode'].map(key=>[key,p.get(key)])));
+    restoreHistoryIntents(target,event.state);navigate(target,{history:false});
+  },{signal});
   const app={instance,build:config.build,services,adapter,repository,navigate,
     get priceWorkspace(){return priceWorkspace;},
     snapshot:()=>({instance,build:config.build,route:{...route},pageRoute:{...pageRoute},quote:workspace?.snapshot?.()||null,price:priceWorkspace?.snapshot?.()||null,environment:environment.kind||'injected',headerOwners:header.querySelectorAll('[data-order-brand-source]').length}),

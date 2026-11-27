@@ -21,7 +21,9 @@ export function mountResearchDrawer({container,scene,module,api,signal,onClose})
     root.dataset.researchConsultEntry='';root.style.position='relative';root.style.inset='auto';root.style.pointerEvents='auto';
     selection.style.padding='24px 26px';selection.append(trigger);background.replaceWith(selection);
   }else{
-    sheet.querySelector('h1,h2')?.after(selection);if(!sheet.contains(selection))sheet.append(selection);
+    // Connected setup replaces the nested authored completion example. Keep
+    // the selection owner on the sheet so its asynchronous load can finish.
+    sheet.querySelector(':scope > h1,:scope > h2')?.after(selection);if(!sheet.contains(selection))sheet.append(selection);
     trigger.hidden=true;root.append(trigger);background.remove();
   }
   for(const el of root.querySelectorAll('#order-single')){el.removeAttribute('id');if(selectionEntry)el.style.minHeight='0';}
@@ -32,13 +34,16 @@ export function mountResearchDrawer({container,scene,module,api,signal,onClose})
   signal?.addEventListener('abort',dispose,{once:true});
   const parent=selectionEntry?container.querySelector('#order-app-page'):null;
   if(parent)parent.prepend(root);else container.append(root);
+  const reviewPass=selectionEntry&&api.reviewScenario&&api.adapter?.fixture?.useConsultationPass?module.reviewConsultationPass:null;
+  if(reviewPass)api.adapter.fixture.useConsultationPass(reviewPass,local.signal);
   let targets=[];
   const contract=api.adapter?.consultation,consultation=contract?{...contract,async load(options){
     const [data,workspace]=await Promise.all([contract.load(options),typeof api.adapter.roleRequest==='function'?api.adapter.roleRequest('/workspace',null,options?.signal):Promise.resolve({})]);
     const passes=researchPassRows({},workspace);
     targets=(data.targets||[]).map(target=>{const quote=workspace.quotes?.find(quote=>quote.id===target.id),business=workspace.businesses?.find(business=>business.org_id===target.orgId&&business.site_id===target.siteId);
-      const pass=passes.find(pass=>pass.quoteId===target.id)||researchPassRows({},{quotes:[{id:target.id,productName:target.label,businessName:target.label,lines:target.lines,expires_at:target.expiresAt}]})[0];
-      return {...target,lines:quote?.lines||target.lines||[],date:quote?.issued_at||quote?.serviceDate||'',businessName:business?.businessName||target.label,pass};});return {...data,targets};
+      const pass=reviewPass&&quote?.reviewPassId===reviewPass.id?reviewPass:passes.find(pass=>pass.quoteId===target.id)||researchPassRows({},{quotes:[{id:target.id,productName:target.label,businessName:target.label,lines:target.lines,expires_at:target.expiresAt}]})[0];
+      const detail=pass.lines.length>1?pass.lines.map(line=>line[0]).join(' · ')+' · 복합 주문':target.detail;
+      return {...target,detail,lines:quote?.lines||target.lines||[],date:quote?.issued_at||quote?.serviceDate||'',businessName:business?.businessName||target.label,pass};});return {...data,targets};
   }}:contract;
   const mountedApi={...api,screen:'drawer',consultation,signal:local.signal,
     select(screen,state,options){
@@ -50,7 +55,10 @@ export function mountResearchDrawer({container,scene,module,api,signal,onClose})
       }
       return api.select(screen,state,options);
     }};
-  try{disposeShared=window.QAUI?.sharedMount?.(root,mountedApi);disposeModule=window.ORDER_PRODUCT_UI?.mount(module,root,scene.state,mountedApi)||module.mount(root,scene.state,mountedApi);polish=polishConsultation(root,()=>targets,local.signal,module.renderPassDetail,api.reduced);}
+  // A selected QA example can show the receipt without issuing a booking.
+  // In the actual form, only the existing successful request owns this state.
+  const receiptExample=scene.state==='done'&&Boolean(api.reviewScenario&&api.adapter?.fixture);
+  try{disposeShared=window.QAUI?.sharedMount?.(root,mountedApi);disposeModule=window.ORDER_PRODUCT_UI?.mount(module,root,scene.state,mountedApi)||module.mount(root,scene.state,mountedApi);polish=polishConsultation(root,()=>targets,local.signal,module.renderPassDetail,api.reduced,receiptExample);}
   catch(error){dispose();throw error;}
   return dispose;
 }
@@ -121,10 +129,10 @@ export function mountConsultationPassDetail(root,{signal,reduced=()=>false}={}){
   return {destroy,close:hide};
 }
 
-function polishConsultation(root,readTargets,signal,renderPassDetail,reduced){
+function polishConsultation(root,readTargets,signal,renderPassDetail,reduced,receiptExample){
   const document=root.ownerDocument,window=document.defaultView,el=(tag,text,className)=>{const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;};
   if(typeof renderPassDetail!=='function')throw Error('CONSULTATION_PASS_RENDERER_MISSING');
-  const style=el('style');style.textContent=`.research-drawer .consult-tickets{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x proximity;align-items:flex-start;padding:5px 3px 16px}.research-drawer .consult-ticket{flex:0 0 min(290px,82vw);border-radius:20px;border:1px solid #d9e1ec;padding:18px;background:#fff;scroll-snap-align:start;transition:background 200ms,border-color 200ms}.research-drawer .consult-ticket:has(input:checked){background:#edf3ff;border-color:#627fd5}.research-drawer .consult-ticket label{display:flex;gap:10px;align-items:flex-start}.research-drawer .consult-ticket label span{display:grid;gap:8px}.research-drawer .consult-ticket input{accent-color:#4969b4;flex:none}.research-drawer .consult-pass-dialog{position:fixed;inset:0;width:min(440px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 40px);height:max-content;margin:auto;padding:0;border:0;background:transparent;color:inherit;overflow:visible;pointer-events:auto}.research-drawer .consult-pass-dialog::backdrop{background:rgba(24,34,49,.34);backdrop-filter:blur(3px)}.research-drawer .consult-pass-stage{max-height:calc(100dvh - 112px);overflow:auto;overscroll-behavior:contain}.research-drawer .consult-pass-dialog:is([data-motion=opening],[data-motion=closing]) .consult-pass-stage{overflow:visible}.research-drawer .consult-pass-dialog .consult-ticket-detail:not([hidden]){animation:none;transform:none;margin:0;padding:0;border:0}.research-drawer .consult-pass-dialog .ticket-detail{width:100%;box-sizing:border-box;transform-origin:0 0;transition:none}.research-drawer .consult-pass-close{display:block;margin:14px auto 0;min-height:44px;background:#fff}.research-drawer .consult-complete{text-align:center;display:grid;justify-items:center;gap:14px;padding:40px 20px}.research-drawer .consult-complete p{margin:0;line-height:1.6}.research-drawer .consult-complete svg{width:64px;height:64px;color:#23875a}.research-drawer .drawer-close{display:none}@media(prefers-reduced-motion:reduce){.research-drawer .consult-ticket{transition:none}}`;root.prepend(style);
+  const style=el('style');style.textContent=`.research-drawer .research-consult-selection>.consult-tickets{display:flex;flex-wrap:nowrap;gap:14px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x proximity;align-items:flex-start;padding:5px 3px 16px}.research-drawer[data-research-consult-entry] .research-consult-selection>.consult-tickets{max-height:none}.research-drawer .consult-tickets>.consult-ticket{flex:0 0 min(290px,82vw);border-radius:20px;border:1px solid #d9e1ec;padding:18px;background:#fff;scroll-snap-align:start;transition:background 200ms,border-color 200ms}.research-drawer .consult-ticket:has(input:checked){background:#edf3ff;border-color:#627fd5}.research-drawer .consult-ticket label{display:flex;gap:10px;align-items:flex-start}.research-drawer .consult-ticket label span{display:grid;gap:8px}.research-drawer .consult-ticket input{accent-color:#4969b4;flex:none}.research-drawer .consult-pass-dialog{position:fixed;inset:0;width:min(440px,calc(100vw - 32px));max-width:none;max-height:calc(100dvh - 40px);height:max-content;margin:auto;padding:0;border:0;background:transparent;color:inherit;overflow:visible;pointer-events:auto}.research-drawer .consult-pass-dialog::backdrop{background:rgba(24,34,49,.34);backdrop-filter:blur(3px)}.research-drawer .consult-pass-stage{max-height:calc(100dvh - 112px);overflow:auto;overscroll-behavior:contain}.research-drawer .consult-pass-dialog:is([data-motion=opening],[data-motion=closing]) .consult-pass-stage{overflow:visible}.research-drawer .consult-pass-dialog .consult-ticket-detail:not([hidden]){animation:none;transform:none;margin:0;padding:0;border:0}.research-drawer .consult-pass-dialog .ticket-detail{width:100%;box-sizing:border-box;transform-origin:0 0;transition:none}.research-drawer .consult-pass-close{display:block;margin:14px auto 0;min-height:44px;background:#fff}.research-drawer .consult-complete{text-align:center;display:grid;justify-items:center;gap:14px;padding:40px 20px}.research-drawer .consult-complete p{margin:0;line-height:1.6}.research-drawer .consult-complete svg{width:64px;height:64px;color:#23875a}.research-drawer .drawer-close{display:none}@media(prefers-reduced-motion:reduce){.research-drawer .consult-ticket{transition:none}}`;root.prepend(style);
   const detailViewer=mountConsultationPassDetail(root,{signal,reduced});
   function update(){
     for(const input of root.querySelectorAll('[name="consult-pass"]')){
@@ -133,11 +141,12 @@ function polishConsultation(root,readTargets,signal,renderPassDetail,reduced){
       const detail=el('section',undefined,'consult-ticket-detail');detail.hidden=true;detail.innerHTML=renderPassDetail(target.pass);
       const button=el('button','패스 상세','btn text');button.type='button';button.dataset.action='consult-ticket-detail';button.setAttribute('aria-expanded','false');card.append(button,detail);
     }
-    const saved=root.querySelector('[data-request-saved="true"]'),sheet=root.querySelector('.functional-drawer');if(saved&&!sheet.querySelector('.consult-complete')){
+    const saved=root.querySelector('[data-request-saved="true"]'),sheet=root.querySelector('.functional-drawer');if((saved||receiptExample)&&!sheet.querySelector('.consult-complete')){
       const notice=sheet.querySelector('.consult-request-message'),receipt=el('section',undefined,'consult-complete');
-      for(const child of sheet.children)if(!child.matches('.drawer-handle')&&child!==notice)child.hidden=true;
+      if(receiptExample)receipt.setAttribute('aria-label','예약 완료 예시');
+      for(const child of sheet.children)if(!child.matches('.drawer-handle')&&(child!==notice||receiptExample))child.hidden=true;
       const mark=document.createElementNS('http://www.w3.org/2000/svg','svg');mark.setAttribute('viewBox','0 0 24 24');mark.setAttribute('fill','none');mark.setAttribute('stroke','currentColor');mark.setAttribute('stroke-width','1.8');mark.setAttribute('aria-hidden','true');mark.innerHTML='<circle cx="12" cy="12" r="10"/><path d="m7 12 3 3 7-7"/>';
-      receipt.append(mark,el('h2','상담을 예약했어요'),el('p','예약시간 확정 후 담당자가 연락드릴 예정이에요'));if(notice)receipt.append(notice);sheet.append(receipt);
+      receipt.append(mark,el('h2','상담을 예약했어요'),el('p','예약시간 확정 후 담당자가 연락드릴 예정이에요'));if(notice&&!receiptExample)receipt.append(notice);sheet.append(receipt);
     }
   }
   const observer=new window.MutationObserver(update);observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['data-request-saved']});update();const dispose=()=>{observer.disconnect();detailViewer.destroy();};signal.addEventListener('abort',dispose,{once:true});return dispose;

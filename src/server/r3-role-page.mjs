@@ -4,6 +4,7 @@ import {createCustomerControls} from './r3-customer-controls.mjs';
 import {runRolePage} from './r3-role-client.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {practiceCatalog,startRolePractice} from './r3-role-practice.mjs';
+import {installProductWorkflowMotion,productWorkflowMotionCss} from './product-workflow-motion.mjs';
 import {createEvidenceEditor} from './r3-evidence-client.mjs';
 const labels={
   business:'사업장 확인',supply:'공급 참여 심사',catalog:'상품·출고 정보 심사',consult:'상담',reprice:'가격 재검토',delivery:'납품 신청',
@@ -31,6 +32,7 @@ export function renderR3RolePage(nonce){
   #account-panel{position:relative;display:grid;gap:9px;background:white;border-radius:16px;padding:18px;margin:0 0 18px;max-width:34rem}#account-panel :focus-visible{outline-offset:2px}#detail details[data-case-action]{margin:8px 0;border-top:1px solid #dde3ec}#detail details[data-case-action]>summary{padding:9px 0;font-weight:600}
 
   ${asyncMotionCss}
+  ${productWorkflowMotionCss}
   .role-badge{border-radius:1rem;background:#a72d43;color:white;display:inline-flex;min-width:1rem;justify-content:center;margin-left:5px;font:600 12px/1.45 system-ui;font-variant-numeric:tabular-nums}#role-search-tags{display:flex;gap:4px;flex-wrap:wrap}#role-search-tags button{padding:3px 7px;border-radius:5px}
   #account-panel{overflow:clip}#account-panel .customer-panel-page{display:grid;gap:9px;min-width:0}
   #account-panel .customer-panel-leaving{position:absolute;inset:18px;pointer-events:none}
@@ -52,5 +54,5 @@ export function renderR3RolePage(nonce){
   <ul id="queue-list"></ul><ul id="list"></ul><button type="button" hidden id="more">다음 50건</button><button type="button" id="refresh">새로고침</button>
   <form id="create" hidden></form></section><section class="panel" id="detail" aria-live="polite"></section></main>
   <section id="publication"></section><section id="r3-practice" hidden></section>
-  <script nonce="${nonce}">(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)},${browserFunction(createCustomerControls)},${browserFunction(mountAsyncMotion)},${browserFunction(createCommonMotion)},${browserFunction(createCommonControlPaint)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
+  <script nonce="${nonce}">(${browserFunction(installProductWorkflowMotion)})(window);(${browserFunction(runRolePage)})(${JSON.stringify(labels)},${browserFunction(createEvidenceEditor)},${browserFunction(createCustomerControls)},${browserFunction(mountAsyncMotion)},${browserFunction(createCommonMotion)},${browserFunction(createCommonControlPaint)});(${browserFunction(startRolePractice)})(document.getElementById("r3-practice"),${JSON.stringify(practiceCatalog())},${JSON.stringify(labels)})</script></body></html>`;
 }

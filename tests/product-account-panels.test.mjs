@@ -36,6 +36,9 @@ async function workspace(t){
   const response=await onRequest({request:new Request(url,{headers:{Cookie:cookie}}),env});assert.equal(response.status,200);
   const errors=[],calls=[],navigation=[],console=new VirtualConsole();console.on('jsdomError',error=>{if(/^Not implemented: navigation/.test(error.message))navigation.push(error);else if(error.type!=='css parsing')errors.push(error);});
   const dom=new JSDOM(await response.text(),{url,runScripts:'outside-only',pretendToBeVisual:true,virtualConsole:console}),w=dom.window;doms.push(dom);
+  // JSDOM has no layout. Avoid cascading the full product stylesheet for every
+  // semantic stack transition; stylesheet scope is tested separately below.
+  for(const style of w.document.querySelectorAll('style'))style.remove();
   w.matchMedia=()=>({matches:true,addEventListener(){},removeEventListener(){}});w.ResizeObserver=class{observe(){}disconnect(){}};w.HTMLElement.prototype.scrollTo=function(){};w.HTMLElement.prototype.animate=()=>({finished:Promise.resolve(),cancel(){},pause(){},play(){}});
   w.fetch=async(input,init={})=>{
    const dest=new URL(String(input),url);assert.equal(dest.origin,origin);const headers=new Headers(init.headers);headers.set('Cookie',cookie);if(init.body)headers.set('Origin',origin);
@@ -46,7 +49,23 @@ async function workspace(t){
   for(const script of w.document.querySelectorAll('script'))if(!script.src)w.eval(script.textContent);
   await w.ORDER_APP_ADAPTER.ready;await tick();
   const brand=w.document.querySelector('.obm-brand'),menu=brand.__orderAccountMenu,panel=menu.panel,svg=brand.querySelector('svg');
-  const open=async id=>{menu.close({immediate:true});menu.open('manage');assert.equal(menu.show(id),true);await until(()=>panel.querySelector('[data-obm-page="'+id+'"] .obm-panel-content')?.getAttribute('aria-busy')!=='true','panel loads '+id);return panel.querySelector('[data-obm-page="'+id+'"] .obm-panel-content');};
+  const open=async id=>{
+   menu.close({immediate:true});menu.open('manage');assert.equal(menu.show(id),true);
+   const content=panel.querySelector('[data-obm-page="'+id+'"] .obm-panel-content');
+   assert.ok(content,'panel exists '+id);
+   if(content.getAttribute('aria-busy')==='true'){
+    await new Promise((resolve,reject)=>{
+     const observer=new w.MutationObserver(()=>{
+      if(content.getAttribute('aria-busy')==='true')return;
+      clearTimeout(timer);observer.disconnect();resolve();
+     });
+     const timer=setTimeout(()=>{observer.disconnect();reject(Error('panel loads '+id));},30000);
+     observer.observe(content,{attributes:true,attributeFilter:['aria-busy']});
+    });
+   }
+   assert.equal(content.querySelector('.obm-load-error'),null,'panel loads successfully '+id);
+   return content;
+  };
   const unchanged=()=>{assert.equal(w.location.href,url);assert.equal(brand.querySelector('svg'),svg);assert.equal(menu.panel,panel);assert.equal(w.document.querySelectorAll('.obm-panel').length,1);assert.deepEqual(navigation,[]);assert.deepEqual(errors,[]);const ids=[...w.document.querySelectorAll('[id]')].map(node=>node.id);assert.equal(new Set(ids).size,ids.length,'panel field IDs do not collide with the host');};
   return {w,brand,menu,panel,calls,errors,navigation,open,unchanged};
  }
@@ -89,7 +108,7 @@ test('purchase, cash confirmation, dispatch, receipt and dashboard reuse actual 
  const f=await workspace(t),buyer=await f.mount('buyer');let content=await buyer.open('manage.payments');
  await until(()=>content.querySelector('[data-purchase-offer]')?.value&&!content.querySelector('[data-purchase-confirm]').disabled,'approved offers appear in the panel');
  const parentRoot=content.querySelector('.product-panel-body'),quantity=content.querySelector('[name=quantity]'),confirm=content.querySelector('[data-purchase-confirm]');quantity.value='31';quantity.dispatchEvent(new buyer.w.Event('input',{bubbles:true}));confirm.click();
- await until(()=>confirm.textContent.includes('주문 확정'),'real quote confirmation');assert.deepEqual((await(await f.request('buyer','/product/purchases')).json()).items,[]);
+ await until(()=>confirm.textContent.includes('주문 확정')&&!confirm.disabled&&confirm.getAttribute('aria-busy')!=='true','real quote confirmation is ready to submit');assert.deepEqual((await(await f.request('buyer','/product/purchases')).json()).items,[]);
  confirm.click();await until(()=>buyer.menu.inspect().page==='manage.payments.view.store-purchase.cash','confirmed purchase opens its child in the same panel');
  await until(()=>buyer.panel.querySelector('[data-purchase-id]')?.textContent===buyer.w.ORDER_APP_ADAPTER.selectedPurchaseId,'the saved order is displayed');
  const order=(await(await f.request('buyer','/product/purchases')).json()).items[0];assert.equal(order.status,'AWAITING_CASH');assert.equal(order.total,31*5970);buyer.unchanged();

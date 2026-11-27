@@ -189,7 +189,12 @@ def check(page, origin, width):
     expect(frame.locator(".opening-date>button")).to_be_disabled()
     expect(frame.locator(".opening-wheels")).to_be_hidden()
     expect(frame.locator(".verification-mark")).to_be_visible()
-    expect(frame.get_by_role("button",name="내 사업장 인증·보완")).to_be_visible()
+    expect(frame.locator(".business-fields")).to_be_hidden()
+    expect(frame.locator(".document-section")).to_be_hidden()
+    frame_click(page, frame.get_by_role("button",name="사업자등록증 제출",exact=True))
+    expect(frame.get_by_role("heading",name="사업자등록증 제출",exact=True)).to_be_visible()
+    expect(frame.locator(".business-fields")).to_have_count(0)
+    expect(frame.locator(".research-file-drop")).to_be_visible()
 
     frame = screen("proof", "empty")
     expect(frame.get_by_role("heading",name="거래내역 증빙",exact=True)).to_be_visible()

@@ -201,7 +201,11 @@ test('sales is the discoverable first analytics state while original analytics a
     assert.equal(entry.contentHashes[390],row.hashes[390]);assert.equal(doc.hash,entry.hashes[390]);
     assert.equal(doc.source.kind,'research-application');assert.equal(doc.source.build,doc.application.build);
     const url=new URL(doc.application.url,'https://order-ia-portal.pages.dev');assert.equal(url.searchParams.get('screen'),row.screen);assert.equal(url.searchParams.get('state'),row.state);
-    const scene=await researchScene(row.screen,row.state,row.variant);assert.equal(scene.html,gunzipSync(Buffer.from(frames[row.current],'base64')).toString(),'the current app still serves the selected original analytics scene');
+    const scene=await researchScene(row.screen,row.state,row.variant);
+    const iconLink=/<button\b[^>]*data-op-route="admin-icon-library"[^>]*>[\s\S]*?<\/button>/g;
+    const original=gunzipSync(Buffer.from(frames[row.current],'base64')).toString();
+    assert.equal([...scene.html.matchAll(iconLink)].length,['normal','partial','empty'].includes(row.state)?1:0,'only screens with the shared admin menu gain the icon link');
+    assert.equal(scene.html.replace(iconLink,''),original,'all existing analytics controls and content remain identical');
   }
   const shell=setup(approvedShellBody()),link=shell.window.document.querySelector('#consult-candidates a');
   assert.equal(link.getAttribute('href'),'/ia?view=roles-r3&menu=consult');assert.equal(link.closest('iframe'),null);assert.equal(shell.window.document.querySelector('#frame').getAttribute('sandbox'),'allow-scripts');shell.window.close();

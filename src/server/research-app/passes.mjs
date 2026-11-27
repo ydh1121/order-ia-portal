@@ -51,6 +51,20 @@ export function installResearchPasses(win=window){
       // This application/panel has one retained header. Repainting data cannot
       // introduce a second brand or a static sample label.
       for(const element of root.querySelectorAll('.page-head,.brand,.nav-sample'))element.remove();
+      if(renderer.screen==='passes'){
+        const style=document.createElement('style');
+        style.textContent=`
+          .ds .passes-page .pass-stage{isolation:isolate}
+          .ds .passes-page .pass-stage:not(.is-deck):not(.pass-loading):not([hidden]){
+            display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px 12px;height:auto
+          }
+          .ds .passes-page .pass-stage:not(.is-deck):not(.pass-loading)>.order-pass{
+            position:relative;inset:auto;width:100%
+          }
+          .ds .passes-page .expired-reminder{z-index:2}
+        `;
+        root.prepend(style);
+      }
       disposeRuntime=renderer.mount(root,state,{...api,signal,passReceipt:receive});
       root.dataset.passDataSource=adapter.fixture?'qa-fixture':'service';
     };
@@ -77,7 +91,22 @@ export function installResearchPasses(win=window){
       let loading;if(renderer.screen==='search')loading=win.ORDER_COMMON_MOTION?.skeleton(stage);
       try{
         const [purchases,workspace]=await Promise.all([adapter.request('/purchases',null,signal),typeof adapter.roleRequest==='function'?adapter.roleRequest('/workspace',null,signal):Promise.resolve({quotes:[],businesses:[]})]);
-        if(!live()||own!==generation)return;loading?.destroy();const rows=researchPassRows(purchases,workspace);
+        if(!live()||own!==generation)return;
+        loading?.destroy();
+        let rows=researchPassRows(purchases,workspace);
+        if(api.reviewScenario===true&&adapter.fixture?.inspect().source.kind==='dummy'){
+          // Review the published examples without mutating a purchase, its
+          // receipt permissions, or the session's ordinary order collection.
+          if(renderer.screen==='passes'&&state==='empty')rows=[];
+          if(renderer.screen==='passes'&&state==='expired'&&!rows.some(row=>row.tone==='expired')){
+            const expired=renderer.reviewPasses.find(row=>row.tone==='expired');
+            rows=[...rows,expired];
+          }
+          if(renderer.screen==='search'&&['empty','detail'].includes(state)){
+            const compound=rows.find(row=>row.lines.length>1)||renderer.reviewPasses.find(row=>row.lines.length>1);
+            rows=[compound,...rows.filter(row=>row.id!==compound.id)];
+          }
+        }
         const actual=renderer.screen==='passes'?(rows.length?(state==='deck'?'deck':'grid'):'empty'):(state==='detail'&&!rows.length?'empty':state);
         paint(actual,rows);root.dataset.passDataState='ready';
       }catch(error){

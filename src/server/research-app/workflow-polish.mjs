@@ -10,6 +10,7 @@ export const researchWorkflowPolishCss=String.raw`
 .research-file-drop{display:grid;gap:10px;padding:20px;border:1px dashed #b5bdcb;border-radius:18px;text-align:center;background:#fafbfc;cursor:pointer}.research-file-drop>svg{width:34px;height:34px;margin:auto;color:#365585;background:none}.research-file-drop input{max-width:100%;font:inherit}.research-file-drop[data-drag=true]{border-color:#355bba;background:#eef3ff}.research-file-drop small{font-weight:400;color:#6a7484}.research-file-drop .research-drop-desktop{display:none}@media(pointer:fine) and (hover:hover){.research-file-drop .research-drop-desktop{display:block}}
 .research-evidence-pages{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}.research-evidence-pages>section{width:150px;padding:12px;border:1px solid #e4e8ef;border-radius:14px;background:#fff}.research-evidence-pages h3{font-size:14px;margin:0 0 8px}.research-evidence-pages canvas{width:100%;max-height:160px;object-fit:contain;cursor:zoom-in}.research-evidence-pages details{display:none}.research-evidence-pages button{margin-top:8px;font:inherit;font-size:13px}
 .research-evidence-pages:empty{display:none}.research-evidence-page .research-workflow-receipt{min-height:min(65svh,600px);align-content:center}
+.ds .research-workflow .business-page:has([data-business-confirmed]){min-height:calc(100svh - 94px)}
 .ds .research-workflow .wf-panel.research-evidence-page{max-width:520px;min-height:calc(100svh - 78px);display:flex;flex-direction:column;gap:0}
 .ds .research-workflow .wf-panel.research-evidence-page>h2{font-size:28px;line-height:1.35;letter-spacing:-.7px;margin:8px 0 24px;font-weight:700}
 .research-evidence-editor{display:flex;flex:1;flex-direction:column;min-height:0}.research-evidence-editor>.research-evidence-settings{display:flex;flex:1;flex-direction:column;gap:20px}
@@ -21,13 +22,37 @@ export const researchWorkflowPolishCss=String.raw`
 .research-signature-pad{position:relative;height:190px;border-radius:16px;background:#f2f4f6;overflow:hidden}.research-evidence-settings .research-signature-pad canvas{width:100%;height:190px;max-width:100%;border:0;border-radius:16px;background:#f2f4f6}.research-signature-pad>.wf-sign-placeholder{inset:0;display:grid;place-items:center;font-size:14px;text-align:center}
 .research-signature-alternative{font-size:13px;color:var(--muted,#6b7684)}.research-signature-alternative>summary{cursor:pointer;min-height:32px;display:flex;align-items:center}.research-signature-alternative>.wf-field{margin-top:8px;color:var(--ink,#20272a)}
 .signature-page .research-evidence-pages{gap:8px}.signature-page .research-evidence-pages>section{width:108px;padding:8px;border:0;border-radius:10px;background:var(--surface,#f2f4f6)}.signature-page .research-evidence-pages h3{font-size:12px;margin:0 0 6px}.signature-page .research-evidence-pages canvas{max-height:92px}
+.ds .research-workflow .wf-panel.signature-page>h2{margin:8px 0 28px;font-weight:750;color:#191f28}.signature-page>h2>span{display:block}
+.signature-page .research-evidence-editor>.research-evidence-settings{gap:0}
+.signature-page .research-evidence-settings>.research-signature-summary{margin:0 0 28px;padding:20px;display:grid;gap:0;background:#f2f4f6;border-radius:20px;color:#191f28}
+.research-signature-summary>.row{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:15px;line-height:23.25px}.research-signature-summary .muted{display:flex;align-items:center;gap:5px;white-space:nowrap}.research-signature-summary .divider{height:1px;background:#dbe0e5;margin:20px 0}
+.signature-page .research-signature-documents{min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:6px}.research-signature-summary .research-summary-edit{border:0;background:none;color:#4e5968;font:inherit;font-size:12px;cursor:pointer;padding:10.375px 2px;margin-block:-10.375px;min-height:44px;line-height:23.25px;touch-action:manipulation}.research-signature-documents strong{white-space:nowrap}
+.signature-page .research-signature-documents>.research-evidence-pages{display:flex;flex-wrap:nowrap;max-width:75px;overflow-x:auto;gap:3px;margin:0}.signature-page .research-signature-documents .research-evidence-pages>section{background:none;padding:0;flex:0 0 24px;width:24px}.signature-page .research-signature-documents .research-evidence-pages canvas{display:block;width:24px;height:24px;border-radius:4px;object-fit:cover}.signature-page .research-signature-documents .research-evidence-pages h3,.signature-page .research-signature-documents .research-evidence-pages button{display:none}
+.signature-page .research-evidence-settings>.wf-signature.research-signature{position:relative;gap:8px;margin:0}.signature-page .signature-label h3{font-size:20px;line-height:28px;font-weight:700}.signature-page .signature-label>.btn{min-height:44px;padding-inline:10px}
+.signature-page .research-signature-pad,.signature-page .research-signature-pad canvas{border-radius:18px}.research-signature-pad canvas{touch-action:none}.research-signature-pad>.wf-sign-placeholder{pointer-events:none}.wf-signature[data-ink=true] .research-signature-pad>.wf-sign-placeholder{visibility:hidden}
+.signature-page .research-signature-alternative:not([open]){position:absolute;inset:0 0 auto;height:0;pointer-events:none}.signature-page .research-signature-alternative>summary{pointer-events:auto}.signature-page .research-signature-alternative>summary{position:absolute;top:0;right:84px;min-height:44px}.signature-page .research-signature-alternative[open]>.wf-field{margin:0}
+.ds .signature-page .research-evidence-settings>label.check-row{box-sizing:border-box;min-height:48px;margin:16px 0 0;padding:8px 0;align-items:center;gap:11px;font-size:13px}.ds .signature-page .check-row>input[type=checkbox]{width:21px;height:21px;margin:0 0 0 4px}
+.signature-page .research-evidence-editor{position:relative}.signature-page .research-evidence-settings{padding-bottom:96px}
+.ds .signature-page .research-evidence-settings>button[data-evidence-submit]{position:absolute;inset:auto 0 20px;margin:0}
 .research-evidence-page .research-workflow-receipt{flex:1;min-height:0;width:100%;box-sizing:border-box}
-.research-evidence-page [hidden],.research-workflow .document-section[hidden],.research-workflow .business-fields[hidden],.research-business-number-mask[hidden]{display:none!important}
+.research-evidence-page [hidden],.research-workflow [data-action=verify-business][hidden],.research-workflow [data-action=business-next][hidden],.research-workflow .document-section[hidden],.research-workflow .business-fields[hidden],.research-business-number-mask[hidden]{display:none!important}
 .research-evidence-viewer{box-sizing:border-box;width:min(920px,calc(100vw - 24px));max-height:calc(100dvh - 32px);border:1px solid #d9e0eb;border-radius:22px;padding:20px;background:white;color:#202b3c}.research-evidence-viewer::backdrop{background:#14233b70}.research-evidence-viewer .research-viewer-toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}.research-evidence-viewer output{margin-right:auto}.research-evidence-viewer button{font:inherit;min-height:40px;border:1px solid #d6dce5;border-radius:12px;background:#f5f7fa;padding:8px 12px}.research-evidence-viewport{max-height:65dvh;overflow:auto;touch-action:pan-y}.research-evidence-viewport canvas{max-width:none!important;width:100%;height:auto!important;border:0!important}.research-evidence-viewport[data-zoom=true] canvas{width:180%}.research-evidence-viewer details{margin-top:16px}.research-evidence-viewer details input{max-width:80px;margin:8px}.research-evidence-viewer[data-editing=true] canvas{cursor:crosshair}
 .research-workflow-receipt{text-align:center;display:grid;justify-items:center;gap:14px;padding:40px 20px}.research-workflow-receipt>svg{width:64px;height:64px;color:#218257}.research-workflow-receipt>p{margin:0;max-width:30em;line-height:1.6}.research-workflow-receipt .wf-status{font-size:13px;color:#6a7484}.research-business-verified svg{animation:research-workflow-check 400ms cubic-bezier(.22,1,.36,1)}@keyframes research-workflow-check{from{opacity:0;transform:translateY(12px) scale(.85)}to{opacity:1;transform:none}}
 .research-evidence-viewer.t-modal{--modal-scale:.96;--modal-close-scale:.98;transform:scale(var(--modal-scale));opacity:0;pointer-events:none;transition:transform 250ms cubic-bezier(.22,1,.36,1),opacity 250ms cubic-bezier(.22,1,.36,1)}.research-evidence-viewer.t-modal.is-open{transform:scale(1);opacity:1;pointer-events:auto}.research-evidence-viewer.t-modal.is-closing{transform:scale(var(--modal-close-scale));opacity:0;pointer-events:none;transition-duration:150ms}
 @media(prefers-reduced-motion:reduce){.research-workflow .is-shaking,.research-business-verified svg{animation:none!important}.research-evidence-viewer.t-modal{transition:none!important}}
 `;
+
+export function createDocumentSignaturePad(win,makePad,options={}){
+  const pad=makePad({...options,width:342,height:190,background:'#f2f4f6',color:'#191f28'});
+  const element=pad.element;
+  if(element.classList.contains('research-signature'))return pad;
+  const make=(tag,className,text)=>{const node=win.document.createElement(tag);if(className)node.className=className;if(text)node.textContent=text;return node;};
+  const canvas=element.querySelector('canvas'),placeholder=element.querySelector('.wf-sign-placeholder'),typed=element.querySelector('.wf-field'),clear=element.querySelector('button');
+  const head=make('div','signature-label row between'),box=make('div','research-signature-pad'),alternative=make('details','research-signature-alternative');
+  element.classList.add('research-signature');clear.className='btn text';head.append(make('h3',null,'서명'),clear);
+  box.append(canvas,placeholder);alternative.append(make('summary',null,'이름으로 서명'),typed);element.append(head,box,alternative);
+  return pad;
+}
 
 export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:readClasses}={}){
   if(win.ORDER_RESEARCH_WORKFLOW_POLISH)return win.ORDER_RESEARCH_WORKFLOW_POLISH;
@@ -69,19 +94,37 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     control.replaceWith(input);wrap.className=shared.className+' wf-field';wrap.replaceChildren(...shared.childNodes);win.QAUI.syncField(input);
   }
   workflow.signaturePad=function(options){
-    const pad=originals.signaturePad.call(this,{...options,width:342,height:190,background:'#f2f4f6'}),page=pad.page,life=lifecycle(options?.signal),element=pad.element;
-    element.classList.add('research-signature');
-    const canvas=element.querySelector('canvas'),placeholder=element.querySelector('.wf-sign-placeholder'),typed=element.querySelector('.wf-field'),clear=element.querySelector('button'),head=el('div',undefined,'signature-label row between'),box=el('div',undefined,'research-signature-pad'),alternative=el('details',undefined,'research-signature-alternative');
-    clear.className='btn text';head.append(el('h3','서명'),clear);box.append(canvas,placeholder);alternative.append(el('summary','이름으로 서명'),typed);element.append(head,box,alternative);
+    const pad=createDocumentSignaturePad(win,originals.signaturePad.bind(this),options),page=pad.page,life=lifecycle(options?.signal),element=pad.element;
+    const canvas=element.querySelector('canvas'),clear=element.querySelector('button');
     signaturePads.set(element,pad);element.addEventListener('input',()=>clearError(element),{signal:life.signal});canvas.addEventListener('pointerup',()=>{if(element.dataset.ink==='true')clearError(element);},{signal:life.signal});clear.addEventListener('click',()=>clearError(element),{signal:life.signal});
     pad.page=()=>{try{return page.call(pad);}catch(e){error(element,e.message);throw e;}};
     const destroy=pad.destroy;pad.destroy=()=>{signaturePads.delete(element);life.dispose();destroy.call(pad);};return pad;
   };
   workflow.mountBusiness=function(root,options={}){
     root.classList.add('research-workflow');const life=lifecycle(options.signal),api=options.api||{},adapter=api.adapter||win.ORDER_APP_ADAPTER,fields=root.querySelector('.business-fields'),verify=root.querySelector('[data-action=verify-business]');let outcome=null,manual,diagnostic;
-    const upload=root.querySelector('.document-section'),next=root.querySelector('[data-action=business-next]'),uploadExample=Boolean(root.querySelector('.verification-mark,.document-section .business-message'));
-    if(upload&&!uploadExample){upload.hidden=true;for(const input of upload.querySelectorAll('input'))input.disabled=true;}
-    if(next)next.hidden=!uploadExample;
+    const upload=root.querySelector('.document-section'),next=root.querySelector('[data-action=business-next]');
+    if(upload){upload.hidden=true;for(const input of upload.querySelectorAll('input'))input.disabled=true;}
+    if(next)next.hidden=true;
+    const fixture=adapter?.fixture,reviewBusiness=api.reviewScenario===true&&fixture?.inspect().source.kind==='dummy';
+    if(reviewBusiness&&['document','verified'].includes(options.state)){
+      const showDocument=()=>{
+        const id='qa-review-business-document',record={id,kind:'business',org_id:'qa-store',site_id:'qa-site',revision:1,state:'EVIDENCE_REQUIRED',evidenceId:null,actions:['attach']};
+        const cases=fixture.inspect().data.cases,existing=cases.find(item=>item.id===id);
+        if(!existing){
+          fixture.configure({data:{cases:[...cases,record]}});
+          life.add(()=>{const snapshot=fixture.inspect();if(!snapshot.disposed)fixture.configure({data:{cases:snapshot.data.cases.filter(item=>item.id!==id)}});});
+        }
+        const evidence=workflow.mountEvidence(root,{api,kind:'business',caseRecord:existing||record,signal:life.signal});life.add(()=>evidence.destroy());
+      };
+      if(options.state==='document')showDocument();
+      else{
+        if(fields){fields.hidden=true;fields.inert=true;}
+        root.querySelector('[data-action=open-case-business]')?.remove();
+        const mark=root.querySelector('.verification-mark');if(mark){mark.dataset.businessConfirmed='';mark.classList.add('research-business-verified');mark.append(el('span','사업자 정보를 확인했어요. 등록증을 제출해 주세요.'));}
+        if(next){next.hidden=false;next.textContent='사업자등록증 제출';next.addEventListener('click',showDocument,{once:true,signal:life.signal});}
+      }
+      return {destroy:life.dispose};
+    }
     for(const star of root.querySelectorAll('.required-star'))star.remove();
     const prompts={'business-name':'상호명을 입력해주세요','owner-name':'대표자명을 입력해주세요','business-sector':'업태를 입력해주세요','business-type':'업종을 입력해주세요'};
     for(const [name,prompt]of Object.entries(prompts)){
@@ -120,13 +163,13 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
       const status=root.querySelector('.wf-status');
       if(root.dataset.businessVerificationId&&fields){
         if(next){next.hidden=false;if(next.textContent!=='사업자등록증 제출')next.textContent='사업자등록증 제출';}
-        fields.hidden=false;fields.inert=true;for(const input of fields.querySelectorAll('input,button'))if(!input.disabled)input.disabled=true;
+        fields.hidden=true;fields.inert=true;for(const input of fields.querySelectorAll('input,button'))if(!input.disabled)input.disabled=true;
         if(!root.querySelector('[data-business-confirmed]')){const success=el('div',undefined,'research-business-verified');success.dataset.businessConfirmed='';success.setAttribute('role','status');success.append(icon('check'),el('span','사업자 정보를 확인했어요. 등록증을 제출해 주세요.'));fields.after(success);if(status)status.textContent=adapter.fixture?'검토용 인증 응답입니다. 실제 국세청 인증이 아닙니다.':'확인한 정보는 사업자 정보 페이지에서 수정할 수 있어요.';}
-        if(verify&&!verify.disabled)verify.disabled=true;
+        if(verify){verify.hidden=true;if(!verify.disabled)verify.disabled=true;}
       }else if(outcome==='provider'&&status?.dataset.error==='true'&&fields&&!manual){
         if(next){next.hidden=false;if(next.textContent!=='등록증으로 확인 요청')next.textContent='등록증으로 확인 요청';}
         fields.hidden=true;fields.inert=true;for(const input of fields.querySelectorAll('input,button'))input.disabled=true;
-        manual=el('section',undefined,'research-business-manual t-panel-slide');manual.setAttribute('role','status');manual.append(el('strong',diagnostic?.source==='configuration'?'사업자 조회 서비스의 연결 설정을 확인하고 있어요.':diagnostic?.source==='invalid-response'?'사업자 조회 기관의 응답을 확인하지 못했어요.':'사업자 조회 기관에 연결하지 못했어요.'),el('p','입력한 정보는 보관되어 있어요. 아래에 사업자등록증을 첨부하고 다음을 눌러 담당자 확인을 요청해 주세요.'));if(diagnostic?.alertQueued===true)manual.append(el('p','담당자의 알림 목록에 연결 확인 요청을 등록했어요.'));fields.after(manual);const entry=manual;win.requestAnimationFrame(()=>{if(!life.signal.aborted&&entry.isConnected)entry.dataset.open='true';});if(verify){verify.textContent='사업자 조회 다시 시도';verify.disabled=false;}
+        manual=el('section',undefined,'research-business-manual t-panel-slide');manual.setAttribute('role','status');manual.append(el('strong',diagnostic?.source==='configuration'?'사업자 조회 서비스의 연결 설정을 확인하고 있어요.':diagnostic?.source==='invalid-response'?'사업자 조회 기관의 응답을 확인하지 못했어요.':'사업자 조회 기관에 연결하지 못했어요.'),el('p','입력한 정보는 보관되어 있어요. 다음 화면에서 사업자등록증을 첨부해 담당자 확인을 요청해 주세요.'));if(diagnostic?.alertQueued===true)manual.append(el('p','담당자의 알림 목록에 연결 확인 요청을 등록했어요.'));fields.after(manual);const entry=manual;win.requestAnimationFrame(()=>{if(!life.signal.aborted&&entry.isConnected)entry.dataset.open='true';});if(verify){verify.textContent='사업자 조회 다시 시도';verify.disabled=false;}
       }else if(outcome==='mismatch'&&status?.dataset.error==='true'&&!fields?.querySelector('[data-workflow-invalid]')){for(const input of fields?.querySelectorAll('[name="business-number"],[name="business-name"],[name="owner-name"]')||[])error(input,'등록증의 내용과 입력값을 다시 확인해 주세요.');}
     });observer.observe(root,{subtree:true,childList:true,attributes:true,attributeFilter:['data-business-verification-id','disabled','data-error']});life.add(()=>observer.disconnect());life.add(()=>{evidencePolish?.();root.__orderSelectedFiles=[];base?.destroy?.();});return {destroy:life.dispose};
   };
@@ -161,9 +204,13 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     panel.addEventListener('research-evidence-loaded',()=>{
       if(life.signal.aborted)return;
       if(screen==='signature'){
-        const element=settings.querySelector('.wf-signature'),pad=signaturePads.get(element),typed=element?.querySelector('input');
+        const element=settings.querySelector('.wf-signature'),pad=signaturePads.get(element);
         if(state==='missing'){try{pad?.page();}catch{}}
-        else if(['drawn','processing'].includes(state)&&typed){typed.value='검토 예시';typed.dispatchEvent(new win.Event('input',{bubbles:true}));pad?.page();const consent=settings.querySelector(':scope > label>input[type=checkbox]');if(consent)consent.checked=true;}
+        else if(['drawn','processing'].includes(state)&&pad){
+          // Four strokes from the approved 342×190 signature specimen. Only explicit dummy states use this drawing.
+          pad.restoreDrawing(ctx=>{ctx.beginPath();ctx.moveTo(68,110);ctx.quadraticCurveTo(80,36,95,105);ctx.quadraticCurveTo(110,174,129,78);ctx.moveTo(99,64);ctx.lineTo(90,143);ctx.moveTo(140,113);ctx.quadraticCurveTo(160,35,171,106);ctx.quadraticCurveTo(180,133,207,66);ctx.moveTo(192,110);ctx.quadraticCurveTo(224,89,264,100);ctx.strokeStyle='#191f28';ctx.lineWidth=2.7;ctx.lineCap=ctx.lineJoin='round';ctx.stroke();});
+          const consent=settings.querySelector(':scope > label>input[type=checkbox]');if(consent)consent.checked=true;
+        }
         if(state==='processing')pending('자료와 서명 제출 중');
       }else if(state==='checking'){status.textContent='파일을 안전하게 확인하고 있어요.';status.dataset.error='false';pending('파일 확인 중');}
       finish();
@@ -190,19 +237,23 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
       const settings=panel.querySelector('.research-evidence-settings'),upload=settings?.querySelector('.research-file-drop'),pages=settings?.querySelector('.research-evidence-pages'),signature=settings?.querySelector('.wf-signature'),consent=settings?.querySelector(':scope > label>input[type=checkbox]')?.parentElement,save=settings?.querySelector('[data-evidence-submit]');
       if(!settings||!upload||!signature||!consent||!save)return;
       restoreMemoField(panel.querySelector('[name=document-memo]'));
-      const purpose=panel.querySelector('.proof-purpose'),memo=panel.querySelector('[name=document-memo]')?.closest('.wf-field'),meter=panel.querySelector('.memo-meter'),hint=settings.querySelector(':scope > p'),galleryHead=el('div',undefined,'research-signature-gallery-label'),edit=el('button','자료 수정','btn text'),next=el('button','다음','btn primary research-proof-next');
-      settings.parentElement.classList.add('research-evidence-editor');save.textContent='제출하기';save.classList.add('btn','primary');edit.type=next.type='button';galleryHead.append(el('h3','제출 자료'),edit);pages.before(galleryHead);
+      const purpose=panel.querySelector('.proof-purpose'),memo=panel.querySelector('[name=document-memo]')?.closest('.wf-field'),meter=panel.querySelector('.memo-meter'),hint=settings.querySelector(':scope > p'),galleryHead=el('section',undefined,'research-signature-summary'),edit=el('button','자료 수정','research-summary-edit'),next=el('button','다음','btn primary research-proof-next');
+      settings.parentElement.classList.add('research-evidence-editor');save.textContent='제출하기';save.classList.add('btn','primary');edit.type=next.type='button';
+      const filesRow=el('div',undefined,'row'),filesLabel=el('span','제출 자료','muted'),documents=el('div',undefined,'research-signature-documents'),count=el('strong'),siteRow=el('div',undefined,'row'),site=el('strong');
+      filesLabel.append(doc.createTextNode(' '),edit);documents.append(count);filesRow.append(filesLabel,documents);siteRow.append(el('span','사업장','muted'),site);galleryHead.append(filesRow,el('div',undefined,'divider'),siteRow);pages.before(galleryHead);
       consent.classList.add('check-row');for(const node of consent.childNodes)if(node.nodeType===3)node.textContent='제출 자료와 서명 내용을 확인했어요.';
       if(memo)signature.before(memo);if(meter)signature.before(meter);settings.append(next);
-      let step=options.api?.screen==='signature'?'signature':'proof',hasDocuments=Boolean(pages.querySelector('canvas'));
+      let step=options.api?.screen==='signature'?'signature':'proof',hasDocuments=Boolean(pages.querySelector('canvas')),fileCount=0;
       const render=()=>{
         if(pages.querySelector('canvas'))hasDocuments=true;const signing=step==='signature';
-        panel.classList.toggle('signature-page',signing);panel.classList.toggle('proof-page',!signing);panel.dataset.evidenceStep=step;const title=signing?'서명이 필요해요':'거래내역 증빙';if(heading.textContent!==title)heading.textContent=title;
+        panel.classList.toggle('signature-page',signing);panel.classList.toggle('proof-page',!signing);panel.dataset.evidenceStep=step;const title=signing?'서명이 필요해요':'거래내역 증빙';if(signing){if(!heading.querySelector('span'))heading.replaceChildren(el('span','서명이 '),doc.createTextNode('필요해요'));}else if(heading.textContent!==title)heading.textContent=title;
+        if(signing&&pages.parentElement!==documents)documents.prepend(pages);else if(!signing&&pages.parentElement!==settings)galleryHead.after(pages);
+        const summary='거래명세서 '+fileCount+'개',business=panel.dataset.evidenceBusiness||'사업장 이름 미등록';if(count.textContent!==summary)count.textContent=summary;if(site.textContent!==business)site.textContent=business;
         for(const node of [purpose,memo,meter])if(node)node.hidden=signing;
         upload.hidden=signing&&hasDocuments;if(hint)hint.hidden=signing;galleryHead.hidden=!signing||!hasDocuments;signature.hidden=consent.hidden=save.hidden=!signing;next.hidden=signing;
       };
       const file=upload.querySelector('input'),confirmed=consent.querySelector('input');
-      file.addEventListener('change',()=>{hasDocuments=false;const status=panel.querySelector('.wf-status');if(status.dataset.error==='true'){status.textContent='';status.dataset.error='false';}},{signal:life.signal});
+      file.addEventListener('change',()=>{hasDocuments=false;fileCount=file.files?.length||0;const status=panel.querySelector('.wf-status');if(status.dataset.error==='true'){status.textContent='';status.dataset.error='false';}},{signal:life.signal});
       next.addEventListener('click',()=>{if(file.disabled)return;if(!hasDocuments){const status=panel.querySelector('.wf-status');status.textContent='증빙 파일을 선택해 주세요.';status.dataset.error='true';file.focus();return;}step='signature';render();heading.focus({preventScroll:true});panel.scrollIntoView?.({block:'start',behavior:'auto'});},{signal:life.signal});
       edit.addEventListener('click',()=>{if(file.disabled)return;step='proof';render();file.focus();},{signal:life.signal});
       confirmed.addEventListener('change',()=>clearError(signature),{signal:life.signal});
@@ -223,11 +274,19 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
       if(ready&&start){start.hidden=true;start.disabled=true;if(select?.options.length===1)select.closest('.wf-field').hidden=true;}
       else if(!opened&&select?.options.length===1&&start&&!start.disabled&&['proof','signature'].includes(options.api?.screen)){opened=true;select.closest('.wf-field').hidden=true;start.click();start.hidden=true;start.disabled=true;}
       else if(opened&&!ready&&status?.dataset.error==='true'&&start){start.hidden=false;start.disabled=false;}
-      if(ready){preparePresentation();presentation?.render();}
+      if(ready&&panel.dataset.evidenceReadOnly==='true'){
+        const title=options.kind==='business'?'제출한 사업자등록증':'제출한 자료와 서명';if(heading.textContent!==title)heading.textContent=title;
+        for(const node of [panel.querySelector('.proof-purpose'),panel.querySelector('[name=document-memo]')?.closest('.wf-field'),panel.querySelector('.memo-meter')])if(node)node.hidden=true;
+      }else if(ready){preparePresentation();presentation?.render();}
       if(ready&&!reviewApplied)reviewApplied=evidenceReviewState(panel,options,life);
-      if(panel.dataset.success==='true')evidenceReceipt(panel,options.kind);
+      if(panel.dataset.success==='true'){
+        evidenceReceipt(panel,options.kind);const receipt=panel.querySelector('.research-workflow-receipt');
+        if(options.kind==='business'&&typeof options.api?.returnToLockedQuote==='function'&&receipt&&!receipt.querySelector('[data-return-to-quote]')){
+          const back=el('button','견적으로 돌아가기','btn primary');back.type='button';back.dataset.returnToQuote='';back.addEventListener('click',options.api.returnToLockedQuote,{signal:life.signal});receipt.append(back);
+        }
+      }
     };
-    const observer=new win.MutationObserver(enhance);observer.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:['data-success','data-error']});life.add(()=>observer.disconnect());enhance();return life.dispose;
+    const observer=new win.MutationObserver(enhance);observer.observe(panel,{subtree:true,childList:true,attributes:true,attributeFilter:['data-success','data-error','data-evidence-business']});life.add(()=>observer.disconnect());enhance();return life.dispose;
   }
   workflow.mountEvidence=function(root,options={}){const base=originals.mountEvidence.call(this,root,options),life=lifecycle(options.signal);life.add(polishEvidence(root,options));life.add(()=>base?.destroy?.());return {destroy:life.dispose};};
   win.ORDER_EVIDENCE_EDITOR=function(options){
@@ -239,14 +298,14 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     if(settings){
       settings.classList.add('research-evidence-settings');
       const upload=file?.closest('label'),hint=settings.querySelector(':scope > p'),pages=settings.querySelector(':scope > div'),signature=settings.querySelector(':scope > .wf-signature'),consent=settings.querySelector(':scope > label>input[type=checkbox]')?.parentElement,save=[...settings.querySelectorAll(':scope > button')].find(button=>button.textContent==='가림 처리본 제출');
-      if(save)save.dataset.evidenceSubmit='';
+      if(save){save.dataset.evidenceSubmit='';save.classList.add('btn','primary');}
       pages?.classList.add('research-evidence-pages');
       for(const item of [upload,hint,pages,signature,consent,save])if(item)settings.append(item);
       const legend=signature?.querySelector('legend');if(legend)legend.textContent='서명';const clear=signature?.querySelector(':scope > .wf-button');if(clear){clear.classList.remove('wf-button');clear.classList.add('btn','text');}
     }
     const viewer=el('dialog',undefined,'research-evidence-viewer t-modal'),toolbar=el('div',undefined,'research-viewer-toolbar'),count=el('output'),viewport=el('div',undefined,'research-evidence-viewport'),controls=el('div');viewer.setAttribute('aria-label','첨부 자료 크게 보기');viewer.append(toolbar,viewport,controls);container.append(viewer);
     const button=(text,fn)=>{const b=el('button',text);b.type='button';on(b,'click',fn);return b;};
-    const sections=()=>[...settings?.querySelectorAll(':scope > div > section')||[]].filter(section=>section.querySelector('canvas')||section===current?.section);
+    const sections=()=>[...settings?.querySelectorAll('.research-evidence-pages > section')||[]].filter(section=>section.querySelector('canvas')||section===current?.section);
     function restore(){if(!current)return;current.section.append(current.canvas);if(current.details)current.section.append(current.details);current=null;viewport.replaceChildren();controls.replaceChildren();}
     function close(immediate=false){if(!viewer.open)return;win.clearTimeout(closing);viewer.classList.remove('is-open');viewer.classList.add('is-closing');const finish=()=>{restore();viewer.classList.remove('is-closing');if(viewer.close)viewer.close();else viewer.removeAttribute('open');};if(immediate||win.matchMedia?.('(prefers-reduced-motion: reduce)').matches)finish();else closing=win.setTimeout(finish,150);}
     function show(index){const list=sections();if(!list.length)return;win.clearTimeout(closing);restore();position=(index+list.length)%list.length;const section=list[position],canvas=section.querySelector('canvas'),details=section.querySelector('details');if(!canvas?.width)return;current={section,canvas,details};editing=false;zoom=false;viewer.dataset.editing='false';viewport.dataset.zoom='false';viewport.append(canvas);if(details)controls.append(details);if(details)details.hidden=true;edit.disabled=options.readOnly||!details;edit.textContent='가림 편집';count.textContent=(position+1)+' / '+list.length;previous.disabled=next.disabled=list.length<2;if(!viewer.open){if(viewer.showModal)viewer.showModal();else viewer.setAttribute('open','');}viewer.classList.remove('is-closing');viewer.classList.add('is-open');}

@@ -55,7 +55,9 @@ def open_expired_pass(page, frame, width, target_id, count, scope):
     try:
         # Ticket paper styling must keep every real card within its stage.
         assert len(layout['cards']) == count
-        assert all(card['position'] == 'absolute' for card in layout['cards']), layout
+        # A grid must give every pass its own cell, including later rows.
+        cells = {(round(card['rect']['left']), round(card['rect']['top'])) for card in layout['cards']}
+        assert len(cells) == count, layout
         stage = layout['stage']['rect']
         assert all(card['rect']['top'] >= stage['top'] - 1 and card['rect']['bottom'] <= stage['bottom'] + 1
                    for card in layout['cards']), layout
@@ -229,7 +231,13 @@ def check(page, origin, width):
 
     frame = screen("search", "empty")
     expect(frame.locator('#order-app-page')).to_have_attribute('data-pass-data-state', 'ready')
-    expect(frame.locator('.quote-search-row')).to_have_count(len(expected_ids))
+    expect(frame.locator('.quote-search-row')).to_have_count(len(expected_ids) + 1)
+    frame_click(page, frame.locator('[data-detail="b17"]'))
+    compound = frame.locator('[data-search-detail]')
+    expect(compound.locator('.ticket-item')).to_have_count(2)
+    expect(compound).to_contain_text('특란 30구')
+    expect(compound).to_contain_text('대란 30구')
+    frame_click(page, frame.locator('[data-action="back-results"]'))
     field = frame.locator(".tag-field input")
     field.evaluate("""e=>{e.dispatchEvent(new CompositionEvent('compositionstart'));e.value='특';e.dispatchEvent(new InputEvent('input',{isComposing:true,bubbles:true}));}""")
     expect(field).to_have_attribute("aria-expanded","false")
@@ -322,7 +330,20 @@ def check(page, origin, width):
     library = frame.locator("#r3-component-library")
     expect(library.get_by_role("heading", name="공통 컴포넌트")).to_be_visible()
     expect(library.locator("header small")).to_have_text("MSG0585-R3")
-    expect(library.locator("details")).to_have_count(9)
+    groups=library.locator(":scope > section > details")
+    expect(groups).to_have_count(10)
+    signatures=library.locator(":scope > section > details:has([data-library-signature-slot])")
+    frame_click(page, signatures.locator(":scope > summary"))
+    expect(signatures.locator("canvas")).to_be_visible()
+    assert signatures.locator("[data-mf-go=signature]").evaluate_all("links=>links.map(x=>x.dataset.mfState)") == ["empty","drawn","missing","processing","done"]
+    alternative=signatures.locator(".research-signature-alternative")
+    frame_click(page, alternative.locator(":scope > summary"))
+    expect(alternative).to_have_attribute("open","")
+    alternative.locator("input").fill("검토")
+    expect(signatures.locator(".wf-signature")).to_have_attribute("data-ink","true")
+    frame_click(page, signatures.get_by_role("button",name="다시 하기"))
+    expect(signatures.locator(".wf-signature")).to_have_attribute("data-ink","false")
+    frame_click(page, signatures.locator(":scope > summary"))
     skeleton = library.locator("details").filter(has_text="목록 뼈대·데이터 표시")
     frame_click(page, skeleton.locator("summary"))
     frame_click(page, skeleton.locator('[data-mf-go="passes"][data-mf-state="loading"]'))
@@ -334,6 +355,14 @@ def check(page, origin, width):
     expect(frame.locator('.r3-geometry-skeleton')).to_have_count(0)
 
     page.clock.set_fixed_time("2026-12-15T05:00:00Z")
+    frame = screen("drawer", "done")
+    receipt = frame.locator('.functional-drawer .consult-complete')
+    expect(receipt).to_have_attribute('aria-label', '예약 완료 예시')
+    expect(receipt.get_by_role('heading')).to_have_text('상담을 예약했어요')
+    expect(receipt).to_contain_text('예약시간 확정 후 담당자가 연락드릴 예정이에요')
+    expect(frame.locator('.functional-drawer [data-action="request-booking"]')).to_be_hidden()
+    expect(frame.locator('.functional-drawer textarea')).to_be_hidden()
+    assert not any(item['kind'] == 'consult' for item in inspect_fixture(frame)['data']['cases'])
     frame = screen("drawer", "closed")
     consultation = check_consultation_flow(page, frame)
     receipt_path = ROOT / 'artifacts/motion21/consultation'
