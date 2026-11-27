@@ -392,17 +392,19 @@ def qa_mode_navigation_checks(open_source, receipt):
 
 
 def assert_q1_missing_group(page, group):
+    choices = page.locator('#picks-' + group + ' [data-pick]')
+    expect(choices.first).to_have_css('background-color', 'rgb(255, 240, 242)')
     seen = page.locator('#picks-' + group).evaluate("""group => {
       const style = getComputedStyle(group);
       return {outer: [style.borderTopWidth, style.outlineWidth, style.boxShadow],
         choices: [...group.querySelectorAll('[data-pick]')].map(button => {
           const paint = getComputedStyle(button);
           return [button.getAttribute('aria-invalid'), button.getAttribute('aria-describedby'),
-            paint.borderTopWidth, paint.borderTopStyle, paint.borderTopColor];
+            paint.borderTopWidth, paint.borderTopStyle, paint.backgroundColor, paint.color];
         })};
     }""")
     assert seen['outer'] == ['0px', '0px', 'none'], seen
-    assert seen['choices'] and all(choice == ['true', 'err-q1', '1px', 'solid', 'rgb(217, 45, 72)']
+    assert seen['choices'] and all(choice == ['true', 'err-q1', '0px', 'none', 'rgb(255, 240, 242)', 'rgb(180, 35, 50)']
                                    for choice in seen['choices']), seen
 
 
@@ -416,9 +418,15 @@ def core_checks(open_source, receipt):
                 assert_q1_missing_group(page, group)
             page.locator('[data-pick=housing][data-value="1"]').click()
             assert page.locator('#picks-housing [aria-invalid=true]').count() == 0
+            housing = page.locator('[data-pick=housing][aria-pressed=true]')
+            expect(housing).to_have_css('border-top-width', '0px')
+            expect(housing).to_have_css('background-color', 'rgb(49, 93, 222)')
+            expect(housing).to_have_css('color', 'rgb(255, 255, 255)')
             for group in ('size', 'pack'):
                 assert_q1_missing_group(page, group)
             page.locator('[data-pick=size][data-value="대란"]').click()
+            egg = page.locator('[data-pick=size][aria-pressed=true] .q1-egg')
+            expect(egg).to_have_css('fill', 'rgb(255, 255, 255)')
             page.locator('[data-pick=pack][data-value="30"]').click()
             page.wait_for_expression('ORDER_RESEARCH_APP.snapshot().quote.lines.length===1')
             expect(page.locator('#err-q1')).to_be_hidden()
@@ -430,6 +438,16 @@ def core_checks(open_source, receipt):
 
     page, identity, _ = open_source('q2', 'empty', 'detailed', 390)
     try:
+        gate=page.locator('#q2-prerequisite')
+        expect(gate).to_be_visible()
+        gate.get_by_role('button',name='입력하기').click()
+        for field, value in [('housing','1'), ('size','대란'), ('pack','30')]:
+            page.locator(f'#sku-editor [data-pick="{field}"][data-value="{value}"]').click()
+        expect(page.locator('#added-lines .sku-entry')).to_have_count(1)
+        stage=page.locator('#section-q2 > .accordion-trigger')
+        if stage.get_attribute('aria-expanded') != 'true':
+            stage.click()
+        expect(gate).to_be_hidden()
         for selector, value in (('[data-line-qty]', '100'), ('[data-line-price]', '5000')):
             page.locator(selector).first.fill(value)
             page.locator(selector).first.press('Tab')
@@ -459,6 +477,34 @@ def core_checks(open_source, receipt):
         assert page_quote(page) == before
         receipt['checks'].append({'check': 'Q2 native numeric input -> regular Q1 tags; row edit and swipe-delete cancellation', 'initialSource': identity,
                                   'quantity': before['lines'][0]['qty'], 'price': before['lines'][0]['price'], 'cancelPreservedExactQuote': True})
+    finally:
+        page.close()
+
+
+def check_delivery_insets(open_source, receipt):
+    page, source, _ = open_source('q4', 'mixed', 'detailed', 320)
+    try:
+        item = page.locator('#section-q4 .q4-body-item').first
+        toggle = item.locator('.q4-body-toggle')
+        expect(toggle).to_have_attribute('aria-expanded', 'false')
+        toggle.click()
+        expect(toggle).to_have_attribute('aria-expanded', 'true')
+        expect(item.locator('[data-q4-select-sites]')).to_be_visible()
+        settle(page)
+        offsets = item.evaluate("""card => {
+          const bounds = selector => card.querySelector(selector).getBoundingClientRect();
+          const outer = card.getBoundingClientRect(), action = bounds('[data-q4-select-sites]');
+          return {title: bounds('.q4-body-heading-copy').left - outer.left,
+            indicator: outer.right - bounds('.q4-body-chevron').right,
+            site: bounds('.allocation-summary-copy').left - outer.left,
+            action: action.left - outer.left, bottom: outer.bottom - action.bottom};
+        }""")
+        assert all(abs(offsets[key] - 16) < 1 for key in ('title', 'indicator', 'site', 'action')), offsets
+        assert abs(offsets['bottom'] - 12) < 1, offsets
+        toggle.click()
+        expect(toggle).to_have_attribute('aria-expanded', 'false')
+        expect(item.locator('.q4-body-panel-inner')).to_have_js_property('inert', True)
+        receipt['checks'].append({'check': 'Q4 nested order details keep consistent insets', 'source': source, 'offsets': offsets})
     finally:
         page.close()
 
@@ -690,6 +736,7 @@ def main():
                 'sameQaIframeRetained': True, 'sourceMutatedForCapture': False}
 
         qa_mode_navigation_checks(open_source, receipt)
+        check_delivery_insets(open_source, receipt)
         core_checks(open_source, receipt)
         mode_motion_checks(open_source, receipt)
         for screen, state, mode, width in MOBILE + DESKTOP + RELATED:

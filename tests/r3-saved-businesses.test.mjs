@@ -63,7 +63,7 @@ test('saved business UI really loads and writes the authenticated account and pr
  }finally{w.close();}
 });
 test('served real quote app owns the saved-business bridge; both entry modes mount the picker',async()=>{
- const app=await r3ProductAsset('/ia/r3-product/web/app.mjs').text(),main=await r3ProductAsset('/ia/r3-product/web/main.mjs').text();assert.match(app,/savedBusinessBridge,regularBridge/);assert.match(app,/guard:guardPendingEdits/);assert.match(app,/getState:\(\)=>S/);assert.match(main,/저장된 사업장 불러오기/);assert.match(main,/app\.savedBusinessBridge\.load/);assert.doesNotMatch(app,/localStorage\.setItem\([^)]*business/);
+ const app=await r3ProductAsset('/ia/r3-product/web/app.mjs').text(),main=await r3ProductAsset('/ia/r3-product/web/main.mjs').text();assert.match(app,/savedBusinessBridge,regularBridge/);assert.match(app,/guard:guardPendingEdits/);assert.match(app,/getState:\(\)=>S/);assert.match(main,/저장된 사업장 추가/);assert.match(main,/app\.savedBusinessBridge\.load/);assert.doesNotMatch(app,/localStorage\.setItem\([^)]*business/);
 });
 test('signed new members may keep personal business input while commercial and QA surfaces stay denied',async()=>{
  const f=signedWorkspace({emptyPriceCatalog:true}),path='/api/ia/r3-role/businesses';

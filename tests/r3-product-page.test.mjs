@@ -17,6 +17,7 @@ test('private product modes mount the real static template, sealed commit, scope
   const html=await renderR3ProductPage(nonce,mode,'opaque-checker');
   assert.match(quoteCommit,/^[a-f0-9]{40}$/);assert.ok(html.includes('data-r3-quote-commit="'+quoteCommit+'"'));
   assert.ok(html.includes('data-r3-quote-mode="'+mode+'"'));
+  assert.match(html,/<header class="calculator-heading"><h1 id="form-title">어떤 계란의 최저가를 <br>알아볼까요\?<\/h1><\/header><div class="nav">/);
   assert.ok(html.includes('nonce="'+nonce+'" type="module" src="'+prefix+'web/main.mjs"'));
   assert.match(html,/href="\/ia\?view=qa-lab"/);assert.ok(html.includes('id="quote-mode-switch"'));
   assert.ok(html.includes('data-code1-jelly="v2"'));assert.ok(html.includes('id="section-q4"'));

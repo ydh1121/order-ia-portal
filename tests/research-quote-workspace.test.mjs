@@ -58,7 +58,7 @@ const until=async predicate=>{for(let i=0;i<100&&!predicate();i++)await new Prom
 test('research endpoint keeps sealed business modules exact and fails closed on changed integration seams',()=>{
   for(const path of ['web/simple-quote-contract.mjs','web/quantity-contract.mjs','web/cadence-contract.mjs','web/q4-validation.mjs','web/address-contract.mjs','web/quote-result.mjs'])assert.equal(getResearchQuoteSource(path,served(path)),served(path),path);
   const original=served('web/app.mjs'),adapted=getResearchQuoteSource('web/app.mjs',original);
-  for(const [from,to]of [['function simpleVerdict()','const buyerTotal='],['function complete(','function changeOpen('],['function finishQty()','$(\'start\').onclick=']]){
+  for(const [from,to]of [['function simpleVerdict()','const buyerTotal='],['function complete(','function changeOpen('],['function finishAddress()','$(\'start\').onclick=']]){
     const begin=original.indexOf(from),end=original.indexOf(to,begin);assert.ok(begin>=0&&end>begin,from);assert.ok(adapted.includes(original.slice(begin,end)),from);
   }
   assert.throws(()=>getResearchQuoteSource('web/app.mjs',original.replace('const addressEditor=createAddressEditor({','const addressEditor = createAddressEditor({')),/SOURCE_MISMATCH/);
@@ -201,16 +201,16 @@ test('research saved-row actions follow actual Q1/Q3/Q4 data without changing va
   const f=setup();try{
     const workspace=await f.mount('detailed',{fixtureScope:true});await settle();
     assert.equal(workspace.snapshot().lines.length,0);assert.equal(f.root.querySelector('#q1-step-actions').hidden,true);
-    assert.equal(f.root.querySelector('#q3-next').hidden,true);assert.equal(f.root.querySelector('#q4-next').hidden,true);
+    assert.equal(f.root.querySelector('#q3-next').hidden,true);assert.equal(f.root.querySelector('#q4-next'),null);
     assert.equal(f.root.querySelector('#add-line').textContent,'계란 추가');assert.equal(f.root.querySelector('#add-line .ui-text-plus'),null);
     assert.equal((await workspace.applyScenario({screen:'q3',state:'closed'})).ok,true);await settle();
     assert.equal(workspace.snapshot().locations.length,1);assert.equal(f.root.querySelector('#q3-next').hidden,false);
-    assert.equal(workspace.snapshot().allocations.length,0);assert.equal(f.root.querySelector('#q4-next').hidden,true);
+    assert.equal(workspace.snapshot().allocations.length,0);assert.equal(f.root.querySelector('#q4-next'),null);
     assert.equal((await workspace.applyScenario({screen:'q4',state:'closed'})).ok,true);await settle();
-    assert.equal(workspace.snapshot().allocations.length,1);assert.equal(f.root.querySelector('#q4-next').hidden,false);
+    assert.equal(workspace.snapshot().allocations.length,1);assert.equal(f.root.querySelector('#q4-next'),null);
     const before=workspace.snapshot(),empty=f.win.JSON.parse(JSON.stringify({...before,locations:[],allocations:[]}));
     assert.equal((await workspace.applyScenario({screen:'q3',state:'closed',payload:empty})).ok,true);await settle();
-    assert.equal(f.root.querySelector('#q3-next').hidden,true);assert.equal(f.root.querySelector('#q4-next').hidden,true);
+    assert.equal(f.root.querySelector('#q3-next').hidden,true);assert.equal(f.root.querySelector('#q4-next'),null);
     assert.equal(workspace.snapshot().lines[0].id,before.lines[0].id);assert.equal(workspace.snapshot().lines[0].qty,before.lines[0].qty);
     assert.equal(workspace.inspect().validation.valid,false,'hiding completion buttons cannot validate missing business/allocation data');
     workspace.dispose();assert.deepEqual(f.failures,[]);
@@ -337,6 +337,37 @@ test('inactive stage navigation preserves scroll without focus, rechecks documen
   }finally{f.close();}
 });
 
+test('saved-site availability follows the active workspace and ignores late data after disposal',async()=>{
+  const f=setup(),requests=[];
+  try{
+    const adapter={ready:Promise.resolve(),roleRequest:(path,body,signal)=>new Promise(resolve=>requests.push({path,signal,resolve}))};
+    const services={...f.services,adapter,context:{actor:{authenticated:true},endpoints:{role:'/__qa_fixture/role'}}};
+    const open=()=>f.mount('detailed',{step:'q3',fixtureScope:true,services});
+    const original=await open();
+    await until(()=>requests.length===1);
+    const old=f.root.querySelector('[data-order-saved-business-open]');
+    assert.equal(old.hidden,true);
+    original.dispose();
+    assert.equal(requests[0].signal.aborted,true);
+    const current=await open();
+    await until(()=>requests.length===2);
+    const trigger=f.root.querySelector('[data-order-saved-business-open]');
+    requests[0].resolve({businesses:[{id:'former',profile:{name:'이전 주소록'}}]});
+    requests[1].resolve({businesses:[]});
+    await settle();
+    assert.equal(trigger.hidden,true);
+    f.win.dispatchEvent(new f.win.Event('focus'));
+    await until(()=>requests.length===3);
+    requests[2].resolve({businesses:[{id:'current',profile:{name:'현재 주소록'}}]});
+    await until(()=>!trigger.hidden);
+    current.dispose();
+    f.win.dispatchEvent(new f.win.Event('focus'));
+    await settle();
+    assert.equal(requests.length,3);
+    assert.deepEqual(f.failures,[]);
+  }finally{f.close();}
+});
+
 test('quote import and disposal preserve the already installed application contact owner',async()=>{
   const f=setup();let regular,release;try{
     regular=await f.win.QuoteWorkspaceTest.createParentServices({document:f.win.document,origin:f.win.location.origin,crypto:webcrypto,fetcher:f.win.fetch});
@@ -368,8 +399,8 @@ test('authenticated research sync and mode copy use regular storage only, picker
     const saved=await workspace.repository.read('simple');quantity.value='12';quantity.dispatchEvent(new f.win.InputEvent('input',{bubbles:true,inputType:'insertText',data:'12'}));await idle(workspace);
     assert.equal((await workspace.restoreDraft(saved)).status,'CONFLICT');assert.equal(workspace.snapshot().lines[0].qty,'12');
     const current=await workspace.repository.read('simple');assert.equal((await workspace.restoreDraft(current)).ok,true);
-    workspace.navigate({step:'q3'});const trigger=f.root.querySelector('.r3-saved-business-actions button');assert.ok(trigger);trigger.click();await until(()=>f.root.querySelector('#saved-business-picker input[type=checkbox]'));
-    assert.deepEqual(domain,['/businesses']);assert.equal(f.root.querySelector('#saved-business-picker input').value,'research-only');
+    workspace.navigate({step:'q3'});const trigger=f.root.querySelector('[data-order-saved-business-open]');await until(()=>!trigger.hidden);trigger.click();await until(()=>f.root.querySelector('#saved-business-picker input[type=checkbox]'));
+    assert.deepEqual(domain,['/businesses','/businesses']);assert.equal(f.root.querySelector('#saved-business-picker input').value,'research-only');
     f.root.querySelector('#saved-business-picker [data-copy-cancel]').click();await settle();
     f.root.querySelector('#quote-mode-switch').click();await settle();const dialog=f.root.querySelector('#quote-mode-dialog');dialog.querySelector('[data-mode-option]').checked=true;dialog.querySelector('[data-mode-confirm]').click();await until(()=>f.navigate.some(value=>value.type==='mode'));
     workspace.dispose();workspace=await f.mount('detailed',{services});assert.equal(workspace.snapshot().lines[0].qty,'12');assert.equal((await workspace.repository.request('/drafts/detailed')).data.lines[0].qty,'12');

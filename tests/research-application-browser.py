@@ -275,7 +275,7 @@ def remember_review_quote(frame):
     """Observe the original quote document and model before hiding its owner."""
     return frame.locator('#order-app-quote').evaluate('''root => {
         window.__researchQuoteBoundary={root,content:root.querySelector('[data-research-quote]'),
-            app:root.querySelector('#app'),review:root.querySelector('#input-review-dialog')};
+            app:root.querySelector('#app'),input:root.querySelector('#q2-lines')};
         if(!window.__researchQuoteBoundary.content || !window.__researchQuoteBoundary.app)
             throw Error('QUOTE_BOUNDARY_OWNER');
         return ORDER_RESEARCH_APP.snapshot().quote;
@@ -286,7 +286,7 @@ def same_review_quote(frame, snapshot):
     assert frame.locator('#order-app-quote').evaluate('''root => {
         const before=window.__researchQuoteBoundary;
         return root===before.root && root.querySelector('[data-research-quote]')===before.content &&
-            root.querySelector('#app')===before.app && root.querySelector('#input-review-dialog')===before.review;
+            root.querySelector('#app')===before.app && root.querySelector('#q2-lines')===before.input;
     }'''), 'Leaving the quote must retain its original workspace document'
     assert frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().quote') == snapshot
 
@@ -1055,10 +1055,7 @@ def main():
                                   'qaDraftRevision': saved['model']['revision'], 'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'product-scope-1440.png'), full_page=True)
 
-        # A retained native dialog can block the entire child document even
-        # when its quote section is hidden and the QA frame itself is usable.
-        # Open the real read-only review from its input stage, then use clicks to
-        # exercise the next owner; never close the dialog from the test.
+        # The live calculator retains its model when QA switches screens.
         phase = 'qa-quote-modal-boundary'
         prepare_frame_pointer(page)
         page.goto(cfg['url'] + '/ia?view=qa-lab&screen=q2/filled/email&width=390')
@@ -1077,23 +1074,18 @@ def main():
                     window.__researchQuoteBoundaryErrors.push(message.payload);
             });
         }''')
-        read_only_targets = [('onboarding', 'guest-2'), ('admin-campaigns', 'normal'),
+        quote_targets = [('onboarding', 'guest-2'), ('admin-campaigns', 'normal'),
                              ('price-workspace', 'costs')]
-        for index, (screen, state) in enumerate(read_only_targets):
+        for index, (screen, state) in enumerate(quote_targets):
             phase = 'qa-quote-modal-to-' + screen
             if index:
                 choose_review_route(page, frame, 'q2', 'filled')
-            frame_click(page, frame.locator('#order-app-quote #input-review-open'))
-            review = frame.locator('#order-app-quote #input-review-dialog')
-            expect(review).to_be_visible()
-            expect(review).to_have_js_property('open', True)
-            assert review.evaluate("dialog => dialog.matches(':modal')"), 'The regression requires a native top-layer modal'
+            expect(frame.locator('#input-review-open,#input-review-dialog')).to_have_count(0)
             snapshot = remember_review_quote(frame)
             assert snapshot['lines'], 'The retained quote must have its real scenario model'
 
             choose_review_route(page, frame, screen, state)
             expect(frame.locator('#order-app-quote')).to_be_hidden()
-            expect(review).to_have_js_property('open', False)
             expect(frame.locator('dialog:modal')).to_have_count(0)
             assert_no_hidden_modal(frame)
             same_review_quote(frame, snapshot)
@@ -1112,7 +1104,7 @@ def main():
 
                 page.locator('#points').click()
                 page.locator('#general').click()
-                draft_text = '견적 검토 모달 전환 후 위치 선택 · 저장하지 않는 초안'
+                draft_text = '견적 입력 화면 전환 후 위치 선택 · 저장하지 않는 초안'
                 page.locator('#body-text').fill(draft_text)
                 page.locator('#reposition').click()
                 veil = frame.locator('#r3-veil')
@@ -1132,11 +1124,9 @@ def main():
                 expect(frame.locator('[data-sales-product]')).to_have_count(160)
             same_review_quote(frame, snapshot)
             assert_no_hidden_modal(frame)
-        receipt['checks'].append('QA quote review releases its native modal before onboarding, campaign and pricing; original quote survives and trusted app/header/pin clicks work')
+        receipt['checks'].append('QA navigation from the input form to onboarding, campaign and pricing retains no modal; original quote survives and trusted app/header/pin clicks work')
 
-        # The exception is only for read-only input review. A different open
-        # canonical dialog must retain its local choice and reject QA routing,
-        # including another quote stage and an authentication overlay.
+        # A confirmation still owns its pending choices and blocks QA routing.
         phase = 'qa-quote-confirm-boundary'
         choose_review_route(page, frame, 'q2', 'filled')
         current_mode = frame.locator('#order-single').evaluate('() => ORDER_RESEARCH_APP.snapshot().route.mode')
@@ -1204,7 +1194,7 @@ def main():
         # the ordinary simple draft rather than treating a QA reset as a save.
         assert frame.locator('#order-single').evaluate(read_simple_draft) == stored_simple_before
         receipt['checks'].append('an open quote confirmation rejects unrelated QA navigation, cancel restores trusted clicks, and an actual successful confirmation closes its native modal before changing to detailed mode')
-        receipt['quoteModalBoundary'] = {'readOnlyReviewTargets': read_only_targets,
+        receipt['quoteModalBoundary'] = {'inputFormTargets': quote_targets,
                                         'blockedConfirmationTargets': blocked_targets,
                                         'retainedQuoteDocumentAndModel': True,
                                         'nativeModalReleased': True,
@@ -1318,17 +1308,18 @@ def main():
                     window.__researchModalPoints.push(message.payload);
             });
         }''')
-        frame_click(page, frame.locator('#order-app-quote #input-review-open'))
-        review = frame.locator('#order-app-quote #input-review-dialog')
+        frame_click(page, frame.locator('#research-order-trigger'))
+        frame_click(page, frame.locator('#research-order-mode-simple'))
+        review = frame.locator('#order-app-quote #quote-mode-dialog')
         expect(review).to_be_visible()
         assert review.evaluate("dialog => dialog.open && dialog.matches(':modal')")
         snapshot = remember_review_quote(frame)
-        review_note = '열린 견적 검토 모달 안의 위치 · 저장하지 않는 초안'
-        review_anchor = pick_native_modal_note(page, frame, review, review.locator('#input-review-title'), review_note)
+        review_note = '열린 견적 모드 전환 모달 안의 위치 · 저장하지 않는 초안'
+        review_anchor = pick_native_modal_note(page, frame, review, review.locator('#quote-mode-title'), review_note)
         same_review_quote(frame, snapshot)
         same_review_application(page, frame)
         page.locator('#close-drawer').click()
-        frame_click(page, review.locator('#input-review-back'))
+        frame_click(page, review.locator('[data-mode-cancel]'))
         expect(review).to_have_js_property('open', False)
         expect(frame.locator('dialog:modal')).to_have_count(0)
         wait_for_expression(page, '''(() => {
@@ -1380,11 +1371,11 @@ def main():
         expect(name).to_have_value(draft_name + 'X')
         assert editor.evaluate("dialog => dialog.open && dialog.matches(':modal')")
         assert_no_hidden_modal(frame)
-        receipt['checks'].append('visible native quote review and editable site dialogs accept trusted location picks while retaining the modal, quote and input; annotation Escape preserves the editor and original controls remain usable')
+        receipt['checks'].append('visible native mode confirmation and editable site dialogs accept trusted location picks while retaining the modal, quote and input; annotation Escape preserves the editor and original controls remain usable')
         receipt['nativeModalPicking'] = {'reviewAnchor': review_anchor, 'editorAnchor': editor_anchor,
                                          'trustedModalHeadingPicks': True, 'draftMarkersAtHeadings': True,
                                          'retainedQuoteDocumentAndModel': True, 'unsavedEditorInputRetained': True,
-                                         'annotationEscapeRetainsEditor': True, 'originalReviewBackButtonWorks': True,
+                                         'annotationEscapeRetainsEditor': True, 'modeCancelButtonWorks': True,
                                          'editorAcceptsInputAfterPick': True, 'commercialAcceptance': False}
         page.screenshot(path=str(OUT / 'native-modal-location-picking-1440.png'), full_page=True)
 

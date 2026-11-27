@@ -63,7 +63,7 @@ def capture_reference_viewports(qa_page, folder):
                     expect(page).to_have_url(re.compile(r'screen=q2(?:&|$)'))
                     expect(page).to_have_url(re.compile(r'state=filled(?:&|$)'))
                     expect(page.locator('#order-app-quote')).to_be_visible()
-                    expect(page.locator('#order-app-quote #input-review-open')).to_be_visible()
+                    expect(page.locator('#order-app-quote #section-q2')).to_be_visible()
                     assert page.evaluate('window.__quoteReturnTrusted') is True
                 assert page.locator('iframe').count()==0
             except AssertionError as error:
@@ -278,32 +278,28 @@ def run(page, origin, width):
     screens = ReviewScreens(page, origin, width)
     frame = screens.screen("q2","empty")
     quote=frame.locator('#order-app-quote')
-    quantity,price=quote.locator('[data-line-qty]').first,quote.locator('[data-line-price]').first
-    frame_click(page,quote.locator('#q2-next'))
-    expect(quote.locator('#err-q2')).to_be_visible()
+    gate=quote.locator('#q2-prerequisite')
+    expect(gate).to_be_visible()
+    for control in gate.locator('input,select,.ui-quantity-trigger').all():
+        expect(control).to_be_disabled()
+    frame_click(page,gate.get_by_role('button',name='입력하기'))
+    expect(quote.locator('#section-q1 > .accordion-trigger')).to_have_attribute('aria-expanded','true')
+    for field,value in [('housing','1'),('size','대란'),('pack','30')]:
+        frame_click(page,quote.locator(f'#sku-editor [data-pick="{field}"][data-value="{value}"]'))
+    expect(quote.locator('#added-lines .sku-entry')).to_have_count(1)
+    stage=quote.locator('#section-q2 > .accordion-trigger')
+    if stage.get_attribute('aria-expanded')!='true':
+        frame_click(page,stage)
+    expect(gate).to_be_hidden()
+    quantity,price=quote.locator('#q2-lines [data-line-qty]'),quote.locator('#q2-lines [data-line-price]')
     quantity.fill('27');quantity.blur()
     price.fill('7300');price.blur()
-    frame_click(page,quote.locator('#input-review-open'))
-    review=quote.locator('#input-review-dialog')
-    expect(review).to_be_visible()
-    expect(review.locator('#input-review-rows')).to_contain_text('월 27판')
-    expect(review.locator('#input-review-rows')).to_contain_text('포장당 7,300원')
-    frame_click(page,review.get_by_role('button',name='월 구매정보 수정',exact=True))
-    expect(review).not_to_be_visible()
-    expect(quantity).to_have_value('27')
-    expect(price).to_have_value(re.compile(r'7,?300'))
-    # The regular edit action schedules focus back to the opened accordion.
-    # Re-enter the price as a user would: the trusted pointer cancels that
-    # pending navigation, then native keys must actually clear the field.
+    expect(quote.locator('#q2-total')).to_contain_text('197,100')
+    expect(quote.locator('#input-review-open,#input-review-dialog')).to_have_count(0)
     frame_click(page,price)
-    expect(price).to_be_focused()
-    price.press('ControlOrMeta+A');price.press('Backspace')
+    price.press('ControlOrMeta+A');price.press('Backspace');price.press('Tab')
     expect(price).to_have_value('')
-    price.press('Tab')
-    expect(price).to_have_value('')
-    frame_click(page,quote.locator('#input-review-open'))
-    expect(review.locator('#input-review-rows')).to_contain_text('포장당 미입력')
-    frame_click(page,review.locator('#input-review-back'))
+    expect(quote.locator('#q2-aggregate')).to_be_hidden()
     for state in ['saving','new-detail','current-detail','equal','current-lower','expired','recompare','no-result','locked','locked-guest']:
         frame = screens.screen('quote-result',state)
         wrapper=frame.locator('[data-review-result]')
@@ -341,7 +337,7 @@ def run(page, origin, width):
     expect(legacy.locator('[name=price]')).to_be_disabled()
     frame_click(page,legacy.locator('.journey-check'))
     expect(legacy.locator('[name=price]')).to_be_enabled()
-    print('PASS browser: current regular Q2 → input review → edit, 10 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
+    print('PASS browser: current regular Q2 prerequisite → SKU selection → editable purchase inputs and live total, 10 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
 if __name__=='__main__':
     host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:

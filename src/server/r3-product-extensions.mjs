@@ -1,3 +1,4 @@
+import {quoteInputSource} from './quote-input-flow.mjs';
 import {browserFunction} from './browser-source.mjs';
 import {createSavedBusinessBridge,mountSavedBusinessPicker} from './r3-saved-business-client.mjs';
 import {createQuoteDraftSync,mountQuoteDraftSync} from './r3-quote-draft-client.mjs';
@@ -7,12 +8,24 @@ export const quoteExtension='r1-production-drafts-20261120-v2';
 // Match one explicit factory export in the pinned product source. A changed base
 // fails closed instead of silently attaching to an unreviewed implementation.
 export function extendQuoteSource(path,source){
+ source=quoteInputSource(path,source);
  const brand=extendBrandAccountSource(path,source);if(brand!==null)return brand;
  if(path==='web/main.mjs')return source+`\n(${browserFunction(mountSavedBusinessPicker)})(app);\n(${browserFunction(mountQuoteDraftSync)})(app,${browserFunction(createQuoteDraftSync)});\n`;
  if(path==='web/quote-mode-switch.mjs'){
   const marker='export function bindQuoteModeSwitch({simple,dialog,trigger,shell,source,guard,saveCurrent,detailedStore,navigate,preference}){';
   if(source.split(marker).length!==2)throw Error('QUOTE_MODE_EXTENSION_SOURCE_MISMATCH');
   return source.replace(marker,marker+`\n const localSaveCurrent=saveCurrent,localDetailedStore=detailedStore;\n saveCurrent=async active=>{const saved=await localSaveCurrent(active);if(!saved.ok||!active())return saved;return window.ORDER_QUOTE_DRAFT_SYNC?window.ORDER_QUOTE_DRAFT_SYNC.flush({isCurrent:active}):saved;};\n detailedStore=()=>{const local=localDetailedStore();return window.ORDER_QUOTE_DRAFT_SYNC?window.ORDER_QUOTE_DRAFT_SYNC.destinationStore(local):local;};\n`);
+ }
+ if(path==='web/simple-quote-ui.mjs'){
+  const marker="$('add-site').closest('.add-row').hidden=true;";
+  if(source.split(marker).length!==2)throw Error('QUOTE_SIMPLE_SITE_ACTION_SOURCE_MISMATCH');
+  return source.replace(marker,`$('add-site').onclick=()=>{
+   if(!bridge.guard('simple-site-add'))return;
+   const field=$('simple-site-count'),current=Number(numeric.read(field).value);
+   if(current>=500){bridge.error('err-q3','사업장은 최대 500개까지 추가할 수 있어요.');field.focus();return;}
+   numeric.replace(field,String(current+1),{notify:true,history:'append'});
+   field.focus({preventScroll:true});
+  };`);
  }
  if(path!=='web/app.mjs')return source;
  const replacements=[

@@ -193,9 +193,9 @@ test('public entry remains nonconfidential and private releases are confined to 
   'supplier-shipments/packing/email'
  ]);
  const priorPresentationItem=item=>item.screen==='component-library'||priorPresentationRows.has(item.id);
- // These PR31 releases were published for review. Their complete packs and
+ // These releases were published for review. Their complete packs and
  // ordered catalogs remain addressable after the next research build is sealed.
- const publishedPr31=new Map([
+ const publishedResearch=new Map([
   ['b4e938cfe5b7731534bdd523705d9ab78c07d5b2101471f217c1b3a62155c885',{
    pack:'dc784002ddcc499538178e8b055101299230776c64e3e384f403bc39551c690d',
    simple:'dc7457504c74d5beda67fd647a61adc17ecc9a16d910fb3a38388c5f6b8c9187',detailed:'2d5ef2551433f233eb58bc5520c47cec96e2d3722d8adb64a6090a029bec97c1'
@@ -207,10 +207,14 @@ test('public entry remains nonconfidential and private releases are confined to 
   ['498b585df8f07e80c1d8909b14d87ead98b69e60629b3032b2cc1609850959a4',{
    pack:'434d022853c0ddb7e71fdb4ce678514eaafaf8fabd30bff71b42a350508b3b31',
    simple:'bea1f00c2aaea30ec9f3ff014f1c02b8e276e04dd5ac96a3e2f3d1906159838c',detailed:'a18453bc90364b27addee863a4a3118177dece744464cea44816bb12784c0072'
+  }],
+  ['9b28d4a82aed618b3a01ef6bfe568dc2c74eb2b06738a2a1b59a49a9e142cf8f',{
+   pack:'8febfeefac3387923913aa900c2133d0b36c14be609312b9b17e948022e26563',
+   simple:'065fdd110cd17b9b79c5c208b296c7458f319a2c871bdff01279bde604c9f259',detailed:'e4072bfbcb3b0c0517fe338324433f300d14fad749a86d5e800384de4809f5b7'
   }]
  ]);
- for(const [build,identity]of publishedPr31){
-  assert.ok(deliveryBuilds.includes(build),'retain published PR31 research build '+build);
+ for(const [build,identity]of publishedResearch){
+  assert.ok(deliveryBuilds.includes(build),'retain published research build '+build);
   assert.equal(researchReleases[build].packSha256,identity.pack);
  }
  const catalogBuildModes=new Set();
@@ -222,7 +226,7 @@ test('public entry remains nonconfidential and private releases are confined to 
   const width=Object.keys(first.hashes)[0],builds=deliveryBuilds.filter(build=>reviewHash(build,first.id,width,mode)===first.hashes[width]);
   assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
-  const published=publishedPr31.get(build);
+  const published=publishedResearch.get(build);
   if(published)assert.equal(entry.name,published[mode]+'.json');
   if(build===deliveryBuild){
    assert.equal(entry.name,qaCatalogIdentity.modes[mode].sha256+'.json');assert.deepEqual(catalog,currentCatalogs[mode]);
