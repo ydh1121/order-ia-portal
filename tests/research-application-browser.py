@@ -923,6 +923,8 @@ def main():
         product = frame.locator('.pw-product-table tbody tr').filter(has=frame.get_by_text('1번 왕란 30구', exact=True))
         price_input = product.locator('[data-product-price]')
         product_id = price_input.get_attribute('data-product-price')
+        initial_price_revision = price_snapshot(frame)['model']['revision']
+        assert initial_price_revision > 0
         price_input.fill('8123')
         expect(price_input).to_have_value('8123')
         frame.locator('#pw-nav [data-section="costs"][aria-current]').click()
@@ -1018,7 +1020,7 @@ def main():
         frame.locator('#price-workspace-app [data-action="draft"]').click()
         expect(frame.locator('#pw-notice')).to_contain_text('임시저장했습니다')
         saved = price_snapshot(frame)
-        assert saved['model']['dirty'] is False and saved['model']['revision'] == 1
+        assert saved['model']['dirty'] is False and saved['model']['revision'] == initial_price_revision + 1
         assert saved['transportMode'] == 'qa-memory' and saved['pendingWrites'] == 0
         assert next(row for row in saved['document']['products'] if row['id'] == product_id)['price'] == '8123'
         saved_cost = next(row for row in saved['document']['costs']['2'] if row['id'] == row_id)['prices'][grade_id]
