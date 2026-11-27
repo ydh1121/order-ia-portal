@@ -178,6 +178,8 @@ def main():
             frame = ready_frame(page)
             result["checks"]["r1Modes"] = {"focus": True, "board": 9, "dualWidths": widths}
 
+            initial_revision = memory_state(frame)["revision"]
+            assert initial_revision > 0, "the normal workspace contains published chart history"
             frame.locator("[data-product-audience=store]").click()
             expect(frame.locator("[data-sales-product]")).to_have_count(160)
             product_row(frame, "1번 왕란 30구").locator("[data-product-price]").fill("8000")
@@ -205,7 +207,7 @@ def main():
             expect(frame.locator("[data-cost=raw]").first).to_be_visible()
             frame.locator("[data-section=products]").click()
             expect(product_row(frame, "1번 왕란 30구").locator("[data-product-price]")).to_have_value("7999")
-            assert memory_state(frame)["revision"] == 1
+            assert memory_state(frame)["revision"] == initial_revision + 1
             result["checks"]["consumer"] = {"businessRows": 160, "consumerRows": 160, "percent": 8800, "amount": 8250, "manualSavedAndReloaded": 7999, "blankBaseSkipped": True}
 
             frame.locator("[data-section=carriers]").click()
@@ -269,7 +271,7 @@ def main():
             frame.locator("[data-action=save]").click()
             submit_dialog(frame)
             expect(frame.locator("#pw-notice")).to_contain_text("반영했습니다")
-            assert memory_state(frame)["revision"] == 2
+            assert memory_state(frame)["revision"] == initial_revision + 2
             result["checks"]["delivery"] = {"eggRange": [360, 660], "packRange": [12, 22], "blankFarePreserved": True, "invalidInputBlocked": True, "enterCommit": True}
 
             for state in ("loading", "error", "guest", "empty"):
@@ -287,10 +289,12 @@ def main():
                     expect(frame.locator("[data-sales-product]")).to_have_count(160)
                     assert frame.locator("[data-product-price]").evaluate_all("els=>els.every(el=>el.value==='')")
                 result["checks"][state] = memory_state(frame)
+                if state == "empty":
+                    assert result["checks"][state]["revision"] == 0
 
             frame = choose_state(page, "consumer-products")
             expect(product_row(frame, "1번 왕란 30구").locator("[data-product-price]")).to_have_value("")
-            assert memory_state(frame)["revision"] == 0, "explicit QA scenarios reset only their disposable pricing data"
+            assert memory_state(frame)["revision"] == initial_revision, "reset restores the seeded table and discards both review edits"
             page.locator("#new").click()
             expect(frame.locator("#r3-veil")).to_be_visible()
             expect(page.locator("#new")).to_have_attribute("aria-pressed", "true")

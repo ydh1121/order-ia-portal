@@ -1,5 +1,7 @@
 import {catalog,frames,cssGzip} from '../product-ui/catalog.gen.mjs';
 import {productFontCss} from '../product-fonts.mjs';
+import {openEggMarketChart} from '../product-ui/egg-market-chart.mjs';
+import {eggMarketChartCss} from '../product-ui/egg-market-chart-style.mjs';
 import {runtimes} from '../product-ui/runtime.gen.mjs';
 import {getProductApplicationDocument,getProductDocuments} from '../product-ui/documents.mjs';
 import {getProductUiBootstrap} from '../product-ui/bootstrap.gen.mjs';
@@ -158,8 +160,8 @@ function researchFoundation(){return foundation??=(async()=>{
   // shared color/motion tokens still inherit into every application screen.
   const sceneRules=css.replace(/:root(?=\s*\{)/g,':scope').replace(/(^|[{},\s])html(?=[\s,.#[:{>+~])/g,'$1:scope');
   const sceneCss='@scope (html) to ([data-research-quote]){\n'+sceneRules+'\n}\n';
-  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+quoteLockCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss,calculatorButtonColors),
-    script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
+  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+quoteLockCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+eggMarketChartCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss,calculatorButtonColors),
+    script:'window.ORDER_OPEN_EGG_MARKET='+browserFunction(openEggMarketChart)+';\n'+sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 
 export async function renderResearchApplication(nonce,parameters=new URLSearchParams(),env,origin='https://order-ia-portal.pages.dev',labContext=null){

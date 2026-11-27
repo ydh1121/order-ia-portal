@@ -103,6 +103,10 @@ Cloudflare Workers의 `Request`에는 `redirect: 'manual'`을 사용한다. 200 
 
 현재 정규 경로를 자동 교체하는 승격 명령은 구현 완료로 간주하지 않는다. 연구 앱의 기본 composition은 fixture 환경이며, 운영 transport 선택과 실제 고객 인증 연결을 완료한 후보를 먼저 검증해야 한다.
 
+### 단가표와 계란 시세 차트의 동시 승격
+
+단가표 편집기, 공개 시세 조회, 플로팅 버튼의 차트는 같은 제품 소스 manifest의 `releaseUnits.priceMarket`에 속한다. 정규본으로 이관할 때에는 검증한 IA 커밋에서 `node scripts/export-price-market-release.mjs price-market.tar.gz`로 두 화면과 공유 의존성, 마이그레이션을 같은 아카이브로 꺼낸다. 아카이브의 `price-market-release.json`에 커밋, 빌드, 두 화면의 소스 해시가 기록된다. 정규 환경에서는 같은 릴리스로 단가표 반영과 차트 조회를 검증한 뒤 두 진입점을 함께 연다. 현재 배포 대상은 IA 연구본이다.
+
 ## 남아 있는 외부 연결과 검증
 
 | 항목 | 현재 코드가 보장하는 것과 남은 것 |

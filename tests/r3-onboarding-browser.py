@@ -535,7 +535,8 @@ def check_unread_number_changes(page, origin, reduced):
         dot.finishBadgeProbe=()=>{cancelAnimationFrame(raf);return {samples,starts,clicks};};
     }''')
     frame_click(page, bell)
-    frame_click(page, frame.get_by_role('button', name='시세 알림'))
+    frame_click(page, frame.get_by_role('button', name='계란 시세', exact=True))
+    frame_click(page, frame.locator('#egg-market-chart [data-inbox]'))
     expect(dot).to_have_text('99+')
     # The first read is 101→100 (still 99+); its text node and motion must survive.
     dot.evaluate('el=>el.initialLabel=el.firstChild')
@@ -598,9 +599,12 @@ def check_notification_pin(page, screens):
     expect(frame.locator('.pm-gooey-label')).to_have_count(0)
     actions=frame.locator('.pm-gooey-action')
     expect(actions).to_have_count(2)
-    assert actions.evaluate_all('(els)=>els.map(el=>el.getAttribute("aria-label"))')==['오더 패스','시세 알림']
+    assert actions.evaluate_all('(els)=>els.map(el=>el.getAttribute("aria-label"))')==['오더 패스','계란 시세']
     assert actions.evaluate_all('(els)=>els.every(el=>!el.innerText.trim()&&el.querySelector("svg"))')
-    expect(actions.nth(1).locator('.ob-market-notice-icon path[data-currency="KRW"][d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"]')).to_have_count(1)
+    glyph = actions.nth(1).locator('svg.ob-market-notice-icon')
+    expect(glyph).to_have_attribute('viewBox', '0 0 24 24')
+    for part in ('path[data-shape="egg"]', 'path[data-currency="KRW"]', 'path[data-shape="price-trend"]'):
+        expect(glyph.locator(part)).to_have_count(1)
     # Check actual SVG paint after the product button rules have cascaded.
     white = 'rgb(255, 255, 255)'
     ink = 'rgb(32, 39, 43)'
@@ -665,6 +669,8 @@ def check_notification_pin(page, screens):
     assert bell.locator('.quick-unread').text_content()==unread
     frame_click(page,bell)
     frame_click(page,actions.nth(1))
+    expect(frame.locator('#egg-market-chart')).to_be_visible()
+    frame_click(page, frame.locator('#egg-market-chart [data-inbox]'))
     expect(panel).to_be_visible()
     notice = panel.locator('button[data-action="research-open-notification"][data-notification-id="qa-notice-1"]')
     expect(notice).to_be_visible()
@@ -681,6 +687,8 @@ def check_notification_pin(page, screens):
     wait_review_session(page,'onboarding','member-1')
     frame_click(page,bell)
     frame_click(page,actions.nth(1))
+    expect(frame.locator('#egg-market-chart')).to_be_visible()
+    frame_click(page, frame.locator('#egg-market-chart [data-inbox]'))
     restore_panel_point(page, envelope)
     expect(notice).to_be_focused()
     expect(notice).to_have_attribute('data-read','false')

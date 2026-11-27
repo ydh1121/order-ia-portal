@@ -21,6 +21,11 @@ async function record(id, width, hash, env, origin) {
     const bucket = await part(env.ASSETS, origin, layer[shard]);
     if (Object.hasOwn(bucket, key)) return bucket[key];
   }
+  // Sparse, byte-exact captures retain the original JSON envelope as issued.
+  if (Object.hasOwn(reviewedDelivery.exactRecords, id)) {
+    const bucket = await part(env.ASSETS, origin, reviewedDelivery.exactRecords[id]);
+    if (Object.hasOwn(bucket, key)) return bucket[key];
+  }
   return null;
 }
 export async function isDeliveredReviewedTarget(id, width, hash, env, origin) {
@@ -35,7 +40,7 @@ export async function serveDeliveredReviewedArtifact(id, width, hash, env, origi
   for (const recipe of Object.values(fields)) {
     for (const item of recipe) if (typeof item === 'number') needed.add(item >>> 10);
   }
-  if (!fields.replayFrame && !metadata.replayFrame) needed.add(source.replay >>> 10);
+  if (!source.exactResponse && !fields.replayFrame && !metadata.replayFrame) needed.add(source.replay >>> 10);
   const parts = new Map(await Promise.all([...needed].map(async index =>
     [index, await part(env.ASSETS, origin, reviewedDelivery.fragments[index])])));
   const fragment = code => parts.get(code >>> 10)[code & 1023];
@@ -45,5 +50,6 @@ export async function serveDeliveredReviewedArtifact(id, width, hash, env, origi
   }
   values.exportHash = await digest(encoder.encode(values.editable));
   const artifact = Object.fromEntries(order.map(name => [name, values[name]]));
+  if (source.exactResponse) return artifact;
   return {...artifact, replayFrame: artifact.replayFrame || fragment(source.replay), archivedSource: source.archivedSource};
 }

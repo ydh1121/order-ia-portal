@@ -1,4 +1,5 @@
 import {onboardingCardResizeSource} from '../product-ui/onboarding-card-resize.mjs';
+import {onboardingMarketChartSource} from '../product-ui/onboarding-market-chart.mjs';
 import {onboardingGooeyCss} from '../product-ui/onboarding-gooey-style.mjs';
 
 const once=(source,before,after)=>{if(source.split(before).length!==2)throw Error('RESEARCH_ONBOARDING_SOURCE_CHANGED:'+before.slice(0,80));return source.replace(before,after);};
@@ -11,7 +12,7 @@ const section=(source,start,end,replacement)=>{
 export function researchOnboardingMarkup(html){return html.replace('<h2>사업자 정보</h2>','');}
 
 export function researchOnboardingSource(source){
-  source=onboardingCardResizeSource(source);
+  source=onboardingMarketChartSource(onboardingCardResizeSource(source));
   source=once(source,"      if(prefix==='guest'&&step===4)return null;","      if(step===4)return null;");
   source=once(source,"if(button){exiting=false;button.focus({preventScroll:true});modeMorph(button,true,()=>{});}","if(button){exiting=false;button.focus({preventScroll:true});}");
   source=once(source,"if(!exiting){exiting=true;modeMorph(b,false,()=>{if(!ctl.signal.aborted)api.select(target,s);});}","if(!exiting){exiting=true;Promise.resolve(api.select(target,s)).then(accepted=>{if(accepted===false)exiting=false;},()=>{exiting=false;});}");

@@ -1,5 +1,7 @@
 // The library's existing asset pack owns the mapping from icons to controls,
 // screen states and routes. Read that same index for the administrator view.
+import {marketPriceIconAsset,marketPriceIconPreview} from '../product-ui/market-price-icon.mjs';
+import {catalog} from '../product-ui/catalog.gen.mjs';
 import {assetPack} from '../r3-ui/qa-assets.gen.mjs';
 
 export const adminIconRow=Object.freeze({id:'admin-icon-library/list/email',screen:'admin-icon-library',state:'list',variant:'email',group:'관리자 · 공통 자산',label:'아이콘 라이브러리',stateLabel:'사용처',defaultWidth:390,role:'admin',phase:'current',runtimeFamily:'researchAdminIcons',supplemental:true});
@@ -45,9 +47,10 @@ export function adminIconMarkup(isCurrent){
     const registeredIcons=assets.filter(a=>a.board==='svg').map(a=>({...a,usages:a.usages.filter(isCurrent)}));
     const brand=registeredIcons.find(a=>a.id==='brand-motion');
     if(brand)brand.usages.push(locks[1]);
-    const icons=[empty,...registeredIcons,{id:'quote-lock',name:'견적 결과 자물쇠',usages:locks,variants:[]}];
+    const market=marketPriceIconAsset(catalog.filter(isCurrent));
+    const icons=[empty,market,...registeredIcons,{id:'quote-lock',name:'견적 결과 자물쇠',usages:locks,variants:[]}];
     const options=icons.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.name)+'</option>').join('');
-    const sections=icons.map((a,i)=>'<section data-icon-uses="'+esc(a.id)+'"'+(i?' hidden':'')+'><h2>'+esc(a.name)+'</h2><p>사용 상태 '+a.usages.length+'개</p>'+usageGroup(a)+'</section>').join('');
+    const sections=icons.map((a,i)=>'<section data-icon-uses="'+esc(a.id)+'"'+(i?' hidden':'')+'>'+(a===market?marketPriceIconPreview:'')+'<h2>'+esc(a.name)+'</h2><p>사용 상태 '+a.usages.length+'개</p>'+usageGroup(a)+'</section>').join('');
     return '<section class="admin-icon-usage" aria-label="아이콘 사용처"><h1>아이콘 사용처</h1><label>아이콘<select>'+options+'</select></label>'+sections+'</section>';
   })();
 }

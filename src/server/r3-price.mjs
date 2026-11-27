@@ -4,6 +4,7 @@ import {workingMemberships,workingPriceConnection} from './product-account-conte
 import { validateSupplyPolicy, simulateSupplyQuote, previousPeriod, PolicyError } from './order-engine/calculation/supply-policy.mjs';
 import {editPriceCatalog,checkPriceGroup} from './r3-price-catalog.mjs';
 import {personalPrice} from './r3-personal-price.mjs';
+import {readEggMarket} from './r3-egg-market.mjs';
 import {priceWorkspace} from './r3-price-workspace-store.mjs';
 import {registrationDesk,registerProduct,updateConnection} from './r3-price-registration.mjs';
 import {createPriceMatrixModel} from './order-engine/calculation/price-matrix.mjs';
@@ -187,6 +188,10 @@ function publicError(e){
 }
 export async function handleR3Price({request,env,actor,path,clock=()=>new Date().toISOString()}) {
   try {
+    if(path==='/workspace/chart'){
+      if(request.method!=='GET')return reply({error:'METHOD_NOT_ALLOWED'},405);
+      return reply(await readEggMarket(env.ORDER_QA_DB,new URL(request.url).searchParams,clock()));
+    }
     if(!actor?.id)deny();
     let db=env.ORDER_QA_DB;if(!db)return reply({error:'SERVICE_UNAVAILABLE'},503);
     const u=new URL(request.url),now=clock(),get=request.method==='GET';

@@ -1,4 +1,4 @@
-import {labSchema} from './product-lab-schema.gen.mjs';
+import {labSchema,marketUpgrade} from './product-lab-schema.gen.mjs';
 import {quoteCommit} from './r3-product-sources.mjs';
 import {defaultPriceRows} from './r3-price-workspace-defaults.mjs';
 import {handleR3Price} from './r3-price.mjs';
@@ -60,10 +60,25 @@ export async function requireLabDb(env){
  const marker=await sql(db,"SELECT id FROM product_lab_identity WHERE id='order-product-lab/v1'").first();
  if(!marker)fail('LAB_SCHEMA_NOT_INSTALLED',503);return db;
 }
+const canUpgradeMarket=digest=>marketUpgrade.to===labSchema.digest&&digest===marketUpgrade.from;
+async function upgradeMarketRun(db,run){
+ const scoped=namespaceDb(db,run.id),source=JSON.parse(run.source_json);
+ const meta={...source,schemaDigest:labSchema.digest,schemaManifest:schemaManifest()};
+ try{
+  await db.batch([...marketUpgrade.sql.map(statement=>scoped.prepare(statement)),
+   sql(db,'UPDATE product_lab_run SET schema_digest=?,source_json=? WHERE id=? AND owner_id=? AND schema_digest=?',labSchema.digest,JSON.stringify(meta),run.id,run.owner_id,run.schema_digest)]);
+ }catch(error){
+  const current=await sql(db,'SELECT * FROM product_lab_run WHERE id=? AND owner_id=?',run.id,run.owner_id).first();
+  if(current?.schema_digest===labSchema.digest)return current;
+  throw error;
+ }
+ return {...run,schema_digest:labSchema.digest,source_json:JSON.stringify(meta)};
+}
 export async function readLabRun(env,owner,runId,{active=false,requireCurrentSchema=true}={}){
  if(owner?.role!=='OWNER'||!validId(runId))fail('LAB_ACCESS_DENIED',403);
  const db=await requireLabDb(env),run=await sql(db,'SELECT * FROM product_lab_run WHERE id=? AND owner_id=?',runId,owner.id).first();
  if(!run)fail('RUN_NOT_FOUND',404);if(active&&run.state!=='ACTIVE')fail('RUN_NOT_ACTIVE',409);
+ if(requireCurrentSchema&&canUpgradeMarket(run.schema_digest))return {db,run:await upgradeMarketRun(db,run)};
  if(requireCurrentSchema&&run.schema_digest!==labSchema.digest)fail('RUN_SCHEMA_MIGRATION_REQUIRED',409);
  return {db,run};
 }
@@ -122,6 +137,11 @@ async function newRun(db,env,owner,b,now,snapshot){
  let payload=null;
  if(snapshot){
   payload=JSON.parse(await loadSnapshotContent(env,snapshot));
+  if(canUpgradeMarket(payload.schemaDigest)&&Array.isArray(payload.tables?.r3_price_workspace_event)){
+   // Existing prices keep their private publication state in a restored run.
+   for(const row of payload.tables.r3_price_workspace_event){if(!Array.isArray(row))fail('SNAPSHOT_INVALID',409);row.push(null);}
+   payload.schemaDigest=labSchema.digest;
+  }
   if(payload.schemaDigest!==labSchema.digest||payload.format!=='order-product-lab-backup/v1')fail('SNAPSHOT_SCHEMA_MISMATCH',409);
   if(!payload.tables||typeof payload.tables!=='object'||Array.isArray(payload.tables))fail('SNAPSHOT_INCOMPLETE',409);
  }
@@ -230,7 +250,11 @@ export async function handleProductLab({request,env,actor,path,csrf,clock=()=>ne
   if(product){
    const context=await labContext(env,actor,product[1],product[2],csrf),suffix=product[4]||'/';
    if(suffix.startsWith('/practice/'))return json({error:'LEGACY_PRACTICE_NOT_A_PRODUCT_RUNTIME'},409);
-   if(product[2]==='guest'&&!(product[3]==='product'&&(['/account','/features'].includes(suffix)||/^\/policies\/(required|privacy|optional)$/.test(suffix))&&request.method==='GET'))return json({error:'AUTHENTICATION_REQUIRED'},401);
+   if(product[2]==='guest'){
+    const publicProduct=product[3]==='product'&&(['/account','/features'].includes(suffix)||/^\/policies\/(required|privacy|optional)$/.test(suffix));
+    const publishedPrices=product[3]==='price'&&suffix==='/workspace/chart';
+    if(request.method!=='GET'||!(publicProduct||publishedPrices))return json({error:'AUTHENTICATION_REQUIRED'},401);
+   }
    if(suffix==='/session'&&request.method==='GET')return json({csrf,expiresAt:actor.expiresAt,practiceAllowed:false,mode:'lab',runId:product[1],persona:product[2]});
    const dest=new URL(request.url);dest.pathname='/api/ia/'+(product[3]==='product'?'product':'r3-'+product[3])+suffix;
    const forwarded=new Request(dest,request),ctx={request:forwarded,env:context.env,actor:context.actor,path:suffix,clock};

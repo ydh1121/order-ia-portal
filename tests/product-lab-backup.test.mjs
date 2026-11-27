@@ -9,7 +9,7 @@ import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 import {handleProductLab,labContext,namespaceDb} from '../src/server/product-lab.mjs';
 import {createEvidenceEditor} from '../src/server/r3-evidence-client.mjs';
-import {labSchema} from '../src/server/product-lab-schema.gen.mjs';
+import {labSchema,marketUpgrade} from '../src/server/product-lab-schema.gen.mjs';
 import {quoteSourceHashes} from '../src/server/r3-product-sources.mjs';
 import {r3ProductAsset} from '../src/server/r3-product-page.mjs';
 
@@ -141,6 +141,31 @@ test('older inline backups and runs without a manifest still download and restor
  const backup=await w.api('/runs/'+run+'/snapshots',{label:'기존 인라인'});assert.equal(backup.status,200);const id=backup.body.snapshot.id,row=w.sqlite.prepare('SELECT * FROM product_lab_snapshot WHERE id=?').get(id),payload=JSON.parse(row.content);assert.equal(payload.format,'order-product-lab-backup/v1');delete payload.schemaManifest;const oldContent=JSON.stringify(payload);w.sqlite.prepare('UPDATE product_lab_snapshot SET content=?,digest=? WHERE id=?').run(oldContent,await sha(oldContent),id);
  const read=await w.api('/snapshots/'+id);assert.equal(read.status,200);assert.equal(read.text,oldContent);const restored=await w.api('/snapshots/'+id+'/restore',{label:'기존 자료 복원',requestKey:crypto.randomUUID()});assert.equal(restored.status,200,restored.body.error);assert.equal(restored.body.run.source.schemaManifest.digest,labSchema.digest);
  w.sqlite.prepare('UPDATE product_lab_snapshot SET content=? WHERE id=?').run('{}',id);assert.equal((await w.api('/snapshots/'+id)).body.error,'SNAPSHOT_CHECKSUM_MISMATCH');
+});
+
+test('the market migration preserves old private prices in running and restored lab namespaces',async t=>{
+ const w=workspace(t),run=await w.create(),table='lab_'+run+'_r3_price_workspace_event';
+ const old=JSON.parse(w.sqlite.prepare('SELECT source_json FROM product_lab_run WHERE id=?').get(run).source_json);
+ old.schemaDigest=old.schemaManifest.digest=marketUpgrade.from;
+ old.schemaManifest.names=old.schemaManifest.names.filter(name=>name!=='r3_price_workspace_market');
+ old.schemaManifest.tables.find(table=>table.name==='r3_price_workspace_event').columns.pop();
+ w.sqlite.exec('DROP INDEX lab_'+run+'_r3_price_workspace_market');
+ w.sqlite.exec('ALTER TABLE '+table+' DROP COLUMN market_projection');
+ w.sqlite.prepare('UPDATE product_lab_run SET schema_digest=?,source_json=? WHERE id=?').run(marketUpgrade.from,JSON.stringify(old),run);
+ const insert=w.sqlite.prepare('INSERT INTO '+table+' VALUES(?,?,?,?,?,?,?,?)');
+ insert.run('lab-operator',1,'private-1','apply','2026-11-20','2026-11-20T00:00:00.000Z','{}','2026-11-20T00:00:00.000Z');
+ const backup=await w.api('/runs/'+run+'/snapshots',{label:'기존 개인 단가 보존'});
+ assert.equal(backup.status,200,backup.body.error);
+ const copy=await w.api('/snapshots/'+backup.body.snapshot.id+'/restore',{label:'시장 공개 전 복원',requestKey:crypto.randomUUID()});
+ assert.equal(copy.status,200,copy.body.error);
+ const live=await w.api('/runs/'+run+'/as/buyer/product/purchases');
+ assert.equal(live.status,200,live.body.error);
+ for(const id of [run,copy.body.run.id]){
+  assert.equal(w.sqlite.prepare('SELECT schema_digest FROM product_lab_run WHERE id=?').get(id).schema_digest,labSchema.digest);
+  const price=w.sqlite.prepare('SELECT request_key,market_projection FROM lab_'+id+'_r3_price_workspace_event WHERE revision=1').get();
+  assert.deepEqual({...price},{request_key:'private-1',market_projection:null});
+ }
+ assert.equal(w.productionTouches(),0);
 });
 
 test('a stored old schema can be listed, archived and backed up without executing it or restoring it under the current schema',async t=>{

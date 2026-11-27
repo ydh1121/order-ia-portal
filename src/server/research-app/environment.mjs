@@ -9,8 +9,45 @@ export function createResearchEnvironment(config, installFixture, installAdapter
   let adapter=null, session=null, saved=null,ownerSession=null,scenarioBackup=null;
   try{saved=JSON.parse(sessionStorage.getItem(storageKey)||'null');}catch{}
   const persist=()=>{if(!adapter?.fixture)return;const value=adapter.fixture.inspect();try{sessionStorage.setItem(storageKey,JSON.stringify({controls:{...value.controls,scenario:'normal'},data:scenarioBackup||value.data,selectedPurchaseId:value.selectedPurchaseId}));}catch{}};
+  // One price ledger per research app. Opening the chart first must read
+  // the same applied versions as opening the editor first.
+  let priceStore=null,priceLoading=null,disposed=false;
+  async function prices(scenario='normal'){
+    if(disposed)throw new DOMException('Research session closed','AbortError');
+    if(priceStore)return priceStore;
+    if(run){
+      if(!adapter)throw Error('PRICE_SESSION_REQUIRED');
+      priceStore={request:(path,body,{signal}={})=>adapter.priceRequest(path,body,signal),inspect:()=>({mode:'lab'})};
+      return priceStore;
+    }
+    if(!priceLoading){
+      const url=new URL((config.assetBase||'/ia/research-assets/')+'research/price-integrations.mjs',location.href);
+      if(url.origin!==location.origin)throw Error('RESEARCH_PRICE_ASSET_ORIGIN');
+      priceLoading=import(url.href).then(source=>{
+        if(disposed)throw new DOMException('Research session closed','AbortError');
+        priceStore=source.createResearchPriceStore({scenario,now:new Date().toISOString()});
+        return priceStore;
+      }).catch(error=>{priceLoading=null;throw error;});
+    }
+    return priceLoading;
+  }
   return {kind:run?'research-lab':'research-fixture',namespace,
-    ...(run?{priceWorkspace:{createTransport:()=>({request:(path,body,{signal}={})=>adapter.priceRequest(path,body,signal),inspect:()=>({mode:'lab'})})}}:{}),
+    priceWorkspace:{
+      async createTransport({scenario='normal'}={}){
+        const store=await prices(scenario);
+        if(store.setScenario&&store.inspect().scenario!==scenario)store.setScenario(scenario);
+        // The form owns this view. The enclosing session owns the ledger.
+        const {destroy,...view}=store;
+        return view;
+      },
+      async readChart(query={},options={}){
+        const store=await prices();
+        options.signal?.throwIfAborted();
+        const params=new URLSearchParams();
+        for(const key of ['shell','grade','from','to'])if(query[key])params.set(key,query[key]);
+        return store.request('/workspace/chart?'+params,undefined,options);
+      }
+    },
     regular:{address:{configured:true,fetcher:async(_url,settings={})=>{
       ownerSession??=fetch('/api/ia/auth/me',{credentials:'same-origin',cache:'no-store',redirect:'error'}).then(async response=>{if(!response.ok)throw Error('ADDRESS_SESSION_REQUIRED');const value=await response.json();if(typeof value.csrf!=='string')throw Error('ADDRESS_SESSION_REQUIRED');return value;}).catch(error=>{ownerSession=null;throw error;});
       const identity=await ownerSession,headers=new Headers(settings.headers);headers.set('X-IA-CSRF',identity.csrf);
@@ -52,6 +89,6 @@ export function createResearchEnvironment(config, installFixture, installAdapter
       if(route.screen==='passes'&&route.state==='loading')current.fixture.holdNextRead('product','/purchases');
       await current.refreshSession?.();
     },
-    dispose(){persist();adapter?.fixture?.dispose();}
+    dispose(){disposed=true;persist();priceStore?.destroy?.();adapter?.fixture?.dispose();}
   };
 }

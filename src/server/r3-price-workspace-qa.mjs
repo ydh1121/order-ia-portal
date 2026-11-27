@@ -44,32 +44,57 @@ export function createPriceWorkspaceQaTransport(model,reference,options={}){
     return model.normalize(document);
   };
   let baseline=initial(scenario);
+  // These are inspectable price-table revisions, not independent chart points.
+  // The last version keeps the table's actual reference matrix. Earlier QA
+  // publications use the table editor's own bulk-cost operation.
+  function seedPublications(){
+    if(!options.seedMarketHistory||scenario==='empty')return;
+    for(const [daysAgo,change] of [[400,180],[80,350],[30,220],[25,420],[19,550],[13,320],[9,440],[6,200],[3,0]]){
+      const effectiveAt=new Date(Date.parse(now)-daysAgo*86400000).toISOString();
+      const document=model.clone(baseline);document.date=model.marketDay(effectiveAt);
+      for(const shell of document.shells)model.bulk(document,shell.id,'raw',change);
+      records.push({revision:records.length+1,action:'apply',date:document.date,effectiveAt,savedAt:effectiveAt,
+        document,content:JSON.stringify(document),market:model.marketSnapshot(document)});
+    }
+  }
+  seedPublications();
   const project=entry=>entry?model.clone({revision:entry.revision,action:entry.action,date:entry.date,effectiveAt:entry.effectiveAt,savedAt:entry.savedAt,document:entry.document}):null;
   const latest=()=>records.at(-1)||null;
   const effective=()=>records.filter(entry=>entry.action!=='draft'&&entry.effectiveAt<=now).sort((a,b)=>a.effectiveAt.localeCompare(b.effectiveAt)||a.revision-b.revision).at(-1)||null;
   function execute(path,body){
     if(disposed)fail('QA_TRANSPORT_DISPOSED');
+    if(path.split('?')[0]==='/workspace/chart'){
+      if(scenario==='error')fail('SERVICE_UNAVAILABLE');
+      const query=new URLSearchParams(path.split('?')[1]||''),range=model.marketRange(query,now);
+      const published=records.filter(entry=>entry.market&&entry.effectiveAt<=now)
+        .sort((a,b)=>a.effectiveAt.localeCompare(b.effectiveAt)||a.revision-b.revision);
+      const relevant=published.filter(entry=>model.marketDay(entry.effectiveAt)<=range.to);
+      return model.marketSeries(range,relevant,now,published.length?model.marketDay(published[0].effectiveAt):null);
+    }
     if(scenario==='guest')fail('ACCESS_REQUIRED');
     if(path==='/session')return {csrf:'qa-memory-only',practiceAllowed:false,serverTime:now};
     if(scenario==='error')fail('SERVICE_UNAVAILABLE');
     const query=new URLSearchParams(path.slice('/workspace'.length));
     if(body!==undefined){
       if(!body||!['draft','apply','schedule'].includes(body.action)||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<0||typeof body.requestKey!=='string'||!/^[-\da-f]{36}$/i.test(body.requestKey))fail('INVALID_REQUEST');
+      if(body.publishMarket!==undefined&&typeof body.publishMarket!=='boolean')fail('INVALID_REQUEST');
+      if(body.publishMarket&&body.action==='draft')fail('MARKET_PUBLICATION_REQUIRES_APPLY');
       const document=model.normalize(body.document),content=JSON.stringify(document);
       const prior=records.find(entry=>entry.requestKey===body.requestKey);
       if(prior){
-        if(prior.content!==content||prior.revision!==body.expectedRevision+1||prior.action!==body.action||body.action==='schedule'&&prior.effectiveAt!==body.effectiveAt)fail('IDEMPOTENCY_CONFLICT');
+        if(Boolean(prior.market)!==Boolean(body.publishMarket)||prior.content!==content||prior.revision!==body.expectedRevision+1||prior.action!==body.action||body.action==='schedule'&&prior.effectiveAt!==body.effectiveAt)fail('IDEMPOTENCY_CONFLICT');
         return {saved:project(prior),serverTime:now};
       }
       if(body.expectedRevision!==(latest()?.revision||0))fail('REVISION_CONFLICT');
       const effectiveAt=body.action==='draft'?null:body.action==='apply'?now:body.effectiveAt;
       if(body.action==='schedule'&&(typeof effectiveAt!=='string'||!Number.isFinite(Date.parse(effectiveAt))||new Date(effectiveAt).toISOString()!==effectiveAt||effectiveAt<=now))fail('WORKSPACE_SCHEDULE_INVALID');
       const entry={revision:body.expectedRevision+1,requestKey:body.requestKey,action:body.action,date:document.date,effectiveAt,savedAt:now,document,content};
+      if(body.publishMarket)entry.market=model.marketSnapshot(document);
       records.push(entry);return {saved:project(entry),serverTime:now};
     }
     const selected=query.has('revision')?records.find(entry=>entry.revision===Number(query.get('revision'))):latest();
     if(query.has('revision')&&!selected)fail('NOT_FOUND');
-    const result={revision:latest()?.revision||0,versions:records.slice().reverse().map(({revision,action,date,effectiveAt,savedAt})=>({revision,action,date,effectiveAt,savedAt})),effective:project(effective()),serverTime:now};
+    const result={canPublishMarket:true,revision:latest()?.revision||0,versions:records.slice().reverse().map(({revision,action,date,effectiveAt,savedAt})=>({revision,action,date,effectiveAt,savedAt})),effective:project(effective()),serverTime:now};
     if(query.get('metadata')!=='1'){result.selectedRevision=selected?.revision||0;result.document=model.clone(selected?.document||baseline);}
     return result;
   }
@@ -80,14 +105,14 @@ export function createPriceWorkspaceQaTransport(model,reference,options={}){
   return {
     async request(path,body){
       if(disposed)fail('QA_TRANSPORT_DISPOSED');
-      if(typeof path!=='string'||!/^\/(?:session|workspace(?:\?(?:metadata=1|revision=[1-9]\d*))?)$/.test(path)||body!==undefined&&path!=='/workspace')fail('QA_REQUEST_NOT_ALLOWED');
+      if(typeof path!=='string'||!/^\/(?:session|workspace(?:\?(?:metadata=1|revision=[1-9]\d*)|\/chart(?:\?[^#]*)?)?)$/.test(path)||body!==undefined&&path!=='/workspace')fail('QA_REQUEST_NOT_ALLOWED');
       calls.push({path,method:body===undefined?'GET':'POST'});
       const value=body===undefined?undefined:model.clone(body);
       if(scenario==='loading'&&path!=='/session')return new Promise((resolve,reject)=>pending.add({path,body:value,resolve,reject}));
       return execute(path,value);
     },
     setScenario(value){scenario=scenarioFor(value);flush();},
-    reset(value='normal'){scenario=scenarioFor(value);records=[];baseline=initial(scenario);flush();},
+    reset(value='normal'){scenario=scenarioFor(value);records=[];baseline=initial(scenario);seedPublications();flush();},
     inspect(){return {mode:'qa-memory',scenario,revision:latest()?.revision||0,document:model.clone(latest()?.document||baseline),pending:pending.size,calls:model.clone(calls)};},
     destroy(){disposed=true;flush();}
   };

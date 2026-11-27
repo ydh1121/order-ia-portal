@@ -1,3 +1,6 @@
+import {openEggMarketChart} from './product-ui/egg-market-chart.mjs';
+import {eggMarketChartCss} from './product-ui/egg-market-chart-style.mjs';
+import {onboardingMarketChartSource} from './product-ui/onboarding-market-chart.mjs';
 import {onboardingCardResizeSource} from './product-ui/onboarding-card-resize.mjs';
 import {catalog,frames,cssGzip} from './product-ui/catalog.gen.mjs';
 import {productFontCss} from './product-fonts.mjs';
@@ -26,7 +29,7 @@ function bootProductDocument(screen,state,introArtSource,reviewLibrary=false){
  let currentState=state,authSheet=null;
  const announce=()=>window.parent?.postMessage({scope:'ORDER_PRODUCT_RUNTIME',type:'ready',runId:adapter?.context.runId,persona:adapter?.context.persona,documentId:adapter?.context.documentId,screen,state:currentState,payload:{path:location.pathname+location.search},componentVariant:document.documentElement.dataset.productComponentVariant||null,source:adapter?.context.source},location.origin);
  const status=text=>{let output=document.querySelector('[data-product-status]');if(!output){output=document.createElement('p');output.dataset.productStatus='';output.className='muted';output.setAttribute('role','status');root.append(output);}output.textContent=text;};
- const api={mode:'product',interactive:true,screen,variant:'email',adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
+ const api={mode:'product',interactive:true,readMarketChart:(query,{signal})=>adapter.priceRequest('/workspace/chart?'+new URLSearchParams(query),undefined,signal),screen,variant:'email',adapter,brandAccount:window.ORDER_BRAND_ACCOUNT_CONTEXT,
   reduced:()=>matchMedia('(prefers-reduced-motion: reduce)').matches,
   select(next,nextState,nextOptions={}){
    if(authSheet?.select(next,nextState,nextOptions))return;
@@ -91,7 +94,7 @@ export async function renderProductApplication(nonce,context,screen='store-purch
   const fallback={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member','quote-wait':'member'};
   document={body:await inflate(frames[row.current]),mount:runtimes[row.runtimeFamily||fallback[row.screen]]||'',css:'',row};state=row.state;
  }
- if(screen==='onboarding')document={...document,mount:onboardingCardResizeSource(document.mount)};
+ if(screen==='onboarding')document={...document,mount:onboardingMarketChartSource(onboardingCardResizeSource(document.mount))};
  return renderProductUiDocument(nonce,context,document);
 }
 
@@ -105,5 +108,5 @@ export async function renderProductUiDocument(nonce,context,document,{reviewLibr
  // Authored families register their retained modules and may carry an earlier
  // global menu factory. Install the current common owner after registration,
  // before any consumer mounts, without rewriting those historical runtimes.
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+productFontCss+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+notificationSettingsCss+panels.css+(authSheet?.css||'')+(screen==='onboarding'?onboardingGooeyCss:'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+document.mount+'\n'+brandAccountScript+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+productFontCss+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+notificationSettingsCss+panels.css+(authSheet?.css||'')+(screen==='onboarding'?onboardingGooeyCss+eggMarketChartCss:'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+(screen==='onboarding'?'window.ORDER_OPEN_EGG_MARKET='+browserFunction(openEggMarketChart)+';\n':'')+document.mount+'\n'+brandAccountScript+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
 }

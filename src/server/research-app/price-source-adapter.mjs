@@ -106,11 +106,13 @@ export async function getResearchPriceModuleSource(){
   const response=r3ProductAsset('/ia/r3-product/web/common-ui.mjs');
   if(!response.ok)throw Error('RESEARCH_PRICE_MODAL_SOURCE_UNAVAILABLE');
   const modal=canonicalPriceModalSource(await response.text());
-  const functions=[mountPriceWorkspace,createPriceWorkspaceModel,createPriceWorkbookReader,importPriceWorkbook,mountPriceWorkspaceTree,createPriceWorkspaceQaTransport];
+  const functions=[mountPriceWorkspace,createPriceWorkbookReader,importPriceWorkbook,mountPriceWorkspaceTree];
   return [
     'export const priceWorkspaceStates='+js(priceWorkspaceQaStates)+';',
     'export const priceWorkspaceReference='+js(defaultPriceRows)+';',
     'export const priceWorkspaceFragment='+js(getResearchPriceWorkspaceFragment())+';',
+    ...[createPriceWorkspaceModel,createPriceWorkspaceQaTransport].map(fn=>'const '+fn.name+'='+browserFunction(fn)+';'),
+    'export function createResearchPriceStore(options){return createPriceWorkspaceQaTransport(createPriceWorkspaceModel(),priceWorkspaceReference,{...options,seedMarketHistory:true});}',
     'export function createResearchPriceIntegration(view){',
     'const lifetime=('+browserFunction(createPriceLifetime)+')(view);',
     'const {window,document,fetch,setTimeout,clearTimeout,setInterval,clearInterval,requestAnimationFrame,cancelAnimationFrame,ResizeObserver,MutationObserver}=lifetime;',
