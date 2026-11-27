@@ -40,7 +40,7 @@ export const researchQuoteCss=`
   background:center / contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 104'%3E%3Cg fill='%23ffbc70'%3E%3Cpath d='M11 0C4.6 0 .1 5.1 .4 11.4L5 61.7c.3 3.7 2.6 6.3 6 6.3s5.8-2.6 6.1-6.3l4.5-50.3C22 5.1 17.4 0 11 0Z'/%3E%3Ccircle cx='10.5' cy='94' r='9.2'/%3E%3C/g%3E%3C/svg%3E");
 }
 /* The shared result artboard reserves its first 78px for the real app header. */
-#order-app-header:has(~ #order-app-page:not([hidden]) [data-review-result]:not(:has(.oq-lock)),~ #order-app-quote:not([hidden]) #page-result.active [data-order-result]:not(.oq-lock)){
+#order-app-header:has(~ #order-app-page:not([hidden]) [data-review-result] [data-order-result]:not(.oq-lock),~ #order-app-quote:not([hidden]) #page-result.active [data-order-result]:not(.oq-lock)){
   position:absolute;inset:0 0 auto;
 }
 /* Restore the final R4 DROPIN geometry (QA HTML SHA-256 fa35e0d35c0ce34e766f096e9ed6a260ef4ca4660ea4566b5aee2c69782ff5d3).

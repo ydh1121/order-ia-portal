@@ -108,7 +108,7 @@ test('purchase, cash confirmation, dispatch, receipt and dashboard reuse actual 
  const f=await workspace(t),buyer=await f.mount('buyer');let content=await buyer.open('manage.payments');
  await until(()=>content.querySelector('[data-purchase-offer]')?.value&&!content.querySelector('[data-purchase-confirm]').disabled,'approved offers appear in the panel');
  const parentRoot=content.querySelector('.product-panel-body'),quantity=content.querySelector('[name=quantity]'),confirm=content.querySelector('[data-purchase-confirm]');quantity.value='31';quantity.dispatchEvent(new buyer.w.Event('input',{bubbles:true}));confirm.click();
- await until(()=>confirm.textContent.includes('주문 확정'),'real quote confirmation');assert.deepEqual((await(await f.request('buyer','/product/purchases')).json()).items,[]);
+ await until(()=>confirm.textContent.includes('주문 확정')&&!confirm.disabled&&confirm.getAttribute('aria-busy')!=='true','real quote confirmation is ready to submit');assert.deepEqual((await(await f.request('buyer','/product/purchases')).json()).items,[]);
  confirm.click();await until(()=>buyer.menu.inspect().page==='manage.payments.view.store-purchase.cash','confirmed purchase opens its child in the same panel');
  await until(()=>buyer.panel.querySelector('[data-purchase-id]')?.textContent===buyer.w.ORDER_APP_ADAPTER.selectedPurchaseId,'the saved order is displayed');
  const order=(await(await f.request('buyer','/product/purchases')).json()).items[0];assert.equal(order.status,'AWAITING_CASH');assert.equal(order.total,31*5970);buyer.unchanged();

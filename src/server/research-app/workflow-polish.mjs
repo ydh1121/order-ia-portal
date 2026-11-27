@@ -42,6 +42,18 @@ export const researchWorkflowPolishCss=String.raw`
 @media(prefers-reduced-motion:reduce){.research-workflow .is-shaking,.research-business-verified svg{animation:none!important}.research-evidence-viewer.t-modal{transition:none!important}}
 `;
 
+export function createDocumentSignaturePad(win,makePad,options={}){
+  const pad=makePad({...options,width:342,height:190,background:'#f2f4f6',color:'#191f28'});
+  const element=pad.element;
+  if(element.classList.contains('research-signature'))return pad;
+  const make=(tag,className,text)=>{const node=win.document.createElement(tag);if(className)node.className=className;if(text)node.textContent=text;return node;};
+  const canvas=element.querySelector('canvas'),placeholder=element.querySelector('.wf-sign-placeholder'),typed=element.querySelector('.wf-field'),clear=element.querySelector('button');
+  const head=make('div','signature-label row between'),box=make('div','research-signature-pad'),alternative=make('details','research-signature-alternative');
+  element.classList.add('research-signature');clear.className='btn text';head.append(make('h3',null,'서명'),clear);
+  box.append(canvas,placeholder);alternative.append(make('summary',null,'이름으로 서명'),typed);element.append(head,box,alternative);
+  return pad;
+}
+
 export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:readClasses}={}){
   if(win.ORDER_RESEARCH_WORKFLOW_POLISH)return win.ORDER_RESEARCH_WORKFLOW_POLISH;
   const doc=win.document,workflow=win.ORDER_WORKFLOW_MOTION,editor=win.ORDER_EVIDENCE_EDITOR;
@@ -82,10 +94,8 @@ export function installResearchWorkflowPolish(win=window,{loadBusinessClasses:re
     control.replaceWith(input);wrap.className=shared.className+' wf-field';wrap.replaceChildren(...shared.childNodes);win.QAUI.syncField(input);
   }
   workflow.signaturePad=function(options){
-    const pad=originals.signaturePad.call(this,{...options,width:342,height:190,background:'#f2f4f6',color:'#191f28'}),page=pad.page,life=lifecycle(options?.signal),element=pad.element;
-    element.classList.add('research-signature');
-    const canvas=element.querySelector('canvas'),placeholder=element.querySelector('.wf-sign-placeholder'),typed=element.querySelector('.wf-field'),clear=element.querySelector('button'),head=el('div',undefined,'signature-label row between'),box=el('div',undefined,'research-signature-pad'),alternative=el('details',undefined,'research-signature-alternative');
-    clear.className='btn text';head.append(el('h3','서명'),clear);box.append(canvas,placeholder);alternative.append(el('summary','이름으로 서명'),typed);element.append(head,box,alternative);
+    const pad=createDocumentSignaturePad(win,originals.signaturePad.bind(this),options),page=pad.page,life=lifecycle(options?.signal),element=pad.element;
+    const canvas=element.querySelector('canvas'),clear=element.querySelector('button');
     signaturePads.set(element,pad);element.addEventListener('input',()=>clearError(element),{signal:life.signal});canvas.addEventListener('pointerup',()=>{if(element.dataset.ink==='true')clearError(element);},{signal:life.signal});clear.addEventListener('click',()=>clearError(element),{signal:life.signal});
     pad.page=()=>{try{return page.call(pad);}catch(e){error(element,e.message);throw e;}};
     const destroy=pad.destroy;pad.destroy=()=>{signaturePads.delete(element);life.dispose();destroy.call(pad);};return pad;

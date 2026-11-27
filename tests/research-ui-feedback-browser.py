@@ -401,13 +401,14 @@ def consultation_pass_probe(page):
       const adapter=ORDER_RESEARCH_APP.adapter,send=adapter.roleRequest;
       window.__consultOriginalRead=send;
       adapter.roleRequest=async(...args)=>{const value=await send(...args);if(args[0]!=='/workspace')return value;
-        return {...value,quotes:(value.quotes||[]).map(quote=>({...quote,lines:[
+        return {...value,quotes:(value.quotes||[]).map(quote=>quote.id==='qa-existing-quote'?{...quote,lines:[
           {productName:'특란',quantity:20,unit:'tray',serviceDate:'2026-12-17'},
-          {productName:'대란',quantity:5,unit:'box',serviceDate:'2026-12-18'}]}))};};
+          {productName:'대란',quantity:5,unit:'box',serviceDate:'2026-12-18'}]}:quote)};};
     }''')
     select(page, 'drawer', 'closed')
-    choice = page.locator('[name=consult-pass]').first
-    detail_button = page.locator('[data-action=consult-ticket-detail]').first
+    choice = page.locator('[name=consult-pass][data-id=b17]')
+    compound_card = page.locator('.consult-ticket').filter(has=choice)
+    detail_button = compound_card.locator('[data-action=consult-ticket-detail]')
     expect(detail_button).to_be_visible()
     choice.check()
     page.locator('[data-action=open-drawer]').click()
@@ -416,12 +417,12 @@ def consultation_pass_probe(page):
     memo = page.locator('.consult-memo textarea')
     memo.fill('패스 상세를 열어도 유지할 상담 메모')
     page.locator('[name=topic]').first.check()
-    page.evaluate('''() => {window.__consultRetained={memo:document.querySelector('.consult-memo textarea'),choice:document.querySelector('[name=consult-pass]'),header:document.querySelector('#order-app-header'),writes:ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==='POST').length};}''')
+    page.evaluate('''() => {window.__consultRetained={memo:document.querySelector('.consult-memo textarea'),choice:document.querySelector('[name=consult-pass][data-id=b17]'),header:document.querySelector('#order-app-header'),writes:ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==='POST').length};}''')
     memo.press('Escape')
     expect(panel).to_be_hidden()
     page.evaluate('''() => {
       const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
-      const opener=document.querySelector('[data-action=consult-ticket-detail]'),card=opener.closest('.consult-ticket'),dialog=document.querySelector('.consult-pass-dialog');
+      const card=__consultRetained.choice.closest('.consult-ticket'),opener=card.querySelector('[data-action=consult-ticket-detail]'),dialog=document.querySelector('.consult-pass-dialog');
       const trace=window.__consultPassGeometry={source:null,click:null,initialOpening:null,frames:[],done:false,trusted:false};
       let seen=false,closed=0,raf=0;
       function observe(kind,rafTimestamp=null){
@@ -468,7 +469,8 @@ def consultation_pass_probe(page):
     wait_for_expression(page, 'document.querySelector(".consult-pass-dialog").dataset.motion==="open"')
     assert dialog.evaluate('node=>node.matches(":modal")')
     expect(dialog.locator('.ticket-item')).to_have_count(2)
-    expect(dialog).to_contain_text('5상자')
+    expect(dialog).to_contain_text('1,200판')
+    expect(dialog).to_contain_text('800판')
     expect(dialog.locator('.consult-pass-close')).to_be_focused()
     # A full-page screenshot expands the viewport to the long retained parent.
     # The real dialog correctly finishes on resize, so observe its actual
@@ -507,7 +509,7 @@ def consultation_pass_probe(page):
     assert settled[0]['ticket']['width'] >= trace['source']['width'] + 24, trace
     assert max(abs(initial['ticket'][key] - trace['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 12, trace
     assert max(abs(closing[-1]['ticket'][key] - closing[-1]['source'][key]) for key in ('x', 'y', 'width', 'height')) <= 2, trace
-    assert page.evaluate('''() => document.querySelector('[name=consult-pass]')===__consultRetained.choice&&__consultRetained.choice.checked&&document.querySelector('.consult-memo textarea')===__consultRetained.memo&&document.querySelector('#order-app-header')===__consultRetained.header''')
+    assert page.evaluate('''() => document.querySelector('[name=consult-pass][data-id=b17]')===__consultRetained.choice&&__consultRetained.choice.checked&&document.querySelector('.consult-memo textarea')===__consultRetained.memo&&document.querySelector('#order-app-header')===__consultRetained.header''')
     page.locator('[data-action=open-drawer]').click()
     expect(memo).to_have_value('패스 상세를 열어도 유지할 상담 메모')
     expect(page.locator('[name=topic]').first).to_be_checked()
@@ -521,6 +523,20 @@ def consultation_pass_probe(page):
     page.keyboard.press('Escape')
     expect(dialog).to_be_hidden()
     expect(detail_button).to_be_focused()
+    workspace_card = page.locator('.consult-ticket').filter(has=page.locator('[name=consult-pass][data-id=qa-existing-quote]'))
+    workspace_button = workspace_card.locator('[data-action=consult-ticket-detail]')
+    workspace_card.evaluate("node=>node.scrollIntoView({block:'nearest',inline:'center',behavior:'instant'})")
+    workspace_button.click()
+    expect(dialog).to_be_visible()
+    expect(dialog.locator('.ticket-item')).to_have_count(2)
+    expect(dialog).to_contain_text('20판')
+    expect(dialog).to_contain_text('5상자')
+    page.keyboard.press('Escape')
+    expect(dialog).to_be_hidden()
+    expect(workspace_button).to_be_focused()
+    expect(choice).to_be_checked()
+    expect(memo).to_have_value('패스 상세를 열어도 유지할 상담 메모')
+    trace['lineQuantitiesByPass'] = {'b17': ['1,200판', '800판'], 'qa-existing-quote': ['20판', '5상자']}
     trace['retainedDraftAndSelection'] = True
     trace['reducedMotionImmediate'] = True
     trace['postCountUnchanged'] = page.evaluate('ORDER_RESEARCH_APP.adapter.fixture.inspect().calls.filter(call=>call.method==="POST").length===__consultRetained.writes')

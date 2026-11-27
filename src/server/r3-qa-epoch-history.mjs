@@ -4,6 +4,8 @@ import * as r1Epoch from './r3-ui/r1-e8e12588-history.gen.mjs';
 import * as rework09Epoch from './r3-ui/r3-af5ece3e-history.gen.mjs';
 import * as release10Epoch from './r3-ui/r3-e5f97029-history.gen.mjs';
 import * as release11Epoch from './r3-ui/r3-a36b41e2-history.gen.mjs';
+import * as component30Epoch from './r3-ui/r3-library-pr30-history.gen.mjs';
+import * as component31Epoch from './r3-ui/r3-library-pr31-history.gen.mjs';
 import * as release13Epoch from './r3-ui/r3-7da1ad50-history.gen.mjs';
 
 const enc=new TextEncoder();
@@ -167,7 +169,8 @@ export function createReviewedEpochReader(epoch,base){return epoch.epochMetadata
 // an existing hash to newly generated code, fixtures or feedback status.
 const previousEpoch=reader(rework09Epoch);
 const release11Archive=deltaReader(release11Epoch,previousEpoch);
-const epochs=[reader(r1Epoch),previousEpoch,deltaReader(release10Epoch,previousEpoch),release11Archive,deltaReader(release13Epoch,release11Archive)];
+const component30Archive=deltaReader(component30Epoch,previousEpoch);
+const epochs=[reader(r1Epoch),previousEpoch,deltaReader(release10Epoch,previousEpoch),release11Archive,deltaReader(release13Epoch,release11Archive),component30Archive,deltaReader(component31Epoch,component30Archive)];
 export const reviewedEpochMetadata=r1Epoch.epochMetadata;
 export const reviewedEpochsMetadata=Object.freeze(epochs.map(epoch=>epoch.metadata));
 export async function readReviewedEpochBody(digest){

@@ -51,7 +51,7 @@ test('service account OAuth + fixed Google batchGet uses readonly scope',async()
  let urls=[];const fetcher=async(url,opt)=>{urls.push(url);if(url.includes('oauth2.googleapis.com')){const assertion=new URLSearchParams(opt.body).get('assertion');const [,body]=assertion.split('.');assert.equal(JSON.parse(Buffer.from(body,'base64url').toString()).scope,'https://www.googleapis.com/auth/spreadsheets.readonly');return Response.json({access_token:'fake-access',token_type:'Bearer'})}assert.ok(url.includes('%27')||url.includes('ranges='));assert.equal(opt.headers.Authorization,'Bearer fake-access');return Response.json({valueRanges:[{values:screenRows}]})};
  const d=await fetchTab({IA_GOOGLE_READ_ENABLED:'true',IA_GOOGLE_SERVICE_ACCOUNT_JSON:JSON.stringify(account),IA_GOOGLE_SHEET_ID:'abc_12345678901234567890'},'screens',fetcher);assert.equal(d.length,77);assert.equal(urls.length,2);
 });
-test('public entry remains nonconfidential and private releases are confined to indexed pack paths',()=>{
+test('public entry remains nonconfidential and private releases are confined to indexed pack paths',async()=>{
  const publicRoot=resolve(dirname(fileURLToPath(import.meta.url)),'../public');
  // Inspect the packaged public/index.html relative to this test file.
  const entry=readFileSync(join(publicRoot,'index.html'),'utf8');assert.match(entry,/url=\/login/);assert.deepEqual(readdirSync(publicRoot).sort(),['_headers','ia','ia-map.css','ia-map.js','index.html','login.css','login.html','login.js','order-notifications-sw.js','owner.css','owner.js','price-template.xlsx','vendor']);
@@ -132,6 +132,11 @@ test('public entry remains nonconfidential and private releases are confined to 
  assert.ok(deliveryBuilds.includes(pr30Build));
  assert.equal(researchReleases[pr30Build].packSha256,'27335bb79baf0058494552ebd8283fef9f87c3581eab4c6ad1571a9db5540c65');
  const pr30CatalogDigests={simple:'f3c47f45fd2e880e1735b6288e04658317a4201d4f83c966973aa84ceb4b1adc',detailed:'bb4098090189c877ba18921507ffe92d948b5a7ed2ccd14bbd76976a65598968'};
+ const {catalog:authoredCatalog}=await import('../src/server/r3-ui/catalog.gen.mjs');
+ const {getQaSupplemental}=await import('../src/server/r3-qa-assets.mjs');
+ const {reviewHashes}=await import('../src/server/r3-ui/approved-width.mjs');
+ const signatureIndexes=[authoredCatalog.find(row=>row.id==='common/default/email'),(await getQaSupplemental()).rows.find(row=>row.id==='component-library/components/email')];
+ const signatureHashes=new Map(await Promise.all(signatureIndexes.map(async row=>[row.id,await reviewHashes(row)])));
  const pr30Catalogs={};
  for(const [mode,digest]of Object.entries(pr30CatalogDigests)){
   const bytes=readFileSync(join(catalogRoot,digest+'.json'));assert.equal(sha(bytes),digest);
@@ -157,6 +162,7 @@ test('public entry remains nonconfidential and private releases are confined to 
     if(native)row.contentHashes=row.hashes;
     else if(row.screen==='price-workspace')row.contentHashes=currentById.get(row.id).contentHashes;
    }else{
+    if(signatureHashes.has(row.id))row.contentHashes=signatureHashes.get(row.id);
     row.hashes=Object.fromEntries(widths.map(width=>[width,sha(JSON.stringify(['order-r1-review-runtime/v1',row.contentHashes[width],qaReviewRuntimeDigest,qaFixtureForRow(row)]))]));
    }
   }
@@ -197,6 +203,14 @@ test('public entry remains nonconfidential and private releases are confined to 
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
   if(build===deliveryBuild){
    assert.equal(entry.name,qaCatalogIdentity.modes[mode].sha256+'.json');assert.deepEqual(catalog,currentCatalogs[mode]);
+   continue;
+  }
+  // The first PR31 candidate was already pushed for review. Its fixed
+  // filenames authenticate both complete catalogs, including the two new rows.
+  if(build==='b4e938cfe5b7731534bdd523705d9ab78c07d5b2101471f217c1b3a62155c885'){
+   const firstPr31={simple:'dc7457504c74d5beda67fd647a61adc17ecc9a16d910fb3a38388c5f6b8c9187',detailed:'2d5ef2551433f233eb58bc5520c47cec96e2d3722d8adb64a6090a029bec97c1'};
+   assert.equal(entry.name,firstPr31[mode]+'.json');
+   assert.equal(researchReleases[build].packSha256,'dc784002ddcc499538178e8b055101299230776c64e3e384f403bc39551c690d');
    continue;
   }
   const priorSourceEpoch=build!==deliveryBuild&&priorSourceBuilds.has(build);

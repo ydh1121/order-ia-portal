@@ -89,13 +89,33 @@ test('published family runtimes and frame identities agree with the reviewed sou
     const runtime = family === 'account' ? runtimes.accountFeedback : runtimes[family];
     assert.ok(runtime.endsWith(source),family+' runtime must include current authored source');
   }
+  const {signatureLibraryCss,signatureLibraryRuntime}=await import('../src/server/signature-library.mjs');
+  const {gunzipSync}=await import('node:zlib');
+  const {cssGzip}=await import('../src/server/r3-ui/catalog.gen.mjs');
   for (const item of catalog.filter(item=>item.runtimeFamily)) {
     const runtime = runtimes[item.runtimeFamily];
     assert.equal(typeof runtime,'string');
-    const scriptHash = hash(frameCode.replace(/^function /,'') + runtime);
+    const library=item.id==='common/default/email';
+    const styleHash=library?hash(gunzipSync(Buffer.from(cssGzip,'base64')).toString()+signatureLibraryCss):cssHash;
+    if(library)assert.equal(item.currentStyleHash,styleHash);
+    const scriptHash = hash(frameCode.replace(/^function /,'') + runtime+(library?'\n'+signatureLibraryRuntime:''));
     for (const [width,stored] of Object.entries(item.hashes)) {
-      assert.equal(hash([item.id,'current',item.current,cssHash,width,scriptHash].join('|')),stored,item.id);
+      assert.equal(hash([item.id,'current',item.current,styleHash,width,scriptHash].join('|')),stored,item.id);
     }
+  }
+});
+
+test('all issued component library recording pins replay the source responses for PR30 and the first PR31 build',async()=>{
+  const {readFile}=await import('node:fs/promises');
+  const {gunzipSync}=await import('node:zlib');
+  const fixture=JSON.parse(gunzipSync(await readFile(new URL('./fixtures/reviewed-component-libraries.json.gz',import.meta.url))));
+  assert.equal(Object.keys(fixture.records).length,60);
+  for(const [artifactHash,{id,width,digest}] of Object.entries(fixture.records)){
+    const [screen,state,variant]=id.split('/');
+    assert.ok(await isR3ReviewTarget({screen,state,variant,viewport:width,artifactHash},'MSG0585-R3'));
+    const replay=await read('?'+new URLSearchParams({id,width,version:'recorded',artifactHash}));
+    const bytes=JSON.stringify(fixture.fields.map(key=>replay[key]??null));
+    assert.equal(createHash('sha256').update(bytes).digest('hex'),digest,id+' '+width+' '+artifactHash);
   }
 });
 

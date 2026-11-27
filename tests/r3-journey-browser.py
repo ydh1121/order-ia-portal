@@ -17,8 +17,12 @@ def capture_reference_viewports(qa_page, folder):
     # data. A module app must run on its authenticated origin, not set_content.
     out = Path(folder)
     out.mkdir(parents=True, exist_ok=True)
-    page = qa_page.context.new_page()
-    page.set_viewport_size({'width':375,'height':828})
+    reference = qa_page.context.browser.new_context(
+        storage_state=qa_page.context.storage_state(), viewport={'width':375,'height':828}, reduced_motion='reduce')
+    page = reference.new_page()
+    # The source artboard shows the initial second. Keep its fixture timestamp
+    # stable during font loading and PNG capture; the motion probe uses a live clock.
+    page.clock.set_fixed_time("2026-11-14T00:00:00+09:00")
     errors=[]
     try:
         for state in ['saving','new-detail','current-detail','equal','current-lower','no-result']:
@@ -66,7 +70,7 @@ def capture_reference_viewports(qa_page, folder):
                 errors.append((state,str(error)))
         assert not errors,errors
     finally:
-        page.close()
+        reference.close()
 
 def check_result(view, state):
     direct=['saving','new-detail','current-detail','equal','current-lower']
@@ -307,6 +311,9 @@ def run(page, origin, width):
         view=wrapper.locator('[data-order-result]')
         if state=='saving':
             view.evaluate("el=>{window.originalReviewPlot=el.querySelector('.oq-plot')}")
+        elif state in ('locked','locked-guest'):
+            expect(wrapper.locator('.oq-plot')).to_have_count(0)
+            expect(view.locator('.oq-lock-graph')).to_have_attribute('aria-hidden','true')
         else:
             assert view.evaluate("el=>window.originalReviewPlot===el.querySelector('.oq-plot')"), (width,state,'preview replaced the live plot')
         check_result(view,state)
@@ -334,7 +341,7 @@ def run(page, origin, width):
     expect(legacy.locator('[name=price]')).to_be_disabled()
     frame_click(page,legacy.locator('.journey-check'))
     expect(legacy.locator('[name=price]')).to_be_enabled()
-    print('PASS browser: current regular Q2 → input review → edit, 9 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
+    print('PASS browser: current regular Q2 → input review → edit, 10 current shared result states, 2 retained PR26 result states, preserved authored Q2 validation/unknown toggle and viewport',width,flush=True)
 if __name__=='__main__':
     host=subprocess.Popen(['node','tests/r3-browser-host.mjs'],cwd=ROOT,stdout=subprocess.PIPE,text=True)
     try:
