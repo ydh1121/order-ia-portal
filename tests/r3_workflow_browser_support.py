@@ -170,7 +170,14 @@ def check_signature_flow(page, frame, *, open_proof, open_signature=None, fail_f
     expect(frame.get_by_role('button', name='자료와 서명 준비', exact=True, include_hidden=True)).to_be_hidden()
     assert frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signatureEditorPreparations') == 1
     assert inspect_fixture(frame)['data']['cases'] == cases_before
-    frame.locator('[name=document-memo]').fill('제출 증빙의 검수용 추가 요청')
+    memo = frame.locator('[name=document-memo]')
+    memo_value = '👨‍👩‍👧‍👦' * 500
+    frame_click(page, memo)
+    page.keyboard.insert_text(memo_value)
+    expect(memo).to_have_value(memo_value)
+    expect(frame.locator('.memo-meter output')).to_have_text('0자 남음')
+    page.keyboard.insert_text('가')
+    expect(memo).to_have_value(memo_value)
     file = frame.locator('.wf-panel input[type=file]')
     expect(frame.locator('.research-file-drop')).to_be_visible()
     expect(file).to_be_attached()
@@ -267,7 +274,7 @@ def check_signature_flow(page, frame, *, open_proof, open_signature=None, fail_f
     case = next(row for row in fixture['data']['cases'] if row['id'] == 'qa-reprice-case')
     assert case['state'] == 'REVIEW' and case['evidenceId']
     attachments = frame.locator('#order-single').evaluate('el=>el.ownerDocument.defaultView.__signatureAttachments')
-    assert len(attachments) == 1 and attachments[0]['context']['memo'] == '제출 증빙의 검수용 추가 요청'
+    assert len(attachments) == 1 and attachments[0]['context']['memo'] == memo_value
     assert fixture['source']['persistent'] is False and fixture['source']['commercial'] is False
     if open_signature:
         saved = open_signature()

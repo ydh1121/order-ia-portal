@@ -151,7 +151,8 @@ test('public entry remains nonconfidential and private releases are confined to 
   const currentById=new Map(current.items.map(row=>[row.id,row]));
   const prices=current.items.filter(row=>row.screen==='price-workspace').map(row=>[row.id,row.contentHashes]).sort(([a],[b])=>a<b?-1:a>b?1:0);
   assert.equal(prices.length,9);
-  assert.equal(sha(JSON.stringify(prices)),'59c712fbe1a3b9a3cf9d4f3398237c3bf7d26bde34b5c46e7b9fa436fe22f81a','price content retains the updated shared workflow renderer');
+  const pricingDigest=deliveryBuild==='227aa0ae7dc1296ef5086efcaee1df89000fc10a81b833bf3f6782e226543539'?'59c712fbe1a3b9a3cf9d4f3398237c3bf7d26bde34b5c46e7b9fa436fe22f81a':'6a0dda1814ae28459452996ab390bd9fe98d7347e62c7321c874d182bc8526e5';
+  assert.equal(sha(JSON.stringify(prices)),pricingDigest,'price content retains the sealed shared workflow renderer');
   expected.items.push(guest,iconLibrary);
   for(const row of expected.items){
    const widths=Object.keys(row.hashes);
@@ -192,6 +193,22 @@ test('public entry remains nonconfidential and private releases are confined to 
   'supplier-shipments/packing/email'
  ]);
  const priorPresentationItem=item=>item.screen==='component-library'||priorPresentationRows.has(item.id);
+ // Both PR31 releases were published for review. Their complete packs and
+ // ordered catalogs remain addressable after the next research build is sealed.
+ const publishedPr31=new Map([
+  ['b4e938cfe5b7731534bdd523705d9ab78c07d5b2101471f217c1b3a62155c885',{
+   pack:'dc784002ddcc499538178e8b055101299230776c64e3e384f403bc39551c690d',
+   simple:'dc7457504c74d5beda67fd647a61adc17ecc9a16d910fb3a38388c5f6b8c9187',detailed:'2d5ef2551433f233eb58bc5520c47cec96e2d3722d8adb64a6090a029bec97c1'
+  }],
+  ['227aa0ae7dc1296ef5086efcaee1df89000fc10a81b833bf3f6782e226543539',{
+   pack:'57be6fc90bc8058348da6d3e5e495896c636e833d14a36c31edf333116a66835',
+   simple:'6287be04f5b0e734c8d93dd8de3085927a404d59d365b2cfb85f99adddcdf914',detailed:'f16147bbcd6e9fd0fa1733beb019444126e592d64c80c9e75e22320c8773e776'
+  }]
+ ]);
+ for(const [build,identity]of publishedPr31){
+  assert.ok(deliveryBuilds.includes(build),'retain published PR31 research build '+build);
+  assert.equal(researchReleases[build].packSha256,identity.pack);
+ }
  const catalogBuildModes=new Set();
  for(const entry of catalogEntries){
   assert.ok(entry.isFile());
@@ -201,18 +218,13 @@ test('public entry remains nonconfidential and private releases are confined to 
   const width=Object.keys(first.hashes)[0],builds=deliveryBuilds.filter(build=>reviewHash(build,first.id,width,mode)===first.hashes[width]);
   assert.equal(builds.length,1,'a retained catalog must identify one indexed delivery build');
   const build=builds[0],key=build+'/'+mode;assert.ok(!catalogBuildModes.has(key));catalogBuildModes.add(key);
+  const published=publishedPr31.get(build);
+  if(published)assert.equal(entry.name,published[mode]+'.json');
   if(build===deliveryBuild){
    assert.equal(entry.name,qaCatalogIdentity.modes[mode].sha256+'.json');assert.deepEqual(catalog,currentCatalogs[mode]);
    continue;
   }
-  // The first PR31 candidate was already pushed for review. Its fixed
-  // filenames authenticate both complete catalogs, including the two new rows.
-  if(build==='b4e938cfe5b7731534bdd523705d9ab78c07d5b2101471f217c1b3a62155c885'){
-   const firstPr31={simple:'dc7457504c74d5beda67fd647a61adc17ecc9a16d910fb3a38388c5f6b8c9187',detailed:'2d5ef2551433f233eb58bc5520c47cec96e2d3722d8adb64a6090a029bec97c1'};
-   assert.equal(entry.name,firstPr31[mode]+'.json');
-   assert.equal(researchReleases[build].packSha256,'dc784002ddcc499538178e8b055101299230776c64e3e384f403bc39551c690d');
-   continue;
-  }
+  if(published)continue;
   const priorSourceEpoch=build!==deliveryBuild&&priorSourceBuilds.has(build);
   // Retain the separately sealed main3391 module-cleanup epoch. Its static
   // component contents are unchanged, but the QA wrapper has its own runtime.
@@ -306,7 +318,7 @@ test('public entry remains nonconfidential and private releases are confined to 
  const recorded=[r1Recorded.shared,...r1Recorded.buckets].map(hash=>hash+'.json.gz');
  assert.equal(recorded.length,17);
  assert.deepEqual(readdirSync(join(releasesRoot,'r1-recorded')).sort(),recorded.sort());
- const reviewed=[...new Set([...reviewedDelivery.records,...reviewedDelivery.fragments,...retainedReviewedParts])].map(hash=>hash+'.json.gz');
+ const reviewed=[...new Set([...reviewedDelivery.records,...reviewedDelivery.additionalRecords,...reviewedDelivery.fragments,...retainedReviewedParts])].map(hash=>hash+'.json.gz');
  assert.deepEqual(readdirSync(join(releasesRoot,'reviewed-recorded')).sort(),reviewed.sort());
  for(const name of reviewed)assert.equal(sha(readFileSync(join(releasesRoot,'reviewed-recorded',name))),name.slice(0,-8),'reviewed parts remain content addressed');
  // The HTTP-denial and exact internal binding bytes are independently exercised

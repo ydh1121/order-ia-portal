@@ -130,7 +130,7 @@ test('live evidence controls reuse shared button paint while memo count, preview
   const originalMemo=v.root.querySelector('[name=document-memo]');
   await until(()=>v.root.querySelector('.research-evidence-page')?.dataset.reviewReady==='true');
   const memo=v.root.querySelector('[name=document-memo]'),meter=v.root.querySelector('.memo-meter'),progress=meter.querySelector('progress');
-  assert.equal(memo,originalMemo);assert.equal(memo.maxLength,4000);assert.equal(memo.closest('.field.is-floating').htmlFor,memo.id);assert.equal(memo.closest('.input-shell.is-multiline').querySelector('textarea'),memo);assert.equal(v.w.document.getElementById(memo.getAttribute('aria-labelledby')).textContent,'추가 요청 · 선택');assert.ok(v.w.document.getElementById(memo.getAttribute('aria-describedby')));
+  assert.equal(memo,originalMemo);assert.equal(memo.hasAttribute('maxlength'),false);assert.equal(memo.closest('.field.is-floating').htmlFor,memo.id);assert.equal(memo.closest('.input-shell.is-multiline').querySelector('textarea'),memo);assert.equal(v.w.document.getElementById(memo.getAttribute('aria-labelledby')).textContent,'추가 요청 · 선택');assert.ok(v.w.document.getElementById(memo.getAttribute('aria-describedby')));
   const meterStyle=v.w.getComputedStyle(meter),progressStyle=v.w.getComputedStyle(progress);
   assert.equal(meterStyle.display,'flex');assert.equal(meterStyle.justifyContent,'flex-end');assert.equal(meterStyle.gap,'12px');
   assert.equal(progressStyle.width,'80px');assert.equal(progressStyle.height,'6px');

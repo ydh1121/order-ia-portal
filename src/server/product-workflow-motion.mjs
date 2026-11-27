@@ -122,8 +122,23 @@ export function installProductWorkflowMotion(win=window){
   return result;
  }
  function mountEvidence(root,{api={},kind='reprice',caseRecord,signal,initialFiles=[]}={}){
-  const adapter=api.adapter||win.ORDER_APP_ADAPTER,ctl=new win.AbortController(),panel=node('section',undefined,'wf-panel'),status=node('p','','wf-status'),select=field('신청 내역','select'),start=button('자료와 서명 준비',true),editor=node('div');status.setAttribute('role','status');panel.append(node('h2',kind==='business'?'사업자등록증 제출':'거래내역 증빙과 서명'));const memo=field('추가 요청 · 선택','textarea'),meter=node('progress'),remaining=node('output','500자 남음');memo.input.name='document-memo';memo.input.maxLength=4000;meter.max=500;meter.value=0;meter.setAttribute('aria-label','추가 요청 글자 수');remaining.setAttribute('aria-live','polite');const memoMeter=node('div',undefined,'memo-meter');memoMeter.append(meter,remaining);
-  const countMemo=()=>{const segmenter=typeof win.Intl.Segmenter==='function'?new win.Intl.Segmenter('ko',{granularity:'grapheme'}):null,tokens=segmenter?[...segmenter.segment(memo.input.value)].map(x=>x.segment):[...memo.input.value];let count=0,value='';for(const token of tokens){if(!/^\s+$/u.test(token)&&++count>500)break;value+=token;}memo.input.value=value;meter.value=Math.min(count,500);remaining.textContent=(500-Math.min(count,500))+'자 남음';};
+  const adapter=api.adapter||win.ORDER_APP_ADAPTER,ctl=new win.AbortController(),panel=node('section',undefined,'wf-panel'),status=node('p','','wf-status'),select=field('신청 내역','select'),start=button('자료와 서명 준비',true),editor=node('div');status.setAttribute('role','status');panel.append(node('h2',kind==='business'?'사업자등록증 제출':'거래내역 증빙과 서명'));const memo=field('추가 요청 · 선택','textarea'),meter=node('progress'),remaining=node('output','500자 남음');memo.input.name='document-memo';meter.max=500;meter.value=0;meter.setAttribute('aria-label','추가 요청 글자 수');remaining.setAttribute('aria-live','polite');const memoMeter=node('div',undefined,'memo-meter');memoMeter.append(meter,remaining);
+  const memoSegmenter=typeof win.Intl.Segmenter==='function'?new win.Intl.Segmenter('ko',{granularity:'grapheme'}):null;
+  const countMemo=()=>{
+   const text=memo.input.value;
+   let count=0,end=0;
+   for(const item of memoSegmenter?memoSegmenter.segment(text):text){
+    const grapheme=memoSegmenter?item.segment:item;
+    if(!/^\s+$/u.test(grapheme)){
+     if(count===500)break;
+     count++;
+    }
+    end+=grapheme.length;
+   }
+   if(end<text.length)memo.input.value=text.slice(0,end);
+   meter.value=count;
+   remaining.textContent=(500-count)+'자 남음';
+  };
   memo.input.addEventListener('input',e=>{if(!e.isComposing)countMemo();},{signal:ctl.signal});memo.input.addEventListener('compositionend',countMemo,{signal:ctl.signal});
   if(kind==='reprice'){const purpose=node('section',undefined,'proof-purpose');purpose.append(node('h3','거래내역 증빙 시 주의사항'));const list=node('ul');for(const text of ['직전 1개월 정산서에서 가격과 수량, 거래일이 보이도록 올려주세요.','사업장을 제외한 제3자의 개인정보는 가려주세요.','보완을 위해 최근 3개월 내 자료를 추가로 요청할 수 있어요.','제출할 자료는 확인 용도로만 사용해요.'])list.append(node('li',text));purpose.append(list);panel.append(purpose,memo.wrap,memoMeter);}panel.append(select.wrap,start,status,editor);root.replaceChildren(panel);let current=caseRecord,items=[],disposeEditor;
   const say=(message,error=false)=>{status.textContent=message;status.dataset.error=String(error);};

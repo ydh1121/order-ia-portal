@@ -4,10 +4,11 @@ import {gunzipSync} from 'node:zlib';
 import {readFile} from 'node:fs/promises';
 import {createHash} from 'node:crypto';
 import {reviewedDelivery} from '../src/server/reviewed-delivery-index.gen.mjs';
-import {serveDeliveredReviewedArtifact} from '../src/server/reviewed-delivery.mjs';
+import {isDeliveredReviewedTarget,serveDeliveredReviewedArtifact} from '../src/server/reviewed-delivery.mjs';
 import {serveDeliveredQaArtifact,isDeliveredReviewTarget} from '../src/server/r3-qa-delivery.mjs';
 import {readReviewedEpochArtifact,createReviewedEpochReader} from '../src/server/r3-qa-epoch-history.mjs';
 import * as twentySeven from '../src/server/r3-ui/r3-69779df0-history.gen.mjs';
+import * as publishedPr31 from '../src/server/r3-ui/r3-reviewed-227aa-history.gen.mjs';
 import {createPrivateResearchAssets} from './helpers/private-research-assets.mjs';
 
 const directory = new URL('../public/ia/research-releases/reviewed-recorded/', import.meta.url);
@@ -15,16 +16,17 @@ const origin = 'https://order.example';
 const env = {ASSETS: createPrivateResearchAssets()};
 const unpack = async file => JSON.parse(gunzipSync(await readFile(file)));
 const release27 = createReviewedEpochReader(twentySeven);
+const release31 = createReviewedEpochReader(publishedPr31, release27);
 
 test('all frozen successor epochs retain earliest-match precedence and original response bytes', async () => {
-  const epochs = ['r1-reviewed-e8e12588', 'reviewed-af5ece3e', 'reviewed-e5f97029', 'reviewed-a36b41e2', 'reviewed-7da1ad50', 'reviewed-69779df0'];
+  const epochs = ['r1-reviewed-e8e12588', 'reviewed-af5ece3e', 'reviewed-e5f97029', 'reviewed-a36b41e2', 'reviewed-7da1ad50', 'reviewed-69779df0', 'reviewed-227aa'];
   const expected = new Map();
   for (const name of epochs) {
     const capture = await unpack(new URL('./fixtures/' + name + '.capture.json.gz', import.meta.url));
     for (const key of Object.keys(capture.captures)) if (!expected.has(key)) expected.set(key, capture.epoch);
   }
   const observed = new Set(), examples = new Set();
-  for (const [index, digest] of reviewedDelivery.records.entries()) {
+  for (const [index, digest] of [...reviewedDelivery.records.entries(), ...reviewedDelivery.additionalRecords.entries()]) {
     const records = await unpack(new URL(digest + '.json.gz', directory));
     for (const [key, row] of Object.entries(records)) {
       const [id, width, hash] = key.split('|');
@@ -35,14 +37,13 @@ test('all frozen successor epochs retain earliest-match precedence and original 
       observed.add(key);
       if (examples.has(row[0])) continue;
       examples.add(row[0]);
-      const old = source.archivedSource.epoch === twentySeven.epochMetadata.epoch
-        ? await release27.artifact(id, Number(width), hash)
-        : await readReviewedEpochArtifact(id, Number(width), hash);
+      const capture = [release27, release31].find(reader => reader.metadata.epoch === source.archivedSource.epoch);
+      const old = capture ? await capture.artifact(id, Number(width), hash) : await readReviewedEpochArtifact(id, Number(width), hash);
       const projected = await serveDeliveredReviewedArtifact(id, Number(width), hash, env, origin);
       assert.equal(JSON.stringify(projected), JSON.stringify({...old.artifact, replayFrame: old.replayFrame, archivedSource: old.archivedSource}));
     }
   }
-  assert.equal(examples.size, 5);
+  assert.equal(examples.size, 6);
   assert.deepEqual(observed, new Set([...expected].filter(([, epoch]) => epoch !== 'r1-e8e12588-20261120').map(([key]) => key)));
 });
 
@@ -88,6 +89,33 @@ test('all 1220 pre-refactor wrapper and price identities retain exact base respo
     {...fixedPrice.target, artifactHash: '0'.repeat(64)},
     {...fixedPrice.target, mode: 'detailed'},
   ]) assert.equal(await isDeliveredReviewTarget(target, 'MSG0585-R3', env, origin), false);
+});
+
+test('the published PR31 wrappers and source documents remain bound to their issued URL and bytes', async () => {
+  const snapshot = await unpack(new URL('./fixtures/reviewed-227aa.capture.json.gz', import.meta.url));
+  assert.equal(snapshot.commit, '089fff674567f08164260517a20b99ce2730d7f6');
+  assert.equal(snapshot.tree, '562fd734d8bfec1fdde02cc727225e2c7e051a3f');
+  const issued = Object.entries(snapshot.captures);
+  assert.equal(issued.length, 1240);
+  const families = new Set();
+  for (const [key, digest] of issued) {
+    const [id, w, hash] = key.split('|'), width = Number(w);
+    assert.ok(await isDeliveredReviewedTarget(id,width,hash,env,origin),key);
+    if (width !== 390) continue;
+    const [screen,state,variant] = id.split('/');
+    families.add(id);
+    const request = new URL('/api/ia/r3-qa/artifact',origin);
+    request.search = new URLSearchParams({id,width,version:'recorded',artifactHash:hash});
+    const response = await serveDeliveredQaArtifact(new Request(request),env);
+    assert.equal(response.status,200,key);
+    const replay = await response.json();
+    const {propertyOrder} = await release31.rawRecordKey(key);
+    const original = Object.fromEntries(propertyOrder.map(field => [field,replay[field]]));
+    assert.equal(createHash('sha256').update(JSON.stringify(original)).digest('hex'),digest,key);
+    assert.equal(replay.archivedSource.commit,snapshot.commit);
+    assert.ok(await isDeliveredReviewTarget({screen,state,variant,viewport:width,artifactHash:hash},'MSG0585-R3',env,origin),key);
+  }
+  assert.equal(families.size,122);
 });
 
 test('unresolved compact login pin opens through the private delivery path with exact response bytes', async () => {
