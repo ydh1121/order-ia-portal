@@ -9,6 +9,13 @@ export function calculatorHeadingMarkup(markup){
   return markup.replace(source,(_,page,nav)=>page+heading+nav);
 }
 
+export const calculatorButtonColors = {
+  rest: '#f1f3f6',
+  hover: '#e7ecf3',
+  ink: '#20272a',
+  selected: '#315dde',
+};
+
 const surface=':is(#page-form,dialog.q1-sku-dialog,dialog.ui-editor-dialog,dialog.q4-regular-dialog)';
 const choices=':is(.ui-choice,.ui-choice-row,.ui-button[aria-pressed],.simple-inline-order button[aria-pressed],.q4-order-options button,.q4-mode-choices input+span,.qa-week-choice button,.qa-day-weekrow button[aria-pressed],.qa-holiday-days button,.qa-calendar-grid button[aria-pressed],.q4-week-days button,.q4-off-days button)';
 const actions=':is(.ui-transaction-action,.ui-continue-action,.ui-cancel-action,.ui-button,.subaction,.link-button,.qa-calendar-heading .ui-icon-button):not(:where(#add-line,#add-site,[data-order-saved-business-open],[data-order-new-business],.ui-field-trigger,.qa-combo-trigger))';
@@ -32,11 +39,11 @@ export const calculatorControlsCss=`
  * Resting controls use a neutral fill. Focus rings still belong to the
  * interactive control and date/text fields keep their input affordances. */
 ${surface}{
-  --calc-choice-surface:#f1f3f6;--calc-choice-hover:#e7ecf3;--calc-selected:#315dde;
+  --calc-choice-surface:${calculatorButtonColors.rest};--calc-choice-hover:${calculatorButtonColors.hover};--calc-selected:${calculatorButtonColors.selected};
   --ui-choice-selected-bg:var(--calc-selected);--ui-choice-selected-color:#fff;
 }
 ${surface} ${choices},
-${surface} ${actions}{border:0;background:var(--calc-action-fill,var(--calc-choice-surface));color:var(--calc-action-ink,var(--ink,#20272a))}
+${surface} ${actions}{border:0;background:var(--calc-action-fill,var(--calc-choice-surface));color:var(--calc-action-ink,var(--ink,${calculatorButtonColors.ink}))}
 @media(hover:hover){
   ${surface} ${choices}:not(:disabled,[aria-disabled=true],${selected},[aria-invalid=true]):hover,
   ${surface} ${actions}:not(:disabled,[aria-disabled=true],.ui-button--primary,.ui-transaction-action--primary,.ui-transaction-action--danger,.ui-continue-action,.filled):hover{background:var(--calc-choice-hover)}

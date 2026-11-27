@@ -18,6 +18,7 @@ import {adminIconMenu,adminIconRow,adminIconMarkup,adminIconCss,installAdminIcon
 import {installReviewQuoteLock,mountQuoteLock,quoteLockCss,quoteLockMarkup} from './quote-preview.mjs';
 import {createResearchEnvironment} from './environment.mjs';
 import {researchRoute} from './routes.mjs';
+import {calculatorButtonColors} from '../product-ui/calculator-controls.mjs';
 import {researchQuoteCss,researchConfirmationCss} from './quote-style.mjs';
 import {researchAssets,researchBuild} from './assets.gen.mjs';
 import {getResearchInspectorPanelsModule,getResearchPinProjectionModule} from './inspector-panels-source.mjs';
@@ -157,7 +158,7 @@ function researchFoundation(){return foundation??=(async()=>{
   // shared color/motion tokens still inherit into every application screen.
   const sceneRules=css.replace(/:root(?=\s*\{)/g,':scope').replace(/(^|[{},\s])html(?=[\s,.#[:{>+~])/g,'$1:scope');
   const sceneCss='@scope (html) to ([data-research-quote]){\n'+sceneRules+'\n}\n';
-  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+quoteLockCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss),
+  return {css:productFontCss+sceneCss+getProductUiBootstrap().css+panels.css+auth.css+researchApplicationCss+researchQuoteCss+quoteLockCss+researchOnboardingCss+researchInteractionCss+researchAuthPolishCss+researchNotificationsCss+researchOrderMenuCss+contactCss+researchConfirmationCss(regularCss,calculatorButtonColors),
     script:sharedCoreScript+'\n'+commonMotionScript+'\n'+brandMotionScript+'\n'+brandAccountScript+'\n'+researchInputMotionSource(getProductUiBootstrap().script)+'\n'+panels.script+'\n'+researchAuthSheetSource(auth.script)+'\nwindow.ORDER_CREATE_RESEARCH_ENV=config=>('+browserFunction(createResearchEnvironment)+')(config,('+researchNotificationFixtureSource(browserFunction(installQaFixtureAdapter))+'),('+productAccountAdapterSource()+'));'};
 })();}
 

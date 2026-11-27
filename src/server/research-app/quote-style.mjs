@@ -3,7 +3,7 @@ import {researchQuoteModeCss} from './quote-mode-presentation.mjs';
 
 /** The retained result dialog keeps its native buttons/listeners. Its visual
  * declarations and token values come from the same current confirmation UI. */
-export function researchConfirmationCss(regularCss){
+export function researchConfirmationCss(regularCss,buttonColors){
   const rule=(source,selector)=>{
     const clean=source.replace(/\/\*[\s\S]*?\*\//g,''),match=[...clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find(item=>item[1].split(',').some(part=>part.trim()===selector));
     if(!match)throw Error('REGULAR_CONFIRM_PRESENTATION_SOURCE_CHANGED:'+selector);return match[2];
@@ -16,7 +16,8 @@ export function researchConfirmationCss(regularCss){
     dialog+'[open]{'+rule(regularCss,'.ui-transaction-group')+';row-gap:var(--ui-confirm-actions-gap)}\n'+
     dialog+'::backdrop{'+rule(regularCss,'dialog[data-modal-variant]::backdrop')+';'+rule(researchQuoteModeCss,'#order-app-quote [data-research-quote] #quote-mode-dialog::backdrop')+'}\n'+
     prefix+' .oq-dialog-title{'+rule(regularCss,'.q1-confirm h2')+';grid-column:1/-1;margin:0;text-align:left;word-break:keep-all}\n'+
-    choice+'{'+rule(regularCss,'.ui-transaction-action')+';white-space:nowrap}\n'+
+    choice+'{'+rule(regularCss,'.ui-transaction-action')+';border:0;background:'+buttonColors.rest+';color:'+buttonColors.ink+';white-space:nowrap}\n'+
+    '@media(hover:hover){'+choice+':not(:disabled):has(~.oq-choice):hover{background:'+buttonColors.hover+'}}\n'+
     choice+':not(:has(~.oq-choice)){'+rule(regularCss,'.ui-transaction-action--primary')+'}\n'+
     choice+':focus-visible{'+rule(regularCss,'.ui-transaction-action:focus-visible')+'}\n'+
     choice+':disabled{'+rule(regularCss,'.ui-transaction-action:disabled')+'}\n';

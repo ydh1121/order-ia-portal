@@ -7,7 +7,7 @@ import {pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 import {createHash, webcrypto} from 'node:crypto';
 import {gunzipSync} from 'node:zlib';
-import {quoteFiles} from '../src/server/r3-product-sources.mjs';
+import {quoteFiles, quoteTemplate} from '../src/server/r3-product-sources.mjs';
 import {regularContactModuleSource, regularServiceSourceIdentity} from '../src/server/research-app/regular-service-assets.mjs';
 import {createRegularServices} from '../src/server/research-app/regular-services.mjs';
 import {mountResearchAccountPanel} from '../src/server/research-app/account-panels.mjs';
@@ -500,12 +500,18 @@ test('business management saves full controllers and the original Q3 picker cons
     const app = {savedBusinessBridge: createSavedBusinessBridge({getState: () => state, guard: () => true,
       save: async (next, {canCommit}) => {assert.equal(canCommit(), true); state = structuredClone(next); return {ok: true};}, render() {},
       blankSite: () => ({status: 'NONE'}), addressFields: f.services.core.address.addressFields, addressStatus: f.services.core.address.addressStatus, simpleMode: false})};
-    const anchor = f.document.createElement('div'); anchor.id = 'q3-sites'; f.document.body.append(anchor);
+    const template = f.document.createElement('template');
+    template.innerHTML = quoteTemplate;
+    const stage = template.content.querySelector('#section-q3');
+    stage.dataset.open = 'true';
+    f.document.body.append(stage);
     const closers = new WeakMap();
     f.window.OrderModalShell = {bind(dialog, close) {closers.set(dialog, close);}, open(dialog) {dialog.open = true;}, close(dialog) {dialog.open = false;}, requestClose(dialog) {closers.get(dialog)?.();}};
     f.window.OrderCopyDialog = {create() {const dialog = f.document.createElement('dialog'); dialog.innerHTML = '<div class="qa-copy-accordion-area"></div><div data-copy-preview></div><div class="qa-copy-target-heading"></div><div class="qa-copy-targets"></div><p role="status"></p><button data-copy-cancel></button><button data-copy-apply></button>'; return dialog;}};
     f.window.fetch = async url => {assert.equal(String(url), adapter.context.endpoints.role + '/businesses'); return json(await adapter.roleRequest('/businesses'));};
-    const picker = f.window.eval('(' + browserFunction(mountSavedBusinessPicker) + ')')(app); await picker.trigger.onclick();
+    const picker = f.window.eval('(' + browserFunction(mountSavedBusinessPicker) + ')')(app); await until(() => !picker.trigger.hidden);
+    assert.equal(picker.trigger.nextElementSibling, stage.querySelector('#add-site'));
+    await picker.trigger.onclick();
     const checkbox = picker.dialog.querySelector('input'); assert.equal(checkbox.value, rows[0].id); checkbox.checked = true; checkbox.dispatchEvent(new f.window.Event('change', {bubbles: true}));
     await picker.dialog.querySelector('[data-copy-apply]').onclick();
     assert.equal(state.locations[0].contactPhone, '010-1234-5678'); assert.equal(state.locations[0].storePhone, '02-1234-5678'); assert.equal(state.locations[0].providerId, juso().providerId);

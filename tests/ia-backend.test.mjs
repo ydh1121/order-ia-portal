@@ -211,6 +211,11 @@ test('public entry remains nonconfidential and private releases are confined to 
   ['9b28d4a82aed618b3a01ef6bfe568dc2c74eb2b06738a2a1b59a49a9e142cf8f',{
    pack:'8febfeefac3387923913aa900c2133d0b36c14be609312b9b17e948022e26563',
    simple:'065fdd110cd17b9b79c5c208b296c7458f319a2c871bdff01279bde604c9f259',detailed:'e4072bfbcb3b0c0517fe338324433f300d14fad749a86d5e800384de4809f5b7'
+  }],
+  // The first PR33 review build remains addressable by its original pack and mode URLs.
+  ['f94f6ee900426b518468c58168f15cfb2b94fabf55339335505ad573cbe5baae',{
+   pack:'bb68b460e7cc676e6479e4422f42fc00ce2fc7b08ef56647ee59eaf27a4491e8',
+   simple:'61431daffd3222f26b37860f3e542635e71968b81e03f756d042d3dc6976233d',detailed:'135d6948c2a9ec44971413afe13e3ec5559af0bb56a889bb3a454ffec96be9b0'
   }]
  ]);
  for(const [build,identity]of publishedResearch){

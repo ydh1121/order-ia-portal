@@ -441,18 +441,24 @@ def core_checks(open_source, receipt):
         gate=page.locator('#q2-prerequisite')
         expect(gate).to_be_visible()
         gate.get_by_role('button',name='입력하기').click()
+        wait_review_session(page.native_page, 'q1')
+        expect(page.container).to_have_js_property('inert', False)
         for field, value in [('housing','1'), ('size','대란'), ('pack','30')]:
             page.locator(f'#sku-editor [data-pick="{field}"][data-value="{value}"]').click()
         expect(page.locator('#added-lines .sku-entry')).to_have_count(1)
         stage=page.locator('#section-q2 > .accordion-trigger')
         if stage.get_attribute('aria-expanded') != 'true':
             stage.click()
+        wait_review_session(page.native_page, 'q2')
+        expect(page.container).to_have_js_property('inert', False)
         expect(gate).to_be_hidden()
         for selector, value in (('[data-line-qty]', '100'), ('[data-line-price]', '5000')):
             page.locator(selector).first.fill(value)
             page.locator(selector).first.press('Tab')
         page.wait_for_expression("(()=>{const l=ORDER_RESEARCH_APP.snapshot().quote.lines[0];return l.qty==='100'&&l.price==='5000';})()")
         page.locator('.accordion-trigger[data-open=q1]').first.click()
+        wait_review_session(page.native_page, 'q1')
+        expect(page.container).to_have_js_property('inert', False)
         row = page.locator('#added-lines [data-saved-row]').first
         expect(row.locator('.saved-quantity-tags > span').nth(0)).to_have_text('월 100판')
         expect(row.locator('.saved-quantity-tags > span').nth(1)).to_have_text('월 구매액 500,000원')
