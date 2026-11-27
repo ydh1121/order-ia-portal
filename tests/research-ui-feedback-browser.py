@@ -734,6 +734,7 @@ def panel_origin_probe(page, capture):
         phone = page.locator('.research-account-panel .ui-phone-shell')
         expect(phone.locator('.ui-phone-part')).to_have_count(3)
         expect(phone).to_be_visible()
+        CAPTURE_TOOLS.settle(page)
         measured = phone.evaluate("""shell=>{const rect=node=>{const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};},parts=[...shell.querySelectorAll('.ui-phone-part')],outer=shell.closest('.input-shell');return {display:getComputedStyle(shell).display,shell:rect(shell),outer:rect(outer),parts:parts.map(node=>({rect:rect(node),value:node.value,hit:document.elementFromPoint(node.getBoundingClientRect().x+node.getBoundingClientRect().width/2,node.getBoundingClientRect().y+node.getBoundingClientRect().height/2)===node})),separators:[...shell.querySelectorAll('.ui-phone-separator')].map(rect),regularValue:window.OrderPhone.get(parts[0])};}""")
         assert measured['display'] == 'flex' and measured['outer']['height'] == 64, measured
         assert len(measured['separators']) == 2 and all(part['hit'] for part in measured['parts']), measured

@@ -53,6 +53,12 @@ export const researchQuoteCss=`
 #order-app-page .mf-wait-visual .mf-wait-avatar{position:absolute;inset:108px auto auto 50%;transform:translateX(-50%);width:256px;max-width:none;height:256px;max-height:none;z-index:3}
 #order-app-page .mf-wait-message{grid-row:3;display:flex;align-items:center;justify-content:center;height:104px;min-height:104px;margin:0;font-size:15px;line-height:1.65}
 #order-app-page .mf-wait .mf-actions{grid-row:5;align-self:end;height:56px;margin:0;padding:0}
+#order-app-page .mf-wait-avatar.is-error{outline:0;opacity:.72}
+#order-app-page .mf-wait .mf-actions:has(>[data-wait-retry]){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:stretch}
+#order-app-page .mf-wait .mf-actions>button{box-sizing:border-box;width:100%;min-height:54px;padding:14px 12px;border:0;border-radius:12px;background:#f1f3f6;color:#313945;font-family:inherit;font-size:17px;line-height:1.5;font-weight:650;letter-spacing:-.45px}
+#order-app-page .mf-wait .mf-actions>[data-wait-retry]{background:#315de6;color:#fff}
+#order-app-page .mf-wait .mf-actions>button:active{transform:translateY(1px)}
+@media(max-width:359px){#order-app-page .mf-wait .mf-actions>button{font-size:16px}}
 #order-single [data-wait-scene] [data-banner-stack]{position:absolute;inset:0 0 auto;display:block;transform:none;width:100%;height:130px;min-height:0;margin:0;padding:0;overflow:hidden;z-index:1;pointer-events:none}
 #order-single [data-wait-scene] [data-banner-stack][hidden]{display:none}
 #order-single [data-wait-scene] [data-banner-stack] .mf-banner{--banner-depth-opacity:1;position:absolute;inset:68px auto auto 50%;box-sizing:border-box;width:calc(100% - 44px);max-width:320px;height:52px;padding:0 16px;gap:10px;border:1px solid #eceef1;border-radius:28px;display:flex;align-items:center;justify-content:flex-start;background:#fff;color:#535f70;font-size:14px;line-height:1.4;box-shadow:0 4px 14px #1724390b,0 1px 3px #17243906;filter:blur(calc(var(--layer,0) * 1px));transform-origin:center center;transform:translateX(-50%) translateY(calc(var(--layer,0) * -12px)) scale(calc(1 - var(--layer,0) * .06));z-index:calc(3 - var(--layer,0));opacity:var(--banner-depth-opacity);animation:research-wait-banner-enter 350ms cubic-bezier(.22,1,.36,1) backwards;transition:transform 350ms cubic-bezier(.22,1,.36,1),opacity 250ms ease,filter 350ms ease;will-change:transform,opacity}

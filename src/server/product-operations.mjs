@@ -98,7 +98,12 @@ async function offers(db,actorId,grants,now){
 async function purchaseList(db,actorId,grants,now){
  const list=await rows(db,`SELECT o.* FROM order_operation o WHERE kind='purchase' AND ${visible} ORDER BY updated_at DESC,id LIMIT 500`,actorId);
  const buyer=grants.some(g=>g.role==='BUYER'),operator=grants.some(g=>g.role==='OPERATOR'),supplier=grants.some(g=>g.role==='SUPPLIER');
- return {items:list.map(r=>({...project(r),actions:purchaseActions(grants,actorId,r)})),offers:await offers(db,actorId,grants,now),selectedPurchaseId:null,capabilities:{create:buyer,confirmCash:operator,dispatch:supplier||operator,receive:buyer,cancel:buyer||operator}};
+ const items=list.map(row=>{
+  const item=project(row);
+  if(hasRole(grants,'BUYER',row.org_id,row.site_id))item.buyerOrgId=row.org_id;
+  return {...item,actions:purchaseActions(grants,actorId,row)};
+ });
+ return {items,offers:await offers(db,actorId,grants,now),selectedPurchaseId:null,capabilities:{create:buyer,confirmCash:operator,dispatch:supplier||operator,receive:buyer,cancel:buyer||operator}};
 }
 async function purchaseQuote(db,env,actor,b,grants,now){
  if(!integer(b.quantity,1,1e7))fail('INVALID_PURCHASE');

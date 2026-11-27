@@ -333,6 +333,34 @@ def page_quote(page):
     return page.evaluate('ORDER_RESEARCH_APP.snapshot().quote')
 
 
+def wait_error_controls(page, width, state):
+    scene = page.locator('[data-wait-scene]')
+    expect(scene).to_have_attribute('data-phase', 'offline' if state == 'offline' else 'error')
+    seen = scene.evaluate("""el => {
+        const avatar = getComputedStyle(el.querySelector('.mf-wait-avatar'));
+        const footer = el.querySelector('.mf-actions');
+        const buttons = [...footer.querySelectorAll('button')].map(button => {
+            const box = button.getBoundingClientRect(), css = getComputedStyle(button);
+            const center = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+            return {label: button.textContent.trim(), x: box.x, y: box.y, width: box.width,
+                height: box.height, radius: css.borderTopLeftRadius, bg: css.backgroundColor,
+                fontSize: css.fontSize, fontWeight: css.fontWeight, hit: button.contains(center)};
+        });
+        return {viewport: innerWidth, outline: avatar.outlineStyle, opacity: avatar.opacity,
+            width: footer.getBoundingClientRect().width, buttons};
+    }""")
+    assert seen['viewport'] == width and seen['outline'] == 'none' and abs(float(seen['opacity']) - .72) < .001, seen
+    back, retry = seen['buttons']
+    assert [back['label'], retry['label']] == ['돌아가기', '다시 비교하기'], seen
+    assert [back['bg'], retry['bg']] == ['rgb(241, 243, 246)', 'rgb(49, 93, 230)'], seen
+    assert abs(retry['x'] - back['x'] - back['width'] - 10) < .1 and abs(back['y'] - retry['y']) < .1, seen
+    for button in (back, retry):
+        assert button['hit'] and button['height'] >= 54 and abs(2 * button['width'] + 10 - seen['width']) < .1, seen
+        assert button['radius'] == '12px' and button['fontWeight'] == '650', seen
+        assert button['fontSize'] == ('16px' if width < 360 else '17px'), seen
+    return seen
+
+
 def qa_mode_navigation_checks(open_source, receipt):
     page, identity, _ = open_source('q1', 'before', 'simple', 390)
     try:
@@ -670,6 +698,9 @@ def main():
                         assert abs(closed['rect']['height'] - 52) < .1, ('Original closed accordion height is 52px', closed)
                         assert abs(closed['header']['height'] - 52) < .1 and closed['body']['height'] == 0, 'Closed content contributes no phantom padding'
                     assert page.locator('header.header').count() == 0
+                if screen == 'quote-wait' and state in ('offline', 'server-error'):
+                    checks = receipt.setdefault('waitErrorControls', {})
+                    checks[label] = wait_error_controls(page, width, state)
                 if screen == 'profile' and state == 'notification':
                     assert captured['source']['route']['panel'] == 'notifications', 'Direct notification entry must retain its actual panel'
                     expect(page.locator('[data-obm-page="notifications"] .obm-heading')).to_have_text('알림')
@@ -786,6 +817,11 @@ def main():
                 write_json(OUT / 'receipt.json', receipt)
             finally:
                 page.close()
+        narrow, _, _ = open_source('quote-wait', 'offline', 'simple', 320)
+        try:
+            receipt['waitErrorControls']['quote-wait-offline-simple-320'] = wait_error_controls(narrow, 320, 'offline')
+        finally:
+            narrow.close()
         resource_hashes()
         assert not forbidden_writes, forbidden_writes
         assert not errors, errors

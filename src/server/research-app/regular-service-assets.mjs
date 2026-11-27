@@ -49,7 +49,7 @@ export function regularServiceSourceIdentity() {
     originalSha256: quoteSourceHashes[path], servedSealedSha256: await sha256(await sealedText(path))
   }))).then(sources => ({repository: 'ydh1121/order', commit: quoteCommit, sources,
     ianaReference: REGULAR_IANA_REFERENCE_PROVENANCE,
-    contactAdaptation: 'Scoped environment and lifecycle only; sealed contact source includes its existing IANA URL substitution.',
+    contactAdaptation: 'Scoped environment, listener lifecycle and focus-aware suggestion dismissal; sealed contact source includes its existing IANA URL substitution.',
     ownershipVerified: false, mailboxVerified: false}));
 }
 
@@ -67,8 +67,11 @@ export function regularContactModuleSource() {
       .replace('{createBrowserEmailService}', '{createBrowserEmailService as originalEmailService}')).join('\n');
     for (const name of ['OrderPhone', 'OrderEmail', 'OrderEmailDomain', 'OrderEmailUI'])
       body = replaceOnce(body, 'window.' + name + '=', 'window.' + name + '=' + name + '=');
-    // Event registration is bookkeeping; every event handler remains the
-    // original handler. No input validator or editing rule is replaced here.
+    // Refocusing and typing can reopen the suggestions before a previous
+    // blur timer fires. Only dismiss them if focus still belongs elsewhere.
+    body = replaceOnce(body, 'setTimeout(close,120);',
+      'setTimeout(()=>{if(document.activeElement!==input)close();},120);');
+    // Track listener ownership so the research form can unmount cleanly.
     body = body.replaceAll('input.addEventListener(', 'listen(input,')
       .replaceAll('list.addEventListener(', 'listen(list,');
     const subscription = body.split('\n').find(line => line.trimStart().startsWith('OrderEmailDomain.subscribe('));

@@ -7,19 +7,31 @@ const day=value=>String(value||'').slice(0,10).replaceAll('-','.');
  * grant receipt rights; those come from the current purchase actions. */
 export function researchPassRows(purchases={},workspace={},now=Date.now()){
   const rows=[],ordered=new Set(),businesses=workspace.businesses||[];
+  const quotesById=new Map((workspace.quotes||[]).map(quote=>[quote.id,quote]));
+  const siteFields=(org,site,label,business)=>({
+    site:String(label),
+    siteKey:site?JSON.stringify([org||null,site]):JSON.stringify([null,null,label]),
+    siteHint:[business?.branchName,business?.siteName,business?.district,business?.region,business?.road,business?.address]
+      .find(text=>typeof text==='string'&&text.trim()&&text.trim()!==label)?.trim()||''
+  });
   for(const item of purchases.items||[]){
     if(!item?.id)continue;const [status,tone]=statuses[item.status]||['상태 확인','review'];ordered.add(item.quoteId);
-    // The purchase contract currently exposes a local site key, not its org.
-    // A shared key across authorized organizations cannot identify one name.
-    const candidates=businesses.filter(b=>b.site_id===item.targetId),business=candidates.length===1?candidates[0]:null,name=business?.businessName||item.target||item.targetId||'내 사업장';
+    // Older receipts may have only a local site key. Prefer their linked quote
+    // and only infer an organization from membership when the site is unique.
+    const quote=quotesById.get(item.quoteId);
+    const site=item.targetId||quote?.site_id;
+    const org=item.buyerOrgId||(quote?.site_id===site?quote?.org_id:null);
+    const candidates=businesses.filter(b=>b.site_id===site&&(!org||org===b.org_id));
+    const business=candidates.length===1?candidates[0]:null;
+    const location=siteFields(org||business?.org_id,site,business?.businessName||item.target||site||'내 사업장',business);
     const lines=(Array.isArray(item.lines)&&item.lines.length?item.lines:[{productName:item.product,quantity:item.quantity,unit:item.unit||'tray',serviceDate:item.serviceDate}]).map(line=>[String(line.productName||line.product||'주문 품목'),quantity(line.quantity,line.unit),line.serviceDate?'납품 '+day(line.serviceDate):'주문 내역']);
-    rows.push({id:String(item.id),purchaseId:String(item.id),revision:item.revision,date:day(item.date||item.createdAt),site:String(name),status,tone,lines,received:item.status==='RECEIVED',canReceive:item.status==='DISPATCHED'&&Array.isArray(item.actions)&&item.actions.includes('receive'),quoteId:item.quoteId||null});
+    rows.push({id:String(item.id),purchaseId:String(item.id),revision:item.revision,date:day(item.date||item.createdAt),...location,status,tone,lines,received:item.status==='RECEIVED',canReceive:item.status==='DISPATCHED'&&Array.isArray(item.actions)&&item.actions.includes('receive'),quoteId:item.quoteId||null});
   }
   for(const quote of workspace.quotes||[]){
     if(!quote?.id||ordered.has(quote.id))continue;
     const expired=Boolean(quote.expires_at)&&Date.parse(quote.expires_at)<=now,business=businesses.find(b=>b.org_id===quote.org_id&&b.site_id===quote.site_id);
     const lines=(Array.isArray(quote.lines)&&quote.lines.length?quote.lines:[{productName:quote.productName,quantity:quote.deliveryQty,unit:quote.unit,serviceDate:quote.serviceDate}]).map(line=>[String(line.productName||'발급 견적'),quantity(line.quantity,line.unit),line.serviceDate?'납품 '+day(line.serviceDate):'발급 견적']);
-    rows.push({id:'quote:'+quote.id,quoteId:quote.id,date:day(quote.issued_at||quote.serviceDate),site:String(business?.businessName||quote.businessName||quote.site_id||'내 사업장'),status:expired?'지난 견적':quote.deliveryState?'납품 요청':'발급 견적',tone:expired?'expired':quote.deliveryState?'booked':'review',lines,received:false,canReceive:false});
+    rows.push({id:'quote:'+quote.id,quoteId:quote.id,date:day(quote.issued_at||quote.serviceDate),...siteFields(quote.org_id,quote.site_id,business?.businessName||quote.businessName||quote.site_id||'내 사업장',business),status:expired?'지난 견적':quote.deliveryState?'납품 요청':'발급 견적',tone:expired?'expired':quote.deliveryState?'booked':'review',lines,received:false,canReceive:false});
   }
   return rows;
 }
