@@ -1,5 +1,7 @@
+import {onboardingCardResizeSource} from './product-ui/onboarding-card-resize.mjs';
 import {catalog,frames,cssGzip} from './product-ui/catalog.gen.mjs';
 import {productFontCss} from './product-fonts.mjs';
+import {onboardingGooeyCss} from './product-ui/onboarding-gooey-style.mjs';
 import {runtimes} from './product-ui/runtime.gen.mjs';
 import {getProductApplicationDocument} from './product-ui/documents.mjs';
 import {getProductUiBootstrap} from './product-ui/bootstrap.gen.mjs';
@@ -89,6 +91,7 @@ export async function renderProductApplication(nonce,context,screen='store-purch
   const fallback={login:'account',signup:'account',otp:'account',password:'account',terms:'account',business:'business',proof:'business',signature:'business',onboarding:'member','quote-wait':'member'};
   document={body:await inflate(frames[row.current]),mount:runtimes[row.runtimeFamily||fallback[row.screen]]||'',css:'',row};state=row.state;
  }
+ if(screen==='onboarding')document={...document,mount:onboardingCardResizeSource(document.mount)};
  return renderProductUiDocument(nonce,context,document);
 }
 
@@ -102,5 +105,5 @@ export async function renderProductUiDocument(nonce,context,document,{reviewLibr
  // Authored families register their retained modules and may carry an earlier
  // global menu factory. Install the current common owner after registration,
  // before any consumer mounts, without rewriting those historical runtimes.
- return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+productFontCss+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+notificationSettingsCss+panels.css+(authSheet?.css||'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+document.mount+'\n'+brandAccountScript+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
+ return '<!doctype html><html lang="ko" data-product-runtime="canonical" data-product-screen="'+esc(screen)+'"'+(document.componentVariantId?' data-product-component-variant="'+esc(document.componentVariantId)+'"':'')+'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>'+esc(document.row.label)+' · Order</title><style>'+productFontCss+css+(document.css||'')+brandPanelUiCss+brandAccountCss+getProductUiBootstrap().css+notificationSettingsCss+panels.css+(authSheet?.css||'')+(screen==='onboarding'?onboardingGooeyCss:'')+'\nbody{margin:0;min-height:100dvh}#order-single{min-height:100dvh;max-width:100%;overflow-x:clip}</style>'+productBootstrap(nonce,context,panels,authSheet)+'</head><body>'+document.body+'<script nonce="'+nonce+'">'+brandMotionScript+'\n'+document.mount+'\n'+brandAccountScript+'\n'+sharedCoreScript+'\n('+browserFunction(bootProductDocument)+')('+js(screen)+','+js(state)+','+js(screen==='onboarding'?sharedTemplates.introArtSource||null:null)+','+js(reviewLibrary)+');</script></body></html>';
 }

@@ -601,11 +601,22 @@ def check_notification_pin(page, screens):
     assert actions.evaluate_all('(els)=>els.map(el=>el.getAttribute("aria-label"))')==['오더 패스','시세 알림']
     assert actions.evaluate_all('(els)=>els.every(el=>!el.innerText.trim()&&el.querySelector("svg"))')
     expect(actions.nth(1).locator('.ob-market-notice-icon path[data-currency="KRW"][d="M8 9l2 7 2-5 2 5 2-7M7.5 11.5h9M8 14h8"]')).to_have_count(1)
+    # Check actual SVG paint after the product button rules have cascaded.
+    white = 'rgb(255, 255, 255)'
+    ink = 'rgb(32, 39, 43)'
+    expect(bell.locator('.ob-notice-icon')).to_have_css('stroke', white)
+    for circle in frame.locator('.pm-gooey-surface circle').all():
+        expect(circle).to_have_css('fill', ink)
+    badge = bell.locator('.t-badge-dot')
+    expect(badge).to_have_css('color', ink)
+    expect(badge).to_have_css('background-color', 'rgb(255, 204, 0)')
     bell.evaluate('el=>window.__gooeyOriginalBell=el')
     unread=bell.locator('.quick-unread').text_content()
     frame_click(page, bell)
     expect(bell).to_have_attribute('aria-expanded','true')
     expect(panel).to_be_hidden()
+    for icon in actions.locator('svg').all():
+        expect(icon).to_have_css('stroke', white)
     expect(actions.nth(0)).to_have_css('transform','matrix(1, 0, 0, 1, -82, -20)')
     expect(actions.nth(1)).to_have_css('transform','matrix(1, 0, 0, 1, -22, -82)')
     geometry=bell.evaluate('''el=>{
